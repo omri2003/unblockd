@@ -58,6 +58,28 @@ owned by a human**, grouped per profile with its `instructions` and `model`:
 everything an orchestrator needs to spawn one agent per group. A single agent
 asks `next_ready(agent="godot-dev")` for its own queue.
 
+## Chat: ask about tickets and boards
+
+**Ask** (or `c`) opens a chat beside the board. Claude answers with read-only
+tools over the same data (boards, tickets, `next_ready`, `work_plan`), so it
+checks instead of guessing. Link things in a question and they're looked up
+before Claude sees it:
+
+| Type | Links |
+|---|---|
+| `#BUG-10` | a ticket on this board (autocompletes) |
+| `#website/UI-2` | a ticket on another board |
+| `@website` | a board (its open tickets) |
+
+Answers link back the same way: click a ticket to open it, or another board's
+ticket to jump there. Each ticket's drawer has **Ask** to start a question
+about it. History stays in your browser, per board.
+
+Needs `ANTHROPIC_API_KEY` in `.env` (compose passes it to the container);
+`UNBLOCKD_MODEL` picks the model. Each question is billed to that key and
+usually takes a few tool calls. The chat can't change tickets: it tells you
+what to change.
+
 ## Configure: `tickets/unblockd.json`
 
 Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
@@ -166,6 +188,8 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended 
 
 ```
 GET    /api/boards                    every board with ticket counts
+GET    /api/chat                      {"enabled", "model"}
+POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 POST   /api/boards                    {"id": "my-game", "title": "My game"}
 # per board under /api/b/<board>/ ; without the prefix = the default board
 GET    meta                           statuses, priorities, fields, config

@@ -13,4 +13,7 @@ services:
       # Python edits on `docker compose restart`. Rebuild only for requirements.txt.
       - ./static:/app/static:ro
       - ./unblockd:/app/unblockd:ro
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # enables the chat; put it in .env
+      UNBLOCKD_MODEL: ${UNBLOCKD_MODEL:-claude-sonnet-5-5}
     restart: unless-stopped

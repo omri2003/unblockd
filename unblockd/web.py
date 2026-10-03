@@ -2,6 +2,8 @@
 
 GET    /api/boards                       every board: id, title, ticket counts
 POST   /api/boards                       {"id": "my-game", "title": "My game"}  (needs UNBLOCKD_ROOT)
+GET    /api/chat                         {"enabled": bool, "model": ...}
+POST   /api/chat                         {"board": id, "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 Per board, under /api/b/<board>/ ; the same paths without the prefix use the default (first) board:
 GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
 GET    next?owner=&pillar=&agent=&tag=&limit=   ready tickets ranked by priority x tickets unblocked
@@ -23,6 +25,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import boards as bd
+from . import chat
 from . import store as st
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -73,6 +76,16 @@ class Handler(BaseHTTPRequestHandler):
 				if method == "POST":
 					b = self._body()
 					return self._send(201, BOARDS.create(str(b.get("id", "")), str(b.get("title", ""))))
+				return self._send(405, {"error": "method not allowed"})
+			if parts == ["api", "chat"]:
+				if method == "GET":
+					return self._send(200, chat.enabled())
+				if method == "POST":
+					b = self._body()
+					try:
+						return self._send(200, chat.ask(BOARDS, b.get("board") or None, b.get("messages") or []))
+					except chat.ChatError as e:
+						return self._send(503, {"error": str(e)})
 				return self._send(405, {"error": "method not allowed"})
 			board, rest = (parts[2], parts[3:]) if parts[1:2] == ["b"] and len(parts) > 2 else (None, parts[1:])
 			store = BOARDS.get(board)

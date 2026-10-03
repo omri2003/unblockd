@@ -171,13 +171,40 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
 .gpanel .ttl{font-weight:600;margin:4px 0 6px;overflow-wrap:anywhere}
 .gpanel .row{display:flex;gap:6px;margin-top:8px}
 .gempty{position:absolute;inset:auto 0 45% 0;text-align:center;color:var(--muted)}
+/* chat: a docked panel on the right. Non-modal, so the board stays usable; a ticket drawer opens over it. */
+.chat{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:15;display:flex;flex-direction:column}
+@media (min-width:1100px){body.chat-open .wrap{margin-right:420px}}
+.chead{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.chead h2{font-size:1.2rem;margin-right:auto}
+.clog{flex:1;overflow-y:auto;padding:14px 16px;display:grid;gap:12px;align-content:start}
+.cm{max-width:92%;overflow-wrap:anywhere}
+.cm.user{justify-self:end;background:var(--jade-soft);border-radius:10px 10px 2px 10px;padding:8px 11px}
+.cm.bot{justify-self:start}
+.cm.bot p{margin:0 0 8px}.cm.bot p:last-child{margin:0}
+.cm.err{color:var(--cinnabar)}
+.cm .used{display:block;margin-top:4px;font-size:.76rem;color:var(--muted)}
+.cm table{border-collapse:collapse;font-size:.88rem}.cm td,.cm th{border:1px solid var(--line);padding:3px 6px;text-align:left}
+.ref{border:1px solid var(--line);background:var(--paper);border-radius:4px;padding:0 5px;font:inherit;font-weight:700;cursor:pointer;color:var(--ink);text-decoration:none;white-space:nowrap}
+.ref:hover{border-color:var(--ink)} .ref.bref{color:var(--slate)}
+.cempty{color:var(--muted);font-size:.9rem}
+.cempty code{cursor:pointer}
+.cform{border-top:1px solid var(--line);padding:10px 12px;position:relative}
+.cform textarea{width:100%;min-height:64px;max-height:200px;resize:vertical;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:8px 10px}
+.cform .formrow{margin-top:6px;justify-content:space-between}
+.ac{position:absolute;left:12px;right:12px;bottom:100%;max-height:240px;overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 -4px 14px rgba(0,0,0,.12);list-style:none;margin:0 0 4px;padding:4px}
+.ac li{display:grid;grid-template-columns:auto 1fr;gap:8px;padding:5px 7px;border-radius:4px;cursor:pointer;font-size:.88rem}
+.ac li[aria-selected="true"],.ac li:hover{background:var(--sunk)}
+.ac .lt{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dots::after{content:'…';animation:dots 1.2s steps(3) infinite}
+@keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
+@media (prefers-reduced-motion:reduce){.dots::after{animation:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
-    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
+    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
   <div class="bar" role="search">
     <input type="search" id="q" placeholder="Search words or an ID like BUG-10" aria-label="Search tickets">
@@ -219,6 +246,16 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
   </section>
 </div>
 <div class="scrim" id="scrim" hidden></div>
+<section class="chat" id="chat" hidden aria-labelledby="chatT">
+  <div class="chead"><h2 id="chatT">Ask about this board</h2><button type="button" class="btn ghost sm" id="chatClear">Clear</button><button type="button" class="btn ghost sm" id="chatClose">Close</button></div>
+  <div class="clog" id="clog" aria-live="polite"></div>
+  <form class="cform" id="cform">
+    <ul class="ac" id="ac" role="listbox" hidden></ul>
+    <label for="cin" class="hint">Link a ticket with <code>#</code>, another board's ticket with <code>#board/ID</code>, a board with <code>@</code></label>
+    <textarea id="cin" placeholder="What's blocking the combat pillar?" aria-autocomplete="list" aria-controls="ac"></textarea>
+    <div class="formrow"><span class="msg" id="cmsg" role="status"></span><button class="btn" type="submit" id="csend">Ask</button></div>
+  </form>
+</section>
 <div class="kbscrim" id="kbScrim" hidden></div>
 <div class="kb" id="kb" hidden role="dialog" aria-modal="true" aria-labelledby="kbT">
   <h2 id="kbT">Keyboard shortcuts</h2>
@@ -226,6 +263,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
     <dt><kbd>/</kbd></dt><dd>Search</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>n</kbd></dt><dd>New ticket</dd>
+    <dt><kbd>c</kbd></dt><dd>Ask about this board (chat). In the chat, <kbd>#</kbd> links a ticket, <kbd>@</kbd> a board</dd>
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next or previous card</dd>
     <dt><kbd>Enter</kbd></dt><dd>Open the focused card</dd>
     <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
@@ -253,6 +291,7 @@ const cap = s => s ? s[0]+s.slice(1).toLowerCase() : '';
 // Several boards: ?board=<id> picks one (remembered); API calls go to /api/b/<id>/...
 const BOARD=(new URLSearchParams(location.search).get('board')||(()=>{try{return localStorage.getItem('unblockd.board')}catch{return null}})()||'').replace(/[^a-z0-9_-]/g,'');
 const API=BOARD?`/api/b/${BOARD}`:'/api';
+if(BOARD){try{localStorage.setItem('unblockd.board',BOARD)}catch{}}
 // Project settings come from GET <API>/meta (the tickets folder's unblockd.json).
 let CFG={title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],agents:[],stale_days:7};
 let PILLARS=[],PNAME={},HUMAN=new Set(),LANES=[['OTHER','All','muted']];
@@ -264,7 +303,7 @@ function applyConfig(c){
   PILLARS=CFG.pillars.map(p=>p.key); PNAME=Object.fromEntries(CFG.pillars.map(p=>[p.key,p.name||cap(p.key)]));
   HUMAN=new Set(CFG.owners.filter(o=>o.kind==='human').map(o=>o.name)); STALE=CFG.stale_days??7;
   LANES=[...CFG.pillars.map(p=>[p.key,pname(p.key),pk(p.key)]),['OTHER',PILLARS.length?'Other':'All','muted']];
-  document.title=CFG.title; $('appTitle').textContent=CFG.title;
+  document.title=CFG.title; $('appTitle').textContent=CFG.title; $('chatT').textContent='Ask about '+CFG.title;
   const light=[],dark=[],cls=[];
   CFG.pillars.forEach((p,i)=>{const d=DEF_PC[i%DEF_PC.length],v=pk(p.key);light.push(`--${v}:${p.color||d[0]}`);dark.push(`--${v}:${p.color_dark||p.color||d[1]}`);cls.push(`.card.${v}{--pc:var(--${v})}`);});
   let st=$('pillarCss'); if(!st){st=document.createElement('style');st.id='pillarCss';document.head.appendChild(st);}
@@ -296,7 +335,7 @@ async function load(force){
   if(prev.size&&!matchMedia('(prefers-reduced-motion: reduce)').matches) noteFinished(prev);
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
-  render();
+  render(); if(!$('chat').hidden&&!CH.busy) renderChat();
   if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
 }
 
@@ -368,7 +407,7 @@ function renderBoard(){
 // ---------- drawer ----------
 let lastFocus=null;
 function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;d.innerHTML=html;d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
-function closeDrawer(){if(typeof syncSel==='function')syncSel();$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname);lastFocus?.focus?.();}
+function closeDrawer(){if(typeof syncSel==='function')syncSel();$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
   return '<ul class="links">'+ids.map(id=>{const t=BY.get(id);if(!t)return `<li><span class="none">${esc(id)} (no such ticket)</span></li>`;
@@ -407,7 +446,7 @@ function showTicket(id,refresh){
   const s=t.effective_status;
   const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
   const ms=mentions(t);
-  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn ghost" data-ingraph>Show in graph</button><button type="button" class="btn ghost" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button></span></div>
+  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn ghost" data-ask-about="${esc(t.id)}">Ask</button><button type="button" class="btn ghost" data-ingraph>Show in graph</button><button type="button" class="btn ghost" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
     <dl class="facts">
       <dt>Status</dt><dd><label class="hint" for="quickStatus" hidden>Status</label><select class="quick" id="quickStatus">${COLS.map(([k,n])=>`<option value="${k}" ${t.status===k?'selected':''}>${n}</option>`).join('')}</select>${s!==t.status?` <span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?` <span class="why">${esc(why)}</span>`:''}</dd>
@@ -474,6 +513,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('#kbBtn')){toggleKb();return;}
+  if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
   if(b=g('[data-view]')){setView(b.dataset.view);return;}
@@ -513,6 +553,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') setView(state.view==='board'?'graph':'board');
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
+  else if(e.key==='c'){ e.preventDefault(); $('chat').hidden?openChat():$('cin').focus(); }
   else if(e.key==='j'||e.key==='k'){
     const cs=visibleCards(); if(!cs.length) return; const i=cs.indexOf(document.activeElement);
     const nx=e.key==='j'?(i<0?0:Math.min(cs.length-1,i+1)):(i<0?cs.length-1:Math.max(0,i-1)); cs[nx].focus();
@@ -892,6 +933,113 @@ fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(!r.ok&&BOARD){try{localStorage
   readColors(); renderBar(); setView(state.view);
   load(true).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
 });
+// ---------- chat ----------
+// Ask Claude about tickets and boards (server: POST /api/chat, read-only tools over the same store).
+// History lives in this browser, per board. #ID / #board/ID / @board become links both ways.
+const CH={log:[],busy:false,on:null,others:new Map(),ac:null};
+const chatKey=()=>'unblockd.chat.'+(BOARD||'default');
+function chatLoad(){try{CH.log=JSON.parse(localStorage.getItem(chatKey())||'[]')}catch{CH.log=[]}}
+function chatSave(){try{localStorage.setItem(chatKey(),JSON.stringify(CH.log.slice(-40)))}catch{}}
+const curBoard=()=>BOARD||$('boardSel').options[0]?.value||'';
+function chatHtml(text){
+  // cross-board refs become links before markdown runs; same-board #IDs are linked by md() itself
+  const hold=[];const put=h=>'\u0001'+(hold.push(h)-1)+'\u0001';
+  let t=String(text||'').replace(/\u0001/g,'');
+  t=t.replace(/(^|[^\w/#])#([a-z0-9][a-z0-9_-]*)\/([A-Z0-9]+-\d+[a-z]?)\b/g,(m,a,b,id)=>b===curBoard()?`${a}${id}`:a+put(`<a class="ref" href="?board=${encodeURIComponent(b)}#${encodeURIComponent(id)}">${esc(b)}/${esc(id)}</a>`));
+  t=t.replace(/(^|[^\w@])@([a-z0-9][a-z0-9_-]*)\b/g,(m,a,b)=>[...$('boardSel').options].some(o=>o.value===b)?a+put(`<a class="ref bref" href="?board=${encodeURIComponent(b)}">@${esc(b)}</a>`):m);
+  t=t.replace(/(^|[^\w/])#([A-Z0-9]+-\d+[a-z]?)\b/g,'$1$2'); // "#BUG-10" -> "BUG-10", which md() links
+  let h=chatMd(t);
+  return h.replace(/\u0001(\d+)\u0001/g,(m,i)=>hold[i]);
+}
+function chatMd(t){ // bodyHtml + simple pipe tables, since answers often compare tickets
+  const lines=t.split('\n'),out=[];let buf=[];
+  const flush=()=>{if(buf.length){out.push(bodyHtml(buf.join('\n')));buf=[];}};
+  for(let i=0;i<lines.length;i++){
+    if(/^\s*\|.*\|\s*$/.test(lines[i])&&/^\s*\|[\s:|-]+\|\s*$/.test(lines[i+1]||'')){
+      flush();const row=l=>l.trim().replace(/^\||\|$/g,'').split('|').map(c=>md(c.trim()));
+      const head=row(lines[i]);i+=2;const body=[];while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i]))body.push(row(lines[i++]));i--;
+      out.push(`<table><tr>${head.map(c=>`<th>${c}</th>`).join('')}</tr>${body.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</table>`);
+    } else buf.push(lines[i]);
+  }
+  flush();return out.join('').replace('<p class="none">No details yet.</p>','');
+}
+function renderChat(){
+  const log=$('clog');
+  if(!CH.log.length){
+    log.innerHTML=`<div class="cempty">${CH.on&&!CH.on.enabled?`<p class="cm err">Chat needs an Anthropic API key on the server: put <code>ANTHROPIC_API_KEY=…</code> in <code>.env</code> next to <code>compose.yaml</code> and restart.</p>`:''}
+      <p>Ask about tickets, chains and agents. For example:</p>
+      <p><code data-ask="What should Claude work on next, and why?">What should Claude work on next, and why?</code></p>
+      <p><code data-ask="What is the longest chain still open, and who owns each step?">What is the longest chain still open?</code></p>
+      <p><code data-ask="Which tickets are stale or point at a missing blocker?">Which tickets need attention?</code></p></div>`;
+    return;}
+  log.innerHTML=CH.log.map(m=>m.role==='user'?`<div class="cm user">${chatHtml(m.content)}</div>`
+    :`<div class="cm bot${m.error?' err':''}">${m.error?esc(m.content):chatHtml(m.content)}${m.tools?.length?`<span class="used">Looked at: ${esc(summTools(m.tools))}</span>`:''}</div>`).join('')
+    +(CH.busy?'<div class="cm bot"><span class="dots">Thinking</span></div>':'');
+  log.scrollTop=log.scrollHeight;
+}
+const summTools=ts=>Object.entries(ts.reduce((a,n)=>(a[n]=(a[n]||0)+1,a),{})).map(([n,c])=>c>1?`${n.replace(/_/g,' ')} ×${c}`:n.replace(/_/g,' ')).join(', ');
+async function openChat(prefill){
+  $('chat').hidden=false;document.body.classList.add('chat-open');store.set('chatOpen',true);
+  $('chatT').textContent='Ask about '+(CFG.title||'this board');
+  if(!CH.on){try{CH.on=await (await fetch('/api/chat',{cache:'no-store'})).json()}catch{CH.on={enabled:false}}}
+  renderChat();
+  const i=$('cin');if(prefill){i.value=prefill+(i.value?' '+i.value:'');}i.focus();i.setSelectionRange(i.value.length,i.value.length);
+}
+function closeChat(){$('chat').hidden=true;document.body.classList.remove('chat-open');store.set('chatOpen',false);hideAc();}
+async function sendChat(){
+  const text=$('cin').value.trim();if(!text||CH.busy)return;
+  CH.log.push({role:'user',content:text});$('cin').value='';CH.busy=true;hideAc();renderChat();
+  try{
+    const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({board:BOARD||null,messages:CH.log.filter(m=>!m.error).map(({role,content})=>({role,content})).slice(-20)})});
+    const j=await r.json().catch(()=>({error:'bad response'}));
+    if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+    CH.log.push({role:'assistant',content:j.reply,tools:j.tools});
+  }catch(e){CH.log.push({role:'assistant',content:e.message,error:true});}
+  CH.busy=false;chatSave();renderChat();
+}
+// autocomplete: "#" tickets on this board, "#board/" tickets on another, "@" boards
+async function otherTickets(b){
+  if(!CH.others.has(b)){try{CH.others.set(b,await (await fetch(`/api/b/${encodeURIComponent(b)}/tickets`)).json())}catch{CH.others.set(b,[])}}
+  return CH.others.get(b);
+}
+function hideAc(){$('ac').hidden=true;CH.ac=null;$('cin').removeAttribute('aria-activedescendant');}
+async function updateAc(){
+  const i=$('cin'),pos=i.selectionStart,before=i.value.slice(0,pos);
+  const m=before.match(/(^|\s)([#@])([a-z0-9_-]*\/)?([\w-]*)$/i);
+  if(!m){hideAc();return;}
+  const [,,sym,bpart,word]=m,start=pos-(m[0].length-m[1].length);let items=[];
+  const w=word.toLowerCase();
+  if(sym==='@'){items=[...$('boardSel').options].filter(o=>o.value!=='__new'&&o.value.includes(w)).map(o=>({ins:'@'+o.value,id:'@'+o.value,lt:o.textContent}));}
+  else{const b=bpart?bpart.slice(0,-1):null;const list=b?await otherTickets(b):T;
+    const rank=t=>{const id=t.id.toLowerCase();return (id.startsWith(w)?0:id.includes(w)?1:2)*2+(t.status==='done');};
+    items=list.filter(t=>t.id.toLowerCase().includes(w)||t.title.toLowerCase().includes(w))
+      .sort((a,b2)=>rank(a)-rank(b2)||a.id.localeCompare(b2.id,undefined,{numeric:true})).slice(0,30)
+      .map(t=>({ins:'#'+(b?b+'/':'')+t.id,id:t.id,lt:t.title}));}
+  if(!items.length){hideAc();return;}
+  CH.ac={items,start,end:pos,sel:0};
+  $('ac').innerHTML=items.map((x,k)=>`<li role="option" id="ac${k}" data-ac="${k}" aria-selected="${k===0}"><span class="tid">${esc(x.id)}</span><span class="lt">${esc(x.lt)}</span></li>`).join('');
+  $('ac').hidden=false;i.setAttribute('aria-activedescendant','ac0');
+}
+function pickAc(k){const a=CH.ac;if(!a)return;const i=$('cin'),x=a.items[k];
+  i.value=i.value.slice(0,a.start)+x.ins+' '+i.value.slice(a.end);const p=a.start+x.ins.length+1;i.focus();i.setSelectionRange(p,p);hideAc();}
+$('cin').addEventListener('input',updateAc);
+$('cin').addEventListener('keydown',e=>{
+  const a=CH.ac;
+  if(a&&(e.key==='ArrowDown'||e.key==='ArrowUp')){e.preventDefault();a.sel=(a.sel+(e.key==='ArrowDown'?1:a.items.length-1))%a.items.length;
+    $('ac').querySelectorAll('li').forEach((li,k)=>li.setAttribute('aria-selected',k===a.sel));$('cin').setAttribute('aria-activedescendant','ac'+a.sel);$('ac'+a.sel)?.scrollIntoView({block:'nearest'});return;}
+  if(a&&(e.key==='Enter'||e.key==='Tab')){e.preventDefault();pickAc(a.sel);return;}
+  if(e.key==='Escape'){e.stopPropagation();a?hideAc():closeChat();return;}
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}
+});
+$('ac').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac]');if(li){e.preventDefault();pickAc(+li.dataset.ac);}});
+$('cform').addEventListener('submit',e=>{e.preventDefault();sendChat();});
+$('chatClose').addEventListener('click',closeChat);
+$('chatClear').addEventListener('click',()=>{CH.log=[];chatSave();renderChat();$('cin').focus();});
+$('clog').addEventListener('click',e=>{const c=e.target.closest('[data-ask]');if(c){$('cin').value=c.dataset.ask;sendChat();}});
+$('chatBtn').addEventListener('click',()=>$('chat').hidden?openChat():closeChat());
+chatLoad();
+if(store.get('chatOpen',false)) openChat();
 setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000); // picks up edits made through the MCP
 })();
 </script>
