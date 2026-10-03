@@ -1,13 +1,48 @@
 {
+  "id": "example",
   "title": "Example project",
   "owners": [
-    {"name": "Me", "kind": "human"},
-    {"name": "Claude", "kind": "agent"}
+    {
+      "name": "Me",
+      "kind": "human"
+    },
+    {
+      "name": "Claude",
+      "kind": "agent"
+    }
   ],
   "pillar_label": "Area",
   "pillars": [
-    {"key": "UI", "name": "Interface"},
-    {"key": "API", "name": "Backend"}
+    {
+      "key": "UI",
+      "name": "Interface"
+    },
+    {
+      "key": "API",
+      "name": "Backend"
+    }
   ],
-  "stale_days": 7
+  "stale_days": 7,
+  "agents": [
+    {
+      "name": "frontend",
+      "pillars": [
+        "UI"
+      ],
+      "tags": [
+        "css",
+        "html"
+      ],
+      "model": "sonnet",
+      "instructions": "Match the existing design tokens; screenshot before and after."
+    },
+    {
+      "name": "backend",
+      "pillars": [
+        "API"
+      ],
+      "model": "sonnet",
+      "instructions": "Stdlib only; add a test for every endpoint."
+    }
+  ]
 }

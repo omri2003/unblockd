@@ -17,6 +17,8 @@ STATUSES = ("todo", "doing", "pending", "done")
 PRIORITIES = ("P0", "P1", "P2", "P3")
 ID_RE = re.compile(r"^[A-Z0-9]+-\d+[a-z]?$")  # also the filename: blocks path traversal
 PREFIX_RE = re.compile(r"^[A-Z0-9]+$")
+TAG_RE = re.compile(r"^[a-z0-9][a-z0-9:._-]{0,39}$")  # lowercase; "agent:<name>" routes a ticket to that agent
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")  # agent profile and board ids
 STALE_DAYS = 7  # default; a doing ticket untouched this long is flagged (config: stale_days)
 CONFIG_FILE = "unblockd.json"  # optional, next to the tickets
 DEFAULT_CONFIG = {
@@ -27,6 +29,10 @@ DEFAULT_CONFIG = {
 	"pillars": [],  # [{"key": "ART", "name": "Art", "color": "#8A4FB5", "color_dark": "#B58CE6"}]
 	"stale_days": STALE_DAYS,
 	"legacy_files": [],  # old ticket lists (relative to the tickets folder): new IDs never reuse a number seen there
+	"id": None,  # board id when several boards are served; None = the project folder's name
+	# Agent profiles: who should work a ticket. A ticket goes to the first profile sharing one of its
+	# tags or its pillar; an explicit "agent:<name>" tag wins. Orchestrators read them via work_plan.
+	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "..."}]
 }
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
@@ -42,6 +48,7 @@ FIELDS = {
 	"blocked_by": ([], lambda v: isinstance(v, list) and all(isinstance(x, str) and ID_RE.match(x) for x in v)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
+	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
 }
 
 
@@ -73,6 +80,11 @@ def load_config(tickets_dir: Path) -> dict:
 	for pl in cfg["pillars"]:
 		if not (isinstance(pl, dict) and PREFIX_RE.match(str(pl.get("key", "")))):
 			raise TicketError(f"{CONFIG_FILE}: each pillar needs a key like ART (A-Z, 0-9)")
+	for ag in cfg["agents"]:
+		if not (isinstance(ag, dict) and NAME_RE.match(str(ag.get("name", "")))):
+			raise TicketError(f"{CONFIG_FILE}: each agent needs a name like godot-dev (a-z, 0-9, - _)")
+		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", [])):
+			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags and pillars are lists of strings")
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
 		cfg["default_owner"] = (agents or [cfg["owners"][0]["name"]])[0]
@@ -126,8 +138,15 @@ class Store:
 				continue
 			if k == "title" and isinstance(v, str):
 				v = v.strip()
+			if k == "tags" and isinstance(v, list):
+				v = list(dict.fromkeys(x.strip().lower() for x in v if isinstance(x, str) and x.strip()))
 			if not FIELDS[k][1](v):
-				raise TicketError(f"invalid {k}: {v!r}")
+				raise TicketError(f"invalid {k}: {v!r}" + (" (tags: lowercase a-z 0-9 : . _ -, max 40 chars, max 20)" if k == "tags" else ""))
+			if k == "tags" and self.config["agents"]:
+				names = [a["name"] for a in self.config["agents"]]
+				bad = [x for x in v if x.startswith("agent:") and x[6:] not in names]
+				if bad:
+					raise TicketError(f"unknown agent in {', '.join(bad)}: agents are {', '.join(names)} (agents in {CONFIG_FILE})")
 			if k == "owner" and v not in (names := [o["name"] for o in self.config["owners"]]):
 				raise TicketError(f"invalid owner {v!r}: one of {', '.join(names)} (owners in {CONFIG_FILE})")
 			if k == "pillar" and v is not None and self.config["pillars"] and v not in (keys := [p["key"] for p in self.config["pillars"]]):
@@ -193,12 +212,38 @@ class Store:
 					stale = None
 			out.append({**t, "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
-			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n)})
+			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
+			            "tags": t.get("tags", []), "agent": self.route(t)})
 		return out
+
+	def route(self, t: dict) -> str | None:
+		"""The agent profile that should work this ticket, or None."""
+		tags = t.get("tags", [])
+		for x in tags:
+			if x.startswith("agent:"):
+				return x[6:]
+		for ag in self.config["agents"]:
+			if set(tags) & set(ag.get("tags", [])) or (t.get("pillar") and t["pillar"] in ag.get("pillars", [])):
+				return ag["name"]
+		return None
+
+	def work_plan(self, per_agent: int = 3) -> dict:
+		"""Ready tickets not owned by a human, grouped by the agent profile that should take them
+		(best first), for an orchestrator to fan out: {"agents": [{profile..., "tickets": [...]}], "unrouted": [...]}."""
+		ready = self.next_ready(limit=10_000)
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		ready = [t for t in ready if t.get("owner") not in humans]  # a person's ticket is theirs, whatever its tags
+		out = []
+		for ag in self.config["agents"]:
+			mine = [t for t in ready if t["agent"] == ag["name"]]
+			out.append({**ag, "ready": len(mine), "tickets": mine[:max(0, int(per_agent))]})
+		unrouted = [t for t in ready if t["agent"] is None]
+		return {"agents": out, "unrouted": unrouted[:max(0, int(per_agent))], "unrouted_count": len(unrouted)}
 
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
-	         priority: str | None = None, q: str | None = None) -> list[dict]:
+	         priority: str | None = None, q: str | None = None, tag: str | None = None,
+	         agent: str | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos)."""
 		res = self._decorate(self._all_raw())
 		if status:
@@ -209,15 +254,20 @@ class Store:
 			res = [t for t in res if t.get("owner", "").lower() == owner.lower()]
 		if priority:
 			res = [t for t in res if t.get("priority") == priority]
+		if tag:
+			res = [t for t in res if tag.lower() in t["tags"]]
+		if agent:
+			res = [t for t in res if t["agent"] == agent]
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]
 		return res
 
-	def next_ready(self, owner: str | None = None, pillar: str | None = None, limit: int = 5) -> list[dict]:
+	def next_ready(self, owner: str | None = None, pillar: str | None = None, limit: int = 5,
+	               agent: str | None = None, tag: str | None = None) -> list[dict]:
 		"""Ready tickets (effective todo: not blocked, started or done), best first:
 		score = priority weight x (1 + open tickets it unblocks), then priority, then id."""
-		res = [t for t in self.list(status="todo", pillar=pillar, owner=owner)]
+		res = self.list(status="todo", pillar=pillar, owner=owner, agent=agent, tag=tag)
 		res.sort(key=lambda t: (-t["score"], PRIORITIES.index(t["priority"]) if t.get("priority") else 9, t["id"]))
 		return res[:max(0, int(limit))]
 

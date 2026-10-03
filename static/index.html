@@ -45,6 +45,8 @@ h1{font-size:clamp(1.7rem,4vw,2.4rem);line-height:1.05}
 .bar{position:sticky;top:0;z-index:5;background:var(--paper);border-block:1px solid var(--line);padding:9px 0;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:14px}
 .bar input[type=search]{flex:1 1 220px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px}
 .seg{display:flex;flex-wrap:wrap;gap:4px}
+.bsel{display:flex;align-items:center;gap:6px} .bsel select{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:6px 8px;max-width:220px}
+.tag{font-size:.74rem;color:var(--muted)} .ag{font-weight:700;color:var(--slate)}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 11px;cursor:pointer;font-size:.85rem}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
@@ -175,13 +177,14 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
 <div class="wrap">
   <header>
     <div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
-    <div class="hdr"><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
+    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
   <div class="bar" role="search">
     <input type="search" id="q" placeholder="Search words or an ID like BUG-10" aria-label="Search tickets">
     <div class="seg" id="pillarSeg"></div>
     <div class="seg" id="ownerSeg"></div>
     <div class="seg" id="prioSeg"></div>
+    <div class="seg" id="agentSeg"></div>
     <div class="seg" id="attnSeg"></div>
   </div>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
@@ -247,8 +250,11 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const inline = s => esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
 const cap = s => s ? s[0]+s.slice(1).toLowerCase() : '';
-// Project settings come from GET /api/meta (the tickets folder's unblockd.json).
-let CFG={title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],stale_days:7};
+// Several boards: ?board=<id> picks one (remembered); API calls go to /api/b/<id>/...
+const BOARD=(new URLSearchParams(location.search).get('board')||(()=>{try{return localStorage.getItem('unblockd.board')}catch{return null}})()||'').replace(/[^a-z0-9_-]/g,'');
+const API=BOARD?`/api/b/${BOARD}`:'/api';
+// Project settings come from GET <API>/meta (the tickets folder's unblockd.json).
+let CFG={title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],agents:[],stale_days:7};
 let PILLARS=[],PNAME={},HUMAN=new Set(),LANES=[['OTHER','All','muted']];
 const pk=k=>'p-'+String(k).toLowerCase().replace(/[^a-z0-9]/g,'_');
 const pname=k=>PNAME[k]||cap(k);
@@ -271,19 +277,19 @@ const NAME=Object.fromEntries(COLS);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 let STALE=7; // days; from the config's stale_days
 const PW={P0:8,P1:4,P2:2,P3:1};
-const state={q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board')};
+const state={agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board')};
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
 async function api(method, path, body){
-  const r=await fetch('/api/tickets'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const r=await fetch(API+'/tickets'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({error:'bad response'}));
   if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
   return j;
 }
 async function load(force){
   let text;
-  try{ text=await (await fetch('/api/tickets',{cache:'no-store'})).text(); }
+  try{ text=await (await fetch(API+'/tickets',{cache:'no-store'})).text(); }
   catch{ $('sub').textContent='Cannot reach the unblockd server. Is it running?'; return; }
   if(text===raw && !force) return;
   raw=text; T=JSON.parse(text); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
@@ -310,6 +316,8 @@ function renderBar(){
   $('pillarSeg').hidden=!PILLARS.length;
   if(PILLARS.length) chips($('pillarSeg'),[['ALL','All'],...PILLARS.map(p=>[esc(p),esc(pname(p)),pk(p)]),['OTHER','Other','muted']],state.pillar,'pillar');
   chips($('ownerSeg'),[['ALL','Anyone'],...CFG.owners.map(o=>[esc(o.name),esc(o.name)])],state.owner,'owner');
+  $('agentSeg').hidden=!CFG.agents?.length;
+  if(CFG.agents?.length) chips($('agentSeg'),[['ALL','Any agent'],...CFG.agents.map(a=>[esc(a.name),esc(a.name)]),['NONE','Unrouted']],state.agent,'agent');
   chips($('prioSeg'),['P0','P1','P2','P3'].map(p=>[p,p]),state.prio,'prio');
   renderAttn();
 }
@@ -320,9 +328,10 @@ function renderAttn(){
 function matches(t){
   if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
+  if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
   if(state.prio.length && !state.prio.includes(t.priority)) return false;
   if(state.attn && !needsAttn(t)) return false;
-  if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+t.section+' '+t.owner).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
+  if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+t.section+' '+t.owner+' '+(t.tags||[]).join(' ')+' '+(t.agent||'')).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
   return true;
 }
 function card(t){
@@ -330,7 +339,9 @@ function card(t){
   if(s==='pending') why=t.open_blockers.length?`<span class="why">Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
-  const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:''].filter(Boolean).join('');
+  const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
+    t.agent&&s!=='done'?`<span class="ag" title="Agent profile that should work this">→ ${esc(t.agent)}</span>`:'',
+    ...(t.tags||[]).filter(x=>!x.startsWith('agent:')).slice(0,3).map(x=>`<span class="tag">#${esc(x)}</span>`)].filter(Boolean).join('');
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   return `<button type="button" class="card${pc}${fl?' flash':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta&&s!=='done'?`<span class="meta">${meta}</span>`:''}${warn}</button>`;
@@ -357,7 +368,7 @@ function renderBoard(){
 // ---------- drawer ----------
 let lastFocus=null;
 function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;d.innerHTML=html;d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
-function closeDrawer(){$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname);lastFocus?.focus?.();}
+function closeDrawer(){if(typeof syncSel==='function')syncSel();$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
   return '<ul class="links">'+ids.map(id=>{const t=BY.get(id);if(!t)return `<li><span class="none">${esc(id)} (no such ticket)</span></li>`;
@@ -401,6 +412,8 @@ function showTicket(id,refresh){
     <dl class="facts">
       <dt>Status</dt><dd><label class="hint" for="quickStatus" hidden>Status</label><select class="quick" id="quickStatus">${COLS.map(([k,n])=>`<option value="${k}" ${t.status===k?'selected':''}>${n}</option>`).join('')}</select>${s!==t.status?` <span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?` <span class="why">${esc(why)}</span>`:''}</dd>
       <dt>Owner</dt><dd>${esc(t.owner)}</dd>
+      <dt>Agent</dt><dd>${t.agent?`<span class="ag">${esc(t.agent)}</span>${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' <span class="hint">(no such profile)</span>'}`:'<span class="hint">None: add a tag or pillar an agent profile claims</span>'}</dd>
+      <dt>Tags</dt><dd>${(t.tags||[]).length?t.tags.map(x=>`<span class="tag">#${esc(x)}</span>`).join(' '):'None'}</dd>
       <dt>${esc(CFG.pillar_label)}</dt><dd>${t.pillar?esc(pname(t.pillar))+(t.pillar_step?`, step ${t.pillar_step}`:''):'None'}</dd>
       <dt>Section</dt><dd>${esc(t.section)||'None'}</dd>
       ${t.waiting_on&&!why?`<dt>Waiting on</dt><dd>${esc(t.waiting_on)}</dd>`:''}
@@ -427,6 +440,7 @@ function editForm(t){
     <label for="f-pillar">${esc(CFG.pillar_label)}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
     <label for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
     <label class="full" for="f-blocked">Blocked by <span class="hint">IDs, comma separated</span><input id="f-blocked" value="${esc(t.blocked_by.join(', '))}"></label>
     <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="200" value="${esc(t.waiting_on)}"></label>
     <label class="full" for="f-body">Details <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body)}</textarea></label>
@@ -438,7 +452,8 @@ async function submitForm(f){
   const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
-    blocked_by:$('f-blocked').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),waiting_on:$('f-waiting').value,body:$('f-body').value};
+    blocked_by:$('f-blocked').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),waiting_on:$('f-waiting').value,body:$('f-body').value,
+    tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
     editing=false; await load(true); showTicket(t.id);
@@ -450,6 +465,7 @@ let armedDelete=false;
 document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
   if(b=g('[data-pillar]')){state.pillar=b.dataset.pillar;store.set('pillar',state.pillar);renderBar();render();return;}
+  if(b=g('[data-agent]')){state.agent=b.dataset.agent;renderBar();render();return;}
   if(b=g('[data-owner]')){state.owner=b.dataset.owner;store.set('owner',state.owner);renderBar();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
   if(g('[data-alldone]')){state.allDone=true;render();return;}
@@ -843,7 +859,36 @@ function setView(v){state.view=v;store.set('view',v);$('board').hidden=v!=='boar
 function render(){renderAttn();renderBoard();renderNext();if(state.view==='graph')syncGraph();}
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
 $('q').addEventListener('input',e=>{state.q=e.target.value.trim();render();});
-fetch('/api/meta',{cache:'no-store'}).then(r=>r.json()).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
+async function loadBoards(){
+  let bs=[];try{bs=await (await fetch('/api/boards',{cache:'no-store'})).json();}catch{}
+  const sel=$('boardSel'); $('boardSel').closest('.bsel').hidden=false;
+  sel.innerHTML=bs.map(b=>`<option value="${esc(b.id)}" title="${b.error?esc(b.error):`${b.open} open, ${b.ready} ready`}"${b.id===BOARD||(!BOARD&&b===bs[0])?' selected':''}>${esc(b.title)}${b.error?' (config error)':''}</option>`).join('')+'<option value="__new">New board…</option>';
+  return bs;
+}
+$('boardSel').addEventListener('change',e=>{
+  const v=e.target.value; if(v==='__new'){newBoardForm();return;}
+  try{localStorage.setItem('unblockd.board',v)}catch{}
+  location.href='?board='+encodeURIComponent(v);
+});
+function newBoardForm(){
+  openId=null;editing=true;
+  openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0">New board</h2><span class="sp"><button type="button" class="btn ghost" data-close>Cancel</button></span></div>
+  <p class="hint">Creates <code>&lt;id&gt;/tickets/unblockd.json</code> in the server's project folder. Edit that file for owners, pillars and agent profiles.</p>
+  <form class="edit" id="boardForm"><label for="b-id">ID <span class="hint">a-z 0-9 - _</span><input id="b-id" required pattern="[a-z0-9][a-z0-9_-]*" maxlength="40"></label>
+  <label for="b-title">Title<input id="b-title" maxlength="80"></label>
+  <div class="full formrow"><button class="btn" type="submit">Create board</button><span class="msg" id="bMsg" role="status"></span></div></form>`);
+  $('b-id').focus();
+}
+document.addEventListener('submit',async e=>{ if(e.target.id!=='boardForm')return; e.preventDefault();
+  const m=$('bMsg'); m.className='msg'; m.textContent='Creating…';
+  try{ const r=await fetch('/api/boards',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:$('b-id').value.trim(),title:$('b-title').value.trim()})});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+    try{localStorage.setItem('unblockd.board',j.id)}catch{} location.href='?board='+encodeURIComponent(j.id);
+  }catch(er){ m.className='msg err'; m.textContent=er.message; }
+});
+const syncSel=()=>{const s=$('boardSel');if(s.value==='__new')s.value=BOARD||s.options[0]?.value||'';};
+loadBoards();
+fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(!r.ok&&BOARD){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
   readColors(); renderBar(); setView(state.view);
   load(true).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
 });

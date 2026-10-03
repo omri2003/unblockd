@@ -20,9 +20,43 @@ git clone https://github.com/omri2003/unblockd && cd unblockd
 docker compose up -d --build          # http://localhost:8787, shows ./example
 ```
 
-Point it at your own project by putting `PROJECT_DIR=/path/to/your/repo` in a
-`.env` file next to `compose.yaml` (the board reads `<repo>/tickets/`).
-Without Docker (Python 3.10+): `TICKETS_DIR=/path/to/repo/tickets python -m unblockd.web`.
+Point it at your own projects by putting `PROJECTS_DIR=/path/to/your/projects`
+in a `.env` file next to `compose.yaml`. Without Docker (Python 3.10+):
+`UNBLOCKD_ROOT=/path/to/your/projects python -m unblockd.web`.
+
+## Boards
+
+One server, many boards. A board is a `tickets/` folder with an
+`unblockd.json` in it: every `<project>/tickets/unblockd.json` under
+`UNBLOCKD_ROOT` is picked up (the config file is the opt-in, so unrelated
+`tickets/` folders are ignored). Switch boards from the header; **New
+board…** creates `<root>/<id>/tickets/unblockd.json`. The first board is the
+default; the board you last opened is remembered.
+
+| Env var | Meaning |
+|---|---|
+| `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
+| `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional. |
+| `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
+
+## Agent profiles: which agent works which ticket
+
+Tickets have `tags`. Agent profiles in `unblockd.json` claim tickets **by tag
+or by pillar**; an explicit `agent:<name>` tag overrides both. Each ticket
+gets a derived `agent` (shown on its card, filterable in the bar).
+
+```json
+"agents": [
+  {"name": "godot-dev", "pillars": ["COMBAT"], "tags": ["gdscript"], "model": "sonnet",
+   "instructions": "Typed GDScript; run the tests before done."},
+  {"name": "blender", "pillars": ["ART"], "instructions": "Batch-process models in Blender."}
+]
+```
+
+`work_plan` (MCP, `GET .../plan`, CLI `plan`) returns the ready tickets **not
+owned by a human**, grouped per profile with its `instructions` and `model`:
+everything an orchestrator needs to spawn one agent per group. A single agent
+asks `next_ready(agent="godot-dev")` for its own queue.
 
 ## Configure: `tickets/unblockd.json`
 
@@ -50,13 +84,15 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `pillar_label` | What your project calls them ("Area", "Track"…). |
 | `stale_days` | A `doing` ticket untouched this long is flagged. |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
+| `id` | Board id (default: the project folder's name). |
+| `agents` | Agent profiles, see below. |
 
 ## Tickets
 
 ```json
 {"id": "BUG-10", "title": "Search ignores accents", "status": "todo", "priority": "P1",
  "owner": "Claude", "pillar": "COMBAT", "pillar_step": 1, "section": "",
- "blocked_by": ["CMB-4"], "waiting_on": "", "body": "cause -> fix -> tests",
+ "blocked_by": ["CMB-4"], "tags": ["gdscript"], "waiting_on": "", "body": "cause -> fix -> tests",
  "created": "2026-10-03", "updated": "2026-10-03"}
 ```
 
@@ -67,8 +103,8 @@ B waits on A) is refused with the loop spelled out.
 
 Every ticket comes back with derived fields: `effective_status`,
 `open_blockers`, `blocks`, `unblocks` (open tickets downstream, transitive),
-`missing_blockers`, `stale_days` and `score` = priority weight (P0 8, P1 4,
-P2 2, P3 1) x (1 + `unblocks`).
+`missing_blockers`, `stale_days`, `agent` and `score` = priority weight
+(P0 8, P1 4, P2 2, P3 1) x (1 + `unblocks`).
 
 ## The board
 
@@ -95,26 +131,30 @@ Keyboard: `/` search, `g` Board/Graph, `n` new, `j`/`k` move, `Enter` open,
 **Claude Code:**
 
 ```sh
-claude mcp add unblockd --scope user -- docker run -i --rm -v /path/to/repo:/data unblockd python -m unblockd.mcp_server
+claude mcp add unblockd --scope user -- docker run -i --rm -v /path/to/projects:/projects unblockd python -m unblockd.mcp_server
 ```
 
 **Claude Desktop** (`claude_desktop_config.json`):
 
 ```json
 {"mcpServers": {"unblockd": {"command": "docker",
-  "args": ["run", "-i", "--rm", "-v", "/path/to/repo:/data", "unblockd", "python", "-m", "unblockd.mcp_server"]}}}
+  "args": ["run", "-i", "--rm", "-v", "/path/to/projects:/projects", "unblockd", "python", "-m", "unblockd.mcp_server"]}}}
 ```
 
 Build the image once first (`docker compose build`), or use
 `ghcr.io/omri2003/unblockd` in place of `unblockd`.
 
-Tools: `next_ready` (start here), `list_tickets`, `get_ticket`,
-`create_ticket`, `update_ticket`, `delete_ticket`.
+Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
+profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
+start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket`,
+`update_ticket`, `delete_ticket`. Every ticket tool takes `board=` (default:
+the first board).
 
 ## CLI
 
 ```
-python -m unblockd.cli --dir <repo>/tickets next --owner Claude
+python -m unblockd.cli --dir <repo>/tickets next --owner Claude --agent godot-dev
+python -m unblockd.cli --dir <repo>/tickets plan --per-agent 3
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}'
@@ -125,13 +165,17 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended 
 ## API
 
 ```
-GET    /api/meta             statuses, priorities, fields, config
-GET    /api/tickets?status=&pillar=&owner=&priority=&q=
-GET    /api/next?owner=&pillar=&limit=
-GET    /api/tickets/<id>
-POST   /api/tickets          {"prefix": "BUG", "title": "...", ...}
-PATCH  /api/tickets/<id>     {"status": "done"}
-DELETE /api/tickets/<id>
+GET    /api/boards                    every board with ticket counts
+POST   /api/boards                    {"id": "my-game", "title": "My game"}
+# per board under /api/b/<board>/ ; without the prefix = the default board
+GET    meta                           statuses, priorities, fields, config
+GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
+GET    next?owner=&pillar=&agent=&tag=&limit=
+GET    plan?per_agent=
+GET    tickets/<id>
+POST   tickets                        {"prefix": "BUG", "title": "...", ...}
+PATCH  tickets/<id>                   {"status": "done"}
+DELETE tickets/<id>
 ```
 
 **No auth.** It listens on 127.0.0.1; don't expose the port wider.
