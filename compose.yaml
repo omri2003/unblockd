@@ -1,0 +1,15 @@
+# docker compose up -d   ->  http://localhost:8787
+# PROJECT_DIR = the repo whose tickets/ folder this board shows (set it in .env next to this file).
+services:
+  unblockd:
+    build: .
+    image: unblockd
+    ports:
+      - "127.0.0.1:8787:8787"   # this machine only: the API has no auth
+    volumes:
+      - ${PROJECT_DIR:-./example}:/data
+      # code mounted from this folder: UI edits show on browser reload,
+      # Python edits on `docker compose restart`. Rebuild only for requirements.txt.
+      - ./static:/app/static:ro
+      - ./unblockd:/app/unblockd:ro
+    restart: unless-stopped

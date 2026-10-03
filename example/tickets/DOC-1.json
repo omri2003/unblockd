@@ -1,0 +1,15 @@
+{
+  "id": "DOC-1",
+  "title": "Write the README",
+  "status": "todo",
+  "priority": "P2",
+  "owner": "Me",
+  "pillar": null,
+  "pillar_step": null,
+  "section": "",
+  "blocked_by": [],
+  "waiting_on": "",
+  "body": "",
+  "created": "2026-10-03",
+  "updated": "2026-10-03"
+}

@@ -1,0 +1,17 @@
+{
+  "id": "UI-1",
+  "title": "Board with four status columns",
+  "status": "todo",
+  "priority": "P1",
+  "owner": "Me",
+  "pillar": "UI",
+  "pillar_step": null,
+  "section": "",
+  "blocked_by": [
+    "API-2"
+  ],
+  "waiting_on": "",
+  "body": "",
+  "created": "2026-10-03",
+  "updated": "2026-10-03"
+}

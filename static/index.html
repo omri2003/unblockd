@@ -1,0 +1,854 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tickets</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=Atkinson+Hyperlegible+Next:wght@400;600;700&display=swap">
+<style>
+/* Layout: ticket board. Header + filter bar, four status columns, a drawer
+   on the right for one ticket (read or edit). Celadon paper and ink, jade =
+   done, amber = in progress, slate = pending, cinnabar seals = priority. */
+:root{
+  --paper:#EBEFE9; --surface:#F7F9F4; --sunk:#E1E7E0; --ink:#1B2420; --muted:#56655E; --line:#C9D2CA;
+  --jade:#2A7864; --jade-soft:#D2E5DC; --cinnabar:#B1402E; --amber:#8F6410; --amber-soft:#F1E5C8;
+  --slate:#4F5F7A; --slate-soft:#DDE3EE;
+  /* pillar outlines: plum / magenta / blue, checked against the status colours and both surfaces */
+  --p-other:var(--line);
+  --display:"Shippori Mincho","Hiragino Mincho ProN","Times New Roman",serif;
+  --body:"Atkinson Hyperlegible Next","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:6px; color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#111915; --surface:#19231F; --sunk:#0D1411; --ink:#DCE5DF; --muted:#93A39B; --line:#2B3933;
+  --jade:#64B79E; --jade-soft:#1D372F; --cinnabar:#E27A66; --amber:#D8A645; --amber-soft:#352B17;
+  --slate:#9DB0D3; --slate-soft:#232C3B;
+  color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{max-width:1500px;margin:0 auto;padding:20px 16px 48px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0;font-weight:800}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--jade);outline-offset:2px}
+code{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:.88em;background:var(--jade-soft);padding:.05em .3em;border-radius:3px;overflow-wrap:anywhere}
+
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px}
+h1{font-size:clamp(1.7rem,4vw,2.4rem);line-height:1.05}
+.sub{color:var(--muted);margin-top:4px;font-size:.88rem}
+.btn{border:1px solid var(--jade);background:var(--jade);color:var(--surface);padding:7px 14px;border-radius:var(--r);cursor:pointer;font-weight:600}
+.btn.ghost{background:transparent;color:var(--jade)}
+.btn.danger{border-color:var(--cinnabar);background:transparent;color:var(--cinnabar)}
+.btn:hover{filter:brightness(1.08)}
+
+.bar{position:sticky;top:0;z-index:5;background:var(--paper);border-block:1px solid var(--line);padding:9px 0;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:14px}
+.bar input[type=search]{flex:1 1 220px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 11px;cursor:pointer;font-size:.85rem}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
+.chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
+.chip.attn{border-color:var(--amber);color:var(--amber)} .chip.attn[aria-pressed="true"]{background:var(--amber);color:var(--surface)}
+/* next up strip */
+.next{background:var(--sunk);border-radius:8px;padding:8px 10px 10px;margin-bottom:14px}
+.next h2{font-size:1.1rem;margin:0}
+.nexttog{display:flex;align-items:center;gap:8px;background:none;border:0;padding:2px 4px;cursor:pointer;font-family:var(--display);font-weight:800;font-size:1.1rem}
+.nexttog .n{font-family:var(--body);font-size:.85rem;color:var(--muted);font-weight:700}
+.nexttog .chev{font-family:var(--body);font-size:.8rem;color:var(--muted);transition:transform .15s}
+.nexttog[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.next .cards{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));margin-top:8px}
+
+.board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
+.col{background:var(--sunk);border-radius:8px;padding:10px;min-width:0}
+.colhead{display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 9px;border-bottom:3px solid var(--c);margin-bottom:10px}
+.colhead h2{font-size:1.1rem}
+.colhead .n{color:var(--muted);font-variant-numeric:tabular-nums;font-weight:700}
+.col.todo{--c:var(--muted)} .col.doing{--c:var(--amber)} .col.pending{--c:var(--slate)} .col.done{--c:var(--jade)}
+.cards{display:grid;gap:8px}
+.card{--pc:var(--p-other);display:block;width:100%;text-align:left;background:var(--surface);border:2px solid var(--pc);border-radius:var(--r);padding:8px 9px;cursor:pointer;min-width:0}
+/* .card.p-<key>{--pc:...} per pillar: generated from the config (applyConfig) */
+.card:hover{border-color:color-mix(in srgb,var(--pc) 60%,var(--ink));box-shadow:0 0 0 1px color-mix(in srgb,var(--pc) 60%,var(--ink))}
+.col.done .card{border-color:color-mix(in srgb,var(--pc) 50%,transparent)}
+.col.done .card:hover{border-color:var(--pc)}
+.wl{display:block;margin-top:5px;font-size:.78rem;font-weight:600}
+.wl.miss{color:var(--cinnabar)} .wl.stale{color:var(--amber)}
+.card.flash{animation:flash 1.2s ease-out}
+@keyframes flash{from{background:var(--jade-soft)}to{background:var(--surface)}}
+@media (prefers-reduced-motion:reduce){.card.flash{animation:none}}
+.top{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.tid{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.seal{font-family:var(--display);font-weight:800;font-size:.72rem;border:1.5px solid currentColor;border-radius:3px;padding:0 4px;line-height:1.45;color:var(--muted)}
+.seal.p0{color:var(--surface);background:var(--cinnabar);border-color:var(--cinnabar)}
+.seal.p1{color:var(--cinnabar)}
+.own{margin-left:auto;font-size:.74rem;font-weight:700;border-radius:99px;padding:0 8px;background:var(--jade-soft);color:var(--jade);white-space:nowrap}
+.own.human{background:var(--amber-soft);color:var(--amber)}
+.card .ttl{display:block;font-weight:600;overflow-wrap:anywhere}
+.meta{display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:6px;font-size:.78rem;color:var(--muted)}
+.why{color:var(--slate);font-weight:600}
+.done .card .ttl{font-weight:400;color:var(--muted)}
+.more{margin-top:8px;width:100%}
+/* drag and drop */
+.card[draggable="true"]{cursor:grab}
+.card.dragging{opacity:.45}
+.col.drop{outline:2px dashed var(--c);outline-offset:-4px}
+.emptycol{color:var(--muted);font-size:.85rem;padding:8px 4px}
+@media (max-width:1100px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:600px){.board{grid-template-columns:1fr}}
+
+.scrim{position:fixed;inset:0;background:rgba(10,16,13,.35);z-index:20}
+aside{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:21;overflow-y:auto;padding:18px 20px 28px}
+.dhead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dhead .sp{margin-left:auto;display:flex;gap:6px}
+aside h2{font-size:1.45rem;margin-bottom:12px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px;font-size:.92rem}
+.facts dt{color:var(--muted)} .facts dd{margin:0;min-width:0}
+.status{display:inline-block;font-weight:700;border-radius:99px;padding:0 9px;font-size:.82rem}
+.status.todo{background:var(--sunk)} .status.doing{background:var(--amber-soft);color:var(--amber)}
+.status.pending{background:var(--slate-soft);color:var(--slate)} .status.done{background:var(--jade-soft);color:var(--jade)}
+aside h3{font-size:.92rem;margin:16px 0 6px}
+.links{display:grid;gap:6px;list-style:none;margin:0;padding:0}
+.links button{display:grid;grid-template-columns:auto auto 1fr;gap:8px;align-items:baseline;width:100%;text-align:left;background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:6px 8px;cursor:pointer}
+.links button:hover{border-color:var(--ink)}
+.lt{overflow-wrap:anywhere;min-width:0}
+.none{color:var(--muted);font-size:.9rem;margin:0}
+.body p{margin:0 0 8px;overflow-wrap:anywhere}
+.body .warn{background:var(--amber-soft);padding:6px 10px;border-radius:var(--r)}
+.body ul,.body ol{margin:0 0 8px;padding-left:1.3em} .body li{margin:0 0 2px;overflow-wrap:anywhere}
+.body .mdh{font-family:var(--display);font-weight:800;margin:12px 0 4px;font-size:1rem} .body h5.mdh{font-size:.95rem} .body h6.mdh{font-size:.88rem;color:var(--muted)}
+.body a{color:var(--jade)}
+.idlink{background:none;border:0;padding:0;margin:0;font:inherit;font-weight:700;color:var(--jade);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.dwarn{display:grid;gap:3px;margin:0 0 12px;font-weight:600;font-size:.9rem}
+.dwarn .miss{color:var(--cinnabar)} .dwarn .stale{color:var(--amber)}
+.kbscrim{position:fixed;inset:0;background:rgba(10,16,13,.35);z-index:30}
+.kb{position:fixed;z-index:31;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));max-height:calc(100% - 32px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 20px 18px}
+.kb h2{font-size:1.3rem;margin-bottom:10px} .kb h3{font-size:.85rem;margin:14px 0 6px;color:var(--muted)}
+.kb dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:.92rem} .kb dd{margin:0}
+kbd{font-family:ui-monospace,Consolas,monospace;font-size:.82rem;background:var(--sunk);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 6px}
+.btn.q{padding:7px 11px}
+select.quick{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:2px 6px}
+
+form.edit{display:grid;gap:10px;grid-template-columns:1fr 1fr}
+form.edit .full{grid-column:1/-1}
+form.edit label{display:grid;gap:4px;font-size:.85rem;font-weight:600}
+form.edit input,form.edit select,form.edit textarea{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:7px 9px;font-weight:400;min-width:0}
+form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:.86rem}
+.formrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msg{font-size:.88rem;color:var(--muted)} .msg.err{color:var(--cinnabar)}
+.hint{color:var(--muted);font-weight:400;font-size:.78rem}
+@media (max-width:480px){form.edit{grid-template-columns:1fr}}
+/* view switch + graph. Graph = Obsidian-style force layout: arrows point from
+   the blocker to what it blocks, and blockers drift left of what they block. */
+.hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.graphwrap{position:relative;background:var(--sunk);border-radius:8px;overflow:hidden}
+.gtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:.85rem}
+.tog{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.tog input{accent-color:var(--jade);margin:0}
+.btn.sm{padding:3px 10px;font-size:.85rem}
+.gleg{border-bottom:1px solid var(--line);padding:6px 12px;font-size:.82rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 18px;align-items:center}
+.legend{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 11px}
+.legend b{font-weight:700;color:var(--ink)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid var(--c);background:var(--f,var(--c))}
+.legend i.ring{border-width:2.5px;background:var(--surface)}
+.legend i.badge{width:8px;height:8px;border:0;background:var(--c)}
+.legend i.bang{width:11px;height:11px;border:0;background:var(--amber);color:var(--surface);font:800 8px/11px var(--body);text-align:center;font-style:normal}
+.ghint{margin-left:auto}
+.gstage{position:relative}
+.chains{border-top:1px solid var(--line);padding:8px 12px 10px;font-size:.88rem}
+.chains summary{cursor:pointer;font-weight:600}
+.chains ul{margin:4px 0 0;padding-left:1.2em;list-style:none;border-left:1px solid var(--line)}
+.chains ul.chainlist{border:0;padding-left:0}
+.chains li{margin:3px 0}
+.gpanel .chain{margin-top:4px;color:var(--ink)}
+.gtools .msg{min-height:1.2em}
+#graph{display:block;width:100%;height:max(440px,calc(100vh - 230px));touch-action:none;cursor:grab}
+#graph.grabbing{cursor:grabbing} #graph.onnode{cursor:pointer}
+.gtip{position:absolute;pointer-events:none;max-width:280px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:5px 8px;font-size:.82rem;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.gpanel{position:absolute;left:12px;bottom:12px;width:min(380px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:.88rem}
+.gpanel .ttl{font-weight:600;margin:4px 0 6px;overflow-wrap:anywhere}
+.gpanel .row{display:flex;gap:6px;margin-top:8px}
+.gempty{position:absolute;inset:auto 0 45% 0;text-align:center;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
+    <div class="hdr"><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
+  </header>
+  <div class="bar" role="search">
+    <input type="search" id="q" placeholder="Search words or an ID like BUG-10" aria-label="Search tickets">
+    <div class="seg" id="pillarSeg"></div>
+    <div class="seg" id="ownerSeg"></div>
+    <div class="seg" id="prioSeg"></div>
+    <div class="seg" id="attnSeg"></div>
+  </div>
+  <section class="next" id="nextUp" hidden aria-label="Next up"></section>
+  <div class="board" id="board"></div>
+  <section class="graphwrap" id="graphWrap" hidden aria-label="Blocking graph">
+    <div class="gtools">
+      <span class="seg" id="gLayoutSeg" role="group" aria-label="Layout"></span>
+      <label class="tog"><input type="checkbox" id="gLinked" checked> Linked tickets only</label>
+      <label class="tog"><input type="checkbox" id="gDone" checked> Show done</label>
+      <label class="tog"><input type="checkbox" id="gMentions"> Mentions in details</label>
+      <label class="tog"><input type="checkbox" id="gCrit"> Critical path</label>
+      <button type="button" class="btn ghost sm" id="gFit">Fit to view</button>
+      <span class="msg" id="gMsg" role="status"></span>
+    </div>
+    <div class="gleg">
+      <span class="legend" aria-hidden="true"><b>Status:</b>
+        <span><i style="--c:var(--ink);--f:var(--surface)"></i>Ready</span>
+        <span><i style="--c:var(--amber)"></i>In progress</span>
+        <span><i style="--c:var(--slate)"></i>Pending</span>
+        <span><i style="--c:var(--jade)"></i>Done</span></span>
+      <span class="legend" aria-hidden="true" id="pillarLegend"></span>
+      <span class="legend" aria-hidden="true"><span><i class="badge" style="--c:var(--cinnabar)"></i>P0</span><span><i class="bang">!</i>Needs attention</span></span>
+      <span class="hint ghint">Shift-drag from one ticket to another to make it a blocker. Click a link to select it.</span>
+    </div>
+    <div class="gstage">
+      <canvas id="graph" role="img" aria-label="Graph of which tickets block which. Arrows point from a blocker to the ticket it holds up. A text version follows below."></canvas>
+      <div class="gtip" id="gTip" hidden></div>
+      <div class="gpanel" id="gPanel" hidden></div>
+      <p class="gempty" id="gEmpty" hidden>No blocking links with these settings. Add “Blocked by” to a ticket to see it here.</p>
+    </div>
+    <details class="chains" id="chains"><summary>Chains as text</summary><div id="chainsBody"></div></details>
+  </section>
+</div>
+<div class="scrim" id="scrim" hidden></div>
+<div class="kbscrim" id="kbScrim" hidden></div>
+<div class="kb" id="kb" hidden role="dialog" aria-modal="true" aria-labelledby="kbT">
+  <h2 id="kbT">Keyboard shortcuts</h2>
+  <dl>
+    <dt><kbd>/</kbd></dt><dd>Search</dd>
+    <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
+    <dt><kbd>n</kbd></dt><dd>New ticket</dd>
+    <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next or previous card</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Open the focused card</dd>
+    <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close a panel, clear a selection, cancel a link</dd>
+  </dl>
+  <h3>Graph</h3>
+  <dl>
+    <dt>Wheel, pinch</dt><dd>Zoom</dd>
+    <dt>Drag</dt><dd>Pan the background, or move a ticket</dd>
+    <dt>Click a ticket</dt><dd>Light up its whole chain</dd>
+    <dt>Double-click</dt><dd>Open the ticket</dd>
+    <dt><kbd>Shift</kbd> + drag</dt><dd>From a blocker onto the ticket it blocks, to link them</dd>
+    <dt>Click a link</dt><dd>Select it, then remove it</dd>
+  </dl>
+  <p style="margin:14px 0 0"><button type="button" class="btn ghost" data-kbclose>Close</button></p>
+</div>
+<aside id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dTitle"></aside>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const inline = s => esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+const cap = s => s ? s[0]+s.slice(1).toLowerCase() : '';
+// Project settings come from GET /api/meta (the tickets folder's unblockd.json).
+let CFG={title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],stale_days:7};
+let PILLARS=[],PNAME={},HUMAN=new Set(),LANES=[['OTHER','All','muted']];
+const pk=k=>'p-'+String(k).toLowerCase().replace(/[^a-z0-9]/g,'_');
+const pname=k=>PNAME[k]||cap(k);
+const DEF_PC=[['#8A4FB5','#B58CE6'],['#CC2F86','#F56CAE'],['#1B6FE0','#3F8BFF'],['#B8641A','#E39A55'],['#2F8F8F','#5FC7C7'],['#6B7A1F','#A9BA4E']]; // checked against the status colours, both themes
+function applyConfig(c){
+  CFG={...CFG,...(c||{})};
+  PILLARS=CFG.pillars.map(p=>p.key); PNAME=Object.fromEntries(CFG.pillars.map(p=>[p.key,p.name||cap(p.key)]));
+  HUMAN=new Set(CFG.owners.filter(o=>o.kind==='human').map(o=>o.name)); STALE=CFG.stale_days??7;
+  LANES=[...CFG.pillars.map(p=>[p.key,pname(p.key),pk(p.key)]),['OTHER',PILLARS.length?'Other':'All','muted']];
+  document.title=CFG.title; $('appTitle').textContent=CFG.title;
+  const light=[],dark=[],cls=[];
+  CFG.pillars.forEach((p,i)=>{const d=DEF_PC[i%DEF_PC.length],v=pk(p.key);light.push(`--${v}:${p.color||d[0]}`);dark.push(`--${v}:${p.color_dark||p.color||d[1]}`);cls.push(`.card.${v}{--pc:var(--${v})}`);});
+  let st=$('pillarCss'); if(!st){st=document.createElement('style');st.id='pillarCss';document.head.appendChild(st);}
+  st.textContent=`:root{${light.join(';')}}@media (prefers-color-scheme:dark){:root{${dark.join(';')}}}${cls.join('')}`;
+  $('pillarLegend').hidden=!PILLARS.length;
+  $('pillarLegend').innerHTML=`<b>${esc(CFG.pillar_label)}:</b>`+CFG.pillars.map(p=>`<span><i class="ring" style="--c:var(--${pk(p.key)})"></i>${esc(pname(p.key))}</span>`).join('')+'<span><i class="ring" style="--c:var(--muted);border-width:1.5px"></i>None</span>';
+}
+const COLS=[['todo','To do'],['doing','In progress'],['pending','Pending'],['done','Done']];
+const NAME=Object.fromEntries(COLS);
+const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+let STALE=7; // days; from the config's stale_days
+const PW={P0:8,P1:4,P2:2,P3:1};
+const state={q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board')};
+const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
+let T=[], BY=new Map(), raw='', openId=null, editing=false;
+
+async function api(method, path, body){
+  const r=await fetch('/api/tickets'+path,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({error:'bad response'}));
+  if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
+  return j;
+}
+async function load(force){
+  let text;
+  try{ text=await (await fetch('/api/tickets',{cache:'no-store'})).text(); }
+  catch{ $('sub').textContent='Cannot reach the unblockd server. Is it running?'; return; }
+  if(text===raw && !force) return;
+  raw=text; T=JSON.parse(text); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
+  if(prev.size&&!matchMedia('(prefers-reduced-motion: reduce)').matches) noteFinished(prev);
+  const open=T.filter(t=>t.status!=='done').length;
+  $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
+  render();
+  if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
+}
+
+// A ticket just turned done: its outgoing edges fade solid -> dashed, and whatever it unblocked pulses once.
+function noteFinished(prev){
+  const done=new Set(T.filter(t=>t.status==='done'&&prev.get(t.id)&&prev.get(t.id).status!=='done').map(t=>t.id)); if(!done.size) return;
+  const now=performance.now();
+  for(const id of done) G.anims.push({type:'fade',id,t0:now,dur:600});
+  for(const t of T){const p=prev.get(t.id); if(p&&p.effective_status==='pending'&&t.effective_status==='todo'&&t.blocked_by.some(b=>done.has(b))){
+    G.anims.push({type:'pulse',id:t.id,t0:now,dur:900}); flash.set(t.id,Date.now());}}
+  setTimeout(()=>{for(const [id,t0] of flash) if(Date.now()-t0>1300) flash.delete(id);},1400);
+}
+
+// ---------- board ----------
+function chips(el,items,cur,attr){el.innerHTML=items.map(([v,l,dot])=>`<button type="button" class="chip" data-${attr}="${v}" aria-pressed="${Array.isArray(cur)?cur.includes(v):cur===v}">${dot?`<i class="dot" style="--dc:var(--${dot})"></i>`:''}${l}</button>`).join('');}
+function renderBar(){
+  $('pillarSeg').hidden=!PILLARS.length;
+  if(PILLARS.length) chips($('pillarSeg'),[['ALL','All'],...PILLARS.map(p=>[esc(p),esc(pname(p)),pk(p)]),['OTHER','Other','muted']],state.pillar,'pillar');
+  chips($('ownerSeg'),[['ALL','Anyone'],...CFG.owners.map(o=>[esc(o.name),esc(o.name)])],state.owner,'owner');
+  chips($('prioSeg'),['P0','P1','P2','P3'].map(p=>[p,p]),state.prio,'prio');
+  renderAttn();
+}
+function renderAttn(){
+  const n=T.filter(needsAttn).length; if(!n&&state.attn) state.attn=false;
+  $('attnSeg').innerHTML=n?`<button type="button" class="chip attn" data-attn aria-pressed="${state.attn}">Needs attention (${n})</button>`:'';
+}
+function matches(t){
+  if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
+  if(state.owner!=='ALL' && t.owner!==state.owner) return false;
+  if(state.prio.length && !state.prio.includes(t.priority)) return false;
+  if(state.attn && !needsAttn(t)) return false;
+  if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+t.section+' '+t.owner).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
+  return true;
+}
+function card(t){
+  const s=t.effective_status; let why='';
+  if(s==='pending') why=t.open_blockers.length?`<span class="why">Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:'';
+  else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
+  const openBlocks=t.unblocks||0;
+  const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:''].filter(Boolean).join('');
+  const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
+  const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
+  return `<button type="button" class="card${pc}${fl?' flash':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta&&s!=='done'?`<span class="meta">${meta}</span>`:''}${warn}</button>`;
+}
+const ord=t=>[t.pillar?PILLARS.indexOf(t.pillar):9, t.pillar_step||99, ['P0','P1','P2','P3'].indexOf(t.priority)+1||9];
+function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;}
+function renderNext(){
+  const el=$('nextUp'),open=store.get('nextOpen',true);
+  const ts=T.filter(t=>t.effective_status==='todo'&&matches(t)).sort((a,b)=>(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,5);
+  el.hidden=!ts.length||state.view!=='board'; if(el.hidden) return;
+  el.innerHTML=`<h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="${open}">Next up <span class="n">${ts.length}</span><span class="chev" aria-hidden="true">▾</span></button></h2>${open?`<div class="cards">${ts.map(card).join('')}</div>`:''}`;
+}
+function renderBoard(){
+  const vis=T.filter(matches);
+  $('board').innerHTML=COLS.map(([k,name])=>{
+    let ts=vis.filter(t=>t.effective_status===k);
+    ts = k==='done' ? ts.sort((a,b)=>(b.updated||'').localeCompare(a.updated||'')) : ts.sort(cmp);
+    const total=ts.length; if(k==='done'&&!state.allDone&&!state.q) ts=ts.slice(0,10);
+    const more=k==='done'&&total>ts.length?`<button type="button" class="btn ghost more" data-alldone>Show all ${total} done</button>`:'';
+    return `<section class="col ${k}" data-col="${k}" aria-label="${name}"><div class="colhead"><h2>${name}</h2><span class="n">${total}</span></div><div class="cards">${ts.map(card).join('')||'<p class="emptycol">Nothing here with these filters.</p>'}</div>${more}</section>`;
+  }).join('');
+}
+
+// ---------- drawer ----------
+let lastFocus=null;
+function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;d.innerHTML=html;d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
+function closeDrawer(){$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname);lastFocus?.focus?.();}
+function linkList(ids){
+  if(!ids.length) return '<p class="none">None</p>';
+  return '<ul class="links">'+ids.map(id=>{const t=BY.get(id);if(!t)return `<li><span class="none">${esc(id)} (no such ticket)</span></li>`;
+    return `<li><button type="button" data-open="${esc(id)}"><span class="tid">${esc(id)}</span><span class="status ${t.effective_status}">${NAME[t.effective_status]}</span><span class="lt">${inline(t.title)}</span></button></li>`;}).join('')+'</ul>';
+}
+const ID_RE=/(^|[^:\w])([A-Z][A-Z0-9]*|\d[A-Z])-(\d+[a-z]?)/g;
+// Escape first, always. Code spans and links are lifted out into placeholders (so nothing inside them is re-processed), then the rest is escaped and decorated.
+function md(src){
+  const hold=[],put=h=>'\0'+(hold.push(h)-1)+'\0';
+  let t=String(src??'').replace(/\0/g,'');
+  t=t.replace(/`([^`]+)`/g,(m,c)=>put(`<code>${esc(c)}</code>`));
+  t=t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,(m,a,u)=>put(`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(a)}</a>`));
+  t=esc(t).replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  t=t.replace(ID_RE,(m,a,p,n)=>{const id=p+'-'+n;return BY.has(id)?`${a}<button type="button" class="idlink" data-open="${esc(id)}">${esc(id)}</button>`:m;});
+  return t.replace(/\0(\d+)\0/g,(m,i)=>hold[i]);
+}
+function bodyHtml(b){
+  const out=[]; let para=[],list=null;
+  const fp=()=>{if(para.length){const p=para.join('\n').trim();out.push(`<p${p.startsWith('⚠')?' class="warn"':''}>${md(p).replace(/\n/g,'<br>')}</p>`);para=[];}};
+  const fl=()=>{if(list){out.push(`<${list.t}>${list.items.map(i=>`<li>${md(i)}</li>`).join('')}</${list.t}>`);list=null;}};
+  for(const line of String(b||'').replace(/\r/g,'').split('\n')){
+    let m;
+    if(!line.trim()){fp();fl();continue;}
+    if(m=line.match(/^\s*[-*]\s+(.*)$/)){fp();if(!list||list.t!=='ul'){fl();list={t:'ul',items:[]};}list.items.push(m[1]);continue;}
+    if(m=line.match(/^\s*\d+\.\s+(.*)$/)){fp();if(!list||list.t!=='ol'){fl();list={t:'ol',items:[]};}list.items.push(m[1]);continue;}
+    if(m=line.match(/^(#{1,3})\s+(.*)$/)){fp();fl();const h=3+m[1].length;out.push(`<h${h} class="mdh">${md(m[2])}</h${h}>`);continue;}
+    fl();para.push(line);
+  }
+  fp();fl();return out.join('')||'<p class="none">No details yet.</p>';
+}
+function mentions(t){ const seen=new Set([t.id,...t.blocked_by,...t.blocks]); const out=[];
+  (t.body||'').replace(ID_RE,(m,a,p,n)=>{const id=p+'-'+n;if(BY.has(id)&&!seen.has(id)){seen.add(id);out.push(id);}}); return out; }
+function showTicket(id,refresh){
+  const t=BY.get(id); if(!t) return; openId=id; editing=false;
+  if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
+  const s=t.effective_status;
+  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
+  const ms=mentions(t);
+  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn ghost" data-ingraph>Show in graph</button><button type="button" class="btn ghost" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button></span></div>
+    <h2 id="dTitle">${inline(t.title)}</h2>
+    <dl class="facts">
+      <dt>Status</dt><dd><label class="hint" for="quickStatus" hidden>Status</label><select class="quick" id="quickStatus">${COLS.map(([k,n])=>`<option value="${k}" ${t.status===k?'selected':''}>${n}</option>`).join('')}</select>${s!==t.status?` <span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?` <span class="why">${esc(why)}</span>`:''}</dd>
+      <dt>Owner</dt><dd>${esc(t.owner)}</dd>
+      <dt>${esc(CFG.pillar_label)}</dt><dd>${t.pillar?esc(pname(t.pillar))+(t.pillar_step?`, step ${t.pillar_step}`:''):'None'}</dd>
+      <dt>Section</dt><dd>${esc(t.section)||'None'}</dd>
+      ${t.waiting_on&&!why?`<dt>Waiting on</dt><dd>${esc(t.waiting_on)}</dd>`:''}
+      <dt>Updated</dt><dd>${esc(t.updated)} (created ${esc(t.created)})</dd>
+    </dl>
+    ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
+    <h3>Blocked by</h3>${linkList(t.blocked_by)}
+    <h3>Blocks</h3>${linkList(t.blocks)}
+    ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
+    <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
+    <p class="msg" id="dMsg" role="status"></p>`, refresh);
+}
+function editForm(t){
+  const isNew=!t; t=t||{status:'todo',owner:[...HUMAN][0]||CFG.owners[0].name,priority:'P2',blocked_by:[],body:'',title:'',section:'',waiting_on:''};
+  editing=true;
+  const opt=(vals,cur)=>vals.map(([v,l])=>`<option value="${esc(v)}" ${String(cur??'')===v?'selected':''}>${esc(l)}</option>`).join('');
+  openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0">${isNew?'New ticket':'Edit '+esc(t.id)}</h2><span class="sp"><button type="button" class="btn ghost" data-close>Cancel</button></span></div>
+  <form class="edit" id="editForm" data-id="${isNew?'':esc(t.id)}">
+    ${isNew?`<label for="f-prefix">ID prefix <span class="hint">next free number is picked</span><input id="f-prefix" value="BUG" pattern="[A-Z0-9]+" required></label><span></span>`:''}
+    <label class="full" for="f-title">Title<input id="f-title" required maxlength="200" value="${esc(t.title)}"></label>
+    <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
+    <label for="f-priority">Priority<select id="f-priority">${opt([['','None'],['P0','P0 blocking'],['P1','P1 core'],['P2','P2 important'],['P3','P3 later']],t.priority)}</select></label>
+    <label for="f-owner">Owner<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
+    <label for="f-pillar">${esc(CFG.pillar_label)}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
+    <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
+    <label for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-blocked">Blocked by <span class="hint">IDs, comma separated</span><input id="f-blocked" value="${esc(t.blocked_by.join(', '))}"></label>
+    <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="200" value="${esc(t.waiting_on)}"></label>
+    <label class="full" for="f-body">Details <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body)}</textarea></label>
+    <div class="full formrow"><button class="btn" type="submit">${isNew?'Create ticket':'Save changes'}</button>${isNew?'':'<button class="btn danger" type="button" data-delete>Delete</button>'}<span class="msg" id="fMsg" role="status"></span></div>
+  </form>`);
+  $('f-title').focus();
+}
+async function submitForm(f){
+  const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
+  const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
+    pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
+    blocked_by:$('f-blocked').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),waiting_on:$('f-waiting').value,body:$('f-body').value};
+  try{
+    const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
+    editing=false; await load(true); showTicket(t.id);
+  }catch(e){ m.className='msg err'; m.textContent=e.message; }
+}
+
+// ---------- events ----------
+let armedDelete=false;
+document.addEventListener('click',async e=>{
+  const g=s=>e.target.closest(s); let b;
+  if(b=g('[data-pillar]')){state.pillar=b.dataset.pillar;store.set('pillar',state.pillar);renderBar();render();return;}
+  if(b=g('[data-owner]')){state.owner=b.dataset.owner;store.set('owner',state.owner);renderBar();render();return;}
+  if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
+  if(g('[data-alldone]')){state.allDone=true;render();return;}
+  if(g('[data-attn]')){state.attn=!state.attn;renderBar();render();return;}
+  if(g('[data-nexttoggle]')){store.set('nextOpen',!store.get('nextOpen',true));renderNext();return;}
+  if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
+  if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
+  if(g('#kbBtn')){toggleKb();return;}
+  if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
+  if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
+  if(b=g('[data-view]')){setView(b.dataset.view);return;}
+  if(g('[data-unfocus]')){setFocus(null);return;}
+  if(g('[data-ingraph]')){const id=openId;closeDrawer();setView('graph');setFocus(id);return;}
+  if(g('[data-edit]')){editForm(BY.get(openId));return;}
+  if(b=g('[data-delete]')){
+    const id=$('editForm').dataset.id;
+    if(!armedDelete){armedDelete=true;b.textContent='Click again to delete '+id;setTimeout(()=>{armedDelete=false;if(b.isConnected)b.textContent='Delete';},3000);return;}
+    try{await api('DELETE','/'+id);armedDelete=false;closeDrawer();load(true);}catch(er){$('fMsg').className='msg err';$('fMsg').textContent=er.message;}
+    return;
+  }
+  if(g('[data-close]')||e.target===$('scrim')){ editing&&openId ? showTicket(openId) : closeDrawer(); return; }
+});
+document.addEventListener('change',async e=>{
+  if(e.target.id!=='quickStatus'||!openId) return;
+  try{ await api('PATCH','/'+openId,{status:e.target.value}); await load(true); }
+  catch(er){ $('dMsg').className='msg err'; $('dMsg').textContent=er.message; }
+});
+document.addEventListener('submit',e=>{ if(e.target.id==='editForm'){e.preventDefault();submitForm(e.target);} });
+let kbFocus=null;
+function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
+const visibleCards=()=>[...document.querySelectorAll('#nextUp .card, #board .card')].filter(c=>c.offsetParent!==null);
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(!$('kb').hidden) toggleKb(false);
+    else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
+    else if(cancelGraphGesture()){}
+    else if(G.selEdge) {clearEdge();}
+    else if(G.focus) setFocus(null);
+    return;
+  }
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  const tg=e.target; if(editing||tg.closest?.('input,textarea,select')||tg.isContentEditable) return;
+  if(e.key==='?'){ e.preventDefault(); toggleKb(); return; }
+  if(!$('drawer').hidden||!$('kb').hidden) return;
+  if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
+  else if(e.key==='g') setView(state.view==='board'?'graph':'board');
+  else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
+  else if(e.key==='j'||e.key==='k'){
+    const cs=visibleCards(); if(!cs.length) return; const i=cs.indexOf(document.activeElement);
+    const nx=e.key==='j'?(i<0?0:Math.min(cs.length-1,i+1)):(i<0?cs.length-1:Math.max(0,i-1)); cs[nx].focus();
+  }
+});
+// drag a card onto a column = set that status (same PATCH as the drawer's status menu)
+let dragId=null;
+document.addEventListener('dragstart',e=>{ const c=e.target.closest?.('.card'); if(!c) return; dragId=c.dataset.open; e.dataTransfer.setData('text/plain',dragId); e.dataTransfer.effectAllowed='move'; c.classList.add('dragging'); });
+document.addEventListener('dragend',e=>{ e.target.closest?.('.card')?.classList.remove('dragging'); document.querySelectorAll('.col.drop').forEach(c=>c.classList.remove('drop')); dragId=null; });
+document.addEventListener('dragover',e=>{ const col=e.target.closest?.('[data-col]'); if(!col||!dragId) return; e.preventDefault(); document.querySelectorAll('.col.drop').forEach(c=>c!==col&&c.classList.remove('drop')); col.classList.add('drop'); });
+document.addEventListener('drop',async e=>{
+  const col=e.target.closest?.('[data-col]'); const id=e.dataTransfer.getData('text/plain')||dragId; if(!col||!id) return; e.preventDefault();
+  col.classList.remove('drop'); const t=BY.get(id); const to=col.dataset.col; if(!t||t.status===to) return;
+  try{ await api('PATCH','/'+id,{status:to}); await load(true);
+    const n=BY.get(id); if(n && n.effective_status!==to) $('sub').textContent=`${id} is ${NAME[to]} but shows as ${NAME[n.effective_status]}: blocked by ${n.open_blockers.join(', ')}.`;
+  }catch(er){ $('sub').textContent='Move failed: '+er.message; }
+});
+// ---------- graph ----------
+// Nodes = tickets, arrow A→B = "A blocks B" (B.blocked_by has A). Size = how many
+// open tickets sit downstream. Fill = status, outline ring = pillar, red dot = P0,
+// amber "!" = needs attention. Two layouts: Flow (layered: columns = chain depth,
+// rows = pillar lanes) and Free (force-directed). Hover = direct links; click = the
+// whole chain both ways; double-click = open; wheel/pinch zooms; drag pans or moves;
+// shift-drag from A to B makes A block B; click an edge to select and remove it.
+const COLW=170, ROWH=64, LOOSEW=84, LOOSEH=52, MINLANE=96, MAXROWS=5, SUBW=74;
+// a cell taller than MAXROWS wraps into sub-columns, so one crowded depth can't make the whole graph a thin tower
+const G={nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',lkey:'',hover:null,focus:null,ptr:null,raf:0,col:{},sized:false,fitted:false,
+  layout:store.get('gLayout','flow')==='free'?'free':'flow',lanes:[],preds:new Map(),critG:null,critF:null,selEdge:null,link:null,pts:new Map(),pinch:null,anims:[],grain:null,msgT:0,last:0,fitSettle:false};
+const cv=$('graph'), ctx=cv.getContext('2d');
+const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+function makeGrain(){ // one small noise tile, drawn once; pattern-filled at ~3% so the page doesn't look like a flat screen
+  const t=document.createElement('canvas');t.width=t.height=96;const x=t.getContext('2d'),im=x.createImageData(96,96),h=(G.col.ink||'#000000').replace('#','');
+  const r=parseInt(h.slice(0,2),16)||0,g=parseInt(h.slice(2,4),16)||0,b=parseInt(h.slice(4,6),16)||0;
+  for(let i=0;i<96*96;i++){im.data[i*4]=r;im.data[i*4+1]=g;im.data[i*4+2]=b;im.data[i*4+3]=Math.random()*255;}
+  x.putImageData(im,0,0);G.grain=ctx.createPattern(t,'repeat');}
+function readColors(){const s=getComputedStyle(document.documentElement);for(const v of['paper','surface','sunk','ink','muted','line','jade','cinnabar','amber','slate','body','display','p-other',...PILLARS.map(pk)])G.col[v]=s.getPropertyValue('--'+v).trim();makeGrain();}
+const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;}; // same start layout on every load
+const prioIdx=p=>{const i=['P0','P1','P2','P3'].indexOf(p);return i<0?9:i;};
+const needsAttn=t=>t.status!=='done'&&((t.missing_blockers||[]).length>0||(t.stale_days!=null&&t.stale_days>=STALE));
+const pillarCol=t=>t.pillar&&PILLARS.includes(t.pillar)?G.col[pk(t.pillar)]:null;
+
+// ----- layered layout -----
+function flowLayout(){
+  const N=[...G.nodes.values()];G.lanes=[];if(!N.length)return;
+  const hasEdge=new Set(),rank=new Map(N.map(n=>[n.id,0])),pred=new Map(),succ=new Map();
+  for(const e of G.edges){hasEdge.add(e.a.id);hasEdge.add(e.b.id);(pred.get(e.b.id)||pred.set(e.b.id,[]).get(e.b.id)).push(e.a.id);(succ.get(e.a.id)||succ.set(e.a.id,[]).get(e.a.id)).push(e.b.id);}
+  for(let it=0;it<=N.length;it++){let ch=false; // longest path from a root; the cap keeps a hand-made loop from spinning forever
+    for(const e of G.edges){const r=rank.get(e.a.id)+1;if(rank.get(e.b.id)<r&&r<=N.length){rank.set(e.b.id,r);ch=true;}}
+    if(!ch)break;}
+  const laneOf=n=>{const i=LANES.findIndex(l=>l[0]===n.t.pillar);return i<0?LANES.length-1:i;};
+  const byOrder=(a,b)=>prioIdx(a.t.priority)-prioIdx(b.t.priority)||(a.t.pillar_step||99)-(b.t.pillar_step||99)||a.id.localeCompare(b.id);
+  const linked=N.filter(n=>hasEdge.has(n.id)),loose=N.filter(n=>!hasEdge.has(n.id)).sort(byOrder);
+  const maxR=linked.reduce((m,n)=>Math.max(m,rank.get(n.id)),-1);
+  const cells=LANES.map(()=>[]); // cells[lane][rank] = nodes, top to bottom
+  for(const n of linked.sort(byOrder)){const li=laneOf(n),r=rank.get(n.id);(cells[li][r]||(cells[li][r]=[])).push(n);}
+  const looseBy=LANES.map((_,li)=>loose.filter(n=>laneOf(n)===li));
+  const cellSubs=len=>Math.max(1,Math.ceil(len/MAXROWS)),cellRows=len=>Math.ceil(len/cellSubs(len));
+  const colX=[0];
+  for(let r=0;r<=maxR;r++){const sub=cells.reduce((m,lc)=>Math.max(m,lc[r]?cellSubs(lc[r].length):1),1);colX[r+1]=colX[r]+(sub-1)*SUBW+COLW;}
+  let top=0;
+  LANES.forEach((l,li)=>{
+    const mL=cells[li].reduce((m,c)=>Math.max(m,c?cellRows(c.length):0),0),nL=looseBy[li].length;
+    if(!mL&&!nL)return;
+    const rows=nL?Math.max(Math.min(mL,6),Math.ceil(Math.sqrt(nL))):0;
+    const h=Math.max(MINLANE,Math.max(mL*ROWH,rows*LOOSEH)+28);
+    G.lanes.push({key:l[0],name:l[1],col:l[2],li,top,h,rows});top+=h;});
+  const L=Object.fromEntries(G.lanes.map(l=>[l.li,l]));
+  const assign=(li,r)=>{const c=cells[li][r];if(!c)return;const rows=cellRows(c.length);
+    c.forEach((n,i)=>{const sc=Math.floor(i/rows),row=i%rows,inC=Math.min(rows,c.length-sc*rows);n.gx=colX[r]+sc*SUBW;n.gy=L[li].top+L[li].h/2+(row-(inC-1)/2)*ROWH;});};
+  for(const li in L)cells[li].forEach((_,r)=>assign(+li,r));
+  const bary=(n,m)=>{const a=m.get(n.id);return a&&a.length?a.reduce((s,id)=>s+G.nodes.get(id).gy,0)/a.length:null;};
+  for(let sw=0;sw<4;sw++){ // barycenter sweeps: left→right orders by predecessors, right→left by successors
+    const fwd=sw%2===0,rs=[];for(let r=0;r<=maxR;r++)rs.push(r);if(!fwd)rs.reverse();
+    for(const r of rs)for(const li in L){const c=cells[li][r];if(!c||c.length<2)continue;
+      const keyed=c.map((n,i)=>{const b=bary(n,fwd?pred:succ);return{n,k:b==null?n.gy:b,i};}).sort((a,b)=>a.k-b.k||a.i-b.i);
+      c.splice(0,c.length,...keyed.map(x=>x.n));assign(+li,r);}}
+  const x0=maxR>=0?colX[maxR+1]:0; // unlinked tickets: a compact grid after the last column
+  for(const li in L){const lane=L[li],ns=looseBy[li],rows=lane.rows;
+    ns.forEach((n,i)=>{const gc=Math.floor(i/rows),gr=i%rows,inCol=Math.min(rows,ns.length-gc*rows);n.gx=x0+gc*LOOSEW;n.gy=lane.top+lane.h/2+(gr-(inCol-1)/2)*LOOSEH;});}
+  // stretch columns toward the canvas's shape: few deep chains + a wide screen otherwise leaves a tall strip with empty sides
+  const W=Math.max(1,...N.map(n=>n.gx)),H=Math.max(1,top),asp=(cv.clientWidth||1200)/(cv.clientHeight||700),want=asp*.85*H/W;
+  if(want>1){const f=Math.min(2.4,want);for(const n of N)n.gx*=f;}
+}
+function easeNodes(dt){
+  let busy=false;const f=reduce.matches?1:1-Math.exp(-dt/90);
+  for(const n of G.nodes.values()){if(G.ptr?.node===n&&G.ptr.moved&&!G.ptr.link)continue;
+    const dx=n.gx-n.x,dy=n.gy-n.y;if(Math.abs(dx)+Math.abs(dy)<.3){n.x=n.gx;n.y=n.gy;continue;}
+    n.x+=dx*f;n.y+=dy*f;busy=true;}
+  return busy;}
+
+// ----- critical chains: longest path of not-done tickets (ties: higher summed priority weight) -----
+const wsum=ids=>ids.reduce((s,id)=>s+(PW[BY.get(id)?.priority]||1),0);
+function chainTo(id,memo){
+  if(memo.has(id))return memo.get(id);
+  memo.set(id,[id]); // provisional entry doubles as the loop guard
+  let best=[],bw=-1;
+  for(const p of G.preds.get(id)||[]){const c=chainTo(p,memo),w=wsum(c);if(c.length>best.length||(c.length===best.length&&w>bw)){best=c;bw=w;}}
+  const r=[...best,id];memo.set(id,r);return r;}
+const chainEdges=ch=>new Set(ch.slice(1).map((x,i)=>ch[i]+'|'+x));
+function recalcCrit(){
+  const memo=new Map();let best=[];
+  for(const n of G.nodes.values()){if(n.t.status==='done')continue;const c=chainTo(n.id,memo);if(c.length>best.length||(c.length===best.length&&c.length>1&&wsum(c)>wsum(best)))best=c;}
+  G.critG=best.length>1?{ids:new Set(best),edges:chainEdges(best),path:best}:null;
+  const t=G.focus&&G.nodes.get(G.focus);
+  if(t&&t.t.status!=='done'){const c=chainTo(G.focus,new Map());G.critF=c.length>1?{ids:new Set(c),edges:chainEdges(c),path:c}:null;}else G.critF=null;
+}
+
+function syncGraph(){
+  const showDone=$('gDone').checked;
+  let ts=T.filter(t=>showDone||t.status!=='done'); const ids=new Set(ts.map(t=>t.id));
+  const edges=[],ments=[],pair=new Set();
+  for(const t of ts) for(const b of t.blocked_by) if(ids.has(b)&&b!==t.id){edges.push([b,t.id,BY.get(b).status!=='done']);pair.add(b+'|'+t.id);pair.add(t.id+'|'+b);}
+  if($('gMentions').checked) for(const t of ts) for(const m of mentions(t)) if(ids.has(m)&&!pair.has(t.id+'|'+m)){ments.push([t.id,m]);pair.add(t.id+'|'+m);pair.add(m+'|'+t.id);}
+  if($('gLinked').checked){const d=new Set();for(const [a,b] of[...edges,...ments]){d.add(a);d.add(b);}ts=ts.filter(t=>d.has(t.id));}
+  G.down=Object.fromEntries(T.map(t=>[t.id,t.unblocks||0]));
+  const old=G.nodes; G.nodes=new Map();
+  for(const t of ts){let n=old.get(t.id);
+    if(!n){const nb=[...edges,...ments].find(e=>e.includes(t.id)&&old.has(e[0]===t.id?e[1]:e[0]));const o=nb?old.get(nb[0]===t.id?nb[1]:nb[0]):{x:0,y:0};
+      const h=hash(t.id),a=(h%628)/100,r=nb?40:60+(h>>10)%240;n={x:o.x+Math.cos(a)*r,y:o.y+Math.sin(a)*r,vx:0,vy:0,gx:0,gy:0,fresh:true};}
+    n.t=t;n.id=t.id;n.r=6+2.6*Math.sqrt(G.down[t.id]||0);G.nodes.set(t.id,n);}
+  G.edges=edges.map(([a,b,open])=>({a:G.nodes.get(a),b:G.nodes.get(b),open}));
+  G.ments=ments.map(([a,b])=>({a:G.nodes.get(a),b:G.nodes.get(b)}));
+  G.preds=new Map();for(const e of G.edges)if(e.a.t.status!=='done'&&e.b.t.status!=='done')(G.preds.get(e.b.id)||G.preds.set(e.b.id,[]).get(e.b.id)).push(e.a.id);
+  if(G.focus&&!G.nodes.has(G.focus))setFocus(null);
+  if(G.selEdge&&!G.edges.some(e=>e.a.id===G.selEdge[0]&&e.b.id===G.selEdge[1]))clearEdge();
+  flowLayout();recalcCrit();
+  const key=[...G.nodes.keys()].join()+'/'+edges.map(e=>e[0]+'>'+e[1]).join()+'/'+ments.join(),lkey=G.layout+'|'+key,first=!old.size;
+  if(G.layout==='flow'){ // new nodes appear in their slot on first draw; later ones glide in from beside a neighbour
+    for(const n of G.nodes.values()){if(first||reduce.matches){n.x=n.gx;n.y=n.gy;}n.fresh=false;}
+    if(lkey!==G.lkey&&G.sized){fit();G.fitted=true;}
+  }else{
+    if(key!==G.key||lkey!==G.lkey){G.alpha=1;if(first||reduce.matches){for(let i=0;i<300&&G.alpha>0.02;i++)step();}
+      if(G.sized){if(!G.fitted||lkey!==G.lkey){fit();G.fitted=true;G.fitSettle=!reduce.matches&&!first;}}}
+  }
+  G.key=key;G.lkey=lkey;
+  $('gEmpty').hidden=G.nodes.size>0;
+  if(G.focus)renderPanel();else if(G.selEdge)renderEdgePanel();
+  renderChains();kick();
+}
+function step(){
+  const N=[...G.nodes.values()],a=G.alpha;
+  for(let i=0;i<N.length;i++)for(let j=i+1;j<N.length;j++){const p=N[i],q=N[j];let dx=q.x-p.x,dy=q.y-p.y,d2=dx*dx+dy*dy;if(d2<1){dx=(i%3)-1||.5;dy=(j%3)-1||.5;d2=1;}
+    const f=Math.min(2200/d2,8)*a,d=Math.sqrt(d2);p.vx-=dx/d*f;p.vy-=dy/d*f;q.vx+=dx/d*f;q.vy+=dy/d*f;}
+  const spring=(e,L,s)=>{const dx=e.b.x-e.a.x,dy=e.b.y-e.a.y,d=Math.hypot(dx,dy)||1,f=(d-L)*s*a;e.a.vx+=dx/d*f;e.a.vy+=dy/d*f;e.b.vx-=dx/d*f;e.b.vy-=dy/d*f;};
+  for(const e of G.edges){spring(e,80,.05);const lag=70-(e.b.x-e.a.x);if(lag>0){e.b.vx+=lag*.015*a;e.a.vx-=lag*.015*a;}} // blockers sit left
+  for(const e of G.ments)spring(e,110,.015);
+  for(const n of N){n.vx-=n.x*.01*a;n.vy-=n.y*.016*a;n.vx*=.6;n.vy*=.6;if(G.ptr?.node!==n){n.x+=n.vx;n.y+=n.vy;}}
+  G.alpha*=.985;
+}
+function kick(){if(!G.raf&&!$('graphWrap').hidden)G.raf=requestAnimationFrame(frame);}
+function frame(){
+  G.raf=0;const now=performance.now(),dt=Math.min(64,G.last?now-G.last:16);G.last=now;let busy=false;
+  if(G.layout==='free'){if(G.alpha>0.02&&!reduce.matches){step();busy=true;}else if(G.fitSettle){G.fitSettle=false;fit();}}
+  else busy=easeNodes(dt);
+  G.anims=G.anims.filter(a=>now-a.t0<a.dur);if(G.anims.length)busy=true;
+  draw(now);
+  if(busy||G.ptr?.node||G.link)kick();else G.last=0;
+}
+function lit(){ // the set to highlight, or null for "everything"
+  const id=G.focus||G.hover;
+  if(!id||!G.nodes.has(id)){return $('gCrit').checked&&G.critG?G.critG.ids:null;}
+  const s=new Set([id]);
+  if(!G.focus){for(const e of[...G.edges,...G.ments]){if(e.a.id===id)s.add(e.b.id);if(e.b.id===id)s.add(e.a.id);}return s;}
+  for(const dir of['up','down']){const st=[id];while(st.length){const x=st.pop();for(const e of G.edges){const nx=dir==='up'?(e.b.id===x&&e.a.id):(e.a.id===x&&e.b.id);if(nx&&!s.has(nx)){s.add(nx);st.push(nx);}}}}
+  return s;
+}
+// centre line of an edge in world units: Flow = horizontal cubic bézier, Free = straight. ux,uy = direction at the arrow tip.
+function edgePts(e,n){
+  const a=e.a,b=e.b,k=G.k,gap=b.r+5.5/k;
+  if(G.layout==='free'){const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d;
+    return{pts:[[a.x+ux*a.r,a.y+uy*a.r],[b.x-ux*gap,b.y-uy*gap]],ux,uy};}
+  const x0=a.x+a.r,y0=a.y,x3=b.x-gap,y3=b.y,dx=x3-x0,off=Math.max(Math.abs(dx)/2,50); // back-edges and same-column links loop out and come back in from the left
+  const x1=x0+off,x2=x3-off,pts=[];
+  for(let i=0;i<=n;i++){const t=i/n,u=1-t,w0=u*u*u,w1=3*u*u*t,w2=3*u*t*t,w3=t*t*t;pts.push([w0*x0+w1*x1+w2*x2+w3*x3,w0*y0+w1*y0+w2*y3+w3*y3]);}
+  const tx=x3-x2,ty=y3-y3,d=Math.hypot(tx,ty)||1; // end tangent = P3 - P2, which is horizontal here
+  return{pts,ux:tx/d,uy:ty/d};
+}
+function taper(pts,w0,w1){ // filled stroke that narrows from w0 at the source to w1 at the tip
+  const n=pts.length,Lp=[],Rp=[];
+  for(let i=0;i<n;i++){const p=pts[i],q=pts[Math.min(i+1,n-1)],r=pts[Math.max(i-1,0)],tx=q[0]-r[0],ty=q[1]-r[1],d=Math.hypot(tx,ty)||1,w=(w0+(w1-w0)*i/(n-1))/2,nx=-ty/d*w,ny=tx/d*w;
+    Lp.push([p[0]+nx,p[1]+ny]);Rp.push([p[0]-nx,p[1]-ny]);}
+  ctx.beginPath();ctx.moveTo(Lp[0][0],Lp[0][1]);for(const p of Lp)ctx.lineTo(p[0],p[1]);for(let i=n-1;i>=0;i--)ctx.lineTo(Rp[i][0],Rp[i][1]);ctx.closePath();ctx.fill();
+}
+function strokePts(pts){ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);ctx.stroke();}
+function arrow(e,ep,ah){const p=ep.pts[ep.pts.length-1],{ux,uy}=ep;
+  ctx.beginPath();ctx.moveTo(p[0],p[1]);ctx.lineTo(p[0]-ux*ah-uy*ah*.5,p[1]-uy*ah+ux*ah*.5);ctx.lineTo(p[0]-ux*ah+uy*ah*.5,p[1]-uy*ah-ux*ah*.5);ctx.closePath();ctx.fill();}
+function draw(now=performance.now()){
+  const dpr=devicePixelRatio||1,W=cv.width/dpr,H=cv.height/dpr,c=G.col,k=G.k;
+  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);
+  if(G.grain){ctx.globalAlpha=.06;ctx.fillStyle=G.grain;ctx.fillRect(0,0,cv.width,cv.height);ctx.globalAlpha=1;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const flow=G.layout==='flow';
+  if(flow)G.lanes.forEach((l,i)=>{const y0=l.top*k+G.ty,y1=(l.top+l.h)*k+G.ty;if(y1<0||y0>H)return;
+    if(i%2){ctx.globalAlpha=.045;ctx.fillStyle=c.ink;ctx.fillRect(0,y0,W,y1-y0);}
+    ctx.globalAlpha=.9;ctx.fillStyle=c[l.col];ctx.fillRect(0,y0,3,y1-y0);});
+  ctx.globalAlpha=1;
+  ctx.setTransform(dpr*k,0,0,dpr*k,dpr*G.tx,dpr*G.ty);
+  const L=lit(),on=n=>(!L||L.has(n.id)||G.link?.from===n||G.link?.over===n),dim=n=>!matches(n.t);
+  const fade=new Map(G.anims.filter(a=>a.type==='fade').map(a=>[a.id,Math.min(1,(now-a.t0)/a.dur)]));
+  const bold=new Set([...(G.critF?.edges||[]),...($('gCrit').checked&&G.critG?G.critG.edges:[])]);
+  ctx.setLineDash([3/k,4/k]);ctx.lineWidth=1.2/k;
+  for(const e of G.ments){ctx.globalAlpha=on(e.a)&&on(e.b)?.5:.06;ctx.strokeStyle=c.jade;ctx.beginPath();ctx.moveTo(e.a.x,e.a.y);ctx.lineTo(e.b.x,e.b.y);ctx.stroke();}
+  ctx.setLineDash([]);
+  const sel=G.selEdge,ah=8/k;
+  for(const e of G.edges){
+    const ep=edgePts(e,flow?20:1),hot=L&&L.has(e.a.id)&&L.has(e.b.id),base=L?(hot?.95:.06):(e.open?.6:.3),fp=fade.get(e.a.id);
+    ctx.fillStyle=ctx.strokeStyle=e.open?c.ink:c.muted;
+    if(e.open||fp!=null){ctx.globalAlpha=base*(fp!=null?1-fp:1)*(L?1:e.open?1:2);ctx.setLineDash([]);taper(ep.pts,3/k,1.2/k);} // brush-stroke: wide at the blocker, thin at the arrow
+    if(!e.open){ctx.globalAlpha=base*(fp!=null?fp:1);ctx.setLineDash([4/k,4/k]);ctx.lineWidth=1.3/k;strokePts(ep.pts);ctx.setLineDash([]);}
+    ctx.globalAlpha=base;ctx.setLineDash([]);arrow(e,ep,ah);
+    const isSel=sel&&sel[0]===e.a.id&&sel[1]===e.b.id;
+    if(isSel){ctx.globalAlpha=1;ctx.strokeStyle=ctx.fillStyle=c.jade;ctx.lineWidth=3.5/k;strokePts(ep.pts);arrow(e,ep,ah*1.15);}
+    else if(bold.has(e.a.id+'|'+e.b.id)){ctx.globalAlpha=.95;ctx.strokeStyle=c.ink;ctx.lineWidth=2.5/k;strokePts(ep.pts);}
+  }
+  ctx.globalAlpha=1;
+  const pulse=new Map(G.anims.filter(a=>a.type==='pulse').map(a=>[a.id,(now-a.t0)/a.dur]));
+  for(const n of G.nodes.values()){
+    const s=n.t.effective_status,sc={todo:c.ink,doing:c.amber,pending:c.slate,done:c.jade}[s],fill=s==='todo'?c.surface:sc,pc=pillarCol(n.t);
+    ctx.globalAlpha=(on(n)?1:.12)*(dim(n)?.25:1)*(s==='done'&&!L?.55:1);
+    ctx.beginPath();ctx.arc(n.x,n.y,n.r,0,6.283);ctx.fillStyle=fill;ctx.fill();
+    ctx.lineWidth=(pc?2.5:1.5)/k;ctx.strokeStyle=pc||c.muted;ctx.stroke(); // ring = pillar
+    if(n.t.priority==='P0'&&s!=='done'){const bx=n.x+n.r*.78,by=n.y-n.r*.78;ctx.beginPath();ctx.arc(bx,by,3.6/k,0,6.283);ctx.fillStyle=c.cinnabar;ctx.fill();ctx.lineWidth=1.2/k;ctx.strokeStyle=c.surface;ctx.stroke();}
+    if(needsAttn(n.t)){const bx=n.x+n.r*.78,by=n.y+n.r*.78;ctx.beginPath();ctx.arc(bx,by,4.6/k,0,6.283);ctx.fillStyle=c.amber;ctx.fill();ctx.lineWidth=1.2/k;ctx.strokeStyle=c.surface;ctx.stroke();
+      ctx.fillStyle=c.surface;ctx.font=`800 ${8/k}px ${c.body}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',bx,by+.4/k);}
+    if(n.id===G.focus){ctx.beginPath();ctx.arc(n.x,n.y,n.r+7/k,0,6.283);ctx.strokeStyle=c.ink;ctx.lineWidth=1.2/k;ctx.setLineDash([2/k,3/k]);ctx.stroke();ctx.setLineDash([]);}
+    if(G.link?.over===n){ctx.globalAlpha=1;ctx.beginPath();ctx.arc(n.x,n.y,n.r+6/k,0,6.283);ctx.strokeStyle=c.jade;ctx.lineWidth=2.5/k;ctx.stroke();}
+    const pp=pulse.get(n.id);if(pp!=null){ctx.globalAlpha=Math.max(0,1-pp);ctx.beginPath();ctx.arc(n.x,n.y,n.r+4/k+pp*24/k,0,6.283);ctx.strokeStyle=c.jade;ctx.lineWidth=2.5/k;ctx.stroke();}
+  }
+  if(G.link){const f=G.link.from;ctx.globalAlpha=1;ctx.setLineDash([5/k,4/k]);ctx.strokeStyle=c.ink;ctx.lineWidth=1.8/k;ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(G.link.x,G.link.y);ctx.stroke();ctx.setLineDash([]);}
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.textAlign='center';ctx.textBaseline='top';ctx.font=`600 12px ${c.body}`;
+  for(const n of G.nodes.values()){ // labels in screen space so they stay crisp; fade out when zoomed far out
+    const show=L?L.has(n.id):k>(flow?.4:.55); if(!show)continue;
+    const x=n.x*k+G.tx,y=(n.y+n.r)*k+G.ty+7; ctx.globalAlpha=dim(n)?.35:1;
+    ctx.lineWidth=3;ctx.strokeStyle=c.sunk;ctx.strokeText(n.id,x,y);ctx.fillStyle=c.ink;ctx.fillText(n.id,x,y);
+  }
+  if(flow){ctx.textAlign='left';ctx.textBaseline='top';ctx.font=`800 15px ${c.display}`; // lane names pinned to the visible left edge
+    for(const l of G.lanes){const y0=l.top*k+G.ty,y1=(l.top+l.h)*k+G.ty;if(y1<0||y0>H)continue;const y=Math.min(Math.max(y0+8,8),y1-22);
+      ctx.globalAlpha=.9;ctx.lineWidth=4;ctx.strokeStyle=c.sunk;ctx.strokeText(l.name,12,y);ctx.fillStyle=c.ink;ctx.fillText(l.name,12,y);}}
+  ctx.globalAlpha=1;
+}
+function fit(){
+  const N=[...G.nodes.values()],W=cv.clientWidth,H=cv.clientHeight,flow=G.layout==='flow',gut=flow?96:0;
+  if(!N.length){G.k=1;G.tx=W/2;G.ty=H/2;return;}
+  let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+  for(const n of N){const x=flow?n.gx:n.x,y=flow?n.gy:n.y;x0=Math.min(x0,x-n.r);y0=Math.min(y0,y-n.r);x1=Math.max(x1,x+n.r);y1=Math.max(y1,y+n.r+18);}
+  if(flow&&G.lanes.length){y0=Math.min(y0,G.lanes[0].top);y1=Math.max(y1,G.lanes.at(-1).top+G.lanes.at(-1).h);}
+  G.k=Math.max(.2,Math.min(2,Math.min((W-gut-40)/(x1-x0||1),(H-40)/(y1-y0||1))));
+  G.tx=gut+(W-gut)/2-(x0+x1)/2*G.k;G.ty=H/2-(y0+y1)/2*G.k;kick();
+}
+function resize(){const dpr=devicePixelRatio||1,w=cv.clientWidth,h=cv.clientHeight;if(!w||!h)return;cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);
+  if(!G.sized){G.sized=true;G.tx=w/2;G.ty=h/2;if(G.nodes.size){fit();G.fitted=true;}}kick();}
+new ResizeObserver(resize).observe(cv);
+const world=e=>{const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left-G.tx)/G.k,y:(e.clientY-r.top-G.ty)/G.k,sx:e.clientX-r.left,sy:e.clientY-r.top};};
+function hit(p){let best=null,bd=Infinity;for(const n of G.nodes.values()){const d=Math.hypot(n.x-p.x,n.y-p.y);if(d<n.r+6/G.k&&d<bd){bd=d;best=n;}}return best;}
+function segDist(px,py,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((px-a[0])*dx+(py-a[1])*dy)/l)):0;return Math.hypot(px-a[0]-t*dx,py-a[1]-t*dy);}
+function hitEdge(p){let best=null,bd=6; // screen pixels
+  for(const e of G.edges){const {pts}=edgePts(e,G.layout==='flow'?16:1);for(let i=0;i<pts.length-1;i++){const d=segDist(p.x,p.y,pts[i],pts[i+1])*G.k;if(d<bd){bd=d;best=e;}}}
+  return best;}
+function tip(n,p){const el=$('gTip');if(!n){el.hidden=true;return;}const t=n.t,d=G.down[t.id]||0;
+  el.innerHTML=`<strong>${esc(t.id)}</strong> <span class="status ${t.effective_status}">${NAME[t.effective_status]}</span><br>${inline(t.title)}${d?`<br><span class="hint">Unblocks ${d} open down the chain</span>`:''}`;
+  el.hidden=false;const w=cv.clientWidth;el.style.left=Math.min(p.sx+14,w-290)+'px';el.style.top=(p.sy+14)+'px';}
+function setFocus(id){G.focus=id;G.selEdge=null;$('gPanel').hidden=!id;recalcCrit();if(id)renderPanel();kick();}
+function clearEdge(){if(!G.selEdge)return;G.selEdge=null;if(!G.focus)$('gPanel').hidden=true;kick();}
+function selectEdge(e){setFocus(null);G.selEdge=[e.a.id,e.b.id];$('gPanel').hidden=false;renderEdgePanel();kick();}
+function renderEdgePanel(){const [a,b]=G.selEdge,ta=BY.get(a),tb=BY.get(b);if(!ta||!tb)return clearEdge();
+  $('gPanel').innerHTML=`<div class="top"><span class="tid">${esc(a)}</span><span>blocks</span><span class="tid">${esc(b)}</span></div>
+    <div class="hint">${inline(ta.title)}<br>holds up<br>${inline(tb.title)}</div>
+    <div class="row"><button type="button" class="btn danger sm" data-unlink data-a="${esc(a)}" data-b="${esc(b)}">Remove link</button><button type="button" class="btn ghost sm" data-unfocus>Clear</button></div>`;}
+function renderPanel(){const t=BY.get(G.focus);if(!t)return setFocus(null);const d=G.down[t.id]||0;
+  const up=[],seen=new Set(),st=[...t.blocked_by];while(st.length){const x=st.pop();if(seen.has(x))continue;seen.add(x);const u=BY.get(x);if(u&&u.status!=='done')up.push(x);st.push(...(u?.blocked_by||[]));}
+  const ch=G.critF?.path;
+  $('gPanel').innerHTML=`<div class="top"><span class="tid">${esc(t.id)}</span><span class="status ${t.effective_status}">${NAME[t.effective_status]}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></div>
+    <div class="ttl">${inline(t.title)}</div>
+    <div class="hint">${up.length?`Waits on ${up.length} open: ${esc(up.join(', '))}.`:'Nothing open is in its way.'}${d?`<br>Unblocks ${d} open down the chain.`:''}</div>
+    ${ch?`<div class="hint chain"><strong>Longest chain to here:</strong> ${ch.map(esc).join(' → ')}</div>`:''}
+    <div class="row"><button type="button" class="btn sm" data-open="${esc(t.id)}">Open ticket</button><button type="button" class="btn ghost sm" data-unfocus>Clear</button></div>`;}
+function gmsg(text,err){const m=$('gMsg');m.textContent=text;m.className='msg'+(err?' err':'');clearTimeout(G.msgT);G.msgT=setTimeout(()=>{m.textContent='';},5000);}
+async function addLink(aId,bId){ // A blocks B  =  B.blocked_by gains A
+  const b=BY.get(bId);if(!b)return;
+  if(b.blocked_by.includes(aId)){gmsg(`${aId} already blocks ${bId}.`);return;}
+  try{await api('PATCH','/'+bId,{blocked_by:[...b.blocked_by,aId]});await load(true);gmsg(`${aId} now blocks ${bId}.`);}
+  catch(er){gmsg(er.message,true);}
+}
+async function removeLink(aId,bId){
+  const b=BY.get(bId);if(!b)return;
+  try{await api('PATCH','/'+bId,{blocked_by:b.blocked_by.filter(x=>x!==aId)});clearEdge();await load(true);gmsg(`${aId} no longer blocks ${bId}.`);}
+  catch(er){gmsg(er.message,true);}
+}
+function startPinch(){const [a,b]=[...G.pts.values()],r=cv.getBoundingClientRect(),mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top;
+  G.ptr=null;G.link=null;cv.classList.remove('grabbing');G.pinch={d0:Math.hypot(a.x-b.x,a.y-b.y)||1,k0:G.k,wx:(mx-G.tx)/G.k,wy:(my-G.ty)/G.k};}
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);G.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(G.pts.size===2){startPinch();return;} if(G.pts.size>2)return;
+  const p=world(e),n=hit(p);
+  if(e.shiftKey&&n&&e.button===0){G.ptr={node:n,link:true,sx:p.sx,sy:p.sy,moved:false};G.link={from:n,x:p.x,y:p.y,over:null};tip(null);kick();return;}
+  G.ptr={node:n,sx:p.sx,sy:p.sy,tx:G.tx,ty:G.ty,moved:false};if(!n)cv.classList.add('grabbing');tip(null);});
+cv.addEventListener('pointermove',e=>{
+  if(G.pts.has(e.pointerId))G.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(G.pinch){if(G.pts.size<2)return;const [a,b]=[...G.pts.values()],r=cv.getBoundingClientRect(),mx=(a.x+b.x)/2-r.left,my=(a.y+b.y)/2-r.top,P=G.pinch;
+    const k=Math.max(.2,Math.min(4,P.k0*Math.hypot(a.x-b.x,a.y-b.y)/P.d0));G.k=k;G.tx=mx-P.wx*k;G.ty=my-P.wy*k;kick();return;}
+  const p=world(e),P=G.ptr;
+  if(P){if(Math.hypot(p.sx-P.sx,p.sy-P.sy)>3)P.moved=true;
+    if(P.link){G.link.x=p.x;G.link.y=p.y;const o=hit(p);G.link.over=o&&o!==P.node?o:null;kick();return;}
+    if(P.node&&P.moved){P.node.x=p.x;P.node.y=p.y;P.node.vx=P.node.vy=0;if(G.layout==='free'&&!reduce.matches)G.alpha=Math.max(G.alpha,.3);kick();}
+    else if(!P.node){G.tx=P.tx+p.sx-P.sx;G.ty=P.ty+p.sy-P.sy;kick();}return;}
+  const n=hit(p),id=n?.id||null;cv.classList.toggle('onnode',!!n||!!hitEdge(p));tip(n,p);if(id!==G.hover){G.hover=id;kick();}});
+async function pointerEnd(e,cancel){
+  G.pts.delete(e.pointerId);
+  if(G.pinch){if(G.pts.size<2)G.pinch=null;G.ptr=null;kick();return;} // a pinch never counts as a click
+  const P=G.ptr,L=G.link;G.ptr=null;G.link=null;cv.classList.remove('grabbing');
+  if(!P){kick();return;}
+  if(P.link){kick();if(!cancel&&L?.over&&L.over!==P.node)await addLink(P.node.id,L.over.id);return;}
+  if(cancel||P.moved){kick();return;}
+  if(P.node){const was=G.focus===P.node.id;clearEdge();setFocus(was?null:P.node.id);return;}
+  const ed=hitEdge(world(e));if(ed)selectEdge(ed);else{clearEdge();setFocus(null);}
+}
+cv.addEventListener('pointerup',e=>pointerEnd(e,false));
+cv.addEventListener('pointercancel',e=>pointerEnd(e,true));
+cv.addEventListener('pointerleave',()=>{if(!G.ptr){G.hover=null;tip(null);cv.classList.remove('onnode');kick();}});
+cv.addEventListener('dblclick',e=>{const n=hit(world(e));if(n){setFocus(n.id);showTicket(n.id);}});
+cv.addEventListener('wheel',e=>{e.preventDefault();const p=world(e),k=Math.max(.2,Math.min(4,G.k*Math.exp(-e.deltaY*.0015)));G.tx=p.sx-p.x*k;G.ty=p.sy-p.y*k;G.k=k;kick();},{passive:false});
+function cancelGraphGesture(){const had=!!(G.link||G.ptr?.link);G.link=null;if(G.ptr?.link)G.ptr=null;if(had)kick();return had;}
+// text version of the chains, for screen readers and keyboards: every root, then what it blocks, depth first
+function renderChains(){
+  const out={},hasIn=new Set();for(const e of G.edges){(out[e.a.id]||(out[e.a.id]=[])).push(e.b.id);hasIn.add(e.b.id);}
+  const roots=[...G.nodes.keys()].filter(id=>out[id]&&!hasIn.has(id)).sort(),seen=new Set();
+  const li=id=>{const t=BY.get(id),btn=`<button type="button" class="idlink" data-open="${esc(id)}">${esc(id)}</button>`;
+    if(seen.has(id))return `<li>${btn} <span class="hint">(see above)</span></li>`;seen.add(id);
+    const kids=[...(out[id]||[])].sort();
+    return `<li>${btn} <span class="lt">${inline(t.title)}</span> <span class="status ${t.effective_status}">${NAME[t.effective_status]}</span>${kids.length?`<ul>${kids.map(li).join('')}</ul>`:''}</li>`;};
+  $('chainsBody').innerHTML=roots.length?`<ul class="chainlist">${roots.map(li).join('')}</ul>`:'<p class="none">No blocking links with these settings.</p>';
+}
+for(const id of['gLinked','gDone','gMentions','gCrit'])$(id).addEventListener('change',()=>{store.set(id,$(id).checked);if(id!=='gCrit'){G.fitted=false;syncGraph();}else kick();});
+for(const id of['gLinked','gDone','gMentions','gCrit']){const v=store.get(id,null);if(v!=null)$(id).checked=v;}
+function renderLayoutSeg(){chips($('gLayoutSeg'),[['flow','Flow'],['free','Free']],G.layout,'glayout');}
+function setLayout(v){if(v===G.layout)return;G.layout=v;store.set('gLayout',v);renderLayoutSeg();syncGraph();}
+renderLayoutSeg();
+$('gFit').addEventListener('click',fit);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readColors();kick();});
+readColors();
+
+// ---------- view switch ----------
+function setView(v){state.view=v;store.set('view',v);$('board').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
+  chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderNext();if(v==='graph'){resize();syncGraph();}}
+function render(){renderAttn();renderBoard();renderNext();if(state.view==='graph')syncGraph();}
+$('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
+$('q').addEventListener('input',e=>{state.q=e.target.value.trim();render();});
+fetch('/api/meta',{cache:'no-store'}).then(r=>r.json()).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
+  readColors(); renderBar(); setView(state.view);
+  load(true).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
+});
+setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000); // picks up edits made through the MCP
+})();
+</script>
+</body>
+</html>

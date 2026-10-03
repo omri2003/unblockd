@@ -1,0 +1,17 @@
+{
+  "id": "API-2",
+  "title": "REST endpoints for tickets",
+  "status": "doing",
+  "priority": "P1",
+  "owner": "Claude",
+  "pillar": "API",
+  "pillar_step": null,
+  "section": "",
+  "blocked_by": [
+    "API-1"
+  ],
+  "waiting_on": "",
+  "body": "",
+  "created": "2026-10-03",
+  "updated": "2026-10-03"
+}

@@ -1,0 +1,2 @@
+# Only the MCP server needs this; the web app is stdlib only.
+mcp>=2.2,<3

@@ -1,0 +1,15 @@
+{
+  "id": "API-1",
+  "title": "Design the ticket schema",
+  "status": "done",
+  "priority": "P1",
+  "owner": "Claude",
+  "pillar": "API",
+  "pillar_step": null,
+  "section": "",
+  "blocked_by": [],
+  "waiting_on": "",
+  "body": "",
+  "created": "2026-10-03",
+  "updated": "2026-10-03"
+}

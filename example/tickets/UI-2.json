@@ -1,0 +1,17 @@
+{
+  "id": "UI-2",
+  "title": "Dependency graph view",
+  "status": "todo",
+  "priority": "P2",
+  "owner": "Claude",
+  "pillar": "UI",
+  "pillar_step": null,
+  "section": "",
+  "blocked_by": [
+    "UI-1"
+  ],
+  "waiting_on": "",
+  "body": "",
+  "created": "2026-10-03",
+  "updated": "2026-10-03"
+}

@@ -1,0 +1,13 @@
+{
+  "title": "Example project",
+  "owners": [
+    {"name": "Me", "kind": "human"},
+    {"name": "Claude", "kind": "agent"}
+  ],
+  "pillar_label": "Area",
+  "pillars": [
+    {"key": "UI", "name": "Interface"},
+    {"key": "API", "name": "Backend"}
+  ],
+  "stale_days": 7
+}
