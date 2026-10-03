@@ -157,10 +157,12 @@ def sources(store, t: dict) -> list[tuple[str, str]]:
 	return out
 
 
-def context(store, tid: str, budget: int = BUDGET, inline: bool = True) -> dict:
+def context(store, tid: str, budget: int | None = None, inline: bool = True) -> dict:
 	"""Everything an agent should read before working a ticket, in order: board docs, agent
 	profile docs, ticket docs, then files attached to the ticket. Inlined until `budget`
 	characters; the rest is listed (call read_doc). Missing or bad entries are listed with an error."""
+	if budget is None:
+		budget = int(store.config.get("context_budget") or BUDGET)
 	t = store.get(tid)
 	base = root(store)
 	docs, seen, left = [], set(), budget

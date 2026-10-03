@@ -102,7 +102,7 @@ them when it claims a ticket:
 
 Entries are repo paths, folders (their text files) or globs; they're links,
 so they stay current. `claim_next` / `claim_ticket` return the ticket's
-`context`: all of it in that order, deduped, inlined up to 60k characters,
+`context`: all of it in that order, deduped, inlined up to `context_budget` (60k characters by default),
 with each doc's `links` (markdown links and `@imports`: the knowledge
 graph's edges) and an error for anything missing. The drawer's **Knowledge**
 list shows the same; click a doc to read it and follow its links. Paths can't
@@ -160,6 +160,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `id` | Board id (default: the project folder's name). |
 | `agents` | Agent profiles, see below (each may have its own `docs`). |
 | `docs` | Knowledge every ticket on the board comes with, see Knowledge. |
+| `context_budget` | Characters of docs inlined per ticket context (default 60000); the rest is listed. |
 
 ## Tickets
 

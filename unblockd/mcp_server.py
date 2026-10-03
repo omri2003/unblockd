@@ -195,10 +195,10 @@ def agents_now(board: str | None = None) -> dict:
 
 
 @tool
-def get_context(id: str, board: str | None = None, budget: int = 60000) -> dict:
+def get_context(id: str, board: str | None = None, budget: int | None = None) -> dict:
 	"""What to read before working a ticket: docs linked on the board, its agent profile and the
 	ticket itself (paths, folders, globs in the project repo), then files attached to it. Inlined up
-	to `budget` characters; the rest is listed for read_doc. Each doc lists its `links` (the
+	to `budget` characters (default: the board's context_budget); the rest is listed for read_doc. Each doc lists its `links` (the
 	knowledge graph's edges) and any error (missing, outside the project)."""
 	return kn.context(BOARDS.get(board), id, budget=budget)
 

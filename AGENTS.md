@@ -56,7 +56,8 @@ owners and pillars must be the configured ones; unknown `agent:<x>` tags refused
 Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refused. Keys:
 `id`, `title`, `owners` [{name, kind: human|agent}], `default_owner`, `pillar_label`, `pillars`
 [{key, name, color, color_dark}], `stale_days`, `lease_minutes`, `legacy_files`, `agents`
-[{name, tags, pillars, model, instructions, docs}], `docs` (knowledge for every ticket).
+[{name, tags, pillars, model, instructions, docs}], `docs` (knowledge for every ticket),
+`context_budget` (chars inlined per context, default 60000).
 
 ## How the pieces work
 
@@ -77,7 +78,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
 - **Knowledge**: `knowledge.context(store, id)` = board `docs`, then the routed agent profile's
   `docs`, then the ticket's `docs`, then files attached to it; deduped by path, inlined until a
-  60k-character budget, the rest listed for `read_doc`. Each doc reports its `links` (markdown
+  `context_budget` (default 60k chars), the rest listed for `read_doc`. Each doc reports its `links` (markdown
   links + `@imports` that exist in the repo: the graph's edges, not followed). Missing / outside /
   non-text entries come back with an `error` instead of failing the bundle. Project root = the
   tickets folder's parent; `_inside()` refuses anything that resolves outside it. `claim_next` /
