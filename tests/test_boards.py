@@ -131,6 +131,17 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("GET", "/api/b/a/next?limit=x")[0], 400)
 		self.assertEqual(self.call("POST", "/api/boards", {"id": "c"})[0], 201)
 
+	def test_knowledge_routes(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/files", {"name": "spec.md", "content": "window 0.2"})[0], 201)
+		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/files/spec.md")[1]["content"], "window 0.2")
+		ctx = self.call("GET", "/api/b/a/tickets/CMB-1/context")[1]
+		self.assertEqual(ctx["docs"][0]["content"], "window 0.2")
+		self.assertEqual(self.call("GET", "/api/b/a/doc?path=tickets/unblockd.json")[0], 200)
+		self.assertEqual(self.call("GET", "/api/b/a/doc?path=../b/tickets/unblockd.json")[0], 400)
+		self.assertEqual(self.call("DELETE", "/api/b/a/tickets/CMB-1/files/spec.md")[0], 200)
+		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/files/spec.md")[0], 400)
+
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})

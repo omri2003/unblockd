@@ -8,6 +8,9 @@
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..."
     python -m unblockd.cli agents                  # who is working what right now
+    python -m unblockd.cli context ID              # docs + attached files to read before working ID
+    python -m unblockd.cli doc PATH                # one file from the project repo
+    python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
     python -m unblockd.cli update ID --json '{"status": "done"}'
@@ -25,6 +28,7 @@ import os
 import sys
 from datetime import date
 
+from . import knowledge as kn
 from . import store as st
 
 
@@ -63,6 +67,12 @@ def main(argv: list[str] | None = None) -> int:
 		x.add_argument("--agent", required=True)
 		x.add_argument(extra, required=name == "complete", default="")
 	sub.add_parser("agents")
+	sub.add_parser("context").add_argument("id")
+	sub.add_parser("doc").add_argument("path")
+	at = sub.add_parser("attach")
+	at.add_argument("id")
+	at.add_argument("file")
+	at.add_argument("--name")
 	no = sub.add_parser("note")
 	no.add_argument("id")
 	no.add_argument("text")
@@ -84,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
 			out = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note)
+			if out:
+				out = {**out, "context": kn.context(s, out["id"])}
 		elif a.cmd == "heartbeat":
 			out = s.heartbeat(a.id, a.agent, a.note)
 		elif a.cmd == "release":
@@ -92,6 +104,14 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.complete(a.id, a.agent, a.summary)
 		elif a.cmd == "agents":
 			out = s.agents_now()
+		elif a.cmd == "context":
+			out = kn.context(s, a.id)
+		elif a.cmd == "doc":
+			out = kn.read_doc(s, a.path)
+		elif a.cmd == "attach":
+			from pathlib import Path
+			f = Path(a.file)
+			out = kn.attach(s, a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":

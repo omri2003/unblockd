@@ -18,6 +18,7 @@ import urllib.request
 from datetime import date
 
 from . import boards as bd
+from . import knowledge as kn
 from . import store as st
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
@@ -61,6 +62,13 @@ TOOLS = [
 	                  "owner": {"type": "string"}, "limit": {"type": "integer"}}}},
 	{"name": "work_plan", "description": "Ready tickets not owned by a human, grouped per agent profile.",
 	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}}}},
+	{"name": "get_context", "description": "The docs and attached files linked to a ticket (board, agent profile, "
+	                                       "ticket), with short contents inlined.",
+	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}, "id": {"type": "string"}},
+	                  "required": ["id"]}},
+	{"name": "read_doc", "description": "A text file from the board's project repo (path relative to its root).",
+	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}, "path": {"type": "string"}},
+	                  "required": ["path"]}},
 ]
 
 
@@ -85,6 +93,10 @@ def run_tool(boards: bd.Boards, default_board: str | None, name: str, args: dict
 			g["tickets"] = [_short(t) for t in g["tickets"]]
 		plan["unrouted"] = [_short(t) for t in plan["unrouted"]]
 		return plan
+	if name == "get_context":
+		return kn.context(store, str(args.get("id", "")), budget=15_000)
+	if name == "read_doc":
+		return kn.read_doc(store, str(args.get("path", "")))
 	raise st.TicketError(f"unknown tool {name}")
 
 

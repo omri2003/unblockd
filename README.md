@@ -88,6 +88,26 @@ ignores itself in git.
 one worker per agent profile with that profile's `instructions` and `model`,
 and each worker runs the loop above until `claim_next` returns null.
 
+## Knowledge: tickets come with their instructions
+
+Stop re-telling agents what to read. Link docs once and every worker gets
+them when it claims a ticket:
+
+| Where | `docs` applies to |
+|---|---|
+| `unblockd.json` → `"docs"` | every ticket on the board (e.g. `AGENTS.md`, `docs/HANDOFF.md`) |
+| an agent profile → `"docs"` | every ticket that profile works (e.g. `docs/MECHANICS.md`) |
+| a ticket → `docs` (Edit) | that ticket (e.g. `docs/notes/combat/`) |
+| **Attach files** in the drawer | that ticket: stored in `tickets/files/<ID>/`, committed with it |
+
+Entries are repo paths, folders (their text files) or globs; they're links,
+so they stay current. `claim_next` / `claim_ticket` return the ticket's
+`context`: all of it in that order, deduped, inlined up to 60k characters,
+with each doc's `links` (markdown links and `@imports`: the knowledge
+graph's edges) and an error for anything missing. The drawer's **Knowledge**
+list shows the same; click a doc to read it and follow its links. Paths can't
+leave the project folder; only text files are read or attached.
+
 ## Chat: ask about tickets and boards
 
 **Ask** (or `c`) opens a chat beside the board. Claude answers with read-only
@@ -138,7 +158,8 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `lease_minutes` | A claim with no heartbeat this long expires (default 15). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
 | `id` | Board id (default: the project folder's name). |
-| `agents` | Agent profiles, see below. |
+| `agents` | Agent profiles, see below (each may have its own `docs`). |
+| `docs` | Knowledge every ticket on the board comes with, see Knowledge. |
 
 ## Tickets
 
@@ -201,7 +222,8 @@ Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
 start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket`,
 `update_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
-`heartbeat`, `release`, `complete`, `agents_now`. Every tool takes `board=`
+`heartbeat`, `release`, `complete`, `agents_now`; for knowledge `get_context`,
+`read_doc`, `attach_file`, `detach_file`. Every tool takes `board=`
 (default: the first board).
 
 ## CLI
@@ -235,6 +257,9 @@ GET    agents                         who is working what now + recent activity
 GET    activity?ticket=&limit=
 POST   claim                          {"agent", "profile"?, "note"?}
 POST   tickets/<id>/claim|heartbeat|release|complete   {"agent", "note" | "reason" | "summary"}
+GET    tickets/<id>/context?inline=0  docs + attached files to read before working it
+GET    doc?path=                      a text file from the project repo, with its links
+POST   tickets/<id>/files             {"name", "content"}     GET / DELETE tickets/<id>/files/<name>
 GET    tickets/<id>
 POST   tickets                        {"prefix": "BUG", "title": "...", ...}
 PATCH  tickets/<id>                   {"status": "done"}

@@ -35,7 +35,9 @@ DEFAULT_CONFIG = {
 	"id": None,  # board id when several boards are served; None = the project folder's name
 	# Agent profiles: who should work a ticket. A ticket goes to the first profile sharing one of its
 	# tags or its pillar; an explicit "agent:<name>" tag wins. Orchestrators read them via work_plan.
-	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "..."}]
+	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
+	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
+	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
 }
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
@@ -53,6 +55,9 @@ FIELDS = {
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
+	# repo paths / folders / globs this ticket's worker should read (knowledge.py); files attached
+	# to the ticket live in tickets/files/<ID>/ and show up as the derived `files`
+	"docs": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 and ".." not in x for x in v)),
 	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
 }
 
@@ -88,8 +93,10 @@ def load_config(tickets_dir: Path) -> dict:
 	for ag in cfg["agents"]:
 		if not (isinstance(ag, dict) and NAME_RE.match(str(ag.get("name", "")))):
 			raise TicketError(f"{CONFIG_FILE}: each agent needs a name like godot-dev (a-z, 0-9, - _)")
-		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", [])):
-			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags and pillars are lists of strings")
+		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", []) + ag.get("docs", [])):
+			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars and docs are lists of strings")
+	if not (isinstance(cfg["docs"], list) and all(isinstance(x, str) for x in cfg["docs"])):
+		raise TicketError(f"{CONFIG_FILE}: docs is a list of repo paths")
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
 		cfg["default_owner"] = (agents or [cfg["owners"][0]["name"]])[0]
@@ -187,6 +194,8 @@ class Store:
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
 		live = self._live_claims()
+		fd = self.dir / "files"
+		attached = {d.name: sorted(f.name for f in d.iterdir() if f.is_file()) for d in fd.iterdir() if d.is_dir()} if fd.is_dir() else {}
 		by_id = {t["id"]: t for t in tickets}
 		blocks: dict[str, list[str]] = {t["id"]: [] for t in tickets}
 		for t in tickets:
@@ -221,6 +230,7 @@ class Store:
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
+			            "docs": t.get("docs", []), "files": attached.get(t["id"], []),
 			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None})
 		return out
 

@@ -23,9 +23,12 @@ unblockd/web.py         Stdlib HTTP server + REST API (Handler._route). Serves s
 unblockd/mcp_server.py  MCP tools (needs the `mcp` package; the only dependency).
 unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools).
 unblockd/chat.py        Messages API over urllib, read-only tool loop, #ID / @board resolution.
+unblockd/knowledge.py   Docs linked to tickets (board / profile / ticket `docs`) + files attached
+                        to tickets (tickets/files/<ID>/); context() = the bundle a worker reads.
 static/index.html       The whole UI, one file, vanilla JS, no build step, no CDN libraries.
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
-                        test_claims (incl. 6 parallel workers), test_chat (fake Messages API).
+                        test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
+                        test_knowledge (context order, dedupe, links, path safety, attachments).
 example/tickets/        Demo board + config; what `docker compose up` shows with no .env.
 .github/workflows/ci.yml  tests, then builds + pushes ghcr.io/<owner>/unblockd on main / v* tags.
 ```
@@ -35,12 +38,14 @@ example/tickets/        Demo board + config; what `docker compose up` shows with
 Ticket fields (`FIELDS` in store.py; add a field there and API + MCP accept it): `title`,
 `status` (todo|doing|pending|done), `priority` (P0-P3|null), `owner`, `pillar`, `pillar_step`,
 `section`, `blocked_by` (ids), `waiting_on`, `body`, `tags` (lowercase; `agent:<name>` routes),
-`touches` (paths/globs the work edits), plus `id`, `created`, `updated`.
+`touches` (paths/globs the work edits), `docs` (repo paths/folders/globs to read), plus `id`,
+`created`, `updated`.
 
 Derived on every read (`_decorate`): `effective_status` (todo with an open blocker = pending),
 `open_blockers`, `blocks`, `unblocks` (open tickets downstream, transitive), `missing_blockers`,
 `stale_days` (doing only), `score` = PRIO_WEIGHT (P0 8, P1 4, P2 2, P3 1) x (1 + unblocks),
-`agent` (routed profile), `claim` (live claim: agent, profile, claimed_at, heartbeat_at, note).
+`agent` (routed profile), `claim` (live claim: agent, profile, claimed_at, heartbeat_at, note),
+`files` (names attached in tickets/files/<ID>/).
 
 Rules enforced in the store: IDs `PREFIX-N` (create with a prefix -> next free number, also
 skipping numbers in `legacy_files`); `blocked_by` loops refused with the loop spelled out;
@@ -51,7 +56,7 @@ owners and pillars must be the configured ones; unknown `agent:<x>` tags refused
 Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refused. Keys:
 `id`, `title`, `owners` [{name, kind: human|agent}], `default_owner`, `pillar_label`, `pillars`
 [{key, name, color, color_dark}], `stale_days`, `lease_minutes`, `legacy_files`, `agents`
-[{name, tags, pillars, model, instructions}].
+[{name, tags, pillars, model, instructions, docs}], `docs` (knowledge for every ticket).
 
 ## How the pieces work
 
@@ -70,6 +75,15 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   read. `complete` needs a summary and appends it to the body, signed. Moving a claimed ticket
   off doing by hand drops the claim. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
+- **Knowledge**: `knowledge.context(store, id)` = board `docs`, then the routed agent profile's
+  `docs`, then the ticket's `docs`, then files attached to it; deduped by path, inlined until a
+  60k-character budget, the rest listed for `read_doc`. Each doc reports its `links` (markdown
+  links + `@imports` that exist in the repo: the graph's edges, not followed). Missing / outside /
+  non-text entries come back with an `error` instead of failing the bundle. Project root = the
+  tickets folder's parent; `_inside()` refuses anything that resolves outside it. `claim_next` /
+  `claim_ticket` (MCP, CLI) return `{...ticket, "context": ...}`, which is the whole point: a
+  worker reads its instructions from the board instead of being told. The chat has
+  `get_context` / `read_doc` too.
 - **Chat**: browser keeps history per board (localStorage) and sends the last 20 messages to
   `POST /api/chat`. The server resolves `#ID`, `#board/ID`, `@board` into the user message, then
   loops tool calls (max 8) against `ANTHROPIC_BASE_URL/v1/messages` with read-only tools.
@@ -121,5 +135,8 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 1. Shared chat between people: needs server-side threads + some identity (there's no auth).
 2. Auth, before anyone exposes the port beyond localhost / before a public launch.
 3. README screenshots or a GIF, before a public launch.
-4. An orchestrator skill ("work on all tasks you can"): `work_plan` -> one worker per profile ->
-   claim loop. The server side is done; the skill is the missing piece.
+4. Knowledge graph view: draw docs + their `links` (+ which tickets link them) like the ticket
+   graph. The data is already in `context()`.
+
+Done since this list was written: the orchestrator lives as the user's `unblockd-work-all` skill
+(not in this repo); it uses `work_plan` + the claim loop, and workers read `context`.

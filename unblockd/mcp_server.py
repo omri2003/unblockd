@@ -1,8 +1,8 @@
 """MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
 
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, update_ticket, delete_ticket, and for workers claim_next, claim_ticket, heartbeat,
-release, complete, agents_now. Every ticket tool takes board= (default: the first board).
+create_ticket, update_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+release, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -13,6 +13,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from . import boards as bd
+from . import knowledge as kn
 from . import store as st
 
 BOARDS = bd.from_env()
@@ -36,7 +37,11 @@ mcp = MCPServer(
 		"lease_minutes expires and goes back to todo); finish with complete(id, agent, summary: "
 		"cause -> fix -> tests, and what was NOT verified), or release(id, agent, reason) if you "
 		"can't finish, or update_ticket to pending with waiting_on when a human must decide. Never "
-		"work a ticket you didn't claim. agents_now shows who is on what."
+		"work a ticket you didn't claim. agents_now shows who is on what.\n"
+		"KNOWLEDGE: claim_next / claim_ticket return the ticket's `context`: the docs linked on the "
+		"board, the agent profile and the ticket, plus files attached to it, inlined up to a budget. "
+		"Read them before working; they are the instructions you would otherwise be told. Items without "
+		"content: read_doc(path). Link more with update_ticket(docs=[...]) or attach_file."
 	),
 )
 
@@ -133,7 +138,7 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
 def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
 	"""Change fields of a ticket. changes is an object of field -> new value, e.g.
 	{"status": "done", "body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, tags, waiting_on, body."""
+	pillar_step, section, blocked_by, tags, touches, docs, waiting_on, body."""
 	return BOARDS.get(board).update(id, changes)
 
 
@@ -149,13 +154,17 @@ def claim_next(agent: str, profile: str | None = None, note: str = "", board: st
 	name (e.g. godot-dev-1); profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. Returns null when
 	there's nothing left for you."""
-	return BOARDS.get(board).claim(agent, profile=profile, note=note)
+	store = BOARDS.get(board)
+	t = store.claim(agent, profile=profile, note=note)
+	return {**t, "context": kn.context(store, t["id"])} if t else None
 
 
 @tool
 def claim_ticket(id: str, agent: str, note: str = "", board: str | None = None) -> dict:
 	"""Claim one specific ticket (it must be ready, not human-owned, not claimed)."""
-	return BOARDS.get(board).claim(agent, tid=id, note=note)
+	store = BOARDS.get(board)
+	t = store.claim(agent, tid=id, note=note)
+	return {**t, "context": kn.context(store, t["id"])}
 
 
 @tool
@@ -183,6 +192,34 @@ def agents_now(board: str | None = None) -> dict:
 	"""Who is working what right now (agent, ticket, last note, seconds since last heartbeat),
 	plus recent activity."""
 	return BOARDS.get(board).agents_now()
+
+
+@tool
+def get_context(id: str, board: str | None = None, budget: int = 60000) -> dict:
+	"""What to read before working a ticket: docs linked on the board, its agent profile and the
+	ticket itself (paths, folders, globs in the project repo), then files attached to it. Inlined up
+	to `budget` characters; the rest is listed for read_doc. Each doc lists its `links` (the
+	knowledge graph's edges) and any error (missing, outside the project)."""
+	return kn.context(BOARDS.get(board), id, budget=budget)
+
+
+@tool
+def read_doc(path: str, board: str | None = None) -> dict:
+	"""One text file from the board's project repo (path relative to the repo root), with its links."""
+	return kn.read_doc(BOARDS.get(board), path)
+
+
+@tool
+def attach_file(id: str, name: str, content: str, board: str | None = None) -> dict:
+	"""Attach a text file to a ticket (stored in tickets/files/<ID>/<name>, committed with it). Use
+	for notes, specs or findings that belong to this ticket; link repo docs with update_ticket docs."""
+	return kn.attach(BOARDS.get(board), id, name, content)
+
+
+@tool
+def detach_file(id: str, name: str, board: str | None = None) -> dict:
+	"""Remove a file attached to a ticket."""
+	return kn.detach(BOARDS.get(board), id, name)
 
 
 def main():

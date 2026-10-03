@@ -20,6 +20,11 @@ POST   tickets/<id>/claim                {"agent", "note"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?}
 POST   tickets/<id>/release              {"agent", "reason"?}
 POST   tickets/<id>/complete             {"agent", "summary"}
+GET    tickets/<id>/context              docs + attached files to read before working it
+GET    doc?path=                         one text file from the project repo (+ its links)
+GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
+POST   tickets/<id>/files                {"name", "content"}  attach a text file
+DELETE tickets/<id>/files/<name>
 
 No auth: it binds to 127.0.0.1 by default. Don't expose it beyond your machine.
 """
@@ -33,6 +38,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import boards as bd
 from . import chat
+from . import knowledge as kn
 from . import store as st
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -111,6 +117,20 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
 				return self._send(200, store.claim(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
+			if method == "GET" and rest == ["doc"]:
+				return self._send(200, kn.read_doc(store, q.get("path", "")))
+			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":
+				return self._send(200, kn.context(store, rest[1], inline=q.get("inline") != "0"))
+			if rest[:1] == ["tickets"] and len(rest) in (3, 4) and rest[2] == "files":
+				tid = rest[1]
+				if method == "POST" and len(rest) == 3:
+					b = self._body()
+					return self._send(201, kn.attach(store, tid, str(b.get("name", "")), b.get("content")))
+				if method == "GET" and len(rest) == 4:
+					return self._send(200, {"name": rest[3], "content": kn.read_file(store, tid, rest[3])})
+				if method == "DELETE" and len(rest) == 4:
+					return self._send(200, kn.detach(store, tid, rest[3]))
+				return self._send(405, {"error": "method not allowed"})
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("claim", "heartbeat", "release", "complete"):
 				b, tid, act = self._body(), rest[1], rest[2]
 				agent = str(b.get("agent", ""))

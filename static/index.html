@@ -134,6 +134,16 @@ aside h3{font-size:.92rem;margin:16px 0 6px}
 .idlink{background:none;border:0;padding:0;margin:0;font:inherit;font-weight:700;color:var(--jade);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
 .dwarn{display:grid;gap:3px;margin:0 0 12px;font-weight:600;font-size:.9rem}
 .dwarn .miss{color:var(--cinnabar)} .dwarn .stale{color:var(--amber)}
+.know{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.88rem}
+.know li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.kdoc{background:none;border:0;padding:0;font:inherit;font-weight:600;color:var(--jade);cursor:pointer;text-align:left;overflow-wrap:anywhere;text-decoration:underline dotted}
+.kdoc:disabled{color:var(--muted);text-decoration:line-through;cursor:default}
+.ksrc{font-size:.76rem;color:var(--muted)} .kerr{font-size:.8rem;color:var(--cinnabar);font-weight:700}
+.kx{margin-left:auto;background:none;border:0;color:var(--cinnabar);cursor:pointer;font:inherit;font-size:.8rem}
+aside.dropping{outline:3px dashed var(--jade);outline-offset:-8px}
+.docv{position:fixed;z-index:41;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,calc(100% - 32px));max-height:calc(100% - 32px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 20px}
+.docv pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.84rem;background:var(--sunk);padding:10px;border-radius:var(--r)}
+.docvscrim{position:fixed;inset:0;background:rgba(10,16,13,.35);z-index:40}
 .kbscrim{position:fixed;inset:0;background:rgba(10,16,13,.35);z-index:30}
 .kb{position:fixed;z-index:31;top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,calc(100% - 32px));max-height:calc(100% - 32px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 20px 18px}
 .kb h2{font-size:1.3rem;margin-bottom:10px} .kb h3{font-size:.85rem;margin:14px 0 6px;color:var(--muted)}
@@ -269,6 +279,8 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
     <div class="formrow"><span class="msg" id="cmsg" role="status"></span><button class="btn" type="submit" id="csend">Ask</button></div>
   </form>
 </section>
+<div class="docvscrim" id="docvScrim" hidden></div>
+<div class="docv" id="docv" hidden role="dialog" aria-modal="true" aria-labelledby="docT"></div>
 <div class="kbscrim" id="kbScrim" hidden></div>
 <div class="kb" id="kb" hidden role="dialog" aria-modal="true" aria-labelledby="kbT">
   <h2 id="kbT">Keyboard shortcuts</h2>
@@ -485,10 +497,12 @@ function showTicket(id,refresh){
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
+    <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
+    <div class="formrow" style="margin-top:6px"><button type="button" class="btn ghost sm" data-attach>Attach files</button><span class="hint">or drop text files here</span><input type="file" id="kfile" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.toml,.csv,.py,.gd,.js,.ts,.html,.css,.sh,.xml"><span class="msg" id="kmsg" role="status"></span></div>
     <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     <p class="msg" id="dMsg" role="status"></p>`, refresh);
-  loadActs(id);
+  loadActs(id); loadKnowledge(id);
 }
 const ACTS=new Map(); // ticket id -> last rendered activity, so a refresh doesn't flicker
 const EVT={claim:'claimed it',heartbeat:'update',release:'released it',complete:'completed it',expired:'claim expired',dropped:'claim ended'};
@@ -512,6 +526,7 @@ function editForm(t){
     <label for="f-pillar">${esc(CFG.pillar_label)}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
     <label for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-docs">Docs <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
     <label class="full" for="f-blocked">Blocked by <span class="hint">IDs, comma separated</span><input id="f-blocked" value="${esc(t.blocked_by.join(', '))}"></label>
     <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="200" value="${esc(t.waiting_on)}"></label>
@@ -525,7 +540,8 @@ async function submitForm(f){
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
     blocked_by:$('f-blocked').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),waiting_on:$('f-waiting').value,body:$('f-body').value,
-    tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean)};
+    tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean),
+    docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
     editing=false; await load(true); showTicket(t.id);
@@ -1073,6 +1089,65 @@ $('chatClear').addEventListener('click',()=>{CH.log=[];chatSave();renderChat();$
 $('clog').addEventListener('click',e=>{const c=e.target.closest('[data-ask]');if(c){$('cin').value=c.dataset.ask;sendChat();}});
 $('chatBtn').addEventListener('click',()=>$('chat').hidden?openChat():closeChat());
 chatLoad();
+// ---------- knowledge: docs linked to a ticket + files attached to it ----------
+// The context bundle an agent gets on claim. Paths open in a viewer; links in a doc open the next one.
+const SRC=s=>s==='board'?'board':s==='ticket'?'this ticket':s==='attached'?'attached':s.startsWith('agent:')?'via '+s.slice(6):s;
+const KNOW={}; // last rendered list per ticket, so a poll refresh doesn't flash "Loading"
+async function loadKnowledge(id){
+  const el=$('know');if(!el)return;if(KNOW[id])el.innerHTML=KNOW[id];
+  let c;try{const r=await fetch(API+'/tickets/'+encodeURIComponent(id)+'/context?inline=0',{cache:'no-store'});c=await r.json();if(!r.ok)throw new Error(c.error);}
+  catch(e){el.innerHTML=`<li class="none">${esc(e.message||'Could not load')}</li>`;return;}
+  const cur=$('know');if(!cur||cur.dataset.for!==id)return;
+  cur.innerHTML=KNOW[id]=c.docs.length?c.docs.map(d=>`<li><button type="button" class="kdoc" ${d.error?'disabled':''} data-doc="${esc(d.file?'':d.path)}" data-file="${esc(d.file||'')}">${esc(d.path)}</button><span class="ksrc">${esc(SRC(d.source))}</span>${d.error?`<span class="kerr">${esc(d.error)}</span>`:`<span class="hint">${Math.max(1,Math.round((d.chars||0)/1000))}k</span>`}${d.file?`<button type="button" class="kx" data-detach="${esc(d.file)}" aria-label="Remove ${esc(d.file)}">Remove</button>`:''}</li>`).join('')
+    :'<li class="none">Nothing linked yet. Add repo paths under Docs (Edit), set docs on the board or agent profile in unblockd.json, or attach a file.</li>';
+}
+function relPath(from,to){ // "docs/HANDOFF.md" + "MECHANICS.md" -> "docs/MECHANICS.md"
+  const out=from.split('/').slice(0,-1);
+  for(const seg of to.split('#')[0].split('/')){if(seg==='..')out.pop();else if(seg&&seg!=='.')out.push(seg);}
+  return out.join('/');
+}
+function docHtml(text,path){ // markdown; links to other repo files open in this viewer
+  const hold=[];const put=h=>'\u0001'+(hold.push(h)-1)+'\u0001';
+  const t=String(text).replace(/\u0001/g,'').replace(/\[([^\]]+)\]\((?!https?:|mailto:|#)([^)\s]+)\)/g,(m,label,to)=>
+    path?put(`<button type="button" class="kdoc" data-doc="${esc(relPath(path,to))}">${esc(label)}</button>`):m);
+  return bodyHtml(t).replace(/\u0001(\d+)\u0001/g,(m,i)=>hold[i]);
+}
+async function viewDoc(path,file){
+  const id=openId; let d;
+  try{const r=await fetch(file?`${API}/tickets/${encodeURIComponent(id)}/files/${encodeURIComponent(file)}`:`${API}/doc?path=${encodeURIComponent(path)}`);d=await r.json();if(!r.ok)throw new Error(d.error);}
+  catch(e){d={content:e.message,err:true};}
+  const name=file||path, md=/\.md$/i.test(name);
+  $('docv').innerHTML=`<div class="dhead"><h2 id="docT" style="margin:0;font-size:1.1rem;overflow-wrap:anywhere">${esc(name)}</h2><span class="sp"><button type="button" class="btn ghost sm" data-docclose>Close</button></span></div>
+    ${d.links?.length?`<p class="hint">Links to: ${d.links.map(l=>`<button type="button" class="kdoc" data-doc="${esc(l)}">${esc(l)}</button>`).join(' ')}</p>`:''}
+    <div class="body">${d.err?`<p class="msg err">${esc(d.content)}</p>`:md?docHtml(d.content,file?'':(d.path||path)):`<pre>${esc(d.content)}</pre>`}</div>`;
+  $('docv').hidden=false;$('docvScrim').hidden=false;$('docv').scrollTop=0;$('docv').querySelector('[data-docclose]').focus();
+}
+function closeDoc(){$('docv').hidden=true;$('docvScrim').hidden=true;}
+const TEXT_OK=/\.(md|txt|json|ya?ml|toml|ini|cfg|csv|py|gd|js|ts|html|css|sh|ps1|xml|tscn|tres|gdshader)$/i;
+async function attachFiles(files){
+  const id=openId,m=$('kmsg');if(!id||!files?.length)return;
+  for(const f of files){
+    if(!TEXT_OK.test(f.name)){m.className='msg err';m.textContent=`${f.name}: only text files can be attached`;continue;}
+    m.className='msg';m.textContent=`Attaching ${f.name}…`;
+    try{const r=await fetch(`${API}/tickets/${encodeURIComponent(id)}/files`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name.replace(/[^A-Za-z0-9._-]/g,'_'),content:await f.text()})});
+      const j=await r.json();if(!r.ok)throw new Error(j.error);m.textContent=`Attached ${j.name}.`;}
+    catch(e){m.className='msg err';m.textContent=e.message;}
+  }
+  await load(true);loadKnowledge(id);
+}
+document.addEventListener('click',async e=>{
+  const g=s=>e.target.closest(s);let b;
+  if(b=g('[data-doc],[data-file]')){if(b.disabled)return;const f=b.dataset.file,p=b.dataset.doc;if(f||p){e.preventDefault();viewDoc(p,f);}return;}
+  if(g('[data-docclose]')||e.target===$('docvScrim')){closeDoc();return;}
+  if(g('[data-attach]')){$('kfile').click();return;}
+  if(b=g('[data-detach]')){const id=openId;try{const r=await fetch(`${API}/tickets/${encodeURIComponent(id)}/files/${encodeURIComponent(b.dataset.detach)}`,{method:'DELETE'});if(!r.ok)throw new Error((await r.json()).error);}catch(er){$('kmsg').className='msg err';$('kmsg').textContent=er.message;}
+    await load(true);loadKnowledge(id);return;}
+},true);
+document.addEventListener('change',e=>{if(e.target.id==='kfile'){attachFiles([...e.target.files]);e.target.value='';}});
+$('drawer').addEventListener('dragover',e=>{if(openId&&!editing&&e.dataTransfer?.types?.includes('Files')){e.preventDefault();$('drawer').classList.add('dropping');}});
+$('drawer').addEventListener('dragleave',e=>{if(e.target===$('drawer'))$('drawer').classList.remove('dropping');});
+$('drawer').addEventListener('drop',e=>{if(!e.dataTransfer?.files?.length||!openId||editing)return;e.preventDefault();$('drawer').classList.remove('dropping');attachFiles([...e.dataTransfer.files]);});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('docv').hidden){e.stopImmediatePropagation();closeDoc();}},true);
 if(store.get('chatOpen',false)) openChat();
 setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000); // picks up edits made through the MCP
 })();
