@@ -186,6 +186,7 @@ Every ticket comes back with derived fields: `effective_status`,
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Warnings**: missing blocker, doing with no update for `stale_days`; a *Needs attention* filter.
+- **Free / Blocked** filter: *Free* = open, nothing open blocks it, not waiting on a person; *Blocked* = an open ticket blocks it. Counts on the chips; the graph dims the rest.
 - Drag a card between columns to change its status. Polls every 4 s, so agent edits show up live.
 
 **Graph** (Board / Graph switch): arrow A -> B means A blocks B. Fill =

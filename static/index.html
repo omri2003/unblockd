@@ -46,7 +46,7 @@ h1{font-size:clamp(1.7rem,4vw,2.4rem);line-height:1.05}
 .bar input[type=search]{flex:1 1 220px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px}
 .seg{display:flex;flex-wrap:wrap;gap:4px}
 .bsel{display:flex;align-items:center;gap:6px} .bsel select{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:6px 8px;max-width:220px}
-.tag{font-size:.74rem;color:var(--muted)} .ag{font-weight:700;color:var(--slate)}
+.tag{font-size:.74rem;color:var(--muted)} .chip .n{font-variant-numeric:tabular-nums;opacity:.7;margin-left:2px} .ag{font-weight:700;color:var(--slate)}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 11px;cursor:pointer;font-size:.85rem}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
@@ -233,6 +233,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
     <div class="seg" id="pillarSeg"></div>
     <div class="seg" id="ownerSeg"></div>
     <div class="seg" id="prioSeg"></div>
+    <div class="seg" id="depSeg" role="group" aria-label="Blocked or free"></div>
     <div class="seg" id="agentSeg"></div>
     <div class="seg" id="attnSeg"></div>
   </div>
@@ -341,7 +342,7 @@ const NAME=Object.fromEntries(COLS);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 let STALE=7; // days; from the config's stale_days
 const PW={P0:8,P1:4,P2:2,P3:1};
-const state={agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board')};
+const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board')};
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
@@ -360,7 +361,7 @@ async function load(force){
   if(prev.size&&!matchMedia('(prefers-reduced-motion: reduce)').matches) noteFinished(prev);
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
-  render(); if(!$('chat').hidden&&!CH.busy) renderChat();
+  renderBar(); render(); if(!$('chat').hidden&&!CH.busy) renderChat();
   if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
 }
 
@@ -382,6 +383,9 @@ function renderBar(){
   chips($('ownerSeg'),[['ALL','Anyone'],...CFG.owners.map(o=>[esc(o.name),esc(o.name)])],state.owner,'owner');
   $('agentSeg').hidden=!CFG.agents?.length;
   if(CFG.agents?.length) chips($('agentSeg'),[['ALL','Any agent'],...CFG.agents.map(a=>[esc(a.name),esc(a.name)]),['NONE','Unrouted']],state.agent,'agent');
+  // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
+  const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
+  chips($('depSeg'),[['ALL','Any'],['FREE',`Free <span class="n">${nf}</span>`],['BLOCKED',`Blocked <span class="n">${nb}</span>`]],state.dep,'dep');
   chips($('prioSeg'),['P0','P1','P2','P3'].map(p=>[p,p]),state.prio,'prio');
   renderAttn();
 }
@@ -389,7 +393,11 @@ function renderAttn(){
   const n=T.filter(needsAttn).length; if(!n&&state.attn) state.attn=false;
   $('attnSeg').innerHTML=n?`<button type="button" class="chip attn" data-attn aria-pressed="${state.attn}">Needs attention (${n})</button>`:'';
 }
+const isBlocked=t=>t.status!=='done'&&(t.open_blockers||[]).length>0;
+const isFree=t=>t.status!=='done'&&!(t.open_blockers||[]).length&&!t.waiting_on;
 function matches(t){
+  if(state.dep==='FREE'&&!isFree(t)) return false;
+  if(state.dep==='BLOCKED'&&!isBlocked(t)) return false;
   if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
   if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
@@ -553,6 +561,7 @@ let armedDelete=false;
 document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
   if(b=g('[data-pillar]')){state.pillar=b.dataset.pillar;store.set('pillar',state.pillar);renderBar();render();return;}
+  if(b=g('[data-dep]')){state.dep=b.dataset.dep;store.set('dep',state.dep);renderBar();render();return;}
   if(b=g('[data-agent]')){state.agent=b.dataset.agent;renderBar();render();return;}
   if(b=g('[data-owner]')){state.owner=b.dataset.owner;store.set('owner',state.owner);renderBar();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
