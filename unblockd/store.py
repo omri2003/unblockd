@@ -6,11 +6,13 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import re
 import tempfile
-from datetime import date
+import time
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 STATUSES = ("todo", "doing", "pending", "done")
@@ -28,6 +30,7 @@ DEFAULT_CONFIG = {
 	"pillar_label": "Pillar",
 	"pillars": [],  # [{"key": "ART", "name": "Art", "color": "#8A4FB5", "color_dark": "#B58CE6"}]
 	"stale_days": STALE_DAYS,
+	"lease_minutes": 15,  # a claim with no heartbeat for this long expires and the ticket goes back to todo
 	"legacy_files": [],  # old ticket lists (relative to the tickets folder): new IDs never reuse a number seen there
 	"id": None,  # board id when several boards are served; None = the project folder's name
 	# Agent profiles: who should work a ticket. A ticket goes to the first profile sharing one of its
@@ -48,6 +51,8 @@ FIELDS = {
 	"blocked_by": ([], lambda v: isinstance(v, list) and all(isinstance(x, str) and ID_RE.match(x) for x in v)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
+	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
+	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
 	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
 }
 
@@ -181,6 +186,7 @@ class Store:
 		"""Add derived fields. A todo with an open blocker shows as pending (effective_status).
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
+		live = self._live_claims()
 		by_id = {t["id"]: t for t in tickets}
 		blocks: dict[str, list[str]] = {t["id"]: [] for t in tickets}
 		for t in tickets:
@@ -213,7 +219,9 @@ class Store:
 			out.append({**t, "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
-			            "tags": t.get("tags", []), "agent": self.route(t)})
+			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
+			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
+			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None})
 		return out
 
 	def route(self, t: dict) -> str | None:
@@ -245,6 +253,7 @@ class Store:
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
 	         agent: str | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos)."""
+		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
 		res = self._decorate(self._all_raw())
 		if status:
 			res = [t for t in res if t["effective_status"] == status]
@@ -275,6 +284,7 @@ class Store:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
+		self._live_claims()
 		target = self._read(path)
 		for t in self._decorate(self._all_raw()):
 			if t["id"] == target["id"]:
@@ -319,6 +329,8 @@ class Store:
 		clean = self._clean(changes, partial=True)
 		if "blocked_by" in clean:
 			self._check_loop(tid, clean["blocked_by"])
+		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
+			self._drop_claim(tid, f"status set to {clean['status']}")
 		t.update(clean)
 		t["updated"] = date.today().isoformat()
 		self._write(t)
@@ -331,6 +343,248 @@ class Store:
 		t = self._read(path)
 		path.unlink()
 		return t
+
+	# ---------- claims: which agent is working what, right now ----------
+	# Runtime state, not ticket content: kept in <tickets>/.unblockd/ (git-ignored by a .gitignore
+	# inside it), so heartbeats never show up as changes in the project repo.
+	def _rt(self) -> Path:
+		d = self.dir / ".unblockd"
+		if not d.is_dir():
+			d.mkdir()
+			(d / ".gitignore").write_text("*\n", encoding="utf-8")
+		return d
+
+	def _locked(self, fn):
+		"""Run fn under a lock file so two agents can't claim the same ticket. Re-entrant: claim()
+		holds it while next_ready() may expire stale claims, which needs it too."""
+		if getattr(self, "_held", False):
+			return fn()
+		lock = self._rt() / "lock"
+		deadline = time.monotonic() + 10
+		while True:
+			try:
+				fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+				break
+			except FileExistsError:
+				try:
+					if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
+						lock.unlink()
+						continue
+				except FileNotFoundError:
+					continue
+				if time.monotonic() > deadline:
+					raise TicketError("another claim is in progress; try again")
+				time.sleep(0.05)
+		self._held = True
+		try:
+			return fn()
+		finally:
+			self._held = False
+			os.close(fd)
+			lock.unlink(missing_ok=True)
+
+	def _claims(self) -> dict:
+		p = self.dir / ".unblockd" / "claims.json"
+		try:
+			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+		except json.JSONDecodeError:
+			return {}
+
+	def _save_claims(self, claims: dict) -> None:
+		p = self._rt() / "claims.json"
+		tmp = p.with_suffix(".tmp")
+		tmp.write_text(json.dumps(claims, indent=2), encoding="utf-8")
+		os.replace(tmp, p)
+
+	def _log(self, event: str, tid: str | None, agent: str | None, note: str = "") -> None:
+		line = {"ts": _now(), "event": event, "ticket": tid, "agent": agent, "note": note[:500]}
+		with open(self._rt() / "activity.jsonl", "a", encoding="utf-8") as f:
+			f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+	def _live_claims(self) -> dict:
+		"""Claims with a recent heartbeat. Expired ones are released here (ticket back to todo)."""
+		claims = self._claims()
+		if not claims:
+			return {}
+		lease = float(self.config["lease_minutes"]) * 60
+		now = time.time()
+		dead = [tid for tid, c in claims.items() if now - _ts(c["heartbeat_at"]) > lease]
+		if dead:
+			def sweep():
+				cur = self._claims()
+				for tid in dead:
+					c = cur.pop(tid, None)
+					if c is None:
+						continue
+					path = self._path(tid)
+					if path.exists():
+						t = self._read(path)
+						if t.get("status") == "doing":
+							t["status"] = "todo"
+							t["updated"] = date.today().isoformat()
+							self._write(t)
+					self._log("expired", tid, c["agent"], f"no heartbeat for {int(lease // 60)} min; back to todo")
+				self._save_claims(cur)
+			self._locked(sweep)
+			claims = self._claims()
+		return {tid: {**c, "age_s": int(now - _ts(c["claimed_at"])), "quiet_s": int(now - _ts(c["heartbeat_at"]))}
+		        for tid, c in claims.items()}
+
+	def _drop_claim(self, tid: str, why: str) -> None:
+		claims = self._claims()
+		if tid in claims:
+			def drop():
+				cur = self._claims()
+				c = cur.pop(tid, None)
+				if c:
+					self._save_claims(cur)
+					self._log("dropped", tid, c["agent"], why)
+			self._locked(drop)
+
+	def _claimable(self, t: dict, live: dict) -> bool:
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		if t["effective_status"] != "todo" or t.get("owner") in humans or t["id"] in live:
+			return False
+		mine = t.get("touches", [])
+		if mine:
+			by_id = {x["id"]: x for x in self._all_raw()}
+			for other in live:
+				if any(_overlap(a, b) for a in mine for b in by_id.get(other, {}).get("touches", [])):
+					return False
+		return True
+
+	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "") -> dict | None:
+		"""Take a ticket for `agent` (a unique worker name, e.g. godot-dev-1): the given one, or the best
+		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
+		claim overlaps. Sets it to doing. Returns the ticket, or None when nothing is claimable."""
+		if not (isinstance(agent, str) and NAME_RE.match(agent)):
+			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. godot-dev-1)")
+		profiles = [a["name"] for a in self.config["agents"]]
+		if profile is None:
+			profile = next((p for p in profiles if agent == p or agent.startswith(p + "-")), None)
+		elif profile not in profiles:
+			raise TicketError(f"unknown profile {profile!r}: {', '.join(profiles) or 'none configured'}")
+
+		def take():
+			live = self._live_claims()
+			if tid:
+				t = self.get(tid)
+				if tid in live:
+					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
+				if not self._claimable(t, live):
+					raise TicketError(f"{tid} can't be claimed: it's {t['effective_status']}"
+					                  + (f", owned by {t['owner']}" if t["effective_status"] == "todo" else "")
+					                  + " (or its touches overlap a live claim)")
+				pick = t
+			else:
+				ready = self.next_ready(limit=10_000, agent=profile)
+				pick = next((t for t in ready if self._claimable(t, live)), None)
+				if pick is None:
+					return None
+			claims = self._claims()
+			now = _now()
+			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300]}
+			self._save_claims(claims)
+			raw = self._read(self._path(pick["id"]))
+			raw["status"], raw["updated"] = "doing", date.today().isoformat()
+			self._write(raw)
+			self._log("claim", pick["id"], agent, note)
+			return pick["id"]
+
+		got = self._locked(take)
+		return self.get(got) if got else None
+
+	def _holder(self, tid: str, agent: str) -> dict:
+		c = self._live_claims().get(tid)
+		if not c:
+			raise TicketError(f"{tid} isn't claimed (or the claim expired): claim it again")
+		if c["agent"] != agent:
+			raise TicketError(f"{tid} is claimed by {c['agent']}, not {agent}")
+		return c
+
+	def heartbeat(self, tid: str, agent: str, note: str = "") -> dict:
+		"""Keep a claim alive and say what you're doing now (shown live on the board)."""
+		def beat():
+			self._holder(tid, agent)
+			claims = self._claims()
+			claims[tid]["heartbeat_at"] = _now()
+			if note:
+				claims[tid]["note"] = note[:300]
+			self._save_claims(claims)
+			self._log("heartbeat", tid, agent, note)
+		self._locked(beat)
+		return self.get(tid)
+
+	def release(self, tid: str, agent: str, reason: str = "") -> dict:
+		"""Give a claimed ticket back: claim ends, ticket returns to todo."""
+		def rel():
+			self._holder(tid, agent)
+			claims = self._claims()
+			claims.pop(tid, None)
+			self._save_claims(claims)
+			raw = self._read(self._path(tid))
+			if raw.get("status") == "doing":
+				raw["status"], raw["updated"] = "todo", date.today().isoformat()
+				self._write(raw)
+			self._log("release", tid, agent, reason)
+		self._locked(rel)
+		return self.get(tid)
+
+	def complete(self, tid: str, agent: str, summary: str) -> dict:
+		"""Finish a claimed ticket: status done, summary appended to the body (dated, signed)."""
+		if not (isinstance(summary, str) and summary.strip()):
+			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
+		def done():
+			self._holder(tid, agent)
+			claims = self._claims()
+			claims.pop(tid, None)
+			self._save_claims(claims)
+			raw = self._read(self._path(tid))
+			body = raw.get("body", "")
+			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, done): {summary.strip()}"
+			raw["status"], raw["updated"] = "done", date.today().isoformat()
+			self._write(raw)
+			self._log("complete", tid, agent, summary)
+		self._locked(done)
+		return self.get(tid)
+
+	def activity(self, tid: str | None = None, limit: int = 50) -> list[dict]:
+		"""Newest first."""
+		p = self.dir / ".unblockd" / "activity.jsonl"
+		if not p.exists():
+			return []
+		out = []
+		for line in p.read_text(encoding="utf-8").splitlines():
+			try:
+				e = json.loads(line)
+			except json.JSONDecodeError:
+				continue
+			if tid is None or e.get("ticket") == tid:
+				out.append(e)
+		return out[::-1][:max(0, int(limit))]
+
+	def agents_now(self) -> dict:
+		"""The live view: one row per working agent, plus recent activity."""
+		live = self._live_claims()
+		titles = {t["id"]: t.get("title", "") for t in self._all_raw()}
+		working = [{"agent": c["agent"], "profile": c.get("profile"), "ticket": tid, "title": titles.get(tid, ""),
+		            "note": c.get("note", ""), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
+		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]
+		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
+
+
+def _now() -> str:
+	return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _ts(iso: str) -> float:
+	return datetime.fromisoformat(iso).timestamp()
+
+
+def _overlap(a: str, b: str) -> bool:
+	"""Do two paths/globs touch the same files? (same path, one inside the other, or a glob match)"""
+	a, b = a.replace("\\", "/").strip("/"), b.replace("\\", "/").strip("/")
+	return a == b or a.startswith(b + "/") or b.startswith(a + "/") or fnmatch.fnmatch(a, b) or fnmatch.fnmatch(b, a)
 
 
 def from_env() -> Store:

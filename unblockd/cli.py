@@ -3,6 +3,11 @@
     python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [-q WORDS]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
+    python -m unblockd.cli claim --agent godot-dev-1 [--id ID] [--profile P]   # take the next (or one) ticket
+    python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
+    python -m unblockd.cli release ID --agent A [--reason "..."]
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..."
+    python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
     python -m unblockd.cli update ID --json '{"status": "done"}'
@@ -47,6 +52,17 @@ def main(argv: list[str] | None = None) -> int:
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", required=True)
+	cl = sub.add_parser("claim")
+	cl.add_argument("--agent", required=True)
+	cl.add_argument("--id")
+	cl.add_argument("--profile")
+	cl.add_argument("--note", default="")
+	for name, extra in (("heartbeat", "--note"), ("release", "--reason"), ("complete", "--summary")):
+		x = sub.add_parser(name)
+		x.add_argument("id")
+		x.add_argument("--agent", required=True)
+		x.add_argument(extra, required=name == "complete", default="")
+	sub.add_parser("agents")
 	no = sub.add_parser("note")
 	no.add_argument("id")
 	no.add_argument("text")
@@ -66,6 +82,16 @@ def main(argv: list[str] | None = None) -> int:
 			for g in out["agents"]:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
+		elif a.cmd == "claim":
+			out = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note)
+		elif a.cmd == "heartbeat":
+			out = s.heartbeat(a.id, a.agent, a.note)
+		elif a.cmd == "release":
+			out = s.release(a.id, a.agent, a.reason)
+		elif a.cmd == "complete":
+			out = s.complete(a.id, a.agent, a.summary)
+		elif a.cmd == "agents":
+			out = s.agents_now()
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":

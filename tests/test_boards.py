@@ -131,6 +131,17 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("GET", "/api/b/a/next?limit=x")[0], 400)
 		self.assertEqual(self.call("POST", "/api/boards", {"id": "c"})[0], 201)
 
+	def test_claim_routes(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})
+		self.assertEqual((code, t["id"], t["claim"]["agent"]), (200, "CMB-1", "godot-dev-1"))
+		self.assertEqual(self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-2"})[1], None)
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/heartbeat", {"agent": "godot-dev-1", "note": "tests"})[0], 200)
+		self.assertEqual(self.call("GET", "/api/b/a/agents")[1]["working"][0]["note"], "tests")
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "nope", "summary": "x"})[0], 400)
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "godot-dev-1", "summary": "done"})[1]["status"], "done")
+		self.assertEqual([e["event"] for e in self.call("GET", "/api/b/a/activity?ticket=CMB-1")[1]], ["complete", "heartbeat", "claim"])
+
 
 if __name__ == "__main__":
 	unittest.main()

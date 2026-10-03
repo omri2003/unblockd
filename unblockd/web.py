@@ -13,6 +13,13 @@ POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id"
 PATCH  tickets/<id>                      {...fields to change}
 DELETE tickets/<id>
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
+GET    agents                            who is working what right now + recent activity
+GET    activity?ticket=&limit=           the claim / heartbeat / release / complete log, newest first
+POST   claim                             {"agent", "profile"?, "note"?}  best claimable ticket, or null
+POST   tickets/<id>/claim                {"agent", "note"?}
+POST   tickets/<id>/heartbeat            {"agent", "note"?}
+POST   tickets/<id>/release              {"agent", "reason"?}
+POST   tickets/<id>/complete             {"agent", "summary"}
 
 No auth: it binds to 127.0.0.1 by default. Don't expose it beyond your machine.
 """
@@ -97,6 +104,23 @@ class Handler(BaseHTTPRequestHandler):
 				                                        tag=q.get("tag"), limit=_num(q, "limit", 5)))
 			if method == "GET" and rest == ["plan"]:
 				return self._send(200, store.work_plan(per_agent=_num(q, "per_agent", 3)))
+			if method == "GET" and rest == ["agents"]:
+				return self._send(200, store.agents_now())
+			if method == "GET" and rest == ["activity"]:
+				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50)))
+			if method == "POST" and rest == ["claim"]:
+				b = self._body()
+				return self._send(200, store.claim(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("claim", "heartbeat", "release", "complete"):
+				b, tid, act = self._body(), rest[1], rest[2]
+				agent = str(b.get("agent", ""))
+				if act == "claim":
+					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", ""))))
+				if act == "heartbeat":
+					return self._send(200, store.heartbeat(tid, agent, str(b.get("note", ""))))
+				if act == "release":
+					return self._send(200, store.release(tid, agent, str(b.get("reason", ""))))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", ""))))
 			if rest[:1] != ["tickets"] or len(rest) > 2:
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None

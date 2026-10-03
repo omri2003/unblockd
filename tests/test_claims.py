@@ -1,0 +1,98 @@
+"""Claims: who is working what, leases, parallel safety, and the live view."""
+import json
+import tempfile
+import threading
+import unittest
+from pathlib import Path
+
+from unblockd.store import Store, TicketError
+
+CFG = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
+       "pillars": [{"key": "ART"}, {"key": "COMBAT"}],
+       "agents": [{"name": "godot-dev", "pillars": ["COMBAT"]}, {"name": "blender", "pillars": ["ART"]}]}
+
+
+class ClaimTest(unittest.TestCase):
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.dir = Path(self.tmp.name) / "tickets"
+		self.dir.mkdir()
+		(self.dir / "unblockd.json").write_text(json.dumps(CFG), encoding="utf-8")
+		self.s = Store(self.dir)
+		self.s.create({"title": "parry", "pillar": "COMBAT", "priority": "P1", "touches": ["scripts/player_3d.gd"]}, tid="CMB-1")
+		self.s.create({"title": "dodge", "pillar": "COMBAT", "priority": "P2", "touches": ["scripts/*.gd"]}, tid="CMB-2")
+		self.s.create({"title": "hud", "pillar": "COMBAT", "priority": "P3", "touches": ["scripts/hud_3d.gd"]}, tid="CMB-3")
+		self.s.create({"title": "rig", "pillar": "ART", "owner": "Omri"}, tid="ART-1")  # a human's
+
+	def tearDown(self):
+		self.tmp.cleanup()
+
+	def test_claim_next_by_profile_and_touches(self):
+		a = self.s.claim("godot-dev-1")  # profile from the name
+		self.assertEqual((a["id"], a["status"], a["claim"]["agent"]), ("CMB-1", "doing", "godot-dev-1"))
+		b = self.s.claim("godot-dev-2")  # CMB-2's glob overlaps player_3d.gd: skipped
+		self.assertEqual(b["id"], "CMB-3")
+		self.assertIsNone(self.s.claim("godot-dev-3"))  # CMB-2 still overlaps CMB-1
+		self.assertIsNone(self.s.claim("blender-1"))  # ART-1 belongs to a human
+		self.assertTrue((self.dir / ".unblockd" / ".gitignore").is_file())
+
+	def test_only_the_holder_can_beat_release_complete(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "claimed by godot-dev-1"):
+			self.s.heartbeat("CMB-1", "godot-dev-2", "hi")
+		self.s.heartbeat("CMB-1", "godot-dev-1", "writing tests")
+		self.assertEqual(self.s.get("CMB-1")["claim"]["note"], "writing tests")
+		with self.assertRaisesRegex(TicketError, "needs a summary"):
+			self.s.complete("CMB-1", "godot-dev-1", " ")
+		t = self.s.complete("CMB-1", "godot-dev-1", "fixed; tests pass")
+		self.assertEqual((t["status"], t["claim"]), ("done", None))
+		self.assertIn("(godot-dev-1, done): fixed; tests pass", t["body"])
+		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")], ["complete", "heartbeat", "claim"])
+
+	def test_release_and_manual_status_change_end_the_claim(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.assertEqual(self.s.release("CMB-1", "godot-dev-1", "blocked on a decision")["status"], "todo")
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.s.update("CMB-1", {"status": "pending", "waiting_on": "Omri: pick a parry window"})
+		self.assertIsNone(self.s.get("CMB-1")["claim"])
+		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "dropped")
+
+	def test_lease_expires_back_to_todo(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		p = self.dir / ".unblockd" / "claims.json"
+		c = json.loads(p.read_text())
+		c["CMB-1"]["heartbeat_at"] = "2020-01-01T00:00:00+00:00"
+		p.write_text(json.dumps(c))
+		t = self.s.get("CMB-1")
+		self.assertEqual((t["status"], t["claim"]), ("todo", None))
+		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "expired")
+
+	def test_refusals(self):
+		with self.assertRaisesRegex(TicketError, "bad agent name"):
+			self.s.claim("Bad Name")
+		with self.assertRaisesRegex(TicketError, "can't be claimed"):
+			self.s.claim("x", tid="ART-1")
+		self.s.claim("a1", tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "already claimed by a1"):
+			self.s.claim("a2", tid="CMB-1")
+
+	def test_parallel_claims_never_collide(self):
+		for i in range(4, 14):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+		got, lock = [], threading.Lock()
+
+		def worker(n):
+			s = Store(self.dir)  # its own Store, like a separate process
+			while (t := s.claim(f"w{n}")) is not None:
+				with lock:
+					got.append(t["id"])
+		ths = [threading.Thread(target=worker, args=(n,)) for n in range(6)]
+		[t.start() for t in ths]
+		[t.join() for t in ths]
+		self.assertEqual(len(got), len(set(got)))  # nobody got the same ticket twice
+		view = self.s.agents_now()
+		self.assertEqual(len(view["working"]), len(got))
+
+
+if __name__ == "__main__":
+	unittest.main()

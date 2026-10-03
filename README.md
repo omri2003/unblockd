@@ -58,6 +58,36 @@ owned by a human**, grouped per profile with its `instructions` and `model`:
 everything an orchestrator needs to spawn one agent per group. A single agent
 asks `next_ready(agent="godot-dev")` for its own queue.
 
+## Agents at work: claims and the live view
+
+Several agents can work one board at once without stepping on each other.
+Each worker uses a unique name (`godot-dev-1`: profile + number) and loops:
+
+```
+claim_next(agent)          -> best ready ticket for its profile, set to doing (or null: nothing left)
+heartbeat(id, agent, note) -> "what I'm doing now", at least every few minutes
+complete(id, agent, summary)   or   release(id, agent, reason)
+```
+
+- **Never two on one ticket**: claims take a file lock; tested with six
+  workers at once.
+- **Never two on the same files**: give tickets `touches` (paths or globs).
+  `claim_next` skips a ticket whose `touches` overlap a live claim.
+- **Never a human's ticket**: tickets owned by a `kind: human` owner are skipped.
+- **Crashed workers don't hold tickets**: a claim with no heartbeat for
+  `lease_minutes` (default 15) expires and the ticket goes back to todo.
+- Moving a claimed ticket off *doing* by hand ends the claim.
+
+The board shows a **Working now** strip (agent, ticket, last note, how long
+ago; *quiet* when it's been silent a while), a pulsing line on claimed cards,
+a dashed ring in the graph, and each ticket's **Agent activity** in its
+drawer. Claims and the activity log live in `tickets/.unblockd/`, which
+ignores itself in git.
+
+**"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
+one worker per agent profile with that profile's `instructions` and `model`,
+and each worker runs the loop above until `claim_next` returns null.
+
 ## Chat: ask about tickets and boards
 
 **Ask** (or `c`) opens a chat beside the board. Claude answers with read-only
@@ -105,6 +135,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `pillars` | Workstreams. Each is a board colour, a filter chip and a graph lane. Colours are optional (a palette checked against the status colours is used). With no pillars, any `pillar` value is accepted. |
 | `pillar_label` | What your project calls them ("Area", "Track"…). |
 | `stale_days` | A `doing` ticket untouched this long is flagged. |
+| `lease_minutes` | A claim with no heartbeat this long expires (default 15). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
 | `id` | Board id (default: the project folder's name). |
 | `agents` | Agent profiles, see below. |
@@ -114,7 +145,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 ```json
 {"id": "BUG-10", "title": "Search ignores accents", "status": "todo", "priority": "P1",
  "owner": "Claude", "pillar": "COMBAT", "pillar_step": 1, "section": "",
- "blocked_by": ["CMB-4"], "tags": ["gdscript"], "waiting_on": "", "body": "cause -> fix -> tests",
+ "blocked_by": ["CMB-4"], "tags": ["gdscript"], "touches": ["scripts/demon_3d.gd"], "waiting_on": "", "body": "cause -> fix -> tests",
  "created": "2026-10-03", "updated": "2026-10-03"}
 ```
 
@@ -169,14 +200,18 @@ Build the image once first (`docker compose build`), or use
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
 start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket`,
-`update_ticket`, `delete_ticket`. Every ticket tool takes `board=` (default:
-the first board).
+`update_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
+`heartbeat`, `release`, `complete`, `agents_now`. Every tool takes `board=`
+(default: the first board).
 
 ## CLI
 
 ```
 python -m unblockd.cli --dir <repo>/tickets next --owner Claude --agent godot-dev
 python -m unblockd.cli --dir <repo>/tickets plan --per-agent 3
+python -m unblockd.cli --dir <repo>/tickets claim --agent godot-dev-1
+python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent godot-dev-1 --note "running tests"
+python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent godot-dev-1 --summary "cause -> fix -> tests"
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}'
@@ -196,6 +231,10 @@ GET    meta                           statuses, priorities, fields, config
 GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
 GET    next?owner=&pillar=&agent=&tag=&limit=
 GET    plan?per_agent=
+GET    agents                         who is working what now + recent activity
+GET    activity?ticket=&limit=
+POST   claim                          {"agent", "profile"?, "note"?}
+POST   tickets/<id>/claim|heartbeat|release|complete   {"agent", "note" | "reason" | "summary"}
 GET    tickets/<id>
 POST   tickets                        {"prefix": "BUG", "title": "...", ...}
 PATCH  tickets/<id>                   {"status": "done"}

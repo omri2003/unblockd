@@ -1,7 +1,8 @@
 """MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
 
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, update_ticket, delete_ticket. Every ticket tool takes board= (default: the first board).
+create_ticket, update_ticket, delete_ticket, and for workers claim_next, claim_ticket, heartbeat,
+release, complete, agents_now. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -27,7 +28,15 @@ mcp = MCPServer(
 		"per agent profile with that profile's instructions and model, ready to fan out; a single "
 		"agent uses next_ready(agent=its name). Create with a prefix (BUG, UI...) and the next free "
 		"number is picked. blocked_by lists tickets that must be done first; loops are refused. "
-		"Put the reasoning in body, not just the change."
+		"Put the reasoning in body, not just the change.\n"
+		"WORKER PROTOCOL (when you are one of several agents): pick a unique agent name like "
+		"godot-dev-1 (profile name + number). Loop: claim_next(agent) -> it sets the ticket to doing "
+		"and returns it, or null when nothing is left for you; work it; call heartbeat(id, agent, "
+		"note) at least every few minutes with what you're doing (a claim with no heartbeat for "
+		"lease_minutes expires and goes back to todo); finish with complete(id, agent, summary: "
+		"cause -> fix -> tests, and what was NOT verified), or release(id, agent, reason) if you "
+		"can't finish, or update_ticket to pending with waiting_on when a human must decide. Never "
+		"work a ticket you didn't claim. agents_now shows who is on what."
 	),
 )
 
@@ -132,6 +141,48 @@ def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
 def delete_ticket(id: str, board: str | None = None) -> dict:
 	"""Delete a ticket file. Prefer status=done for finished work; delete is for mistakes and duplicates."""
 	return BOARDS.get(board).delete(id)
+
+
+@tool
+def claim_next(agent: str, profile: str | None = None, note: str = "", board: str | None = None) -> dict | None:
+	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
+	name (e.g. godot-dev-1); profile defaults to the profile your name starts with. Skips tickets
+	owned by humans, already claimed, or whose `touches` overlap a live claim. Returns null when
+	there's nothing left for you."""
+	return BOARDS.get(board).claim(agent, profile=profile, note=note)
+
+
+@tool
+def claim_ticket(id: str, agent: str, note: str = "", board: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed)."""
+	return BOARDS.get(board).claim(agent, tid=id, note=note)
+
+
+@tool
+def heartbeat(id: str, agent: str, note: str = "", board: str | None = None) -> dict:
+	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
+	least every few minutes."""
+	return BOARDS.get(board).heartbeat(id, agent, note)
+
+
+@tool
+def release(id: str, agent: str, reason: str = "", board: str | None = None) -> dict:
+	"""Give your claimed ticket back (it returns to todo). Say why."""
+	return BOARDS.get(board).release(id, agent, reason)
+
+
+@tool
+def complete(id: str, agent: str, summary: str, board: str | None = None) -> dict:
+	"""Finish your claimed ticket: status done, summary appended to its body. summary = cause ->
+	fix -> tests, and what was NOT verified."""
+	return BOARDS.get(board).complete(id, agent, summary)
+
+
+@tool
+def agents_now(board: str | None = None) -> dict:
+	"""Who is working what right now (agent, ticket, last note, seconds since last heartbeat),
+	plus recent activity."""
+	return BOARDS.get(board).agents_now()
 
 
 def main():

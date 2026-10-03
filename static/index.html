@@ -53,6 +53,18 @@ h1{font-size:clamp(1.7rem,4vw,2.4rem);line-height:1.05}
 .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
 .chip.attn{border-color:var(--amber);color:var(--amber)} .chip.attn[aria-pressed="true"]{background:var(--amber);color:var(--surface)}
 /* next up strip */
+.working{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:8px 12px;margin-bottom:14px}
+.working h2{font-size:1.1rem;margin:0 0 6px}
+.working ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.working li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:.9rem}
+.working .who{font-weight:700} .working .wn{color:var(--muted);overflow-wrap:anywhere} .working .quiet{color:var(--amber);font-weight:700}
+.working li button{background:none;border:0;padding:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink)} .working li button:hover .tid{text-decoration:underline}
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none;align-self:center;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+.wk{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.78rem;color:var(--amber);font-weight:700;overflow-wrap:anywhere}
+.acts{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.85rem}
+.acts li{display:grid;grid-template-columns:auto 1fr;gap:8px} .acts time{color:var(--muted);white-space:nowrap}
 .next{background:var(--sunk);border-radius:8px;padding:8px 10px 10px;margin-bottom:14px}
 .next h2{font-size:1.1rem;margin:0}
 .nexttog{display:flex;align-items:center;gap:8px;background:none;border:0;padding:2px 4px;cursor:pointer;font-family:var(--display);font-weight:800;font-size:1.1rem}
@@ -214,6 +226,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
     <div class="seg" id="agentSeg"></div>
     <div class="seg" id="attnSeg"></div>
   </div>
+  <section class="working" id="working" hidden aria-label="Agents working now"></section>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="board" id="board"></div>
   <section class="graphwrap" id="graphWrap" hidden aria-label="Blocking graph">
@@ -383,10 +396,19 @@ function card(t){
     ...(t.tags||[]).filter(x=>!x.startsWith('agent:')).slice(0,3).map(x=>`<span class="tag">#${esc(x)}</span>`)].filter(Boolean).join('');
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
-  return `<button type="button" class="card${pc}${fl?' flash':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta&&s!=='done'?`<span class="meta">${meta}</span>`:''}${warn}</button>`;
+  return `<button type="button" class="card${pc}${fl?' flash':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta&&s!=='done'?`<span class="meta">${meta}</span>`:''}${t.claim?`<span class="wk"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)}${t.claim.note?': '+esc(t.claim.note):''}</span>`:''}${warn}</button>`;
 }
 const ord=t=>[t.pillar?PILLARS.indexOf(t.pillar):9, t.pillar_step||99, ['P0','P1','P2','P3'].indexOf(t.priority)+1||9];
 function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;}
+const ago=iso=>{const s=Math.max(0,(Date.now()-Date.parse(iso))/1000);return s<60?'just now':s<3600?`${Math.round(s/60)} min ago`:s<86400?`${Math.round(s/3600)} h ago`:`${Math.round(s/86400)} d ago`;};
+function renderWorking(){ // agents holding a claim right now; ages tick client-side
+  const el=$('working'),ws=T.filter(t=>t.claim).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
+  el.hidden=!ws.length||state.view!=='board'; if(el.hidden) return;
+  const lease=(CFG.lease_minutes||15)*60000;
+  el.innerHTML=`<h2>Working now <span class="n">${ws.length}</span></h2><ul>${ws.map(t=>{const quiet=Date.now()-Date.parse(t.claim.heartbeat_at)>lease*.6;
+    return `<li><i class="pulse" aria-hidden="true"></i><span class="who">${esc(t.claim.agent)}</span><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button>${t.claim.note?`<span class="wn">“${esc(t.claim.note)}”</span>`:''}<span class="${quiet?'quiet':'wn'}" title="Started ${esc(ago(t.claim.claimed_at))}">${quiet?'quiet ':''}${esc(ago(t.claim.heartbeat_at))}</span></li>`;}).join('')}</ul>`;
+}
+setInterval(()=>{if(!$('working').hidden)renderWorking();},15000);
 function renderNext(){
   const el=$('nextUp'),open=store.get('nextOpen',true);
   const ts=T.filter(t=>t.effective_status==='todo'&&matches(t)).sort((a,b)=>(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,5);
@@ -459,11 +481,22 @@ function showTicket(id,refresh){
       <dt>Updated</dt><dd>${esc(t.updated)} (created ${esc(t.created)})</dd>
     </dl>
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
+    ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
+    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     <p class="msg" id="dMsg" role="status"></p>`, refresh);
+  loadActs(id);
+}
+const ACTS=new Map(); // ticket id -> last rendered activity, so a refresh doesn't flicker
+const EVT={claim:'claimed it',heartbeat:'update',release:'released it',complete:'completed it',expired:'claim expired',dropped:'claim ended'};
+async function loadActs(id){
+  const el=$('acts'); if(!el) return; if(ACTS.has(id)) el.innerHTML=ACTS.get(id);
+  let a=[];try{a=await (await fetch(API+'/activity?ticket='+encodeURIComponent(id)+'&limit=30',{cache:'no-store'})).json();}catch{}
+  const html=a.length?a.map(e=>`<li><time datetime="${esc(e.ts)}" title="${esc(e.ts)}">${esc(ago(e.ts))}</time><span><b>${esc(e.agent||'')}</b> ${esc(EVT[e.event]||e.event)}${e.note?`: ${esc(e.note)}`:''}</span></li>`).join(''):'<li class="none">No agent has worked on this yet.</li>';
+  ACTS.set(id,html); const cur=$('acts'); if(cur&&cur.dataset.for===id) cur.innerHTML=html;
 }
 function editForm(t){
   const isNew=!t; t=t||{status:'todo',owner:[...HUMAN][0]||CFG.owners[0].name,priority:'P2',blocked_by:[],body:'',title:'',section:'',waiting_on:''};
@@ -780,6 +813,7 @@ function draw(now=performance.now()){
       ctx.fillStyle=c.surface;ctx.font=`800 ${8/k}px ${c.body}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('!',bx,by+.4/k);}
     if(n.id===G.focus){ctx.beginPath();ctx.arc(n.x,n.y,n.r+7/k,0,6.283);ctx.strokeStyle=c.ink;ctx.lineWidth=1.2/k;ctx.setLineDash([2/k,3/k]);ctx.stroke();ctx.setLineDash([]);}
     if(G.link?.over===n){ctx.globalAlpha=1;ctx.beginPath();ctx.arc(n.x,n.y,n.r+6/k,0,6.283);ctx.strokeStyle=c.jade;ctx.lineWidth=2.5/k;ctx.stroke();}
+    if(n.t.claim){ctx.globalAlpha=1;ctx.beginPath();ctx.arc(n.x,n.y,n.r+5/k,0,6.283);ctx.strokeStyle=c.amber;ctx.lineWidth=2/k;ctx.setLineDash([4/k,3/k]);ctx.stroke();ctx.setLineDash([]);}
     const pp=pulse.get(n.id);if(pp!=null){ctx.globalAlpha=Math.max(0,1-pp);ctx.beginPath();ctx.arc(n.x,n.y,n.r+4/k+pp*24/k,0,6.283);ctx.strokeStyle=c.jade;ctx.lineWidth=2.5/k;ctx.stroke();}
   }
   if(G.link){const f=G.link.from;ctx.globalAlpha=1;ctx.setLineDash([5/k,4/k]);ctx.strokeStyle=c.ink;ctx.lineWidth=1.8/k;ctx.beginPath();ctx.moveTo(f.x,f.y);ctx.lineTo(G.link.x,G.link.y);ctx.stroke();ctx.setLineDash([]);}
@@ -813,7 +847,7 @@ function hitEdge(p){let best=null,bd=6; // screen pixels
   for(const e of G.edges){const {pts}=edgePts(e,G.layout==='flow'?16:1);for(let i=0;i<pts.length-1;i++){const d=segDist(p.x,p.y,pts[i],pts[i+1])*G.k;if(d<bd){bd=d;best=e;}}}
   return best;}
 function tip(n,p){const el=$('gTip');if(!n){el.hidden=true;return;}const t=n.t,d=G.down[t.id]||0;
-  el.innerHTML=`<strong>${esc(t.id)}</strong> <span class="status ${t.effective_status}">${NAME[t.effective_status]}</span><br>${inline(t.title)}${d?`<br><span class="hint">Unblocks ${d} open down the chain</span>`:''}`;
+  el.innerHTML=`<strong>${esc(t.id)}</strong> <span class="status ${t.effective_status}">${NAME[t.effective_status]}</span><br>${inline(t.title)}${d?`<br><span class="hint">Unblocks ${d} open down the chain</span>`:''}${t.claim?`<br><span class="wk" style="margin-top:2px">${esc(t.claim.agent)} is on it${t.claim.note?': '+esc(t.claim.note):''}</span>`:''}`;
   el.hidden=false;const w=cv.clientWidth;el.style.left=Math.min(p.sx+14,w-290)+'px';el.style.top=(p.sy+14)+'px';}
 function setFocus(id){G.focus=id;G.selEdge=null;$('gPanel').hidden=!id;recalcCrit();if(id)renderPanel();kick();}
 function clearEdge(){if(!G.selEdge)return;G.selEdge=null;if(!G.focus)$('gPanel').hidden=true;kick();}
@@ -896,8 +930,8 @@ readColors();
 
 // ---------- view switch ----------
 function setView(v){state.view=v;store.set('view',v);$('board').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
-  chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderNext();if(v==='graph'){resize();syncGraph();}}
-function render(){renderAttn();renderBoard();renderNext();if(state.view==='graph')syncGraph();}
+  chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderWorking();renderNext();if(v==='graph'){resize();syncGraph();}}
+function render(){renderAttn();renderBoard();renderWorking();renderNext();if(state.view==='graph')syncGraph();}
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
 $('q').addEventListener('input',e=>{state.q=e.target.value.trim();render();});
 async function loadBoards(){
