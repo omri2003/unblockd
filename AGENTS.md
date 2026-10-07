@@ -41,7 +41,7 @@ example/tickets/        Demo board + config; what `docker compose up` shows with
 ## Data model
 
 Ticket fields (`FIELDS` in store.py; add a field there and API + MCP accept it): `title`,
-`status` (todo|doing|pending|done), `priority` (P0-P3|null), `owner`, `pillar`, `pillar_step`,
+`status` (todo|doing|pending|review|done), `priority` (P0-P3|null), `owner`, `pillar`, `pillar_step`,
 `section`, `blocked_by` (ids), `parent` (id of the group/epic this ticket is a part of; NOT a blocker), `waiting_on`, `body`, `tags` (lowercase; `agent:<name>` routes),
 `touches` (paths/globs the work edits), `docs` (repo paths/folders/globs to read), plus `id`,
 `created`, `updated`.
@@ -63,7 +63,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 `id`, `title`, `owners` [{name, kind: human|agent}], `default_owner`, `pillar_label`, `pillars`
 [{key, name, color, color_dark}], `stale_days`, `wip_limit` (int or null: the UI's In-progress WIP badge; none when null), `lease_minutes`, `legacy_files`, `agents`
 [{name, tags, pillars, model, instructions, docs}], `docs` (knowledge for every ticket),
-`context_budget` (chars inlined per context, default 60000).
+`context_budget` (chars inlined per context, default 60000), `review` (bool, default false: the review gate, see Claims).
 
 ## How the pieces work
 
@@ -79,7 +79,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   claimed, `touches` not overlapping a live claim. Sets status doing. A file lock
   (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes; `create`, `update`, `delete` and `split` take it too (next-id + write, and read-modify-write, would otherwise race).
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next
-  read. `complete` needs a summary and appends it to the body, signed. `ask(id, agent, question)` (MCP `ask_human`, CLI `ask --question`) is for a decision only a human can make: it ends the claim, sets `waiting_on` = question (status stays todo) and logs `question`; a todo with a non-empty `waiting_on` has `effective_status` pending, so it is neither ready nor claimable until a human clears `waiting_on` (answer goes in the body). Moving a claimed ticket
+  read. `complete` needs a summary and appends it to the body, signed. **Review gate**: with `review: true` in the config, `complete()` sets status `review` (body signed `(agent, review)`) instead of `done`. `review` is open work: it does NOT unblock dependents (decided on purpose: the human look is the point), is not claimable, and a human moves it to `done` (or back to todo) with `update`. The UI shows a Review column (plum) before Done when the config has `review` or any ticket is in that status (`setCols()`; the `--cols` CSS var sizes the grid); the Free/Blocked chips still count a review ticket as free. `ask(id, agent, question)` (MCP `ask_human`, CLI `ask --question`) is for a decision only a human can make: it ends the claim, sets `waiting_on` = question (status stays todo) and logs `question`; a todo with a non-empty `waiting_on` has `effective_status` pending, so it is neither ready nor claimable until a human clears `waiting_on` (answer goes in the body). Moving a claimed ticket
   off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `deleted`, `question`, `created`, `split` and `done` (moved to done by hand),
   and `GET /activity?since=` filters it. The log is bounded: past `ACTIVITY_MAX` (5 MB) `_log` renames it to `activity.1.jsonl` (one old file kept, older history is dropped) and `activity()` reads newest-first across both, stopping at `limit` or `since`. The notifier sees the smaller file as a rotation and restarts at 0 (events logged between its last poll and the rotation are not announced). Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).

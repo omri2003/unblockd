@@ -74,6 +74,32 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
 		self.assertEqual(self.s.claim("godot-dev-1", tid="CMB-2")["id"], "CMB-2")
 
+	def test_review_gate_lands_complete_in_review_and_does_not_unblock(self):
+		d = Path(self.tmp.name) / "r" / "tickets"
+		d.mkdir(parents=True)
+		(d / "unblockd.json").write_text(json.dumps({**CFG, "review": True}), encoding="utf-8")
+		s = Store(d)
+		s.create({"title": "a", "pillar": "COMBAT"}, tid="CMB-1")
+		s.create({"title": "b", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-2")
+		s.claim("godot-dev-1", tid="CMB-1")
+		t = s.complete("CMB-1", "godot-dev-1", "did it")
+		self.assertEqual((t["status"], t["claim"]), ("review", None))
+		self.assertIn("(godot-dev-1, review): did it", t["body"])
+		b = s.get("CMB-2")
+		self.assertEqual((b["effective_status"], b["open_blockers"]), ("pending", ["CMB-1"]))  # review is not done
+		self.assertIsNone(s.claim("godot-dev-2"))  # nothing claimable, review is for a human
+		self.assertEqual(s.update("CMB-1", {"status": "done"})["status"], "done")  # the human's decision
+		self.assertEqual(s.get("CMB-2")["effective_status"], "todo")
+		bad = Path(self.tmp.name) / "bad" / "tickets"
+		bad.mkdir(parents=True)
+		(bad / "unblockd.json").write_text(json.dumps({"review": "yes"}), encoding="utf-8")
+		with self.assertRaises(TicketError):
+			Store(bad)
+
+	def test_complete_without_review_is_done(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.assertEqual(self.s.complete("CMB-1", "godot-dev-1", "ok")["status"], "done")
+
 	def test_split_wires_children_and_drops_the_claim(self):
 		self.s.create({"title": "gate", "pillar": "COMBAT"}, tid="CMB-9")
 		self.s.update("CMB-1", {"blocked_by": ["CMB-9"], "tags": ["agent:godot-dev"], "docs": ["AGENTS.md"]})

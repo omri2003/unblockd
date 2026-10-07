@@ -22,7 +22,7 @@ mcp = MCPServer(
 	instructions=(
 		"unblockd: dependency-aware ticket boards. One ticket = one JSON file; several boards may be "
 		"served (list_boards; every tool takes board=, default = the first). status is "
-		"todo|doing|pending|done; a todo with an open blocker reads as pending (effective_status). "
+		"todo|doing|pending|review|done; a todo with an open blocker reads as pending (effective_status). review (boards with review=true) = finished by an agent, waiting for a human to set done; it does not unblock dependents. "
 		"Priorities P0 (blocking) to P3 (later). Each board's owners, pillars and agent profiles: "
 		"board_info. A ticket's `agent` says which agent profile should work it (from its tags or "
 		"pillar; an `agent:<name>` tag overrides). To work a board: work_plan groups ready tickets "
@@ -106,7 +106,7 @@ def next_ready(board: str | None = None, owner: str | None = None, pillar: str |
 def list_tickets(board: str | None = None, status: str | None = None, pillar: str | None = None,
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
                  agent: str | None = None, parent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
-	"""List tickets. Filters: status (todo|doing|pending|done, matches effective status), pillar,
+	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
 	owner, priority (P0-P3), tag, agent (profile name), parent (id: that ticket's parts), q (words to search).
 	Returns short summaries unless full=true."""
 	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent)
@@ -196,7 +196,7 @@ def release(id: str, agent: str, reason: str = "", board: str | None = None) -> 
 
 @tool
 def complete(id: str, agent: str, summary: str, board: str | None = None) -> dict:
-	"""Finish your claimed ticket: status done, summary appended to its body. summary = cause ->
+	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified."""
 	return BOARDS.get(board).complete(id, agent, summary)
 

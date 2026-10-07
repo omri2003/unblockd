@@ -16,7 +16,7 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-STATUSES = ("todo", "doing", "pending", "done")
+STATUSES = ("todo", "doing", "pending", "review", "done")
 PRIORITIES = ("P0", "P1", "P2", "P3")
 ID_RE = re.compile(r"^[A-Z0-9]+-\d+[a-z]?$")  # also the filename: blocks path traversal
 PREFIX_RE = re.compile(r"^[A-Z0-9]+$")
@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
 	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
 	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
+	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 }
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
@@ -91,6 +92,8 @@ def load_config(tickets_dir: Path) -> dict:
 		if unknown:
 			raise TicketError(f"{path}: unknown key(s) {', '.join(sorted(unknown))}. Known: {', '.join(DEFAULT_CONFIG)}")
 		cfg.update(user)
+	if not isinstance(cfg["review"], bool):
+		raise TicketError(f"{CONFIG_FILE}: review must be true or false")
 	if cfg["wip_limit"] is not None and not (type(cfg["wip_limit"]) is int and cfg["wip_limit"] > 0):
 		raise TicketError(f"{CONFIG_FILE}: wip_limit must be a positive number or null")
 	if not cfg["owners"] or not all(isinstance(o, dict) and o.get("name") for o in cfg["owners"]):
@@ -652,7 +655,7 @@ class Store:
 		return self.get(tid)
 
 	def complete(self, tid: str, agent: str, summary: str) -> dict:
-		"""Finish a claimed ticket: status done, summary appended to the body (dated, signed)."""
+		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed)."""
 		if not (isinstance(summary, str) and summary.strip()):
 			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
 		def done():
@@ -662,8 +665,9 @@ class Store:
 			self._save_claims(claims)
 			raw = self._read(self._path(tid))
 			body = raw.get("body", "")
-			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, done): {summary.strip()}"
-			raw["status"], raw["updated"] = "done", date.today().isoformat()
+			status = "review" if self.config["review"] else "done"
+			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}"
+			raw["status"], raw["updated"] = status, date.today().isoformat()
 			self._write(raw)
 			self._log("complete", tid, agent, summary)
 		self._locked(done)
