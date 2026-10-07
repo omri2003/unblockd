@@ -125,6 +125,23 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   Needs `ANTHROPIC_API_KEY`; `UNBLOCKD_MODEL` defaults to `claude-sonnet-5-5` (not verified
   against a live key). The chat can't write. It is person <-> Claude only: no shared threads.
 
+## Why files, not a database
+
+Decision, don't re-litigate: **one JSON file per ticket in the project's git repo is the product.** Tickets are reviewed in PRs next to the code
+they describe, work offline, diff and merge like source, and agents need no server to read or write them (CLI/MCP open the folder).
+A database would give up exactly that. Measured at 5,000 tickets (earlier measurement, before CORE-5's single read per claim; not re-run): `store.list()` 0.15 s, `claim` 0.31 s: fine.
+
+The real limits, and what already answers each:
+
+| Limit | Answer |
+|---|---|
+| The file lock only works on one filesystem, so every agent had to run where the tickets are | Remote CLI: `UNBLOCKD_URL` sends commands to the one web server, whose Store does the locking |
+| Every open browser re-downloaded the whole board every 4 s | `ETag` + 304 on GET; the UI sends `If-None-Match` |
+| `activity.jsonl` grew forever and was parsed whole | Rotated at 5 MB, read newest-first and stopped early |
+| Parallel `create`/`update` raced (lost tickets, lost claims) | `create`/`update`/`delete`/`split` run under the same lock as claims |
+
+Revisit SQLite only for the **runtime** state (claims, activity), never for tickets, and only if remote mode stops being enough.
+
 ## Conventions
 
 - **Stdlib only** in Python (except `mcp` for the MCP server). Tabs. Python 3.10+.
