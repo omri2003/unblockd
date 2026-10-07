@@ -109,7 +109,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:.9rem}
 .dg-bar h2{font-size:.95rem;margin:0} .dg-bar .since{color:var(--muted)}
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
-.dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)}
+.dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
 .dg-g{margin:10px 0 0;font-size:.82rem;font-weight:800;color:var(--muted)}
 .dg-l{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px;max-height:40vh;overflow:auto}
@@ -623,7 +623,7 @@ function renderAttn(){
   $('attnSeg').innerHTML=n?`<button type="button" class="chip attn" data-attn aria-pressed="${state.attn}">Needs attention (${n})</button>`:'';
 }
 const isBlocked=t=>t.status!=='done'&&(t.open_blockers||[]).length>0;
-const isFree=t=>t.status!=='done'&&!(t.open_blockers||[]).length&&!t.waiting_on;
+const isFree=t=>t.status!=='done'&&t.status!=='review'&&!(t.open_blockers||[]).length&&!t.waiting_on;
 function matches(t){
   if(state.dep==='FREE'&&!isFree(t)) return false;
   if(state.dep==='BLOCKED'&&!isBlocked(t)) return false;
@@ -732,7 +732,9 @@ async function loadDigest(){
 }
 function digestGroups(){
   const ok=DG.ev.filter(e=>BY.has(e.ticket)), by=(...k)=>ok.filter(e=>k.includes(e.event)), first=n=>(n||'').split('\n')[0].slice(0,140);
-  return [['fin','✓','Finished',by('complete','done').map(e=>[e,e.agent||'by hand',first(e.note)])],
+  const rv=e=>BY.get(e.ticket).status==='review'; // a `complete` on a review board is not finished: a human still has to look
+  return [['fin','✓','Finished',by('complete','done').filter(e=>!rv(e)).map(e=>[e,e.agent||'by hand',first(e.note)])],
+    ['rev','●','Ready for review',by('complete').filter(rv).map(e=>[e,e.agent,first(e.note)])],
     ['sta','▶','Started',by('claim').map(e=>[e,e.agent,''])],
     ['stk','⚠','Stuck',by('expired','release').map(e=>[e,e.agent,e.event==='expired'?'claim expired, back to To do':'released'+(e.note?': '+first(e.note):'')])],
     ['new','＋','New',by('created').map(e=>[e,'',''])]].filter(g=>g[3].length);
