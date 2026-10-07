@@ -505,13 +505,12 @@ class Store:
 		got = self._locked(take)
 		return self.get(got) if got else None
 
-	def _holder(self, tid: str, agent: str) -> dict:
+	def _holder(self, tid: str, agent: str) -> None:
 		c = self._live_claims().get(tid)
 		if not c:
 			raise TicketError(f"{tid} isn't claimed (or the claim expired): claim it again")
 		if c["agent"] != agent:
 			raise TicketError(f"{tid} is claimed by {c['agent']}, not {agent}")
-		return c
 
 	def heartbeat(self, tid: str, agent: str, note: str = "") -> dict:
 		"""Keep a claim alive and say what you're doing now (shown live on the board)."""
@@ -596,10 +595,3 @@ def _overlap(a: str, b: str) -> bool:
 	"""Do two paths/globs touch the same files? (same path, one inside the other, or a glob match)"""
 	a, b = a.replace("\\", "/").strip("/"), b.replace("\\", "/").strip("/")
 	return a == b or a.startswith(b + "/") or b.startswith(a + "/") or fnmatch.fnmatch(a, b) or fnmatch.fnmatch(b, a)
-
-
-def from_env() -> Store:
-	return Store(
-		os.environ.get("TICKETS_DIR", "tickets"),
-		[p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p],
-	)

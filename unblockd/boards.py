@@ -30,10 +30,7 @@ class Boards:
 		self.legacy = legacy or []
 
 	def _scan(self) -> list[Path]:
-		found: list[Path] = []
-		for d in self.dirs:
-			if d.is_dir():
-				found.append(d)
+		found = [d for d in self.dirs if d.is_dir()]
 		for r in self.roots:
 			if not r.is_dir():
 				continue

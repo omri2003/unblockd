@@ -155,16 +155,14 @@ def claim_next(agent: str, profile: str | None = None, note: str = "", board: st
 	owned by humans, already claimed, or whose `touches` overlap a live claim. Returns null when
 	there's nothing left for you."""
 	store = BOARDS.get(board)
-	t = store.claim(agent, profile=profile, note=note)
-	return {**t, "context": kn.context(store, t["id"])} if t else None
+	return kn.with_context(store, store.claim(agent, profile=profile, note=note))
 
 
 @tool
 def claim_ticket(id: str, agent: str, note: str = "", board: str | None = None) -> dict:
 	"""Claim one specific ticket (it must be ready, not human-owned, not claimed)."""
 	store = BOARDS.get(board)
-	t = store.claim(agent, tid=id, note=note)
-	return {**t, "context": kn.context(store, t["id"])}
+	return kn.with_context(store, store.claim(agent, tid=id, note=note))
 
 
 @tool

@@ -110,7 +110,7 @@ def resolve_refs(boards: bd.Boards, board: str | None, text: str) -> list[dict]:
 			seen.add(("b", bid))
 			s = boards.get(bid)
 			out.append({"kind": "board", "board": bid, "id": bid,
-			            "data": {"title": s.config["title"], "tickets": [_short(t) for t in s.list(status=None) if t["status"] != "done"]}})
+			            "data": {"title": s.config["title"], "tickets": [_short(t) for t in s.list() if t["status"] != "done"]}})
 	for m in TICKET_REF.finditer(text):
 		bid, tid = m.group(1) or board, m.group(2)
 		if ("t", bid, tid) in seen:

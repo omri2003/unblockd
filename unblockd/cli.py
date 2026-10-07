@@ -27,6 +27,7 @@ import json
 import os
 import sys
 from datetime import date
+from pathlib import Path
 
 from . import knowledge as kn
 from . import store as st
@@ -93,9 +94,7 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			out = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note)
-			if out:
-				out = {**out, "context": kn.context(s, out["id"])}
+			out = kn.with_context(s, s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note))
 		elif a.cmd == "heartbeat":
 			out = s.heartbeat(a.id, a.agent, a.note)
 		elif a.cmd == "release":
@@ -109,7 +108,6 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "doc":
 			out = kn.read_doc(s, a.path)
 		elif a.cmd == "attach":
-			from pathlib import Path
 			f = Path(a.file)
 			out = kn.attach(s, a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "get":
