@@ -58,6 +58,8 @@ FIELDS = {
 	"blocked_by": ([], lambda v: isinstance(v, list) and all(isinstance(x, str) and ID_RE.match(x) for x in v)),
 	# a group (epic), not a blocker: this ticket is a part of that one. Loop-checked, the parent must exist
 	"parent": (None, lambda v: v is None or (isinstance(v, str) and ID_RE.match(v) is not None)),
+	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
+	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
@@ -666,7 +668,8 @@ class Store:
 			raw = self._read(self._path(tid))
 			body = raw.get("body", "")
 			status = "review" if self.config["review"] else "done"
-			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}"
+			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
+			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else "")
 			raw["status"], raw["updated"] = status, date.today().isoformat()
 			self._write(raw)
 			self._log("complete", tid, agent, summary)

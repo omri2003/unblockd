@@ -138,7 +138,7 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
 def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
 	"""Change fields of a ticket. changes is an object of field -> new value, e.g.
 	{"status": "done", "body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
+	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
 	return BOARDS.get(board).update(id, changes)
 
 

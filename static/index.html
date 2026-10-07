@@ -216,6 +216,7 @@ aside h3{font-size:.82rem;font-weight:700;color:var(--muted);border-top:1px soli
 .none{color:var(--muted);font-size:.9rem;margin:0}
 .body p{margin:0 0 8px;overflow-wrap:anywhere}
 .body .warn{background:var(--amber-soft);padding:6px 10px;border-radius:var(--r)}
+.dw{list-style:none;margin:0 0 8px;padding:0} .dw li{position:relative;padding-left:1.5em;margin:0 0 3px;overflow-wrap:anywhere} .dw li::before{content:'☐';position:absolute;left:0;color:var(--muted)}
 .body ul,.body ol{margin:0 0 8px;padding-left:1.3em} .body li{margin:0 0 2px;overflow-wrap:anywhere}
 .body .mdh{font-family:var(--display);font-weight:700;margin:12px 0 4px;font-size:1rem} .body h5.mdh{font-size:.95rem} .body h6.mdh{font-size:.88rem;color:var(--muted)}
 .body a{color:var(--jade)}
@@ -872,6 +873,7 @@ function showTicket(id,refresh){
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
+    ${(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:''}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
@@ -904,6 +906,7 @@ function editForm(t){
     <label for="f-pillar">${esc(CFG.pillar_label)}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
     <label for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-done">Done when <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
     <label class="full" for="f-docs">Docs <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
     <label class="full" for="f-blocked">Blocked by <span class="hint">IDs, comma separated</span><input id="f-blocked" value="${esc(t.blocked_by.join(', '))}"></label>
@@ -919,7 +922,7 @@ async function submitForm(f){
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
     blocked_by:$('f-blocked').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),waiting_on:$('f-waiting').value,body:$('f-body').value,
     tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean),
-    docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean)};
+    docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
     editing=false; await load(true); showTicket(t.id); toast(f.dataset.id?`Saved ${t.id}`:`Created ${t.id}`);

@@ -46,6 +46,20 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(agents["links"], ["docs/HANDOFF.md", "docs/MECHANICS.md"])  # md link + @import; web link ignored
 		self.assertIn("Start here", agents["content"])
 
+	def test_done_when_leads_the_context_and_is_echoed_by_complete(self):
+		self.assertEqual(kn.context(self.s, "CMB-1")["done_when"], [])
+		self.s.update("CMB-1", {"done_when": ["parry window is 0.2s", "tests pass"]})
+		ctx = kn.context(self.s, "CMB-1")
+		self.assertEqual(list(ctx)[:3], ["ticket", "done_when", "docs"])
+		self.assertEqual(ctx["done_when"], ["parry window is 0.2s", "tests pass"])
+		self.assertIn("done_when", ctx["note"])
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		body = self.s.complete("CMB-1", "godot-dev-1", "window 0.2s; tests pass")["body"]
+		self.assertTrue(body.endswith("window 0.2s; tests pass\nDone when:\n- parry window is 0.2s\n- tests pass"))
+		for bad in ("x", [""], ["a"] * 21, [1]):
+			with self.assertRaises(TicketError):
+				self.s.update("CMB-1", {"done_when": bad})
+
 	def test_budget_lists_instead_of_inlining(self):
 		ctx = kn.context(self.s, "CMB-1", budget=40)
 		inlined = [d["path"] for d in ctx["docs"] if "content" in d]

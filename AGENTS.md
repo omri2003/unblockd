@@ -43,6 +43,7 @@ example/tickets/        Demo board + config; what `docker compose up` shows with
 Ticket fields (`FIELDS` in store.py; add a field there and API + MCP accept it): `title`,
 `status` (todo|doing|pending|review|done), `priority` (P0-P3|null), `owner`, `pillar`, `pillar_step`,
 `section`, `blocked_by` (ids), `parent` (id of the group/epic this ticket is a part of; NOT a blocker), `waiting_on`, `body`, `tags` (lowercase; `agent:<name>` routes),
+`done_when` (list of short acceptance criteria: the bar for done, apart from the background in `body`; shown at the top of `context()` and echoed under "Done when:" in the body entry `complete()` appends; the drawer lists it as a checklist and the edit form takes one per line; not copied by split),
 `touches` (paths/globs the work edits), `docs` (repo paths/folders/globs to read), plus `id`,
 `created`, `updated`.
 
