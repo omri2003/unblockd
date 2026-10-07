@@ -226,6 +226,7 @@ status, ring = pillar, size = how much is waiting on it.
 Keyboard: `/` search, `g` Board/Graph, `n` new, `j`/`k` move, `Enter` open,
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
 (Comfortable / Compact) and the "While you were away" digest, per browser.
+**Agents** (header button, or the "N agents working" badge) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.
 
 ## Connect the MCP server
 

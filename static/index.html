@@ -254,6 +254,11 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 .ovm{position:absolute;right:0;top:calc(100% + 4px);z-index:3;display:grid;min-width:160px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden} .ovm .dz{color:var(--cinnabar)}
 .spanel{position:relative} .spanel summary{list-style:none;user-select:none} .spanel summary::-webkit-details-marker{display:none} .spanel[open] summary{background:var(--jade-soft)}
 .spanel .sbody{z-index:8;left:auto;right:0;width:min(330px,calc(100vw - 32px))} .sbody .hint{margin:0}
+#apanel .sbody{width:min(660px,calc(100vw - 32px));gap:8px} .astat{width:100%;border-collapse:collapse;font-size:.88rem;font-variant-numeric:tabular-nums}
+.astat th{font-size:.74rem;color:var(--muted);font-weight:700;text-align:right;padding:0 6px 5px;vertical-align:bottom} .astat td{text-align:right;padding:6px;border-top:1px solid var(--line);vertical-align:top}
+.astat th:first-child,.astat td:first-child{text-align:left;padding-left:0} .astat td:first-child b{display:block} .astat .nm{display:block;font-size:.76rem;color:var(--muted);font-weight:400;overflow-wrap:anywhere}
+.astat td.warn{color:var(--amber);background:var(--amber-soft);font-weight:700} .astat .sub2{display:block;font-size:.72rem;color:var(--muted);font-weight:400}
+@media(max-width:600px){.astat{font-size:.8rem}.astat th,.astat td{padding-inline:3px}}
 .splitf{display:grid;gap:8px;margin:14px 0 4px;padding:12px;border:1px solid var(--jade);border-radius:var(--r);background:var(--jade-soft)}
 .splitf h3{margin:0;border:0;padding:0} .splitf label{font-size:.85rem;font-weight:600} .splitf .chk{display:flex;gap:6px;align-items:center}
 .splitf textarea{width:100%;min-height:84px;resize:vertical;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 9px}
@@ -343,7 +348,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 <div class="wrap">
   <header>
     <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
-    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button">New ticket</button><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser)">⚙</summary><div class="fbody sbody" id="sbody">
+    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" title="Per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser)">⚙</summary><div class="fbody sbody" id="sbody">
       <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
       <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
@@ -521,7 +526,7 @@ async function load(force){
   paint();
 }
 let paint=null; // the deferred render, if any
-const menuBusy=()=>!!(document.querySelector('.mv[open],.ovf[open],#fpanel[open],#spanel[open]'));
+const menuBusy=()=>!!(document.querySelector('.mv[open],.ovf[open],#fpanel[open],#spanel[open],#apanel[open]'));
 const flushPaint=()=>setTimeout(()=>{ if(paint&&!menuBusy()) paint(); });
 document.addEventListener('toggle',flushPaint,true);
 
@@ -660,6 +665,37 @@ function renderWorking(){ // agents holding a claim right now; ages tick client-
   const lease=(CFG.lease_minutes||15)*60000;
   el.innerHTML=`<h2>Working now <span class="n">${ws.length}</span></h2><ul>${ws.map(t=>{const quiet=Date.now()-Date.parse(t.claim.heartbeat_at)>lease*.6;
     return `<li${BV.mode==='dim'&&!BV.M.has(t.id)?' class="dimmed"':''}><i class="pulse" aria-hidden="true"></i><span class="who">${esc(t.claim.agent)}</span><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button>${t.claim.note?`<span class="wn">“${esc(t.claim.note)}”</span>`:''}<span class="${quiet?'quiet':'wn'}" title="Started ${esc(ago(t.claim.claimed_at))}">${quiet?'quiet ':''}${esc(ago(t.claim.heartbeat_at))}</span></li>`;}).join('')}</ul>`;
+}
+// Agent stats (#apanel): fetched when the panel opens or the range changes, never on the 4 s poll. One row per profile.
+let AP={days:store.get('agentDays',7),ev:null,err:''}, apTok=0;
+const profOf=a=>(CFG.agents||[]).map(p=>p.name).filter(p=>a===p||a.startsWith(p+'-')).sort((x,y)=>y.length-x.length)[0]||'other';
+const median=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length?s.length%2?s[m]:(s[m-1]+s[m])/2:null;}; // check: median([3,1,2])===2, median([1,2,3,10])===2.5, median([])===null
+const dur=ms=>ms==null?'–':ms<6e4?'<1 min':ms<36e5?`${Math.round(ms/6e4)} min`:ms<1728e5?`${(ms/36e5).toFixed(1)} h`:`${(ms/864e5).toFixed(1)} d`; // check: dur(42*6e4)==='42 min', dur(3.1*36e5)==='3.1 h'
+function agentStats(ev){ // ev oldest first. check: claim t0, complete t0+30min, same ticket+agent -> d=[30 min]; release or expired -> stuck++ only if that claim was seen in range (else rate could pass 100%), no duration
+  const P={},open=new Map(),g=a=>P[profOf(a)]??={names:new Set(),fin:0,claims:0,stuck:0,split:0,now:0,d:[]};
+  for(const e of ev){ if(!e.agent) continue; const r=g(e.agent),k=e.ticket+'\0'+e.agent; r.names.add(e.agent);
+    if(e.event==='claim'){r.claims++;open.set(k,Date.parse(e.ts));}
+    else if(e.event==='complete'){r.fin++;if(open.has(k))r.d.push(Date.parse(e.ts)-open.get(k));open.delete(k);}
+    else if(e.event==='release'||e.event==='expired'){if(open.has(k))r.stuck++;open.delete(k);}
+    else if(e.event==='dropped') open.delete(k);
+    else if(e.event==='split') r.split++; }
+  for(const t of T) if(t.claim){const r=g(t.claim.agent);r.names.add(t.claim.agent);r.now++;}
+  return Object.entries(P).sort(([a],[b])=>a.localeCompare(b));
+}
+async function loadAgents(){
+  const my=++apTok; AP.ev=null; AP.err=''; renderAgents();
+  try{const r=await fetch(API+'/activity?limit=1000000&since='+encodeURIComponent(new Date(Date.now()-AP.days*864e5).toISOString()),{cache:'no-store'});
+    if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error||r.status); const ev=(await r.json()).reverse(); if(my!==apTok) return; AP.ev=ev;
+  }catch(er){ if(my!==apTok) return; AP.err=String(er.message||er); }
+  renderAgents();
+}
+function renderAgents(){
+  const rows=AP.ev?agentStats(AP.ev):[], seg=`<div class="seg" id="apRange" data-l="Range" role="group" aria-label="Range">${[7,30].map(d=>`<button type="button" class="chip" data-aprange="${d}" aria-pressed="${AP.days===d}">${d} days</button>`).join('')}</div>`;
+  const body=AP.err?`<p class="hint">Could not load activity: ${esc(AP.err)}</p>`:!AP.ev?'<p class="hint">Loading…</p>':!rows.length?`<p class="hint">No agent activity in the last ${AP.days} days. Claims, completions and splits by agents show up here once they happen.</p>`
+    :`<table class="astat"><thead><tr><th>Profile</th><th>Finished</th><th title="Claim to complete, same ticket and agent">Median to finish</th><th title="(expired + released) / claims. 30% or more: tickets too big or instructions weak">Stuck rate</th><th>Splits</th><th>Working now</th></tr></thead><tbody>${rows.map(([p,r])=>{
+      const rate=r.claims?r.stuck/r.claims:null, bad=rate!=null&&rate>=.3;
+      return `<tr><td><b>${esc(p)}</b><span class="nm">${esc([...r.names].sort().join(', '))}</span></td><td>${r.fin}</td><td>${dur(median(r.d))}</td><td${bad?' class="warn" title="30% or more of claims ended stuck: split the tickets or tighten the instructions"':''}>${rate==null?'–':(bad?'⚠ ':'')+Math.round(rate*100)+'%'}<span class="sub2">${r.stuck} of ${r.claims}</span></td><td>${r.split}</td><td>${r.now}</td></tr>`;}).join('')}</tbody></table>`;
+  $('abody').innerHTML=seg+body;
 }
 // heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
 function tickAges(){const lim=(CFG.lease_minutes?CFG.lease_minutes/2:10)*60000;
@@ -859,8 +895,10 @@ let armedDelete=false;
 document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
   if(!g('.fpanel')) $('fpanel').open=false;
-  if(!g('.spanel')) $('spanel').open=false;
+  if(!g('#spanel')) $('spanel').open=false;
+  if(!g('#apanel')) $('apanel').open=false;
   document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.contains(e.target)||(d.open=false));
+  if(b=g('[data-aprange]')){AP.days=+b.dataset.aprange;store.set('agentDays',AP.days);loadAgents();return;}
   if(b=g('[data-pref]')){const[k,v]=b.dataset.pref.split(':');setPref(k,v);return;}
   if(b=g('[data-pillar]')){state.pillar=b.dataset.pillar;store.set('pillar',state.pillar);renderBar();render();return;}
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
@@ -880,7 +918,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-seg]')){if(state.view!=='board')setView('board');if(matchMedia('(max-width:600px)').matches)setTab(b.dataset.seg);goTo(document.querySelector(`[data-col="${b.dataset.seg}"]`));return;}
   if(g('[data-dgtoggle]')){dgOpen=!dgOpen;renderDigest();return;}
   if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());DG=null;renderDigest();return;}
-  if(g('[data-toworking]')){if(state.view!=='board')setView('board');goTo($('working'));return;}
+  if(g('[data-toworking]')){$('apanel').open=true;$('apanel').scrollIntoView({block:'nearest'});return;}
   if(g('[data-nexttoggle]')){store.set('nextOpen',!store.get('nextOpen',true));renderNext();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
@@ -916,7 +954,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches?.(
 document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remember the knowledge fold; keep the filter panel inside the viewport
   if(e.target.id==='kn') store.set('knOpen',e.target.open);
   if(e.target.id==='fpanel'){const b=$('fbody');b.style.translate='';if(e.target.open)b.style.translate=Math.min(0,innerWidth-16-b.getBoundingClientRect().right)+'px';}
-  if(e.target.id==='spanel'){const b=$('sbody');b.style.translate='';if(e.target.open){const r=b.getBoundingClientRect();b.style.translate=(r.left<16?16-r.left:Math.min(0,innerWidth-16-r.right))+'px';}}
+  if(e.target.id==='apanel'&&e.target.open) loadAgents();
+  if(e.target.id==='spanel'||e.target.id==='apanel'){const b=$(e.target.id==='spanel'?'sbody':'abody');b.style.translate='';if(e.target.open){const r=b.getBoundingClientRect();b.style.translate=(r.left<16?16-r.left:Math.min(0,innerWidth-16-r.right))+'px';}}
 },true);
 document.addEventListener('submit',e=>{ if(e.target.id==='splitForm'){e.preventDefault();submitSplit(e.target);} });
 document.addEventListener('input',e=>{ if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
@@ -929,6 +968,7 @@ document.addEventListener('keydown',e=>{
     if(!$('kb').hidden) toggleKb(false);
     else if($('fpanel').open) $('fpanel').open=false;
     else if($('spanel').open) $('spanel').open=false;
+    else if($('apanel').open) $('apanel').open=false;
     else if(document.querySelector('.mv[open],.ovf[open]')) document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.open=false);
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(cancelGraphGesture()){}
@@ -1320,7 +1360,7 @@ function renderStrip(){ // proportions of every ticket by what it shows as; a se
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
   $('strip').hidden=!T.length;
-  $('strip').innerHTML=`<div class="segbar" role="group" aria-label="Tickets by status">${COLS.map(([k,l])=>`<button type="button" class="s-${k}" style="--n:${n[k]}" data-seg="${k}" title="${l}: ${n[k]}. Jump to the column"><b>${n[k]}</b>${l}</button>`).join('')}</div><span class="ready"><b>${ready}</b>ready</span>${ag?`<button type="button" class="agbadge" data-toworking><i class="pulse" aria-hidden="true"></i>${ag} agent${ag>1?'s':''} working</button>`:''}`;
+  $('strip').innerHTML=`<div class="segbar" role="group" aria-label="Tickets by status">${COLS.map(([k,l])=>`<button type="button" class="s-${k}" style="--n:${n[k]}" data-seg="${k}" title="${l}: ${n[k]}. Jump to the column"><b>${n[k]}</b>${l}</button>`).join('')}</div><span class="ready"><b>${ready}</b>ready</span>${ag?`<button type="button" class="agbadge" data-toworking title="Agent stats"><i class="pulse" aria-hidden="true"></i>${ag} agent${ag>1?'s':''} working</button>`:''}`;
 }
 const goTo=el=>{if(!el||el.hidden)return;el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});el.classList.remove('ping');void el.offsetWidth;el.classList.add('ping');};
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});

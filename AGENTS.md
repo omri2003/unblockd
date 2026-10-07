@@ -127,7 +127,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 - **Filter chrome**: the bar holds search, a Filters `<details>` (`#fpanel`: pillar, owner, priority, agent, Show mode),
   removable pills for active non-default filters (each pill carries the `data-*` of the chip that resets it, so the
   existing click handler does the work) and the Free/Blocked chips. Header strip (`renderStrip`): status proportions,
-  "N ready", "N agents working"; segments scroll to their column. Next up is a ranked one-line strip (3, "show all").
+  "N ready", "N agents working" (opens the Agents panel); segments scroll to their column. Next up is a ranked one-line strip (3, "show all").
   Urgency on cards: `.p0` cinnabar wash, `.blocked` hatched + lock; claimed cards get an amber outline and an agent chip
   with heartbeat age (`tickAges`, late after lease/2). Feedback goes through `toast(msg,{err,undo})`; status moves use
   `moveTo()` (drag-drop, the card's native "Move to" `<details>`, the drawer's segmented status; it refuses
@@ -145,6 +145,11 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   Compact bar with counts + Expand/Collapse + Dismiss (Dismiss = lastSeen now, hidden for good). Only clock times, never
   "x ago", so nothing drifts. Hidden outside the board view and when empty. Events come from `activity.jsonl`, which is
   gitignored runtime state: tickets created or closed by `git pull` don't appear (only changes through the store do).
+- **Agent stats (header "Agents", `#apanel`; the "N agents working" badge opens it)**: a `.spanel` like Settings (Esc / outside click close it). One `GET /activity?since=<now-range>&limit=1000000`
+  when the panel opens or the 7 / 30 day range changes (`loadAgents`; range kept in `store` `agentDays`), never on the poll; `agentStats()` groups client-side per profile (`profOf`: longest configured
+  profile name the agent equals or starts with `<name>-`, else "other"). Finished = `complete`; median = claim -> complete of the same ticket+agent (a complete whose claim is before the range counts as
+  finished but has no duration); stuck rate = (`expired` + `release`) / `claim`s, highlighted (amber + warning sign) at >= 30%; splits = `split` events with an agent; working now = live claims in `T`.
+  Events don't carry the profile, so it is derived from the agent name. No server change.
 - **The UI polls every 4 s** and re-renders only when the tickets JSON text changes (and, while a card's Move-to, the drawer's `.ovf` or `#fpanel` `<details>` is open, `load()` keeps the data but defers the render to `paint`, flushed on their `toggle`; heartbeats must not close menus). So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).
