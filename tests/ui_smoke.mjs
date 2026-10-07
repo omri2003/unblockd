@@ -89,6 +89,17 @@ try {
 		await toggle('#spanel', 'Settings panel');
 		await toggle('#apanel', 'Agents panel');
 
+		await page.locator('.card >> visible=true').nth(0).click({ modifiers: ['Shift'] }); // bulk edit: select 2, set priority, Undo
+		await page.locator('.card >> visible=true').nth(1).click({ modifiers: ['Shift'] });
+		await visible('#bulk', 'bulk bar');
+		ok((await page.locator('#bulk b').innerText()).startsWith('2 selected'), `[${tag}] bulk bar should say 2 selected`);
+		await noOverflow('bulk bar');
+		await page.selectOption('#bulk [data-bulk="priority"]', 'P3');
+		await visible('#toasts .toast:has-text("2 updated")', 'bulk update toast');
+		await page.click('#toasts .toast button');
+		await visible('#toasts .toast:has-text("Reverted")', 'bulk undo toast');
+		await page.keyboard.press('Escape');
+		ok(await page.locator('#bulk').isHidden(), `[${tag}] Escape should clear the selection`);
 		await page.click('.card >> visible=true');
 		await visible('#drawer', 'ticket drawer');
 		await noOverflow('drawer');

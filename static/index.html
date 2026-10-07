@@ -82,6 +82,10 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .card.onpath:hover,.card.dimmed:hover,.card.onpath:focus-visible,.card.dimmed:focus-visible{opacity:1}
 .meta .onp{font-style:italic;color:var(--muted)}
 .prog{display:inline-flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums} .prog i{display:block;width:44px;height:5px;border-radius:3px;background:var(--line);overflow:hidden} .prog b{display:block;height:100%;background:var(--jade)}
+.card.sel{outline:2px solid var(--jade);outline-offset:-2px;background-color:var(--jade-soft)}
+.bulk{position:fixed;z-index:45;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 16px;background:var(--surface);border-top:2px solid var(--jade);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
+.bulk select,.bulk input{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:5px 8px;max-width:150px;min-width:0} .bulk input{width:110px}
+body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,90px) + 12px)}
 .lane{margin:6px 4px 0;font-size:.74rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);display:flex;gap:6px;border-bottom:1px solid var(--line);padding-bottom:2px;min-width:0} .lane:first-child{margin-top:0} .lane span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .lane .n{margin-left:auto;font-variant-numeric:tabular-nums}
 .working li.dimmed{opacity:.35}
 .bsel{display:flex;align-items:center;gap:6px} .bsel select{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:6px 8px;max-width:220px}
@@ -462,6 +466,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 </section>
 <div class="docvscrim" id="docvScrim" hidden></div>
 <div class="docv" id="docv" hidden role="dialog" aria-modal="true" aria-labelledby="docT"></div>
+<div class="bulk" id="bulk" hidden role="group" aria-label="Edit selected tickets"></div>
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <div class="kbscrim" id="kbScrim" hidden></div>
 <div class="kb" id="kb" hidden role="dialog" aria-modal="true" aria-labelledby="kbT">
@@ -544,6 +549,7 @@ function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, error
   setTimeout(()=>el.remove(),err?6000:4000);
 }
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
+const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
 async function jf(url, method='GET', body){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
@@ -693,8 +699,25 @@ function card(t){
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
-  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
+  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
 }
+function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
+  const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
+  const sel=(f,l,o)=>`<select data-bulk="${f}" aria-label="${esc(l)}"><option value="">${esc(l)}…</option>${o.map(([v,x])=>`<option value="${esc(v)}">${esc(x)}</option>`).join('')}</select>`;
+  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS)}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag"><input data-bulk="parent" placeholder="Parent ID or -" aria-label="Parent ID, or - for none"><button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
+  document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
+}
+async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
+  const ids=[...SEL].filter(id=>BY.has(id)),was=new Map(ids.map(id=>[id,BY.get(id)[field]])),ok=[],bad=[];
+  for(const id of ids){
+    const v=field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:val==='-'?null:field==='parent'?val.toUpperCase():val;
+    try{await api('PATCH','/'+id,{[field]:v});ok.push(id);}catch(er){bad.push(`${id}: ${er.message}`);}
+  }
+  await load(true); renderBulk();
+  if(bad.length) toast(`${bad.length} failed. ${bad[0]}`,{err:1});
+  if(ok.length) toast(`${ok.length} updated`,{undo:async()=>{for(const id of ok)try{await api('PATCH','/'+id,{[field]:was.get(id)});}catch{} await load(true);toast('Reverted');}});
+}
+document.addEventListener('change',e=>{const f=e.target.dataset?.bulk,v=e.target.value.trim();if(f&&v)bulk(f,v);});
 const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==t.status).map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;
 const ord=t=>[t.pillar?PILLARS.indexOf(t.pillar):9, t.pillar_step||99, prioIdx(t.priority)];
 function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;}
@@ -994,6 +1017,8 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
   if(g('[data-drefresh]')){loadDocs();return;}
+  if((e.shiftKey||e.ctrlKey||e.metaKey)&&(b=g('.card[data-open]'))){e.preventDefault();const id=b.dataset.open;SEL.has(id)?SEL.delete(id):SEL.add(id);renderBulk();renderBoard();return;}
+  if(g('[data-bulkclear]')){SEL.clear();renderBulk();renderBoard();return;}
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
   if(b=g('[data-view]')){setView(b.dataset.view);return;}
   if(g('[data-unfocus]')){setFocus(null);return;}
@@ -1036,6 +1061,7 @@ document.addEventListener('keydown',e=>{
     else if(menuBusy()) closeMenus();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(state.view==='docs'&&DV.f){DV.f=null;renderDocs();}
+    else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
     else if(cancelGraphGesture()){}
     else if(G.selEdge) {clearEdge();}
     else if(G.isolate) leaveIsolate();
@@ -1501,7 +1527,7 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
 // ---------- view switch ----------
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
   chips($('viewSeg'),[['board','Board'],['graph','Graph'],['docs','Docs']],v,'view');renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
-function render(){renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
+function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
