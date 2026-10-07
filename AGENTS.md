@@ -107,7 +107,14 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   "N ready", "N agents working"; segments scroll to their column. Next up is a ranked one-line strip (3, "show all").
   Urgency on cards: `.p0` cinnabar wash, `.blocked` hatched + lock; claimed cards get an amber outline and an agent chip
   with heartbeat age (`tickAges`, late after lease/2). Feedback goes through `toast(msg,{err,undo})`; status moves use
-  `moveTo()` (drag-drop and drawer menu) and Undo is one PATCH back.
+  `moveTo()` (drag-drop, the card's native "Move to" `<details>`, the drawer's segmented status; it refuses
+  doing for a ticket with open blockers) and Undo is one PATCH back. Cards are wrapped in `.cw` (a button can't hold
+  the move menu). To do has an inline quick-add (`quickAdd`; Enter creates, Shift+Enter keeps typing; prefix remembered
+  per board in localStorage; `renderBoard` restores a half-typed draft). Card ages (`data-up`) and heartbeats
+  (`data-hb`) are filled by `tickAges`, never in the JSON. `emptyState()` covers a new board and "filters hide
+  everything" (`clearFilters`). At <=600px `#tabs` shows one column at a time (`TAB`, sessionStorage); `body[data-tab]`
+  drives CSS, so never use a bare `[data-tab]` selector in the click handler. The drawer is title, status/owner,
+  details, blockers, then a collapsed Knowledge and activity `<details>`; Ask / Show in graph / Delete live in `.ovf`.
 - **The UI polls every 4 s** and re-renders only when the tickets JSON text changes. So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).
