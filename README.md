@@ -37,6 +37,7 @@ default; the board you last opened is remembered.
 |---|---|
 | `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
 | `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional. |
+| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
 
 ## Agent profiles: which agent works which ticket
@@ -155,6 +156,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `pillars` | Workstreams. Each is a board colour, a filter chip and a graph lane. Colours are optional (a palette checked against the status colours is used). With no pillars, any `pillar` value is accepted. |
 | `pillar_label` | What your project calls them ("Area", "Track"…). |
 | `stale_days` | A `doing` ticket untouched this long is flagged. |
+| `wip_limit` | More than this many `doing` tickets shows a WIP badge on the column (default `null` = none). |
 | `lease_minutes` | A claim with no heartbeat this long expires (default 15). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
 | `id` | Board id (default: the project folder's name). |

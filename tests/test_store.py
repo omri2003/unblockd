@@ -26,6 +26,22 @@ class StoreTest(unittest.TestCase):
 		with self.assertRaises(NotFound):
 			self.s.get("BUG-13")
 
+	def test_doing_refused_while_blockers_are_open(self):
+		self.s.create({"title": "base"}, tid="UI-1")
+		self.s.create({"title": "top", "blocked_by": ["UI-1"]}, tid="UI-2")
+		with self.assertRaisesRegex(TicketError, "UI-2 is blocked by UI-1 .still open"):
+			self.s.update("UI-2", {"status": "doing"})
+		self.s.update("UI-1", {"status": "done"})
+		self.assertEqual(self.s.update("UI-2", {"status": "doing"})["status"], "doing")
+		self.s.create({"title": "late blocker"}, tid="UI-3")
+		self.s.update("UI-2", {"blocked_by": ["UI-3"]})  # already doing: not a transition
+		self.assertEqual(self.s.update("UI-2", {"title": "renamed", "status": "doing"})["title"], "renamed")
+
+	def test_wip_limit_validated(self):
+		(Path(self.tmp.name) / "tickets" / "unblockd.json").write_text('{"wip_limit": 0}')
+		with self.assertRaisesRegex(TicketError, "wip_limit"):
+			Store(Path(self.tmp.name) / "tickets")
+
 	def test_open_blocker_makes_todo_pending_and_done_clears_it(self):
 		self.s.create({"title": "Cultivation"}, tid="PORT-1")
 		self.s.create({"title": "Essence", "blocked_by": ["PORT-1"]}, tid="EMP-12")

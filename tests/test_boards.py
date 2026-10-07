@@ -1,8 +1,11 @@
 """Agent routing, work plans, several boards, and the multi-board HTTP API."""
+import http.client
 import json
+import os
 import tempfile
 import threading
 import unittest
+from unittest import mock
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -106,9 +109,9 @@ class ApiTest(unittest.TestCase):
 		self.srv.server_close()
 		self.tmp.cleanup()
 
-	def call(self, method, path, body=None):
+	def call(self, method, path, body=None, headers=None):
 		req = urllib.request.Request(self.base + path, method=method, data=json.dumps(body).encode() if body else None,
-		                             headers={"Content-Type": "application/json"})
+		                             headers={"Content-Type": "application/json", **(headers or {})})
 		try:
 			with urllib.request.urlopen(req) as r:
 				return r.status, json.loads(r.read())
@@ -122,6 +125,24 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("GET", "/api/meta")[1]["board"], "a")
 		self.assertEqual([x["id"] for x in self.call("GET", "/api/boards")[1]], ["a", "b"])
 		self.assertEqual(self.call("GET", "/api/b/zzz/tickets")[0], 404)
+
+	def test_token_auth(self):
+		self.assertEqual(self.call("GET", "/api/tickets")[0], 200)  # unset: open
+		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
+			code, body = self.call("GET", "/api/tickets")
+			self.assertEqual(code, 401)
+			self.assertIn("?token=", body["error"])
+			self.assertEqual(self.call("GET", "/api/tickets", headers={"Authorization": "Bearer nope"})[0], 401)
+			self.assertEqual(self.call("GET", "/api/tickets", headers={"Authorization": "Bearer s3cret"})[0], 200)
+			self.assertEqual(self.call("GET", "/api/tickets", headers={"Cookie": "unblockd_token=s3cret"})[0], 200)
+			self.assertEqual(self.call("GET", "/api/tickets?token=nope")[0], 401)
+			conn = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)  # urllib would follow the redirect
+			conn.request("GET", "/?board=b&token=s3cret")
+			r = conn.getresponse()
+			self.assertEqual((r.status, r.getheader("Location")), (302, "/?board=b"))
+			self.assertRegex(r.getheader("Set-Cookie"), "unblockd_token=s3cret; HttpOnly; SameSite=Strict; Path=/")
+			conn.request("GET", "/")
+			self.assertEqual(conn.getresponse().status, 200)  # the page itself needs no token
 
 	def test_plan_and_agent_filter(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})

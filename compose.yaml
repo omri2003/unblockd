@@ -6,7 +6,7 @@ services:
     build: .
     image: unblockd
     ports:
-      - "127.0.0.1:8787:8787"   # this machine only: the API has no auth
+      - "127.0.0.1:8787:8787"   # this machine only unless UNBLOCKD_TOKEN is set
     volumes:
       - ${PROJECTS_DIR:-./example}:/projects
       # code mounted from this folder: UI edits show on browser reload,
@@ -15,5 +15,6 @@ services:
       - ./unblockd:/app/unblockd:ro
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # enables the chat; put it in .env
+      UNBLOCKD_TOKEN: ${UNBLOCKD_TOKEN:-}   # optional shared token for the API (see README)
       UNBLOCKD_MODEL: ${UNBLOCKD_MODEL:-claude-sonnet-5-5}
     restart: unless-stopped

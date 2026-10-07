@@ -433,7 +433,7 @@ const DEF_PC=[['#8A4FB5','#B58CE6'],['#CC2F86','#F56CAE'],['#1B6FE0','#3F8BFF'],
 function applyConfig(c){
   CFG={...CFG,...(c||{})};
   PILLARS=CFG.pillars.map(p=>p.key); PNAME=Object.fromEntries(CFG.pillars.map(p=>[p.key,p.name||cap(p.key)]));
-  HUMAN=new Set(CFG.owners.filter(o=>o.kind==='human').map(o=>o.name)); STALE=CFG.stale_days??7;
+  HUMAN=new Set(CFG.owners.filter(o=>o.kind==='human').map(o=>o.name)); STALE=CFG.stale_days??7; WIP=CFG.wip_limit??null;
   LANES=[...CFG.pillars.map(p=>[p.key,pname(p.key),pk(p.key)]),['OTHER',PILLARS.length?'Other':'All','muted']];
   document.title=CFG.title; $('appTitle').textContent=CFG.title; $('chatT').textContent='Ask about '+CFG.title;
   const light=[],dark=[],cls=[];
@@ -454,7 +454,7 @@ const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pilla
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
 const setTab=k=>{TAB=k;try{sessionStorage.setItem('unblockd.tab',k)}catch{}renderBoard();};
-const WIP=5; // more than this many in progress = warning on the column
+let WIP=null; // from the config's wip_limit: more than this many in progress = warning on the column
 function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, errors a little longer
   const el=document.createElement('div');el.className='toast'+(err?' err':'');el.append(msg);
   if(undo){const b=document.createElement('button');b.type='button';b.textContent='Undo';b.onclick=()=>{el.remove();undo();};el.append(b);}
@@ -470,18 +470,33 @@ async function api(method, path, body){
   if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
   return j;
 }
+let authShown=false;
+function authFail(text){ // 401: say how to get in, once (the 4 s poll must not repeat it or reload)
+  if(authShown) return; authShown=true;
+  let m; try{ m=JSON.parse(text).error; }catch{}
+  toast(m||'Unauthorized: open the board once with ?token=...',{err:1});
+  $('sub').textContent=m||'Unauthorized.';
+}
 async function load(force){
   let text;
-  try{ const r=await fetch(API+'/tickets',{cache:'no-store'}); text=await r.text(); if(!r.ok) throw 0; }
+  try{ const r=await fetch(API+'/tickets',{cache:'no-store'}); text=await r.text(); if(r.status===401){ authFail(text); return; } if(!r.ok) throw 0; }
   catch{ toast('Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
   if(text===raw && !force) return;
   raw=text; T=JSON.parse(text); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!matchMedia('(prefers-reduced-motion: reduce)').matches) noteFinished(prev);
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
-  renderBar(); render(); if(!$('chat').hidden&&!CH.busy) renderChat();
-  if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
+  paint=()=>{ paint=null;
+    renderBar(); render(); if(!$('chat').hidden&&!CH.busy) renderChat();
+    if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
+  };
+  if(!force&&menuBusy()) return; // a re-render would destroy the open menu: keep the data, paint when it closes
+  paint();
 }
+let paint=null; // the deferred render, if any
+const menuBusy=()=>!!(document.querySelector('.mv[open],.ovf[open],#fpanel[open]'));
+const flushPaint=()=>setTimeout(()=>{ if(paint&&!menuBusy()) paint(); });
+document.addEventListener('toggle',flushPaint,true);
 
 // A ticket just turned done: its outgoing edges fade solid -> dashed, and whatever it unblocked pulses once.
 function noteFinished(prev){
@@ -644,7 +659,7 @@ function renderBoard(){
     ts = k==='done' ? ts.sort((a,b)=>(b.updated||'').localeCompare(a.updated||'')) : ts.sort(cmp);
     const total=ts.length; if(k==='done'&&!state.allDone&&!state.q) ts=ts.slice(0,10);
     const more=k==='done'&&total>ts.length?`<button type="button" class="btn ghost more" data-alldone>Show all ${total} done</button>`:'';
-    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead"><h2>${name}</h2>${k==='doing'&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}<span class="n">${total}</span></div>${k==='todo'?qaForm():''}<div class="cards">${ts.map(card).join('')||'<p class="emptycol">None</p>'}</div>${more}</section>`;
+    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead"><h2>${name}</h2>${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}<span class="n">${total}</span></div>${k==='todo'?qaForm():''}<div class="cards">${ts.map(card).join('')||'<p class="emptycol">None</p>'}</div>${more}</section>`;
   }).join('');
   if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
 }
@@ -1213,7 +1228,7 @@ const goTo=el=>{if(!el||el.hidden)return;el.scrollIntoView({behavior:matchMedia(
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
 $('q').addEventListener('input',e=>{setQ(e.target.value);render();});
 async function loadBoards(){
-  let bs=[];try{bs=await (await fetch('/api/boards',{cache:'no-store'})).json();}catch{}
+  let bs=[];try{const r=await fetch('/api/boards',{cache:'no-store'});if(r.ok)bs=await r.json();}catch{}
   const sel=$('boardSel'); $('boardSel').closest('.bsel').hidden=false;
   sel.innerHTML=bs.map(b=>`<option value="${esc(b.id)}" title="${b.error?esc(b.error):`${b.open} open, ${b.ready} ready`}"${b.id===BOARD||(!BOARD&&b===bs[0])?' selected':''}>${esc(b.title)}${b.error?' (config error)':''}</option>`).join('')+'<option value="__new">New board…</option>';
   return bs;
@@ -1241,7 +1256,7 @@ document.addEventListener('submit',async e=>{ if(e.target.id!=='boardForm')retur
 });
 const syncSel=()=>{const s=$('boardSel');if(s.value==='__new')s.value=BOARD||s.options[0]?.value||'';};
 loadBoards();
-fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(!r.ok&&BOARD){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
+fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
   readColors(); renderBar(); setView(state.view);
   load(true).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
 });

@@ -23,6 +23,7 @@
     }
   ],
   "stale_days": 7,
+  "wip_limit": 5,
   "agents": [
     {
       "name": "frontend",

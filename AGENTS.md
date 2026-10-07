@@ -49,13 +49,14 @@ Derived on every read (`_decorate`): `effective_status` (todo with an open block
 
 Rules enforced in the store: IDs `PREFIX-N` (create with a prefix -> next free number, also
 skipping numbers in `legacy_files`); `blocked_by` loops refused with the loop spelled out;
+setting `doing` on a ticket with open blockers is refused (in `update`, so web/MCP/CLI all get it; `claim` only takes ready tickets);
 owners and pillars must be the configured ones; unknown `agent:<x>` tags refused.
 
 ## Config: `<tickets>/unblockd.json`
 
 Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refused. Keys:
 `id`, `title`, `owners` [{name, kind: human|agent}], `default_owner`, `pillar_label`, `pillars`
-[{key, name, color, color_dark}], `stale_days`, `lease_minutes`, `legacy_files`, `agents`
+[{key, name, color, color_dark}], `stale_days`, `wip_limit` (int or null: the UI's In-progress WIP badge; none when null), `lease_minutes`, `legacy_files`, `agents`
 [{name, tags, pillars, model, instructions, docs}], `docs` (knowledge for every ticket),
 `context_budget` (chars inlined per context, default 60000).
 
@@ -85,6 +86,10 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `claim_ticket` (MCP, CLI) return `{...ticket, "context": ...}`, which is the whole point: a
   worker reads its instructions from the board instead of being told. The chat has
   `get_context` / `read_doc` too.
+- **Auth**: optional shared token, `UNBLOCKD_TOKEN` (not per-user identity). Unset = open (and a warning at startup if bound beyond loopback).
+  Set = every `/api/*` needs `Authorization: Bearer` or the `unblockd_token` cookie; any URL with `?token=` (correct) sets the cookie
+  and 302s to the same URL without it. 401 JSON says how to fix it; the page loads anyway and the UI shows that message once
+  (`authFail`; no reload). MCP and CLI use the store directly and are unaffected. Compared with `hmac.compare_digest`.
 - **Chat**: browser keeps history per board (localStorage) and sends the last 20 messages to
   `POST /api/chat`. The server resolves `#ID`, `#board/ID`, `@board` into the user message, then
   loops tool calls (max 8) against `ANTHROPIC_BASE_URL/v1/messages` with read-only tools.
@@ -115,7 +120,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   everything" (`clearFilters`). At <=600px `#tabs` shows one column at a time (`TAB`, sessionStorage); `body[data-tab]`
   drives CSS, so never use a bare `[data-tab]` selector in the click handler. The drawer is title, status/owner,
   details, blockers, then a collapsed Knowledge and activity `<details>`; Ask / Show in graph / Delete live in `.ovf`.
-- **The UI polls every 4 s** and re-renders only when the tickets JSON text changes. So the
+- **The UI polls every 4 s** and re-renders only when the tickets JSON text changes (and, while a card's Move-to, the drawer's `.ovf` or `#fpanel` `<details>` is open, `load()` keeps the data but defers the render to `paint`, flushed on their `toggle`; heartbeats must not close menus). So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).
 - Errors are `TicketError` with a message that says how to fix it; HTTP 400/404, MCP tool error.
@@ -154,7 +159,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 ## Not built yet (ideas, in rough priority)
 
 1. Shared chat between people: needs server-side threads + some identity (there's no auth).
-2. Auth, before anyone exposes the port beyond localhost / before a public launch.
+2. Per-user identity (auth is only a shared token for now).
 3. README screenshots or a GIF, before a public launch.
 4. Knowledge graph view: draw docs + their `links` (+ which tickets link them) like the ticket
    graph. The data is already in `context()`.

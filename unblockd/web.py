@@ -26,15 +26,18 @@ GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
 POST   tickets/<id>/files                {"name", "content"}  attach a text file
 DELETE tickets/<id>/files/<name>
 
-No auth: it binds to 127.0.0.1 by default. Don't expose it beyond your machine.
+Auth: none by default (binds to 127.0.0.1). With UNBLOCKD_TOKEN set, /api/* needs `Authorization: Bearer <token>`
+or the `unblockd_token` cookie, which any page visited with `?token=<token>` sets. A shared secret, not per-user identity.
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from . import boards as bd
 from . import chat
@@ -65,6 +68,11 @@ class Handler(BaseHTTPRequestHandler):
 		self.end_headers()
 		self.wfile.write(data)
 
+	def _authed(self, token: str) -> bool:
+		bearer = (self.headers.get("Authorization") or "").removeprefix("Bearer ")
+		cookie = SimpleCookie(self.headers.get("Cookie") or "").get("unblockd_token")
+		return any(c and hmac.compare_digest(c.encode(), token.encode()) for c in (bearer, cookie and cookie.value))
+
 	def _body(self) -> dict:
 		n = int(self.headers.get("Content-Length") or 0)
 		if n > MAX_BODY:
@@ -78,11 +86,21 @@ class Handler(BaseHTTPRequestHandler):
 		url = urlparse(self.path)
 		parts = [p for p in url.path.split("/") if p]
 		q = {k: v[0] for k, v in parse_qs(url.query).items()}
+		token = os.environ.get("UNBLOCKD_TOKEN")
 		try:
+			if token and hmac.compare_digest(q.get("token", "").encode(), token.encode()):
+				rest_q = urlencode({k: v for k, v in q.items() if k != "token"})
+				self.send_response(302)
+				self.send_header("Set-Cookie", f"unblockd_token={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000")
+				self.send_header("Location", url.path + ("?" + rest_q if rest_q else ""))
+				self.send_header("Content-Length", "0")
+				return self.end_headers()
 			if method == "GET" and parts in ([], ["index.html"]):
 				return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
 			if parts[:1] != ["api"]:
 				return self._send(404, {"error": "not found"})
+			if token and not self._authed(token):
+				return self._send(401, {"error": "unauthorized: open the board once with ?token=<UNBLOCKD_TOKEN> or send Authorization: Bearer <token>"})
 			if parts == ["api", "boards"]:
 				if method == "GET":
 					return self._send(200, BOARDS.summary())
@@ -173,6 +191,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
+	if not os.environ.get("UNBLOCKD_TOKEN") and host not in ("127.0.0.1", "localhost", "::1"):
+		print(f"WARNING: bound to {host} with no auth: set UNBLOCKD_TOKEN, or anyone who can reach the port can edit tickets", flush=True)
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
 	      + (", ".join(f"{k} ({v})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	ThreadingHTTPServer((host, port), Handler).serve_forever()

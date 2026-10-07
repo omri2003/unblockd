@@ -30,6 +30,7 @@ DEFAULT_CONFIG = {
 	"pillar_label": "Pillar",
 	"pillars": [],  # [{"key": "ART", "name": "Art", "color": "#8A4FB5", "color_dark": "#B58CE6"}]
 	"stale_days": STALE_DAYS,
+	"wip_limit": None,  # int: the UI warns when more tickets than this are in progress; None = no warning
 	"lease_minutes": 15,  # a claim with no heartbeat for this long expires and the ticket goes back to todo
 	"legacy_files": [],  # old ticket lists (relative to the tickets folder): new IDs never reuse a number seen there
 	"id": None,  # board id when several boards are served; None = the project folder's name
@@ -86,6 +87,8 @@ def load_config(tickets_dir: Path) -> dict:
 		if unknown:
 			raise TicketError(f"{path}: unknown key(s) {', '.join(sorted(unknown))}. Known: {', '.join(DEFAULT_CONFIG)}")
 		cfg.update(user)
+	if cfg["wip_limit"] is not None and not (type(cfg["wip_limit"]) is int and cfg["wip_limit"] > 0):
+		raise TicketError(f"{CONFIG_FILE}: wip_limit must be a positive number or null")
 	if not cfg["owners"] or not all(isinstance(o, dict) and o.get("name") for o in cfg["owners"]):
 		raise TicketError(f"{CONFIG_FILE}: owners must be a non-empty list of {{\"name\", \"kind\"}}")
 	for pl in cfg["pillars"]:
@@ -340,6 +343,11 @@ class Store:
 		clean = self._clean(changes, partial=True)
 		if "blocked_by" in clean:
 			self._check_loop(tid, clean["blocked_by"])
+		if clean.get("status") == "doing" and t.get("status") != "doing":
+			open_b = [b for b in clean.get("blocked_by", t.get("blocked_by", []))
+			          if self._path(b).exists() and self._read(self._path(b)).get("status") != "done"]
+			if open_b:
+				raise TicketError(f"{tid} is blocked by {', '.join(open_b)} (still open): finish or unlink it first")
 		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
 			self._drop_claim(tid, f"status set to {clean['status']}")
 		t.update(clean)
