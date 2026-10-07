@@ -42,6 +42,25 @@ class StoreTest(unittest.TestCase):
 		self.assertEqual([k["parent"] for k in r["children"]], ["E-1", "E-1"])
 		self.assertEqual(r["parent"]["progress"], {"done": 0, "total": 2})
 
+	def test_delete_cleans_up_and_reports_who_points_at_it(self):
+		self.s.create({"title": "gone"}, tid="E-1")
+		self.s.create({"title": "waits", "blocked_by": ["E-1"]}, tid="E-2")
+		self.s.create({"title": "part", "parent": "E-1"}, tid="E-3")
+		self.s.create({"title": "other"}, tid="E-4")
+		self.s.claim("w-1", tid="E-1")
+		files = self.s.dir / "files" / "E-1"
+		files.mkdir(parents=True)
+		(files / "spec.md").write_text("x", encoding="utf-8")
+		r = self.s.delete("E-1")
+		self.assertEqual((r["id"], r["referenced_by"]), ("E-1", ["E-2", "E-3"]))
+		self.assertFalse(files.exists())
+		self.assertEqual(self.s.agents_now()["working"], [])  # claim gone with it
+		self.assertEqual([e["event"] for e in self.s.activity("E-1")[:2]], ["deleted", "dropped"])
+		self.assertEqual(self.s.get("E-2")["missing_blockers"], ["E-1"])  # not edited
+		self.assertEqual(self.s.delete("E-4")["referenced_by"], [])
+		with self.assertRaises(NotFound):
+			self.s.delete("E-1")
+
 	def test_parent_refusals(self):
 		self.s.create({"title": "a"}, tid="E-1")
 		self.s.create({"title": "b", "parent": "E-1"}, tid="E-2")

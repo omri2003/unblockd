@@ -10,6 +10,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 from datetime import date, datetime, timezone
@@ -427,6 +428,7 @@ class Store:
 		return self._locked(run)
 
 	def delete(self, tid: str) -> dict:
+		"""Remove a ticket, its claim and attachments. Returns it plus `referenced_by`: tickets still pointing at it."""
 		return self._locked(lambda: self._delete(tid))
 
 	def _delete(self, tid: str) -> dict:
@@ -434,8 +436,12 @@ class Store:
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
 		t = self._read(path)
+		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
 		path.unlink()
-		return t
+		self._drop_claim(tid, "ticket deleted")
+		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)  # attachments
+		self._log("deleted", tid, None, t["title"])
+		return {**t, "referenced_by": refs}  # still list it in blocked_by / parent: not edited, now dangling
 
 	# ---------- claims: which agent is working what, right now ----------
 	# Runtime state, not ticket content: kept in <tickets>/.unblockd/ (git-ignored by a .gitignore

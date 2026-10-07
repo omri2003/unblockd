@@ -53,7 +53,7 @@ Derived on every read (`_decorate`): `effective_status` (todo with an open block
 `files` (names attached in tickets/files/<ID>/).
 
 Rules enforced in the store: IDs `PREFIX-N` (create with a prefix -> next free number, also
-skipping numbers in `legacy_files`); `blocked_by` loops refused with the loop spelled out; `parent` must exist and may not loop (create/update; `list(parent=X)`, CLI `list --parent`, MCP `list_tickets(parent=)`; no REST filter or UI yet; deleting a parent leaves children pointing at it, shown with no `children` on anyone);
+skipping numbers in `legacy_files`); `delete` runs under the lock: drops the claim, removes `tickets/files/<ID>/`, logs `deleted`, and returns the ticket plus `referenced_by` (tickets whose `blocked_by`/`parent` still name it; they are not edited and show it as a missing blocker); `blocked_by` loops refused with the loop spelled out; `parent` must exist and may not loop (create/update; `list(parent=X)`, CLI `list --parent`, MCP `list_tickets(parent=)`; no REST filter or UI yet; deleting a parent leaves children pointing at it, shown with no `children` on anyone);
 setting `doing` on a ticket with open blockers is refused (in `update`, so web/MCP/CLI all get it; `claim` only takes ready tickets);
 owners and pillars must be the configured ones; unknown `agent:<x>` tags refused.
 
@@ -80,7 +80,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes; `create`, `update`, `delete` and `split` take it too (next-id + write, and read-modify-write, would otherwise race).
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next
   read. `complete` needs a summary and appends it to the body, signed. `ask(id, agent, question)` (MCP `ask_human`, CLI `ask --question`) is for a decision only a human can make: it ends the claim, sets `waiting_on` = question (status stays todo) and logs `question`; a todo with a non-empty `waiting_on` has `effective_status` pending, so it is neither ready nor claimable until a human clears `waiting_on` (answer goes in the body). Moving a claimed ticket
-  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `question`, `created`, `split` and `done` (moved to done by hand),
+  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `deleted`, `question`, `created`, `split` and `done` (moved to done by hand),
   and `GET /activity?since=` filters it. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
 - **Remote CLI**: with `UNBLOCKD_URL` set (+ `UNBLOCKD_TOKEN`, `UNBLOCKD_BOARD` for a non-default board) `cli.main` builds a `cli.Remote` instead of a `Store`: same method names, each one a urllib call to the REST endpoint, server errors come back as `TicketError` (exit 1). The file lock only works on one filesystem, so this is how agents on other machines share a board; the server's Store does the locking. `--dir` is ignored then. New Store operations need a REST route AND a `Remote` method, or remote workers lose them (`ask` and `list?parent=` were added for this).
