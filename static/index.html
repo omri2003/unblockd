@@ -551,9 +551,11 @@ function authFail(text){ // 401: say how to get in, once (the 4 s poll must not 
   toast(m||'Unauthorized: open the board once with ?token=...',{err:1});
   $('sub').textContent=m||'Unauthorized.';
 }
+let etag=null; // ETag of the last /tickets response; sent back so an unchanged board costs a 304
 async function load(force){
   let text;
-  try{ const r=await fetch(API+'/tickets',{cache:'no-store'}); text=await r.text(); if(r.status===401){ authFail(text); return; } if(!r.ok) throw 0; }
+  try{ const r=await fetch(API+'/tickets',{cache:'no-store',headers:etag&&!force?{'If-None-Match':etag}:{}}); if(r.status===304) return; // unchanged since the last ETag
+    text=await r.text(); if(r.status===401){ authFail(text); return; } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
   catch{ toast('Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
   if(text===raw && !force) return;
   raw=text; T=JSON.parse(text); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));

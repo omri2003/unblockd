@@ -126,6 +126,23 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual([x["id"] for x in self.call("GET", "/api/boards")[1]], ["a", "b"])
 		self.assertEqual(self.call("GET", "/api/b/zzz/tickets")[0], 404)
 
+	def test_etag_304_when_the_board_is_unchanged(self):
+		self.call("POST", "/api/tickets", {"prefix": "BUG", "title": "x"})
+
+		def get(etag=None):
+			c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)
+			c.request("GET", "/api/tickets", headers={"If-None-Match": etag} if etag else {})
+			r = c.getresponse()
+			return r.status, r.getheader("ETag"), r.read()
+		code, etag, body = get()
+		self.assertEqual(code, 200)
+		self.assertTrue(etag and body)
+		self.assertEqual(get(etag), (304, etag, b""))
+		self.call("PATCH", "/api/tickets/BUG-1", {"title": "y"})
+		code2, etag2, _ = get(etag)  # stale tag after an update: full 200 with a new tag
+		self.assertEqual(code2, 200)
+		self.assertNotEqual(etag2, etag)
+
 	def test_token_auth(self):
 		self.assertEqual(self.call("GET", "/api/tickets")[0], 200)  # unset: open
 		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):

@@ -34,6 +34,7 @@ or the `unblockd_token` cookie, which any page visited with `?token=<token>` set
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -65,8 +66,13 @@ class Handler(BaseHTTPRequestHandler):
 
 	def _send(self, code: int, payload, ctype="application/json; charset=utf-8"):
 		data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode()
+		etag = f'"{hashlib.md5(data).hexdigest()}"' if code == 200 and self.command == "GET" else None
+		if etag and etag in [x.strip() for x in (self.headers.get("If-None-Match") or "").split(",")]:
+			code, data = 304, b""  # unchanged: the 4 s poll costs headers, not the whole board
 		self.send_response(code)
 		self.send_header("Content-Type", ctype)
+		if etag:
+			self.send_header("ETag", etag)
 		self.send_header("Content-Length", str(len(data)))
 		self.send_header("Cache-Control", "no-store")
 		self.end_headers()
