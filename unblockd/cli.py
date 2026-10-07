@@ -18,7 +18,8 @@
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text"        # appends a dated paragraph to the body
 
---dir defaults to $TICKETS_DIR, then ./tickets. Settings come from
+--dir defaults to $TICKETS_DIR, then ./tickets. With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
+command goes to that server's REST API instead of a local folder, so agents on other machines share one board and one lock. Settings come from
 <dir>/unblockd.json (see README); extra legacy numbering files from $UNBLOCKD_LEGACY.
 Prints JSON. Exit code 1 + message on bad input.
 """
@@ -28,11 +29,56 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date
 from pathlib import Path
 
 from . import knowledge as kn
 from . import store as st
+
+
+class Remote:
+	"""The Store calls this CLI makes, sent to a running unblockd.web instead (UNBLOCKD_URL)."""
+	def __init__(self, url: str, token: str | None = None, board: str | None = None):
+		self.base = url.rstrip("/") + "/api" + (f"/b/{urllib.parse.quote(board)}" if board else "")
+		self.token = token
+
+	def _call(self, method: str, path: str, body=None, **q):
+		q = {k: v for k, v in q.items() if v is not None}
+		req = urllib.request.Request(self.base + path + ("?" + urllib.parse.urlencode(q) if q else ""), method=method,
+		                             data=None if body is None else json.dumps(body).encode(),
+		                             headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.token}"} if self.token else {})})
+		try:
+			with urllib.request.urlopen(req, timeout=30) as r:
+				return json.loads(r.read())
+		except urllib.error.HTTPError as e:
+			try:
+				msg = json.loads(e.read()).get("error")
+			except (ValueError, AttributeError):
+				msg = None
+			raise st.TicketError(msg or f"{self.base}: HTTP {e.code}")
+		except urllib.error.URLError as e:
+			raise st.TicketError(f"can't reach {self.base}: {e.reason} (UNBLOCKD_URL)")
+
+	def list(self, **f): return self._call("GET", "/tickets", **f)
+	def next_ready(self, **f): return self._call("GET", "/next", **f)
+	def work_plan(self, per_agent=3): return self._call("GET", "/plan", per_agent=per_agent)
+	def agents_now(self): return self._call("GET", "/agents")
+	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
+	def create(self, data, tid=None, prefix=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {})})
+	def update(self, tid, changes): return self._call("PATCH", f"/tickets/{tid}", changes)
+	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
+	def claim(self, agent, tid=None, profile=None, note=""):
+		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note})
+	def heartbeat(self, tid, agent, note=""): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note})
+	def release(self, tid, agent, reason=""): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason})
+	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
+	def complete(self, tid, agent, summary): return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary})
+	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
+	def read_doc(self, path): return self._call("GET", "/doc", path=path)
+	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,7 +133,10 @@ def main(argv: list[str] | None = None) -> int:
 	a = ap.parse_args(argv)
 
 	try:
-		s = st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
+		url = os.environ.get("UNBLOCKD_URL")
+		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
+			st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
+		ctx = s.context if url else lambda tid: kn.context(s, tid)
 		if a.cmd == "list":
 			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent)
 			out = [{k: t.get(k) for k in ("id", "title", "effective_status", "priority", "owner", "pillar", "agent", "open_blockers")} for t in res]
@@ -101,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			out = kn.with_context(s, s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note))
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note)
+			out = {**got, "context": ctx(got["id"])} if got else None
 		elif a.cmd == "heartbeat":
 			out = s.heartbeat(a.id, a.agent, a.note)
 		elif a.cmd == "release":
@@ -113,12 +163,12 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "agents":
 			out = s.agents_now()
 		elif a.cmd == "context":
-			out = kn.context(s, a.id)
+			out = ctx(a.id)
 		elif a.cmd == "doc":
-			out = kn.read_doc(s, a.path)
+			out = s.read_doc(a.path) if url else kn.read_doc(s, a.path)
 		elif a.cmd == "attach":
 			f = Path(a.file)
-			out = kn.attach(s, a.id, a.name or f.name, f.read_text(encoding="utf-8"))
+			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
 			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
 		elif a.cmd == "get":

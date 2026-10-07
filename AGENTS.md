@@ -21,7 +21,7 @@ unblockd/boards.py      Several boards: discovers <root>/<project>/tickets/unblo
                         create(). Every front door goes through Boards -> Store.
 unblockd/web.py         Stdlib HTTP server + REST API (Handler._route). Serves static/index.html.
 unblockd/mcp_server.py  MCP tools (needs the `mcp` package; the only dependency).
-unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools).
+unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools); `Remote` = the same over REST (UNBLOCKD_URL).
 unblockd/notify.py      Webhook notifications: one daemon thread started by web.main (UNBLOCKD_WEBHOOK).
 unblockd/chat.py        Messages API over urllib, read-only tool loop, #ID / @board resolution.
 unblockd/knowledge.py   Docs linked to tickets (board / profile / ticket `docs`) + files attached
@@ -83,6 +83,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `question`, `created`, `split` and `done` (moved to done by hand),
   and `GET /activity?since=` filters it. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
+- **Remote CLI**: with `UNBLOCKD_URL` set (+ `UNBLOCKD_TOKEN`, `UNBLOCKD_BOARD` for a non-default board) `cli.main` builds a `cli.Remote` instead of a `Store`: same method names, each one a urllib call to the REST endpoint, server errors come back as `TicketError` (exit 1). The file lock only works on one filesystem, so this is how agents on other machines share a board; the server's Store does the locking. `--dir` is ignored then. New Store operations need a REST route AND a `Remote` method, or remote workers lose them (`ask` and `list?parent=` were added for this).
 - **Split** (`store.split(id, titles, sequential, by)`; REST `POST tickets/<id>/split`, MCP `split_ticket`, CLI `split --title ...`, drawer
   menu "Split…"): a ticket too big for one go becomes >=2 children (same prefix, next free ids; `parent` = the split ticket; pillar, owner, priority, tags incl. `agent:<x>`,
   touches, docs copied; body "Split from X."; inherit the parent's `blocked_by`; `sequential` = child N also waits on child N-1) and the parent's
