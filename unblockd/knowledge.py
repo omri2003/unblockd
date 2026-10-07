@@ -157,6 +157,11 @@ def sources(store, t: dict) -> list[tuple[str, str]]:
 	return out
 
 
+def with_context(store, t: dict | None) -> dict | None:
+	"""A freshly claimed ticket plus its context bundle (None passes through): what a worker reads first."""
+	return {**t, "context": context(store, t["id"])} if t else None
+
+
 def context(store, tid: str, budget: int | None = None, inline: bool = True) -> dict:
 	"""Everything an agent should read before working a ticket, in order: board docs, agent
 	profile docs, ticket docs, then files attached to the ticket. Inlined until `budget`
