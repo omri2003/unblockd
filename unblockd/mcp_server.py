@@ -211,6 +211,13 @@ def get_context(id: str, board: str | None = None, budget: int | None = None) ->
 
 
 @tool
+def knowledge_graph(board: str | None = None) -> dict:
+	"""Who reads what: open tickets, the docs their context would hold, ticket->doc and doc->doc edges, and the problems:
+	`no_docs` (tickets with no task-specific doc), `broken` (missing / outside / non-text refs + their tickets), `hubs`, `orphans`."""
+	return kn.graph(BOARDS.get(board))
+
+
+@tool
 def read_doc(path: str, board: str | None = None) -> dict:
 	"""One text file from the board's project repo (path relative to the repo root), with its links."""
 	return kn.read_doc(BOARDS.get(board), path)

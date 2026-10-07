@@ -198,3 +198,75 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 		docs.append(item)
 	return {"ticket": tid, "docs": docs, "inlined_chars": budget - left,
 	        "note": "Read these before working the ticket. Items without content: read_doc(path)."}
+
+
+HUBS = 5  # how many hub docs graph() lists
+
+
+def graph(store) -> dict:
+	"""Who reads what, without inlining anything: every open ticket -> the docs context() would give it.
+	{tickets, docs, reads: [{ticket, doc, via}], links: [{from, to}], no_docs, broken, hubs, orphans}.
+	- `via` = board | profile | ticket | file (first source wins per ticket, like context()'s dedupe).
+	- doc `kind` = the broadest way anyone reads it (board > profile > ticket > file), or `linked` when
+	  no ticket reads it: such a doc is `linked_only` (an orphan) and is only reached through another doc's link.
+	- `links` = doc -> doc, one hop from the docs tickets read (links_of(): only targets that exist, as text).
+	- `no_docs` = open tickets with no readable doc from their profile, themselves or attachments: only
+	  board-wide docs (or nothing, or only broken refs) means an agent gets no task-specific context.
+	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big.
+	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design)."""
+	base, cache, finfo = root(store), {}, {}
+	rank = {"board": 0, "profile": 1, "ticket": 2, "file": 3}
+	tickets, docs, reads, links, readers = [], {}, [], [], {}
+
+	def info(rel, p):  # size + outgoing links, once per file
+		if rel not in finfo:
+			size = p.stat().st_size
+			text = p.read_text(encoding="utf-8", errors="replace") if size <= MAX_FILE else None
+			finfo[rel] = (size, None if text is None else links_of(text, p, base))
+		return finfo[rel]
+
+	def add(t, rel, p, err, via):
+		d = docs.setdefault(rel, {"path": rel, "kind": via})
+		if rank[via] < rank[d["kind"]]:
+			d["kind"] = via
+		if err:
+			d["error"] = err
+		elif p is not None:
+			d["size"], lk = info(rel, p)
+			if lk is None:
+				d["error"] = "too big to inline; read it in parts in the repo"
+		if t["id"] not in readers.setdefault(rel, set()):
+			readers[rel].add(t["id"])
+			reads.append({"ticket": t["id"], "doc": rel, "via": via})
+
+	for t in store.list():
+		if t["status"] == "done":
+			continue
+		tickets.append({k: t.get(k) for k in ("id", "title", "pillar", "agent", "priority")} | {"status": t["effective_status"]})
+		for entry, src in sources(store, t):
+			if entry not in cache:
+				cache[entry] = expand(store, entry)
+			for rel, p, err in cache[entry]:
+				add(t, rel, p, err, src.split(":")[0].replace("agent", "profile"))
+		for f in list_files(store, t["id"]):
+			rel = f"tickets/files/{t['id']}/{f['name']}"
+			add(t, rel, files_dir(store, t["id"]) / f["name"], None, "file")
+	for rel in list(docs):
+		d = docs[rel]
+		d["readers"] = len(readers[rel])
+		if "error" in d:
+			continue
+		for to in finfo[rel][1] or []:
+			if to not in docs:
+				q = base / to
+				if not _is_text(q):
+					continue
+				docs[to] = {"path": to, "kind": "linked", "linked_only": True, "readers": 0, "size": q.stat().st_size}
+			links.append({"from": rel, "to": to})
+	good = {r["ticket"] for r in reads if r["via"] != "board" and "error" not in docs[r["doc"]]}
+	broken = [{"path": r, "error": d["error"], "via": d["kind"], "tickets": sorted(readers[r])} for r, d in docs.items() if d.get("error")]
+	hubs = sorted((d for d in docs.values() if d["kind"] != "board" and d["readers"] >= 2), key=lambda d: (-d["readers"], d["path"]))[:HUBS]
+	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links,
+	        "no_docs": [t["id"] for t in tickets if t["id"] not in good], "broken": broken,
+	        "hubs": [{"path": d["path"], "readers": d["readers"]} for d in hubs],
+	        "orphans": sorted(r for r, d in docs.items() if d.get("linked_only"))}

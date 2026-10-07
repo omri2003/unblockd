@@ -342,6 +342,44 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dots::after{content:'…';animation:dots 1.2s steps(3) infinite}
 @keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
 @media (prefers-reduced-motion:reduce){.dots::after{animation:none}}
+/* Docs view: tickets left, docs right, lines between. Plain DOM + one SVG: CSS tokens resolve natively, no JS colour reads. */
+.dprob{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.dprob button{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:600;text-align:left}
+.dprob button.bad{border-color:var(--cinnabar);color:var(--cinnabar);background:var(--surface)}
+.dprob button.zero{color:var(--muted);cursor:default;font-weight:400}
+.dprob button[aria-pressed=true]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.dtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:10px;font-size:.82rem;color:var(--muted)}
+.dtools .sw{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
+.dstage{position:relative;background:var(--sunk);border-radius:8px;padding:12px 12px}
+.dcols{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,22%) minmax(0,1.1fr) 56px;align-items:start}
+.dcols ol{list-style:none;margin:0;padding:0;display:grid;gap:3px}
+.dcols h2{font-size:.82rem;color:var(--muted);margin:0 0 6px;font-weight:700}
+.dcols>div{min-width:0} .dcols ol{grid-template-columns:minmax(0,1fr)}
+#dSvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#dSvg path{fill:none;stroke:var(--line);stroke-width:1.2}
+#dSvg path.s{stroke:var(--ink);stroke-width:2}
+#dSvg path.l{stroke-dasharray:4 3;stroke:var(--muted)}
+#dSvg path.l.s{stroke:var(--ink)}
+#dSvg path.x{stroke:var(--cinnabar);stroke-dasharray:2 3}
+.dn{display:flex;align-items:center;gap:8px;width:100%;min-height:30px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:3px 8px;cursor:pointer;text-align:left;min-width:0}
+.dn:hover,.dn.on{border-color:var(--ink)}
+.dn .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn .mk{flex:none;width:12px;height:12px;border:2px solid var(--ink);background:var(--surface)}
+.tk .mk{border-radius:50%} .tk .mk.doing{background:var(--amber);border-color:var(--amber)} .tk .mk.pending{background:var(--slate);border-color:var(--slate)}
+.dk .mk{border-radius:3px;border-color:var(--muted)} .dk.orph .mk{border-style:dashed} .dk.bad .mk{border-color:var(--cinnabar);background:var(--cinnabar)}
+.dk.hub .mk{background:var(--jade);border-color:var(--jade)}
+.dk .pth{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.82rem} .dk .pth i{font-style:normal;color:var(--muted)}
+.dn .tag{flex:none;font-size:.74rem;color:var(--muted);white-space:nowrap} .dn .tag.bad,.dn .tag.warn{color:var(--cinnabar);font-weight:700}
+.dn .tag.bad{flex:0 1 auto;min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis}
+.dn.fade{opacity:.3} .dn.fade:hover{opacity:1}
+.dempty{padding:18px 4px;color:var(--muted)}
+.dh3{font-size:.85rem;margin:14px 0 4px;color:var(--muted)}
+.dlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.dlist li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.dlist button:not(.kdoc){background:none;border:0;padding:0;font:inherit;cursor:pointer;text-align:left;color:var(--ink)} .dlist button:not(.kdoc):hover .tid{text-decoration:underline}
+@media (max-width:700px){
+  .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
+}
 </style>
 </head>
 <body>
@@ -355,7 +393,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
   <div class="strip" id="strip" aria-label="Status overview"></div>
-  <div class="bar" role="search">
+  <div class="bar" id="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
     <details class="fpanel" id="fpanel"><summary class="btn ghost">Filters <b class="fcount" id="fcount" hidden></b></summary>
       <div class="fbody" id="fbody">
@@ -375,6 +413,17 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
   <div class="board" id="board"></div>
+  <section class="docswrap" id="docsWrap" hidden aria-label="What agents read">
+    <div class="dprob" id="dProb" role="group" aria-label="Problems"></div>
+    <div class="dtools"><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
+      <span><i class="sw" style="border:2px solid var(--ink);border-radius:50%"></i>Ticket</span>
+      <span><i class="sw" style="border:2px solid var(--muted);border-radius:3px"></i>Doc</span>
+      <span><i class="sw" style="border:2px dashed var(--muted);border-radius:3px"></i>Only linked from another doc</span>
+      <span><i class="sw" style="background:var(--cinnabar);border-radius:3px"></i>Broken reference</span>
+      <span><i class="sw" style="background:var(--jade);border-radius:3px"></i>Hub</span>
+      <span class="hint">Dashed lines: doc links to doc. Board-wide docs are every ticket's; their lines show on hover.</span></div>
+    <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs they will read</h2><ol id="dD"></ol></div></div></div>
+  </section>
   <section class="graphwrap" id="graphWrap" hidden aria-label="Blocking graph">
     <div class="gtools">
       <span class="seg" id="gLayoutSeg" role="group" aria-label="Layout"></span>
@@ -425,6 +474,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   <dl>
     <dt><kbd>/</kbd></dt><dd>Search</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
+    <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
     <dt><kbd>n</kbd></dt><dd>New ticket</dd>
     <dt><kbd>c</kbd></dt><dd>Ask about this board (chat). In the chat, <kbd>#</kbd> links a ticket, <kbd>@</kbd> a board</dd>
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next or previous card</dd>
@@ -519,7 +569,7 @@ async function load(force){
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
   paint=()=>{ paint=null;
-    renderBar(); render(); if(!$('chat').hidden&&!CH.busy) renderChat();
+    renderBar(); render(); if(state.view==='docs')loadDocs(); if(!$('chat').hidden&&!CH.busy) renderChat();
     if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
   };
   if(!force&&menuBusy()) return; // a re-render would destroy the open menu: keep the data, paint when it closes
@@ -927,6 +977,9 @@ document.addEventListener('click',async e=>{
   if(g('#kbBtn')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
+  if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
+  if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
+  if(g('[data-drefresh]')){loadDocs();return;}
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
   if(b=g('[data-view]')){setView(b.dataset.view);return;}
   if(g('[data-unfocus]')){setFocus(null);return;}
@@ -971,6 +1024,7 @@ document.addEventListener('keydown',e=>{
     else if($('apanel').open) $('apanel').open=false;
     else if(document.querySelector('.mv[open],.ovf[open]')) document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.open=false);
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
+    else if(state.view==='docs'&&DV.f){DV.f=null;renderDocs();}
     else if(cancelGraphGesture()){}
     else if(G.selEdge) {clearEdge();}
     else if(G.isolate) leaveIsolate();
@@ -984,6 +1038,7 @@ document.addEventListener('keydown',e=>{
   if(!$('drawer').hidden||!$('kb').hidden) return;
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') setView(state.view==='board'?'graph':'board');
+  else if(e.key==='d') setView(state.view==='docs'?'board':'docs');
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
   else if(e.key==='c'){ e.preventDefault(); $('chat').hidden?openChat():$('cin').focus(); }
   else if(e.key==='j'||e.key==='k'){
@@ -1352,9 +1407,90 @@ $('gFit').addEventListener('click',fit);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readColors();kick();}); // OS switch (only matters in System; harmless otherwise)
 readColors();
 
+// ---------- docs view: what will agents read, and where is that broken? ----------
+// GET /knowledge once on entering and on Refresh, and again when the tickets JSON changes (paint). Never on every poll.
+// Layout: tickets left, docs right (most-read first), lines between. Chosen over the canvas force layout: a bipartite
+// graph reads best in two columns, rows are real buttons (keyboard, a11y, mobile list), and no second engine is needed.
+const DV={data:null,f:null,hl:null,busy:false,err:''};
+const DPROB=[['nodocs',['ticket without docs','tickets without docs'],'no_docs','bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
+  ['broken',['broken reference','broken references'],'broken','bad','A docs entry that is missing, outside the project, not text, or too big.'],
+  ['hubs',['hub doc','hub docs'],'hubs','','Docs read by the most tickets (2 or more; board-wide docs excluded). Changing one affects many tickets.'],
+  ['orphans',['orphan doc','orphan docs'],'orphans','','Docs that only another doc links to. No ticket makes an agent read them.']];
+async function loadDocs(){
+  if(DV.busy)return;DV.busy=true;DV.err='';
+  try{const r=await fetch(API+'/knowledge',{cache:'no-store'});const j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));DV.data=j;}
+  catch(e){DV.err=e.message||'Could not load';}
+  DV.busy=false;if(state.view==='docs')renderDocs();
+}
+const dBase=p=>p.split('/').pop(),dDir=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')+1):'';
+const dKind={board:'board',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
+function dSets(f){ // the nodes a problem filter points at: {t:Set of tickets, d:Set of docs}
+  const g=DV.data,t=new Set(),d=new Set();if(!f)return null;
+  if(f==='nodocs')g.no_docs.forEach(x=>t.add(x));
+  if(f==='broken')g.broken.forEach(b=>{d.add(b.path);b.tickets.forEach(x=>t.add(x));});
+  if(f==='hubs')g.hubs.forEach(h=>{d.add(h.path);g.reads.forEach(r=>{if(r.doc===h.path)t.add(r.ticket);});});
+  if(f==='orphans')g.orphans.forEach(x=>{d.add(x);g.links.forEach(l=>{if(l.to===x)d.add(l.from);});});
+  return {t,d};
+}
+function renderDocs(){
+  const g=DV.data,P=$('dProb'),T_=$('dT'),D_=$('dD');
+  if(!g){P.innerHTML='';T_.innerHTML=D_.innerHTML='';$('dStage').firstElementChild.replaceChildren();
+    $('dT').innerHTML=`<li class="dempty">${DV.err?`<span class="msg err">${esc(DV.err)}</span>`:'Reading docs<span class="dots"></span>'}</li>`;return;}
+  P.innerHTML=DPROB.map(([k,l,key,bad,tip])=>{const n=g[key].length;
+    return `<button type="button" class="${bad&&n?'bad':''}${n?'':' zero'}" data-dprob="${k}" aria-pressed="${DV.f===k}" ${n?'':'disabled'} title="${esc(tip)}">${bad&&n?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('');
+  const hubs=new Set(g.hubs.map(h=>h.path)),bad=new Set(g.broken.map(b=>b.path)),nod=new Set(g.no_docs);
+  const docs=[...g.docs].sort((a,b)=>b.readers-a.readers||a.path.localeCompare(b.path));
+  T_.innerHTML=g.tickets.length?g.tickets.map(t=>`<li><button type="button" class="dn tk" data-open="${esc(t.id)}" data-n="t:${esc(t.id)}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}<i class="mk ${t.status}"></i></button></li>`).join('')
+    :'<li class="dempty">No open tickets.</li>';
+  D_.innerHTML=docs.length?docs.map(d=>`<li><button type="button" class="dn dk${bad.has(d.path)?' bad':''}${hubs.has(d.path)?' hub':''}${d.linked_only?' orph':''}" data-dnode="${esc(d.path)}" data-n="d:${esc(d.path)}"><i class="mk"></i><span class="pth" title="${esc(d.path)}"><i>${esc(dDir(d.path))}</i>${esc(dBase(d.path))}</span>${d.error?`<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`:`<span class="tag">${dKind[d.kind]}</span>`}<span class="tag">${d.readers?'×'+d.readers:''}</span></button></li>`).join('')
+    :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board or an agent profile in unblockd.json, or to a ticket.</li>`;
+  markDocs();
+}
+function markDocs(){ // classes + lines only; cheap, runs on hover
+  const g=DV.data;if(!g)return;
+  const sel=DV.hl?(()=>{const [k,id]=[DV.hl[0],DV.hl.slice(2)],t=new Set(),d=new Set();
+      if(k==='t'){t.add(id);g.reads.forEach(r=>{if(r.ticket===id)d.add(r.doc);});}
+      else{d.add(id);g.reads.forEach(r=>{if(r.doc===id)t.add(r.ticket);});g.links.forEach(l=>{if(l.from===id)d.add(l.to);if(l.to===id)d.add(l.from);});}
+      return {t,d,hover:k};})():dSets(DV.f);
+  for(const b of document.querySelectorAll('#dStage .dn')){const [k,id]=[b.dataset.n[0],b.dataset.n.slice(2)];if(!b.dataset.n)continue;
+    b.classList.toggle('fade',!!sel&&!(k==='t'?sel.t:sel.d).has(id));b.classList.toggle('on',DV.hl===b.dataset.n);}
+  const svg=$('dSvg'),st=$('dStage').getBoundingClientRect(),pos=new Map();
+  if(getComputedStyle(svg).display==='none'){svg.innerHTML='';return;}
+  for(const b of document.querySelectorAll('#dStage .dn')){const m=b.querySelector('.mk').getBoundingClientRect();pos.set(b.dataset.n,[m.left+m.width/2-st.left,m.top+m.height/2-st.top,b.getBoundingClientRect().right-st.left]);}
+  const strong=(a,b)=>!!sel&&(sel.hover?(sel.hover==='t'?a.slice(2)===DV.hl.slice(2):(a.slice(2)===DV.hl.slice(2)||b.slice(2)===DV.hl.slice(2))):sel.t.has(a.slice(2))&&sel.d.has(b.slice(2)));
+  const board=new Set(g.docs.filter(d=>d.kind==='board').map(d=>d.path));
+  let out='';
+  for(const r of g.reads){const a='t:'+r.ticket,b='d:'+r.doc,A=pos.get(a),B=pos.get(b);if(!A||!B)continue;
+    const s=strong(a,b);if(r.via==='board'&&!s)continue; // everyone reads these: lines only on demand
+    const x1=A[0],x2=B[0],mx=(x1+x2)/2;
+    out+=`<path class="${s?'s':''}${g.broken.some(x=>x.path===r.doc)?' x':''}" d="M${x1},${A[1]}C${mx},${A[1]} ${mx},${B[1]} ${x2},${B[1]}"/>`;}
+  for(const l of g.links){const a='d:'+l.from,b='d:'+l.to,A=pos.get(a),B=pos.get(b);if(!A||!B)continue;
+    const s=!!sel&&(sel.hover?(sel.hover==='d'&&(l.from===DV.hl.slice(2)||l.to===DV.hl.slice(2))):sel.d.has(l.from)&&sel.d.has(l.to));
+    const x=Math.max(A[2],B[2]),bulge=14+Math.min(34,Math.abs(A[1]-B[1])/8);
+    out+=`<path class="l ${s?'s':''}" d="M${A[2]},${A[1]}C${x+bulge},${A[1]} ${x+bulge},${B[1]} ${B[2]},${B[1]}"/>`;}
+  svg.innerHTML=out;
+}
+function openDocNode(path){ // side panel for one doc: who reads it, what it links to, why it is broken
+  const g=DV.data,d=g&&g.docs.find(x=>x.path===path);if(!d)return;
+  const rd=g.reads.filter(r=>r.doc===path),to=g.links.filter(l=>l.from===path).map(l=>l.to),from=g.links.filter(l=>l.to===path).map(l=>l.from);
+  const dl=a=>a.length?`<ul class="dlist">${a.map(p=>`<li><button type="button" class="kdoc" data-dnode="${esc(p)}">${esc(p)}</button></li>`).join('')}</ul>`:'<p class="hint">None.</p>';
+  openId=null;openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0;font-size:1.05rem;overflow-wrap:anywhere;font-family:var(--mono)">${esc(path)}</h2><span class="sp"><button type="button" class="btn ghost" data-close>Close</button></span></div>
+    <p class="hint">${dKind[d.kind]}${d.size!=null?`, ${Math.max(1,Math.round(d.size/1000))}k`:''}${d.linked_only?'. No ticket reads it; only another doc links here.':''}</p>
+    ${d.error?`<p class="msg err">Broken: ${esc(d.error)}. Fix the path in the docs list of the ticket, profile or board that names it.</p>`:`<p><button type="button" class="btn sm" data-doc="${esc(path)}">View file</button></p>`}
+    <h3 class="dh3">Read by ${rd.length} ticket${rd.length===1?'':'s'}</h3>
+    ${rd.length?`<ul class="dlist">${rd.map(r=>{const t=g.tickets.find(x=>x.id===r.ticket);return `<li><button type="button" data-open="${esc(r.ticket)}"><span class="tid">${esc(r.ticket)}</span> ${inline(t?t.title:'')}</button><span class="ksrc">${esc(dKind[r.via]||r.via)}</span></li>`;}).join('')}</ul>`:'<p class="hint">No open ticket.</p>'}
+    <h3 class="dh3">Links to</h3>${dl(to)}<h3 class="dh3">Linked from</h3>${dl(from)}`);
+}
+{const st=$('dStage');
+ st.addEventListener('pointerover',e=>{const b=e.target.closest('.dn');const n=b?b.dataset.n:null;if(n!==DV.hl){DV.hl=n;markDocs();}});
+ st.addEventListener('pointerleave',()=>{if(DV.hl){DV.hl=null;markDocs();}});
+ st.addEventListener('focusin',e=>{const b=e.target.closest('.dn');if(b){DV.hl=b.dataset.n;markDocs();}});
+ st.addEventListener('focusout',()=>{DV.hl=null;markDocs();});
+ addEventListener('resize',()=>{if(state.view==='docs')markDocs();});}
+
 // ---------- view switch ----------
-function setView(v){if(v!=='graph')leaveIsolate();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
-  chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}}
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
+  chips($('viewSeg'),[['board','Board'],['graph','Graph'],['docs','Docs']],v,'view');renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
 function render(){renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;

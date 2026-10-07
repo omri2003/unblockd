@@ -23,6 +23,7 @@ POST   tickets/<id>/release              {"agent", "reason"?}
 POST   tickets/<id>/complete             {"agent", "summary"}
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
+GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
 GET    doc?path=                         one text file from the project repo (+ its links)
 GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
 POST   tickets/<id>/files                {"name", "content"}  attach a text file
@@ -137,6 +138,8 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
 				return self._send(200, store.claim(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
+			if method == "GET" and rest == ["knowledge"]:
+				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":

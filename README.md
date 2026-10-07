@@ -127,6 +127,8 @@ graph's edges) and an error for anything missing. The drawer's **Knowledge**
 list shows the same; click a doc to read it and follow its links. Paths can't
 leave the project folder; only text files are read or attached.
 
+**Docs view** (header switch, or `d`): what every open ticket's agent will read, and where that is broken. A problem strip counts tickets without docs, broken references, hub docs and orphan docs (click one to highlight it); tickets are on the left, docs on the right, hover for the lines, click a doc for who reads it and what it links to. Same data: `GET /knowledge`, MCP `knowledge_graph`.
+
 ## Chat: ask about tickets and boards
 
 **Ask** (or `c`) opens a chat beside the board. Claude answers with read-only
@@ -223,7 +225,7 @@ status, ring = pillar, size = how much is waiting on it.
 - **Shift-drag A onto B** makes A block B; click a link to remove it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 
-Keyboard: `/` search, `g` Board/Graph, `n` new, `j`/`k` move, `Enter` open,
+Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `j`/`k` move, `Enter` open,
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
 (Comfortable / Compact) and the "While you were away" digest, per browser.
 **Agents** (header button, or the "N agents working" badge) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.

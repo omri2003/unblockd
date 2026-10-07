@@ -74,6 +74,39 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(self.s.get("CMB-1")["files"], [])
 		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")][:2], ["detach", "attach"])
 
+	def test_graph(self):
+		self.s.create({"title": "plain", "pillar": "COMBAT"}, tid="CMB-2")  # board + profile docs
+		self.s.create({"title": "bare"}, tid="CMB-3")                        # no profile: board doc only
+		self.s.create({"title": "att"}, tid="CMB-4")
+		self.s.create({"title": "done one", "docs": ["nope2.md"]}, tid="CMB-5")
+		self.s.update("CMB-5", {"status": "done"})
+		kn.attach(self.s, "CMB-4", "spec.md", "see [m](../../../docs/MECHANICS.md)")
+		(self.repo / "docs" / "extra.md").write_text("only reachable by link", encoding="utf-8")
+		(self.repo / "docs" / "HANDOFF.md").write_text("Next. [x](extra.md) [n](notes/a.md)", encoding="utf-8")
+		g = kn.graph(self.s)
+		self.assertEqual([t["id"] for t in g["tickets"]], ["CMB-1", "CMB-2", "CMB-3", "CMB-4"])  # done tickets are skipped
+		docs = {d["path"]: d for d in g["docs"]}
+		self.assertEqual([docs[p]["kind"] for p in ("AGENTS.md", "docs/MECHANICS.md", "docs/notes/a.md", "tickets/files/CMB-4/spec.md")],
+		                 ["board", "profile", "ticket", "file"])
+		reads = {(r["ticket"], r["doc"]): r["via"] for r in g["reads"]}
+		self.assertEqual(reads[("CMB-1", "docs/HANDOFF.md")], "profile")  # also on the ticket: first source wins, like context()
+		self.assertEqual(reads[("CMB-3", "AGENTS.md")], "board")
+		self.assertNotIn(("CMB-3", "docs/MECHANICS.md"), reads)
+		self.assertNotIn("nope2.md", docs)
+		self.assertIn({"from": "AGENTS.md", "to": "docs/HANDOFF.md"}, g["links"])  # doc -> doc
+		self.assertIn({"from": "tickets/files/CMB-4/spec.md", "to": "docs/MECHANICS.md"}, g["links"])
+		self.assertEqual(g["orphans"], ["docs/extra.md"])  # linked by a doc, read by no ticket
+		self.assertTrue(docs["docs/extra.md"]["linked_only"])
+		self.assertEqual(g["broken"], [{"path": "nope.md", "error": "missing", "via": "ticket", "tickets": ["CMB-1"]}])
+		self.assertEqual(g["no_docs"], ["CMB-3"])  # CMB-1/2 have profile docs, CMB-4 an attachment
+		self.assertEqual(g["hubs"][0], {"path": "docs/HANDOFF.md", "readers": 2})  # AGENTS.md (board) is not a hub
+
+	def test_graph_flags_paths_outside_the_project(self):
+		self.s.config["docs"].append("../secret.md")  # can't be written through the API, but a hand-edited config can
+		g = kn.graph(self.s)
+		self.assertEqual([(b["path"], b["via"], b["tickets"]) for b in g["broken"] if "outside" in b["error"]], [("../secret.md", "board", ["CMB-1"])])
+		self.assertNotIn("outside", " ".join(d["path"] for d in g["docs"] if "error" not in d))
+
 
 if __name__ == "__main__":
 	unittest.main()

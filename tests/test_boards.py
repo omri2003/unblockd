@@ -160,6 +160,8 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(ctx["docs"][0]["content"], "window 0.2")
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=tickets/unblockd.json")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=../b/tickets/unblockd.json")[0], 400)
+		g = self.call("GET", "/api/b/a/knowledge")[1]
+		self.assertEqual((g["reads"][0]["doc"], g["reads"][0]["via"]), ("tickets/files/CMB-1/spec.md", "file"))
 		self.assertEqual(self.call("DELETE", "/api/b/a/tickets/CMB-1/files/spec.md")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/files/spec.md")[0], 400)
 

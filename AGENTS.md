@@ -96,6 +96,12 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `claim_ticket` (MCP, CLI) return `{...ticket, "context": ...}`, which is the whole point: a
   worker reads its instructions from the board instead of being told. The chat has
   `get_context` / `read_doc` too.
+- **Knowledge graph** (`knowledge.graph(store)`; REST `GET knowledge`, MCP `knowledge_graph`): what `context()` would give every OPEN ticket, without inlining
+  (`expand()` results are cached per call). Returns `tickets`, `docs` {path, kind, size, readers, error?, linked_only?}, `reads` [{ticket, doc, via}], `links` [{from, to}]
+  (doc -> doc, one hop from docs a ticket reads; targets must exist and be text; those no ticket reads become `linked_only` nodes), and the problem lists.
+  `via` = board|profile|ticket|file, first source wins per ticket (same dedupe as context()); a doc's `kind` is its broadest `via`, or `linked`.
+  **no_docs** = open tickets with no readable doc via profile, ticket or attachment (only board-wide docs, nothing, or only broken refs). **broken** = [{path, error, via, tickets}]
+  (missing / outside the project / not text / too big). **hubs** = top 5 docs read by >= 2 tickets, board-wide docs excluded (everyone reads those). **orphans** = `linked_only` docs.
 - **Auth**: optional shared token, `UNBLOCKD_TOKEN` (not per-user identity). Unset = open (and a warning at startup if bound beyond loopback).
   Set = every `/api/*` needs `Authorization: Bearer` or the `unblockd_token` cookie; any URL with `?token=` (correct) sets the cookie
   and 302s to the same URL without it. 401 JSON says how to fix it; the page loads anyway and the UI shows that message once
@@ -138,6 +144,11 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   everything" (`clearFilters`). At <=600px `#tabs` shows one column at a time (`TAB`, sessionStorage); `body[data-tab]`
   drives CSS, so never use a bare `[data-tab]` selector in the click handler. The drawer is title, status/owner,
   details, blockers, then a collapsed Knowledge and activity `<details>`; Ask / Show in graph / Delete live in `.ovf`.
+- **Docs view** (third view, `d`; `#docsWrap`, `loadDocs`/`renderDocs`/`markDocs`/`openDocNode`, state `DV`): fetches `GET /knowledge` on entering, on Refresh and when the tickets JSON changed
+  (in `paint`), never on every poll. Top: problem strip (tickets without docs, broken references, hub docs, orphan docs; click = `DV.f` highlights those nodes, others fade; Esc clears).
+  Below: tickets left, docs right (most-read first), one SVG of curves between row markers (board-wide edges only on hover, doc -> doc dashed on the right). Hover/focus a row lights its lines
+  (`DV.hl`, `markDocs` only touches classes + the SVG). Click a doc: drawer panel (readers, links to / from, error, View file); click a ticket: the normal drawer. At <=700px: no SVG, docs list then tickets list.
+  Deliberately DOM + SVG, not the canvas force engine: it is a bipartite graph, so two ordered columns read better, rows are real buttons, and tokens resolve in CSS (no `readColors` needed).
 - **Digest ("While you were away", `#digest`, `loadDigest`/`renderDigest`)**: per board the browser keeps
   `unblockd.lastSeen.<board>` (ISO, localStorage via `store`). No value = first visit: set to now, show nothing. Otherwise one
   `GET /activity?since=<lastSeen>&limit=2000` on load (not on every poll), grouped client-side: Finished (`complete`, `done`
@@ -190,8 +201,6 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 
 1. Shared chat between people: needs server-side threads + some identity (there's no auth).
 2. Per-user identity (auth is only a shared token for now).
-3. Knowledge graph view: draw docs + their `links` (+ which tickets link them) like the ticket
-   graph. The data is already in `context()`.
 
-Done since this list was written: the orchestrator lives as the user's `unblockd-work-all` skill
+Done since this list was written: the Docs view (knowledge graph); the orchestrator lives as the user's `unblockd-work-all` skill
 (not in this repo); it uses `work_plan` + the claim loop, and workers read `context`.
