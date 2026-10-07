@@ -47,7 +47,7 @@ class ClaimTest(unittest.TestCase):
 		t = self.s.complete("CMB-1", "godot-dev-1", "fixed; tests pass")
 		self.assertEqual((t["status"], t["claim"]), ("done", None))
 		self.assertIn("(godot-dev-1, done): fixed; tests pass", t["body"])
-		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")], ["complete", "heartbeat", "claim"])
+		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")], ["complete", "heartbeat", "claim", "created"])
 
 	def test_release_and_manual_status_change_end_the_claim(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
@@ -66,6 +66,20 @@ class ClaimTest(unittest.TestCase):
 		t = self.s.get("CMB-1")
 		self.assertEqual((t["status"], t["claim"]), ("todo", None))
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "expired")
+
+	def test_activity_since_and_digest_events(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.s.release("CMB-1", "godot-dev-1", "stuck on rig")
+		self.s.create({"title": "new one"}, tid="CMB-9")
+		self.s.update("CMB-3", {"status": "done"})  # by hand
+		self.s.update("CMB-3", {"title": "hud2"})  # not a transition: no second event
+		ev = [e["event"] for e in self.s.activity(since="2020-01-01T00:00:00Z", limit=100)]
+		self.assertEqual(ev.count("done"), 1)
+		self.assertEqual(ev.count("created"), 5)
+		self.assertEqual([e["event"] for e in self.s.activity(since="2020-01-01T00:00:00")][:2], ["done", "created"])
+		self.assertEqual(self.s.activity(since="2999-01-01T00:00:00Z"), [])
+		with self.assertRaisesRegex(TicketError, "since must be an ISO timestamp"):
+			self.s.activity(since="yesterday")
 
 	def test_refusals(self):
 		with self.assertRaisesRegex(TicketError, "bad agent name"):

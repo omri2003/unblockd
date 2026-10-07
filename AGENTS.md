@@ -75,7 +75,8 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes.
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next
   read. `complete` needs a summary and appends it to the body, signed. Moving a claimed ticket
-  off doing by hand drops the claim. Runtime files (`claims.json`, `activity.jsonl`) live in
+  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `created` and `done` (moved to done by hand),
+  and `GET /activity?since=` filters it. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
 - **Knowledge**: `knowledge.context(store, id)` = board `docs`, then the routed agent profile's
   `docs`, then the ticket's `docs`, then files attached to it; deduped by path, inlined until a
@@ -120,6 +121,13 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   everything" (`clearFilters`). At <=600px `#tabs` shows one column at a time (`TAB`, sessionStorage); `body[data-tab]`
   drives CSS, so never use a bare `[data-tab]` selector in the click handler. The drawer is title, status/owner,
   details, blockers, then a collapsed Knowledge and activity `<details>`; Ask / Show in graph / Delete live in `.ovf`.
+- **Digest ("While you were away", `#digest`, `loadDigest`/`renderDigest`)**: per board the browser keeps
+  `unblockd.lastSeen.<board>` (ISO, localStorage via `store`). No value = first visit: set to now, show nothing. Otherwise one
+  `GET /activity?since=<lastSeen>&limit=2000` on load (not on every poll), grouped client-side: Finished (`complete`, `done`
+  by hand), Started (`claim`), Stuck (`expired`, `release`), New (`created`); events whose ticket is gone are skipped.
+  Compact bar with counts + Expand/Collapse + Dismiss (Dismiss = lastSeen now, hidden for good). Only clock times, never
+  "x ago", so nothing drifts. Hidden outside the board view and when empty. Events come from `activity.jsonl`, which is
+  gitignored runtime state: tickets created or closed by `git pull` don't appear (only changes through the store do).
 - **The UI polls every 4 s** and re-renders only when the tickets JSON text changes (and, while a card's Move-to, the drawer's `.ovf` or `#fpanel` `<details>` is open, `load()` keeps the data but defers the render to `paint`, flushed on their `toggle`; heartbeats must not close menus). So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).

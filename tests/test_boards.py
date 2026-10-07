@@ -172,7 +172,10 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("GET", "/api/b/a/agents")[1]["working"][0]["note"], "tests")
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "nope", "summary": "x"})[0], 400)
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "godot-dev-1", "summary": "done"})[1]["status"], "done")
-		self.assertEqual([e["event"] for e in self.call("GET", "/api/b/a/activity?ticket=CMB-1")[1]], ["complete", "heartbeat", "claim"])
+		self.assertEqual([e["event"] for e in self.call("GET", "/api/b/a/activity?ticket=CMB-1")[1]], ["complete", "heartbeat", "claim", "created"])
+		self.assertEqual(len(self.call("GET", "/api/b/a/activity?since=2020-01-01T00:00:00Z&limit=99")[1]), 4)
+		self.assertEqual(self.call("GET", "/api/b/a/activity?since=2999-01-01T00:00:00Z")[1], [])
+		self.assertEqual(self.call("GET", "/api/b/a/activity?since=nope")[0], 400)
 
 
 if __name__ == "__main__":

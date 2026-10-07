@@ -333,6 +333,7 @@ class Store:
 			t["owner"] = self.config["default_owner"]
 		t["created"] = t["updated"] = today
 		self._write(t)
+		self._log("created", tid, None, t["title"])
 		return self.get(tid)
 
 	def update(self, tid: str, changes: dict) -> dict:
@@ -350,9 +351,12 @@ class Store:
 				raise TicketError(f"{tid} is blocked by {', '.join(open_b)} (still open): finish or unlink it first")
 		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
 			self._drop_claim(tid, f"status set to {clean['status']}")
+		was = t.get("status")
 		t.update(clean)
 		t["updated"] = date.today().isoformat()
 		self._write(t)
+		if t["status"] == "done" and was != "done":  # by hand; an agent's complete() logs its own event
+			self._log("done", tid, None)
 		return self.get(tid)
 
 	def delete(self, tid: str) -> dict:
@@ -566,8 +570,15 @@ class Store:
 		self._locked(done)
 		return self.get(tid)
 
-	def activity(self, tid: str | None = None, limit: int = 50) -> list[dict]:
-		"""Newest first."""
+	def activity(self, tid: str | None = None, limit: int = 50, since: str | None = None) -> list[dict]:
+		"""Newest first. `since` (ISO timestamp, naive = UTC) keeps only events at or after it."""
+		floor = None
+		if since:
+			try:
+				d = datetime.fromisoformat(since.replace("Z", "+00:00"))
+			except ValueError:
+				raise TicketError(f"since must be an ISO timestamp like 2026-10-08T18:40:00Z, got {since!r}")
+			floor = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()
 		p = self.dir / ".unblockd" / "activity.jsonl"
 		if not p.exists():
 			return []
@@ -577,7 +588,7 @@ class Store:
 				e = json.loads(line)
 			except json.JSONDecodeError:
 				continue
-			if tid is None or e.get("ticket") == tid:
+			if (tid is None or e.get("ticket") == tid) and (floor is None or _ts(e["ts"]) >= floor):
 				out.append(e)
 		return out[::-1][:max(0, int(limit))]
 

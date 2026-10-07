@@ -14,7 +14,8 @@ PATCH  tickets/<id>                      {...fields to change}
 DELETE tickets/<id>
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
 GET    agents                            who is working what right now + recent activity
-GET    activity?ticket=&limit=           the claim / heartbeat / release / complete log, newest first
+GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expired / complete / created / done log, newest first;
+                                         since=<ISO time> keeps only newer events (the "While you were away" digest)
 POST   claim                             {"agent", "profile"?, "note"?}  best claimable ticket, or null
 POST   tickets/<id>/claim                {"agent", "note"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?}
@@ -131,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and rest == ["agents"]:
 				return self._send(200, store.agents_now())
 			if method == "GET" and rest == ["activity"]:
-				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50)))
+				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50), q.get("since")))
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
 				return self._send(200, store.claim(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
