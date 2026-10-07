@@ -21,6 +21,7 @@ POST   tickets/<id>/claim                {"agent", "note"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?}
 POST   tickets/<id>/release              {"agent", "reason"?}
 POST   tickets/<id>/complete             {"agent", "summary"}
+POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    doc?path=                         one text file from the project repo (+ its links)
 GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
@@ -160,6 +161,9 @@ class Handler(BaseHTTPRequestHandler):
 				if act == "release":
 					return self._send(200, store.release(tid, agent, str(b.get("reason", ""))))
 				return self._send(200, store.complete(tid, agent, str(b.get("summary", ""))))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
+				b = self._body()
+				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
 			if rest[:1] != ["tickets"] or len(rest) > 2:
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None

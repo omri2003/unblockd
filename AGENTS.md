@@ -77,9 +77,16 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes.
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next
   read. `complete` needs a summary and appends it to the body, signed. Moving a claimed ticket
-  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `created` and `done` (moved to done by hand),
+  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `created`, `split` and `done` (moved to done by hand),
   and `GET /activity?since=` filters it. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
+- **Split** (`store.split(id, titles, sequential, by)`; REST `POST tickets/<id>/split`, MCP `split_ticket`, CLI `split --title ...`, drawer
+  menu "Split…"): a ticket too big for one go becomes >=2 children (same prefix, next free ids; pillar, owner, priority, tags incl. `agent:<x>`,
+  touches, docs copied; body "Split from X."; inherit the parent's `blocked_by`; `sequential` = child N also waits on child N-1) and the parent's
+  `blocked_by` gains all children. A `doing` parent goes back to todo with its claim dropped (a doing ticket can't have open blockers).
+  Refused: unknown or done parent, <2 non-empty titles, any invalid title (all validated before anything is created). Runs under the lock,
+  logs one `split` event (note = child ids). Nothing is moved or deleted from the parent. The drawer keeps the half-typed form in `SPLIT`/`SPLITD`
+  so the 4 s refresh doesn't lose it.
 - **Knowledge**: `knowledge.context(store, id)` = board `docs`, then the routed agent profile's
   `docs`, then the ticket's `docs`, then files attached to it; deduped by path, inlined until a
   `context_budget` (default 60k chars), the rest listed for `read_doc`. Each doc reports its `links` (markdown
@@ -102,8 +109,16 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 ## Conventions
 
 - **Stdlib only** in Python (except `mcp` for the MCP server). Tabs. Python 3.10+.
-- **One-file UI**: vanilla JS in `static/index.html`. Colours are CSS tokens on `:root` with a
-  dark-mode block; pillar colours are generated from config at runtime (`applyConfig`).
+- **One-file UI**: vanilla JS in `static/index.html`. Colours are CSS tokens on `:root`, each one
+  `light-dark(light, dark)` with `color-scheme: light dark`: there is no separate dark block, add a token once with both values. Pillar colours
+  are generated into the same form from config (`color`, `color_dark`) in `applyConfig`.
+- **Settings (⚙ in the header, `#spanel`)**: per browser, `store` keys `theme` (system|light|dark), `density` (comfortable|compact), `digest`
+  (on|off); `SET` / `setPref(k,v)` / `renderSettings()`, buttons carry `data-pref="k:v"`. Theme = `data-theme` on `<html>` (unset = System)
+  picking `color-scheme` in three tiny rules; Density = class `compact` on `<html>` (a few `.compact` rules after `:root`). A tiny inline
+  `<script>` in `<head>` applies both before first paint (no flash). `t` cycles the theme. **A custom property holding `light-dark()` reads back
+  unresolved**, so JS that needs real colours (`readColors()` for the graph canvas and grain) resolves them through a hidden probe element's
+  `color`; `setPref('theme')` and the OS `matchMedia` change both call `readColors(); kick()`. Never read a token with `getPropertyValue` for
+  drawing, and never `closest('[data-theme]')` (the `<html>` carries it).
 - **Show mode** (`showSet` in index.html): M = `matches()`, then Only = M, Paths = M + ancestors + descendants over the
   visible universe (two separate walks), Dim = all. Mode is per view (`showModeBoard` / `showModeGraph`). The board uses
   `BV` (set in `render()`); the graph filters in `syncGraph()` before edges/layout, so Flow re-lays out the subset.

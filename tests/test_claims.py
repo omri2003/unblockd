@@ -57,6 +57,40 @@ class ClaimTest(unittest.TestCase):
 		self.assertIsNone(self.s.get("CMB-1")["claim"])
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "dropped")
 
+	def test_split_wires_children_and_drops_the_claim(self):
+		self.s.create({"title": "gate", "pillar": "COMBAT"}, tid="CMB-9")
+		self.s.update("CMB-1", {"blocked_by": ["CMB-9"], "tags": ["agent:godot-dev"], "docs": ["AGENTS.md"]})
+		self.s.update("CMB-9", {"status": "done"})
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		r = self.s.split("CMB-1", ["window", " ", "vfx", "sound"], by="godot-dev-1")
+		kids = r["children"]
+		self.assertEqual([k["id"] for k in kids], ["CMB-10", "CMB-11", "CMB-12"])  # next free numbers, parent's prefix
+		for k in kids:
+			self.assertEqual((k["pillar"], k["owner"], k["priority"], k["tags"], k["touches"], k["docs"], k["body"], k["blocked_by"]),
+			                 ("COMBAT", "Claude", "P1", ["agent:godot-dev"], ["scripts/player_3d.gd"], ["AGENTS.md"], "Split from CMB-1.", ["CMB-9"]))
+		p = r["parent"]
+		self.assertEqual((p["blocked_by"], p["status"], p["effective_status"], p["claim"]), (["CMB-9", "CMB-10", "CMB-11", "CMB-12"], "todo", "pending", None))
+		self.assertEqual(p["unblocks"], 0)
+		self.assertEqual(self.s.get("CMB-10")["unblocks"], 1)
+		ev = self.s.activity("CMB-1")[0]
+		self.assertEqual((ev["event"], ev["agent"], ev["note"]), ("split", "godot-dev-1", "CMB-10, CMB-11, CMB-12"))
+		self.assertEqual(self.s.activity("CMB-1")[1]["event"], "dropped")
+
+	def test_split_sequential_chains_the_parts(self):
+		kids = self.s.split("CMB-2", ["a", "b", "c"], sequential=True)["children"]
+		self.assertEqual([k["blocked_by"] for k in kids], [[], ["CMB-4"], ["CMB-5"]])
+		self.assertEqual([k["effective_status"] for k in kids], ["todo", "pending", "pending"])
+
+	def test_split_refusals(self):
+		for args, msg in ((("NOPE-1", ["a", "b"]), "no ticket"), (("CMB-1", ["only"]), "at least 2 parts"),
+		                  (("CMB-1", ["a", "  "]), "at least 2 parts"), (("CMB-1", ["a", "x" * 201]), "invalid title")):
+			with self.assertRaisesRegex(TicketError, msg):
+				self.s.split(*args)
+		self.s.update("CMB-3", {"status": "done"})
+		with self.assertRaisesRegex(TicketError, "already done"):
+			self.s.split("CMB-3", ["a", "b"])
+		self.assertEqual(len(self.s.list()), 4)  # nothing was created by the refused calls
+
 	def test_lease_expires_back_to_todo(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		p = self.dir / ".unblockd" / "claims.json"

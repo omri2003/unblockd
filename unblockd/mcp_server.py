@@ -1,7 +1,7 @@
 """MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
 
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, update_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
@@ -140,6 +140,15 @@ def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
 	{"status": "done", "body": "..."}. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, tags, touches, docs, waiting_on, body."""
 	return BOARDS.get(board).update(id, changes)
+
+
+@tool
+def split_ticket(id: str, titles: list[str], sequential: bool = False, board: str | None = None) -> dict:
+	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it, then
+	claim_next. One child per title (pillar, owner, priority, tags, touches, docs copied); the parent
+	then waits on all of them. sequential=true makes each part wait on the one before. If you hold the
+	claim, the parent goes back to todo and your claim ends. Returns {parent, children}."""
+	return BOARDS.get(board).split(id, titles, sequential=sequential)
 
 
 @tool

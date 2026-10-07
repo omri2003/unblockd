@@ -163,6 +163,15 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("DELETE", "/api/b/a/tickets/CMB-1/files/spec.md")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/files/spec.md")[0], 400)
 
+	def test_split_route(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/split", {"titles": ["one"]})[0], 400)
+		code, r = self.call("POST", "/api/b/a/tickets/CMB-1/split", {"titles": ["one", "two"], "sequential": True})
+		self.assertEqual((code, r["parent"]["blocked_by"], r["children"][1]["blocked_by"]), (200, ["CMB-2", "CMB-3"], ["CMB-2"]))
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/split", {"titles": ["a", "b"]})[0], 404)
+		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
+			self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-2/split", {"titles": ["a", "b"]})[0], 401)
+
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})

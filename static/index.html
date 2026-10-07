@@ -4,27 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tickets</title>
+<script>try{const g=k=>JSON.parse(localStorage.getItem(k)),t=g('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;if(g('density')==='compact')document.documentElement.classList.add('compact')}catch{}</script>
 <style>
 /* Layout: ticket board. Header + filter bar, four status columns, a drawer
    on the right for one ticket (read or edit). Celadon paper and ink, jade =
    done, amber = in progress, slate = pending, cinnabar seals = priority.
    Calm ledger: flat 1px cards, the pillar is a 4px spine, IDs in mono, system fonts. */
 :root{
-  --paper:#EBEFE9; --surface:#F7F9F4; --sunk:#E1E7E0; --ink:#1B2420; --muted:#56655E; --line:#C9D2CA;
-  --jade:#2A7864; --jade-soft:#D2E5DC; --cinnabar:#B1402E; --amber:#8F6410; --amber-soft:#F1E5C8;
-  --slate:#4F5F7A; --slate-soft:#DDE3EE;
+  /* one block: light-dark(light, dark). Settings (gear) set data-theme to light / dark; unset = follow the OS */
+  color-scheme:light dark;
+  --paper:light-dark(#EBEFE9,#111915); --surface:light-dark(#F7F9F4,#19231F); --sunk:light-dark(#E1E7E0,#0D1411);
+  --ink:light-dark(#1B2420,#DCE5DF); --muted:light-dark(#56655E,#93A39B); --line:light-dark(#C9D2CA,#2B3933);
+  --jade:light-dark(#2A7864,#64B79E); --jade-soft:light-dark(#D2E5DC,#1D372F); --cinnabar:light-dark(#B1402E,#E27A66);
+  --amber:light-dark(#8F6410,#D8A645); --amber-soft:light-dark(#F1E5C8,#352B17);
+  --slate:light-dark(#4F5F7A,#9DB0D3); --slate-soft:light-dark(#DDE3EE,#232C3B);
   /* pillar outlines: plum / magenta / blue, checked against the status colours and both surfaces */
   --p-other:var(--line);
   --display:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
   --body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
-  --r:6px; color-scheme:light;
+  --r:6px;
 }
-@media (prefers-color-scheme:dark){:root{
-  --paper:#111915; --surface:#19231F; --sunk:#0D1411; --ink:#DCE5DF; --muted:#93A39B; --line:#2B3933;
-  --jade:#64B79E; --jade-soft:#1D372F; --cinnabar:#E27A66; --amber:#D8A645; --amber-soft:#352B17;
-  --slate:#9DB0D3; --slate-soft:#232C3B;
-  color-scheme:dark}}
+:root[data-theme=light]{color-scheme:light} :root[data-theme=dark]{color-scheme:dark}
+/* Density (settings): one class on <html> */
+.compact .board{gap:10px} .compact .col{padding:7px} .compact .cards{gap:5px} .compact .colhead{padding-bottom:5px;margin-bottom:7px}
+.compact .card{padding:5px 8px 5px 7px;font-size:.92em} .compact .wl{margin-top:3px}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
@@ -248,6 +252,11 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 .dmeta{margin:0 0 6px}
 .ovf{position:relative} .ovf summary{list-style:none} .ovf summary::-webkit-details-marker{display:none}
 .ovm{position:absolute;right:0;top:calc(100% + 4px);z-index:3;display:grid;min-width:160px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden} .ovm .dz{color:var(--cinnabar)}
+.spanel{position:relative} .spanel summary{list-style:none;user-select:none} .spanel summary::-webkit-details-marker{display:none} .spanel[open] summary{background:var(--jade-soft)}
+.spanel .sbody{z-index:8;left:auto;right:0;width:min(330px,calc(100vw - 32px))} .sbody .hint{margin:0}
+.splitf{display:grid;gap:8px;margin:14px 0 4px;padding:12px;border:1px solid var(--jade);border-radius:var(--r);background:var(--jade-soft)}
+.splitf h3{margin:0;border:0;padding:0} .splitf label{font-size:.85rem;font-weight:600} .splitf .chk{display:flex;gap:6px;align-items:center}
+.splitf textarea{width:100%;min-height:84px;resize:vertical;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 9px}
 .kn>summary{cursor:pointer;font-weight:700;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin-top:18px} .kn h3{border-top:0;padding-top:0}
 select.quick{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:2px 6px}
 
@@ -334,7 +343,11 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 <div class="wrap">
   <header>
     <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
-    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
+    <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button">New ticket</button><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser)">⚙</summary><div class="fbody sbody" id="sbody">
+      <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
+      <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
+      <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
+      <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
   <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" role="search">
@@ -411,6 +424,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt><kbd>c</kbd></dt><dd>Ask about this board (chat). In the chat, <kbd>#</kbd> links a ticket, <kbd>@</kbd> a board</dd>
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next or previous card</dd>
     <dt><kbd>Enter</kbd></dt><dd>Open the focused card</dd>
+    <dt><kbd>t</kbd></dt><dd>Cycle the theme: System, Light, Dark</dd>
     <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close a panel, clear a selection, cancel a link</dd>
   </dl>
@@ -449,10 +463,10 @@ function applyConfig(c){
   HUMAN=new Set(CFG.owners.filter(o=>o.kind==='human').map(o=>o.name)); STALE=CFG.stale_days??7; WIP=CFG.wip_limit??null;
   LANES=[...CFG.pillars.map(p=>[p.key,pname(p.key),pk(p.key)]),['OTHER',PILLARS.length?'Other':'All','muted']];
   document.title=CFG.title; $('appTitle').textContent=CFG.title; $('chatT').textContent='Ask about '+CFG.title;
-  const light=[],dark=[],cls=[];
-  CFG.pillars.forEach((p,i)=>{const d=DEF_PC[i%DEF_PC.length],v=pk(p.key);light.push(`--${v}:${p.color||d[0]}`);dark.push(`--${v}:${p.color_dark||p.color||d[1]}`);cls.push(`.card.${v}{--pc:var(--${v})}`);});
+  const vars=[],cls=[];
+  CFG.pillars.forEach((p,i)=>{const d=DEF_PC[i%DEF_PC.length],v=pk(p.key);vars.push(`--${v}:light-dark(${p.color||d[0]},${p.color_dark||p.color||d[1]})`);cls.push(`.card.${v}{--pc:var(--${v})}`);});
   let st=$('pillarCss'); if(!st){st=document.createElement('style');st.id='pillarCss';document.head.appendChild(st);}
-  st.textContent=`:root{${light.join(';')}}@media (prefers-color-scheme:dark){:root{${dark.join(';')}}}${cls.join('')}`;
+  st.textContent=`:root{${vars.join(';')}}${cls.join('')}`;
   $('pillarLegend').hidden=!PILLARS.length;
   $('pillarLegend').innerHTML=`<b>${esc(CFG.pillar_label)}:</b>`+CFG.pillars.map(p=>`<span><i class="ring" style="--c:var(--${pk(p.key)})"></i>${esc(pname(p.key))}</span>`).join('')+'<span><i class="ring" style="--c:var(--muted);border-width:1.5px"></i>None</span>';
 }
@@ -507,7 +521,7 @@ async function load(force){
   paint();
 }
 let paint=null; // the deferred render, if any
-const menuBusy=()=>!!(document.querySelector('.mv[open],.ovf[open],#fpanel[open]'));
+const menuBusy=()=>!!(document.querySelector('.mv[open],.ovf[open],#fpanel[open],#spanel[open]'));
 const flushPaint=()=>setTimeout(()=>{ if(paint&&!menuBusy()) paint(); });
 document.addEventListener('toggle',flushPaint,true);
 
@@ -633,7 +647,7 @@ function digestGroups(){
     ['new','＋','New',by('created').map(e=>[e,'',''])]].filter(g=>g[3].length);
 }
 function renderDigest(){
-  const el=$('digest'); if(!DG||state.view!=='board'){el.hidden=true;return;}
+  const el=$('digest'); if(!DG||SET.digest==='off'||state.view!=='board'){el.hidden=true;return;}
   const gs=digestGroups(); el.hidden=!gs.length; if(el.hidden) return;
   const d=new Date(DG.since), hm=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), sameDay=d.toDateString()===new Date().toDateString();
   const since=sameDay?hm:d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm;
@@ -702,7 +716,7 @@ function renderBoard(){
 // ---------- drawer ----------
 let lastFocus=null;
 function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;d.innerHTML=html;d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
-function closeDrawer(){if(typeof syncSel==='function')syncSel();$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
+function closeDrawer(){SPLIT=null;if(typeof syncSel==='function')syncSel();$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
   return '<ul class="links">'+ids.map(id=>{const t=BY.get(id);if(!t)return `<li><span class="none">${esc(id)} (no such ticket)</span></li>`;
@@ -735,8 +749,28 @@ function bodyHtml(b){
 }
 function mentions(t){ const seen=new Set([t.id,...t.blocked_by,...t.blocks]); const out=[];
   (t.body||'').replace(ID_RE,(m,a,p,n)=>{const id=p+'-'+n;if(BY.has(id)&&!seen.has(id)){seen.add(id);out.push(id);}}); return out; }
+// Split: an inline form in the drawer (SPLIT = ticket being split, SPLITD = the half-typed draft, so the 4 s refresh keeps it)
+let SPLIT=null, SPLITD={text:'',seq:false};
+const closeOvf=()=>document.querySelectorAll('.ovf[open]').forEach(d=>d.open=false);
+const splitForm=t=>`<form class="splitf" id="splitForm" data-for="${esc(t.id)}"><h3>Split ${esc(t.id)}</h3>
+  <label for="sp-t">One part per line</label><textarea id="sp-t" placeholder="Parry window&#10;Parry VFX&#10;Parry sound">${esc(SPLITD.text)}</textarea>
+  <label class="chk"><input type="checkbox" id="sp-seq"${SPLITD.seq?' checked':''}> Do in order</label>
+  <span class="hint">${esc(t.id)} will wait on the parts. Each part copies its pillar, owner, priority and tags.</span>
+  <div class="formrow"><button type="submit" class="btn">Split</button><button type="button" class="btn ghost" data-splitcancel>Cancel</button><span class="msg" id="spMsg" role="status"></span></div></form>`;
+async function submitSplit(f){
+  const id=f.dataset.for, titles=$('sp-t').value.split('\n').map(x=>x.trim()).filter(Boolean), m=$('spMsg');
+  if(titles.length<2){m.className='msg err';m.textContent='Add at least 2 parts, one per line.';return;}
+  m.className='msg';m.textContent='Splitting…';
+  try{
+    const r=await api('POST','/'+id+'/split',{titles,sequential:$('sp-seq').checked});
+    SPLIT=null; await load(true); showTicket(id,true);
+    const msg=document.createElement('span'); msg.append(`Split ${id} into `);
+    r.children.forEach((c,i)=>{if(i)msg.append(', ');const b=document.createElement('button');b.type='button';b.dataset.open=c.id;b.textContent=c.id;msg.append(b);});
+    toast(msg);
+  }catch(e){m.className='msg err';m.textContent=e.message;}
+}
 function showTicket(id,refresh){
-  const t=BY.get(id); if(!t) return; openId=id; editing=false;
+  const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status;
   const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
@@ -745,12 +779,13 @@ function showTicket(id,refresh){
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
     t.waiting_on&&!why?`<span>Waiting on ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
-  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm"><button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
+  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
     <div class="srow"><div class="segc" role="group" aria-label="Status">${COLS.map(([k,n])=>`<button type="button" class="chip" data-setstatus="${k}" aria-pressed="${t.status===k}">${n}</button>`).join('')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
     <div class="meta dmeta">${dm.join('')}</div>
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
+    ${SPLIT===t.id?splitForm(t):''}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
@@ -762,7 +797,7 @@ function showTicket(id,refresh){
   loadActs(id); loadKnowledge(id);
 }
 const ACTS=new Map(); // ticket id -> last rendered activity, so a refresh doesn't flicker
-const EVT={claim:'claimed it',heartbeat:'update',release:'released it',complete:'completed it',expired:'claim expired',dropped:'claim ended'};
+const EVT={claim:'claimed it',heartbeat:'update',release:'released it',complete:'completed it',expired:'claim expired',dropped:'claim ended',split:'split it into'};
 async function loadActs(id){
   const el=$('acts'); if(!el) return; if(ACTS.has(id)) el.innerHTML=ACTS.get(id);
   let a=[];try{a=await (await fetch(API+'/activity?ticket='+encodeURIComponent(id)+'&limit=30',{cache:'no-store'})).json();}catch{}
@@ -805,12 +840,28 @@ async function submitForm(f){
   }catch(e){ m.className='msg err'; m.textContent=e.message; }
 }
 
+// ---------- settings (gear): per browser, localStorage ----------
+const pickOf=(v,ok,d)=>ok.includes(v)?v:d;
+const SET={theme:pickOf(store.get('theme','system'),['system','light','dark'],'system'),density:pickOf(store.get('density','comfortable'),['comfortable','compact'],'comfortable'),digest:pickOf(store.get('digest','on'),['on','off'],'on')};
+const SETS=[['theme','setTheme',[['system','System'],['light','Light'],['dark','Dark']]],['density','setDensity',[['comfortable','Comfortable'],['compact','Compact']]],['digest','setDigest',[['on','On'],['off','Off']]]];
+function renderSettings(){for(const[k,id,items]of SETS)chips($(id),items.map(([v,l])=>[k+':'+v,l]),k+':'+SET[k],'pref');}
+function setPref(k,v){
+  SET[k]=v; store.set(k,v); const r=document.documentElement;
+  if(k==='theme'){if(v==='system')delete r.dataset.theme;else r.dataset.theme=v;readColors();kick();} // canvas colours are read from the resolved theme
+  if(k==='density')r.classList.toggle('compact',v==='compact');
+  if(k==='digest')renderDigest();
+  renderSettings();
+}
+renderSettings();
+
 // ---------- events ----------
 let armedDelete=false;
 document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
   if(!g('.fpanel')) $('fpanel').open=false;
+  if(!g('.spanel')) $('spanel').open=false;
   document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.contains(e.target)||(d.open=false));
+  if(b=g('[data-pref]')){const[k,v]=b.dataset.pref.split(':');setPref(k,v);return;}
   if(b=g('[data-pillar]')){state.pillar=b.dataset.pillar;store.set('pillar',state.pillar);renderBar();render();return;}
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
@@ -833,6 +884,8 @@ document.addEventListener('click',async e=>{
   if(g('[data-nexttoggle]')){store.set('nextOpen',!store.get('nextOpen',true));renderNext();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
+  if(g('[data-split]')){closeOvf();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
+  if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
   if(g('#kbBtn')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
@@ -863,7 +916,10 @@ document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches?.(
 document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remember the knowledge fold; keep the filter panel inside the viewport
   if(e.target.id==='kn') store.set('knOpen',e.target.open);
   if(e.target.id==='fpanel'){const b=$('fbody');b.style.translate='';if(e.target.open)b.style.translate=Math.min(0,innerWidth-16-b.getBoundingClientRect().right)+'px';}
+  if(e.target.id==='spanel'){const b=$('sbody');b.style.translate='';if(e.target.open){const r=b.getBoundingClientRect();b.style.translate=(r.left<16?16-r.left:Math.min(0,innerWidth-16-r.right))+'px';}}
 },true);
+document.addEventListener('submit',e=>{ if(e.target.id==='splitForm'){e.preventDefault();submitSplit(e.target);} });
+document.addEventListener('input',e=>{ if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
 document.addEventListener('submit',e=>{ if(e.target.id==='editForm'){e.preventDefault();submitForm(e.target);} });
 let kbFocus=null;
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
@@ -872,6 +928,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(!$('kb').hidden) toggleKb(false);
     else if($('fpanel').open) $('fpanel').open=false;
+    else if($('spanel').open) $('spanel').open=false;
     else if(document.querySelector('.mv[open],.ovf[open]')) document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.open=false);
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(cancelGraphGesture()){}
@@ -883,6 +940,7 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   const tg=e.target; if(editing||tg.closest?.('input,textarea,select')||tg.isContentEditable) return;
   if(e.key==='?'){ e.preventDefault(); toggleKb(); return; }
+  if(e.key==='t'){ const o=['system','light','dark']; setPref('theme',o[(o.indexOf(SET.theme)+1)%3]); toast('Theme: '+{system:'System',light:'Light',dark:'Dark'}[SET.theme]); return; }
   if(!$('drawer').hidden||!$('kb').hidden) return;
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') setView(state.view==='board'?'graph':'board');
@@ -920,11 +978,14 @@ const GEMPTY=$('gEmpty').textContent;
 const cv=$('graph'), ctx=cv.getContext('2d');
 const reduce=matchMedia('(prefers-reduced-motion: reduce)');
 function makeGrain(){ // one small noise tile, drawn once; pattern-filled at ~3% so the page doesn't look like a flat screen
-  const t=document.createElement('canvas');t.width=t.height=96;const x=t.getContext('2d'),im=x.createImageData(96,96),h=(G.col.ink||'#000000').replace('#','');
-  const r=parseInt(h.slice(0,2),16)||0,g=parseInt(h.slice(2,4),16)||0,b=parseInt(h.slice(4,6),16)||0;
+  const t=document.createElement('canvas');t.width=t.height=96;const x=t.getContext('2d'),im=x.createImageData(96,96),[r,g,b]=(G.col.ink||'').match(/[\d.]+/g)||[0,0,0];
   for(let i=0;i<96*96;i++){im.data[i*4]=r;im.data[i*4+1]=g;im.data[i*4+2]=b;im.data[i*4+3]=Math.random()*255;}
   x.putImageData(im,0,0);G.grain=ctx.createPattern(t,'repeat');}
-function readColors(){const s=getComputedStyle(document.documentElement);for(const v of['paper','surface','sunk','ink','muted','line','jade','cinnabar','amber','slate','body','display','p-other',...PILLARS.map(pk)])G.col[v]=s.getPropertyValue('--'+v).trim();makeGrain();}
+// Tokens are light-dark(): a custom property reads back unresolved, so colours go through a probe's `color` (resolved rgb for the current theme)
+const probe=Object.assign(document.createElement('i'),{hidden:true});document.documentElement.append(probe);
+function readColors(){const s=getComputedStyle(document.documentElement);
+  for(const v of['paper','surface','sunk','ink','muted','line','jade','cinnabar','amber','slate','p-other',...PILLARS.map(pk)]){probe.style.color='var(--'+v+')';G.col[v]=getComputedStyle(probe).color;}
+  for(const v of['body','display'])G.col[v]=s.getPropertyValue('--'+v).trim();makeGrain();}
 const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;}; // same start layout on every load
 const prioIdx=p=>{const i=['P0','P1','P2','P3'].indexOf(p);return i<0?9:i;};
 const needsAttn=t=>t.status!=='done'&&((t.missing_blockers||[]).length>0||(t.stale_days!=null&&t.stale_days>=STALE));
@@ -1248,7 +1309,7 @@ function renderLayoutSeg(){chips($('gLayoutSeg'),[['flow','Flow'],['free','Free'
 function setLayout(v){if(v===G.layout)return;G.layout=v;store.set('gLayout',v);renderLayoutSeg();syncGraph();}
 renderLayoutSeg();
 $('gFit').addEventListener('click',fit);
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readColors();kick();});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readColors();kick();}); // OS switch (only matters in System; harmless otherwise)
 readColors();
 
 // ---------- view switch ----------

@@ -359,6 +359,37 @@ class Store:
 			self._log("done", tid, None)
 		return self.get(tid)
 
+	def split(self, tid: str, titles: list[str], sequential: bool = False, by: str | None = None) -> dict:
+		"""Break a ticket that is too big into parts. One child per title (same prefix; pillar, owner, priority,
+		tags, touches, docs copied; inherits the parent's blocked_by; sequential = each also waits on the one before),
+		and the parent now waits on all of them (a doing parent goes back to todo, its claim dropped).
+		Returns {"parent": ..., "children": [...]}."""
+		def run():
+			parent = self.get(tid)
+			if parent["status"] == "done":
+				raise TicketError(f"{tid} is already done: split a ticket that is still open")
+			if not (isinstance(titles, list) and all(isinstance(x, str) for x in titles)):
+				raise TicketError("titles must be a list of strings, one per part")
+			titles_ = [x.strip() for x in titles if x.strip()]
+			if len(titles_) < 2:
+				raise TicketError("split needs at least 2 parts: give 2 or more non-empty titles (for one part, just edit the ticket)")
+			for x in titles_:  # validate everything before creating anything
+				self._clean({"title": x}, partial=True)
+			prefix = tid.split("-")[0]
+			keep = {k: parent.get(k) for k in ("pillar", "owner", "priority", "tags", "touches", "docs")}
+			kids: list[dict] = []
+			for x in titles_:
+				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
+				kids.append(self.create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked}, prefix=prefix))
+			ids = [k["id"] for k in kids]
+			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
+			if parent["status"] == "doing":
+				changes["status"] = "todo"  # update() drops the claim; a doing ticket can't have open blockers
+			self.update(tid, changes)
+			self._log("split", tid, by, ", ".join(ids))
+			return {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
+		return self._locked(run)
+
 	def delete(self, tid: str) -> dict:
 		path = self._path(tid)
 		if not path.exists():

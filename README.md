@@ -92,6 +92,10 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo.
 - Moving a claimed ticket off *doing* by hand ends the claim.
+- **Too big? Split it** instead of half-doing it: `split_ticket(id, titles, sequential?)`
+  (REST `POST tickets/<id>/split`, CLI `split`, drawer menu *Split…*) makes one child per
+  title with the parent's pillar, owner, priority, tags, touches and docs, and the parent
+  now waits on all of them (your claim ends); then `claim_next`. *Do in order* chains the parts.
 
 The board shows a **Working now** strip (agent, ticket, last note, how long
 ago; *quiet* when it's been silent a while), a pulsing line on claimed cards,
@@ -220,7 +224,8 @@ status, ring = pillar, size = how much is waiting on it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 
 Keyboard: `/` search, `g` Board/Graph, `n` new, `j`/`k` move, `Enter` open,
-`?` shortcuts, `Esc` close.
+`t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
+(Comfortable / Compact) and the "While you were away" digest, per browser.
 
 ## Connect the MCP server
 
@@ -243,7 +248,7 @@ Build the image once first (`docker compose build`), or use
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
 start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket`,
-`update_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
+`update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `complete`, `agents_now`; for knowledge `get_context`,
 `read_doc`, `attach_file`, `detach_file`. Every tool takes `board=`
 (default: the first board).
@@ -259,6 +264,7 @@ python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent godot-dev-1 
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}'
+python -m unblockd.cli --dir <repo>/tickets split BUG-10 --title "part one" --title "part two" --sequential
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --json '{"status":"done"}'
 python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended to the body"
 ```

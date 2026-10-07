@@ -14,6 +14,7 @@
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
     python -m unblockd.cli update ID --json '{"status": "done"}'
+    python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text"        # appends a dated paragraph to the body
 
 --dir defaults to $TICKETS_DIR, then ./tickets. Settings come from
@@ -74,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
 	at.add_argument("id")
 	at.add_argument("file")
 	at.add_argument("--name")
+	sp = sub.add_parser("split")
+	sp.add_argument("id")
+	sp.add_argument("--title", action="append", default=[])
+	sp.add_argument("--sequential", action="store_true")
+	sp.add_argument("--by")
 	no = sub.add_parser("note")
 	no.add_argument("id")
 	no.add_argument("text")
@@ -110,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "attach":
 			f = Path(a.file)
 			out = kn.attach(s, a.id, a.name or f.name, f.read_text(encoding="utf-8"))
+		elif a.cmd == "split":
+			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":
