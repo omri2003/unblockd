@@ -77,6 +77,15 @@ try {
 		await page.click('[data-view="board"]');
 
 		await toggle('#fpanel', 'Filters panel');
+		ok(await page.locator('.card .prog').count(), `[${tag}] parent progress bar missing (DOC-1 was split)`);
+		await page.click('#fpanel > summary'); // Group by parent -> swimlane headings; Parent filter -> only its parts
+		await page.click('[data-group="parent"]');
+		ok(await page.locator('.col .lane').count(), `[${tag}] Group by parent drew no swimlanes`);
+		await page.click('[data-group="none"]');
+		await page.click('#parentSeg [data-parent]:not([data-parent="ALL"])');
+		ok((await page.locator('.card').count()) === 2, `[${tag}] Parent filter should leave the 2 parts`);
+		await page.click('#pills [data-parent]');
+		await page.click('#fpanel > summary');
 		await toggle('#spanel', 'Settings panel');
 		await toggle('#apanel', 'Agents panel');
 

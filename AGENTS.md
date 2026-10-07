@@ -55,7 +55,7 @@ Derived on every read (`_decorate`): `effective_status` (todo with an open block
 `files` (names attached in tickets/files/<ID>/).
 
 Rules enforced in the store: IDs `PREFIX-N` (create with a prefix -> next free number, also
-skipping numbers in `legacy_files`); `delete` runs under the lock: drops the claim, removes `tickets/files/<ID>/`, logs `deleted`, and returns the ticket plus `referenced_by` (tickets whose `blocked_by`/`parent` still name it; they are not edited and show it as a missing blocker); `blocked_by` loops refused with the loop spelled out; `parent` must exist and may not loop (create/update; `list(parent=X)`, CLI `list --parent`, MCP `list_tickets(parent=)`; no REST filter or UI yet; deleting a parent leaves children pointing at it, shown with no `children` on anyone);
+skipping numbers in `legacy_files`); `delete` runs under the lock: drops the claim, removes `tickets/files/<ID>/`, logs `deleted`, and returns the ticket plus `referenced_by` (tickets whose `blocked_by`/`parent` still name it; they are not edited and show it as a missing blocker); `blocked_by` loops refused with the loop spelled out; `parent` must exist and may not loop (create/update; `list(parent=X)`, CLI `list --parent`, MCP `list_tickets(parent=)`; no REST filter (the UI filters client-side); deleting a parent leaves children pointing at it, shown with no `children` on anyone);
 setting `doing` on a ticket with open blockers is refused (in `update`, so web/MCP/CLI all get it; `claim` only takes ready tickets);
 owners and pillars must be the configured ones; unknown `agent:<x>` tags refused.
 
@@ -174,6 +174,7 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
   everything" (`clearFilters`). At <=600px `#tabs` shows one column at a time (`TAB`, sessionStorage); `body[data-tab]`
   drives CSS, so never use a bare `[data-tab]` selector in the click handler. The drawer is title, status/owner,
   details, blockers, then a collapsed Knowledge and activity `<details>`; Ask / Show in graph / Delete live in `.ovf`.
+- **Parents on the board**: a card shows `↑ PARENT` and, when it has children, a jade progress bar `done/total` (`.prog`, from `progress`). Filters has **Parent** (chips = tickets that have children; state `parent`, remembered; `renderBar` resets it to ALL if that parent is gone; a removable pill like the other filters; it shows the parts, not the parent itself) and **Group by** (none|pillar|parent|agent; `state.group`, remembered, not a filter so no pill): `lanes(ts)` in `renderBoard` puts a small `.lane` heading per group inside each column, no-key group last.
 - **Docs view** (third view, `d`; `#docsWrap`, `loadDocs`/`renderDocs`/`markDocs`/`openDocNode`, state `DV`): fetches `GET /knowledge` on entering, on Refresh and when the tickets JSON changed
   (in `paint`), never on every poll. Top: problem strip (tickets without docs, broken references, hub docs, orphan docs; click = `DV.f` highlights those nodes, others fade; Esc clears).
   Below: tickets left, docs right (most-read first), one SVG of curves between row markers (board-wide edges only on hover, doc -> doc dashed on the right). Hover/focus a row lights its lines
