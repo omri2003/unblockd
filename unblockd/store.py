@@ -317,6 +317,9 @@ class Store:
 
 	def create(self, data: dict, tid: str | None = None, prefix: str | None = None) -> dict:
 		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number."""
+		return self._locked(lambda: self._create(data, tid, prefix))
+
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None) -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -337,6 +340,9 @@ class Store:
 		return self.get(tid)
 
 	def update(self, tid: str, changes: dict) -> dict:
+		return self._locked(lambda: self._update(tid, changes))
+
+	def _update(self, tid: str, changes: dict) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
@@ -391,6 +397,9 @@ class Store:
 		return self._locked(run)
 
 	def delete(self, tid: str) -> dict:
+		return self._locked(lambda: self._delete(tid))
+
+	def _delete(self, tid: str) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
@@ -404,7 +413,7 @@ class Store:
 	def _rt(self) -> Path:
 		d = self.dir / ".unblockd"
 		if not d.is_dir():
-			d.mkdir()
+			d.mkdir(exist_ok=True)  # parallel first calls race here
 			(d / ".gitignore").write_text("*\n", encoding="utf-8")
 		return d
 

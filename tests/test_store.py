@@ -1,10 +1,17 @@
 """python -m unittest  (stdlib only)"""
 import json
+import multiprocessing
 import tempfile
 import unittest
 from pathlib import Path
 
 from unblockd.store import NotFound, Store, TicketError
+
+
+def _make(args):
+	d, n = args
+	s = Store(Path(d))
+	return [s.create({"title": "x"}, prefix="R")["id"] for _ in range(n)]
 
 
 class StoreTest(unittest.TestCase):
@@ -16,6 +23,13 @@ class StoreTest(unittest.TestCase):
 
 	def tearDown(self):
 		self.tmp.cleanup()
+
+	def test_parallel_creates_lose_nothing(self):
+		d = Path(self.tmp.name) / "tickets"
+		with multiprocessing.Pool(6) as pool:
+			ids = sum(pool.map(_make, [(str(d), 10)] * 6), [])
+		self.assertEqual(len(ids), len(set(ids)), "same id handed out twice")
+		self.assertEqual(len(list(d.glob("R-*.json"))), 60)
 
 	def test_crud_and_next_id_continues_legacy_numbering(self):
 		t = self.s.create({"title": "Search ignores accents", "priority": "P1"}, prefix="BUG")

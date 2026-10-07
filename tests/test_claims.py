@@ -141,6 +141,27 @@ class ClaimTest(unittest.TestCase):
 		view = self.s.agents_now()
 		self.assertEqual(len(view["working"]), len(got))
 
+	def test_update_does_not_lose_a_concurrent_claim(self):
+		for i in range(4, 24):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+		got = []
+
+		def claimer():
+			s = Store(self.dir)
+			while (t := s.claim("w1")) is not None:
+				got.append(t["id"])
+
+		def editor():
+			s = Store(self.dir)
+			for _ in range(3):
+				for i in range(1, 24):
+					s.update(f"CMB-{i}", {"body": "edit"})
+		ths = [threading.Thread(target=claimer), threading.Thread(target=editor), threading.Thread(target=editor)]
+		[t.start() for t in ths]
+		[t.join() for t in ths]
+		for tid in got:  # an unlocked update re-writes the old status over the claim
+			self.assertEqual(self.s.get(tid)["status"], "doing", tid)
+
 
 if __name__ == "__main__":
 	unittest.main()

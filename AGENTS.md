@@ -77,7 +77,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 - **Claims**: `claim(agent)` takes the best claimable ticket for the worker's profile (profile =
   the one its name starts with, e.g. godot-dev-1 -> godot-dev): ready, not human-owned, not
   claimed, `touches` not overlapping a live claim. Sets status doing. A file lock
-  (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes.
+  (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes; `create`, `update`, `delete` and `split` take it too (next-id + write, and read-modify-write, would otherwise race).
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next
   read. `complete` needs a summary and appends it to the body, signed. Moving a claimed ticket
   off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `created`, `split` and `done` (moved to done by hand),
