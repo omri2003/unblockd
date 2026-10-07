@@ -20,7 +20,8 @@ unblockd/store.py       THE core. Ticket CRUD over one folder, validation (FIELD
 unblockd/boards.py      Several boards: discovers <root>/<project>/tickets/unblockd.json, ids,
                         create(). Every front door goes through Boards -> Store.
 unblockd/web.py         Stdlib HTTP server + REST API (Handler._route). Serves static/index.html.
-unblockd/mcp_server.py  MCP tools (needs the `mcp` package; the only dependency).
+unblockd/mcp_server.py  MCP tools + the `work_loop` prompt / `unblockd://work-loop` resource (the worker protocol; `WORK_LOOP`)
+                        (needs the `mcp` package; the only dependency).
 unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools); `Remote` = the same over REST (UNBLOCKD_URL).
 unblockd/notify.py      Webhook notifications: one daemon thread started by web.main (UNBLOCKD_WEBHOOK).
 unblockd/chat.py        Messages API over urllib, read-only tool loop, #ID / @board resolution.
@@ -29,7 +30,7 @@ unblockd/knowledge.py   Docs linked to tickets (board / profile / ticket `docs`)
 static/index.html       The whole UI, one file, vanilla JS, no build step, no CDN libraries.
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
                         test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
-                        test_notify (fake webhook receiver), test_knowledge (context order, dedupe, links, path safety, attachments).
+                        test_notify (fake webhook receiver), test_mcp (work_loop prompt + resource; skipped without `mcp`), test_knowledge (context order, dedupe, links, path safety, attachments).
 tests/ui_smoke.mjs      Playwright smoke: example board + CLI claim/split, 1400/390px x light/dark; board, graph, docs,
                         drawer, panels, toast; fails on page/console errors or horizontal overflow (CI job `ui`).
 docs/screenshots/       README images. Regenerate: copy example/ to a temp root, add tickets + a few claims via the CLI,

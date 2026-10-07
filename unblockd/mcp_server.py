@@ -1,5 +1,6 @@
 """MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
 
+Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
@@ -44,6 +45,35 @@ mcp = MCPServer(
 		"content: read_doc(path). Link more with update_ticket(docs=[...]) or attach_file."
 	),
 )
+
+
+WORK_LOOP = """You are a worker on the unblockd board {board}{profile_line}. Loop until step 2 returns null:
+1. Your worker name is unique: {agent_hint}. Use it as `agent` in every call below.
+2. claim_next(agent=<your name>{claim_args}) -> a ticket plus its `context`, or null: then stop and report what you did.
+3. Read every doc in `context` in order before touching anything (read_doc(path) for items without content; report entries with an `error`). `done_when`, if present, is the bar for done.
+4. Work it. Call heartbeat(id, agent, note) with what you are doing at least every 5 minutes: 15 minutes of silence expires the claim and the ticket goes back to todo.
+5. Needs a decision only a human can make: ask_human(id, agent, question), then go on to the next ticket. Cannot finish for another reason: release(id, agent, reason).
+6. Done: complete(id, agent, summary) with "cause -> fix -> tests; NOT verified: ..." and an answer for each `done_when` item. On boards with review=true it lands in review for a human instead of done.
+Rules: never work a ticket you did not claim; never edit outside what the ticket needs; a new problem becomes its own ticket (create_ticket with blocked_by and touches), not a wider change here. agents_now shows who is on what."""
+
+
+def work_loop_text(board: str | None = None, profile: str | None = None) -> str:
+	return WORK_LOOP.format(
+		board=board or "(the default board; list_boards shows the others)", profile_line=f" with the agent profile {profile}" if profile else "",
+		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. godot-dev-1 (board_info lists the profiles)",
+		claim_args=(f", profile={profile}" if profile else "") + (f", board={board}" if board else ""))
+
+
+@mcp.prompt()
+def work_loop(board: str | None = None, profile: str | None = None) -> str:
+	"""The worker protocol: claim -> read context -> heartbeat -> complete / release / ask_human, in a loop."""
+	return work_loop_text(board, profile)
+
+
+@mcp.resource("unblockd://work-loop", mime_type="text/plain")
+def work_loop_resource() -> str:
+	"""The same worker protocol as the work_loop prompt, for clients that read resources."""
+	return work_loop_text()
 
 
 def tool(fn):
