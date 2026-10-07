@@ -99,6 +99,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 - **Show mode** (`showSet` in index.html): M = `matches()`, then Only = M, Paths = M + ancestors + descendants over the
   visible universe (two separate walks), Dim = all. Mode is per view (`showModeBoard` / `showModeGraph`). The board uses
   `BV` (set in `render()`); the graph filters in `syncGraph()` before edges/layout, so Flow re-lays out the subset.
+  **Isolate on click** (`gIsolate`, default on) is separate from Show mode: `G.isolate = id` (not persisted) makes `syncGraph()` skip `showSet`, the filters and "Linked only" and draw `withChains(T,{id})` (ancestors + descendants over all of T; done tickets only if Show done, the root always). `G.focus` is pinned to it (`setFocus(null)` re-focuses the root); leave with `leaveIsolate()` (Esc, empty canvas, Back to all, board view, unticking the box), which restores zoom/pan in Flow. Don't reuse `state.q`/`showGraph` for it.
   Search `/re/` is parsed once in `setQ()`; it is tested against `id title` and against `id` alone, so `/^BUG-10$/` works.
 - **The UI polls every 4 s** and re-renders only when the tickets JSON text changes. So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"

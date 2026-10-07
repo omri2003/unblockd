@@ -199,6 +199,7 @@ status, ring = pillar, size = how much is waiting on it.
 - Hover = direct links; click = the whole chain and the longest open chain
   to it; **Critical path** toggle; double-click opens the ticket.
 - In Only / Paths the graph drops hidden tickets and re-lays out what's left; in Paths, chain-only tickets are drawn faded. Click a ticket, then **Show only this chain** to search its id and switch to Paths. Clear the search to go back.
+- **Isolate on click** (toolbar checkbox, on by default): clicking a ticket draws only its whole chain (everything upstream and downstream, over the whole board, ignoring the filters, Show mode and "Linked tickets only") and re-lays it out. **Back to all**, Esc or a click on empty canvas returns to your view, filters untouched. Untick the box for the old highlight-and-dim focus.
 - **Shift-drag A onto B** makes A block B; click a link to remove it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 

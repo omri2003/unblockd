@@ -255,8 +255,10 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:ui-monospace,Con
       <label class="tog"><input type="checkbox" id="gDone" checked> Show done</label>
       <label class="tog"><input type="checkbox" id="gMentions"> Mentions in details</label>
       <label class="tog"><input type="checkbox" id="gCrit"> Critical path</label>
+      <label class="tog" title="Click a ticket to draw only its whole chain, ignoring the filters. Esc goes back."><input type="checkbox" id="gIsolate" checked> Isolate on click</label>
       <button type="button" class="btn ghost sm" id="gFit">Fit to view</button>
       <span class="msg" id="gMsg" role="status"></span>
+      <span class="msg" id="gIso" role="status" hidden></span>
     </div>
     <div class="gleg">
       <span class="legend" aria-hidden="true"><b>Status:</b>
@@ -425,12 +427,15 @@ function showSet(universe,mode){
   const M=new Set(universe.filter(matches).map(t=>t.id));
   if(mode==='dim') return {mode,M,S:null};
   if(mode==='only') return {mode,M,S:M};
+  return {mode,M,S:withChains(universe,M)};
+}
+function withChains(universe,M){ // M plus every ancestor and descendant of each member (also used by graph isolation, over all of T)
   const ids=new Map(universe.map(t=>[t.id,t])),kids=new Map(),S=new Set(M);
   for(const t of universe) for(const b of t.blocked_by||[]) if(ids.has(b)&&b!==t.id)(kids.get(b)||kids.set(b,[]).get(b)).push(t.id);
   const walk=next=>{const seen=new Set(),st=[...M];while(st.length){for(const y of next(st.pop()))if(!seen.has(y)){seen.add(y);S.add(y);st.push(y);}}};
   walk(x=>(ids.get(x).blocked_by||[]).filter(b=>ids.has(b))); // upstream
   walk(x=>kids.get(x)||[]); // downstream
-  return {mode,M,S};
+  return S;
 }
 let BV={mode:'only',M:new Set(),S:null}; // the board's current selection, set by render()
 const onBoard=t=>!BV.S||BV.S.has(t.id);
@@ -620,7 +625,8 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
   if(b=g('[data-view]')){setView(b.dataset.view);return;}
   if(g('[data-unfocus]')){setFocus(null);return;}
-  if(g('[data-ingraph]')){const id=openId;closeDrawer();setView('graph');setFocus(id);return;}
+  if(g('[data-isoback]')){leaveIsolate();return;}
+  if(g('[data-ingraph]')){const id=openId;closeDrawer();setView('graph');focusNode(id);return;}
   if(g('[data-edit]')){editForm(BY.get(openId));return;}
   if(b=g('[data-delete]')){
     const id=$('editForm').dataset.id;
@@ -645,6 +651,7 @@ document.addEventListener('keydown',e=>{
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(cancelGraphGesture()){}
     else if(G.selEdge) {clearEdge();}
+    else if(G.isolate) leaveIsolate();
     else if(G.focus) setFocus(null);
     return;
   }
@@ -682,7 +689,7 @@ document.addEventListener('drop',async e=>{
 // shift-drag from A to B makes A block B; click an edge to select and remove it.
 const COLW=170, ROWH=64, LOOSEW=84, LOOSEH=52, MINLANE=96, MAXROWS=5, SUBW=74;
 // a cell taller than MAXROWS wraps into sub-columns, so one crowded depth can't make the whole graph a thin tower
-const G={nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',lkey:'',hover:null,focus:null,ptr:null,raf:0,col:{},sized:false,fitted:false,
+const G={nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',lkey:'',hover:null,focus:null,isolate:null,saved:null,restore:false,ptr:null,raf:0,col:{},sized:false,fitted:false,
   layout:store.get('gLayout','flow')==='free'?'free':'flow',lanes:[],preds:new Map(),critG:null,critF:null,selEdge:null,link:null,pts:new Map(),pinch:null,anims:[],grain:null,msgT:0,last:0,fitSettle:false};
 const GEMPTY=$('gEmpty').textContent;
 const cv=$('graph'), ctx=cv.getContext('2d');
@@ -766,14 +773,19 @@ function recalcCrit(){
 
 function syncGraph(){
   const showDone=$('gDone').checked;
-  let ts=T.filter(t=>showDone||t.status!=='done');
-  const SH=showSet(ts,state.showGraph); G.M=SH.M; G.mode=SH.mode; // Only/Paths drop hidden tickets (nodes and edges) before layout
-  if(SH.S) ts=ts.filter(t=>SH.S.has(t.id));
-  const noMatch=!ts.length&&SH.mode!=='dim'; const ids=new Set(ts.map(t=>t.id));
+  if(G.isolate&&!BY.has(G.isolate))endIsolate(); // the isolated ticket was deleted
+  let ts=T.filter(t=>showDone||t.status!=='done'),noMatch=false;
+  if(G.isolate){ // isolation: the whole chain of one ticket over all of T; filters, Show mode and "Linked only" are ignored
+    const S=withChains(T,new Set([G.isolate]));ts=T.filter(t=>t.id===G.isolate||(S.has(t.id)&&(showDone||t.status!=='done')));G.M=null;G.mode='';
+  }else{
+    const SH=showSet(ts,state.showGraph); G.M=SH.M; G.mode=SH.mode; // Only/Paths drop hidden tickets (nodes and edges) before layout
+    if(SH.S) ts=ts.filter(t=>SH.S.has(t.id));
+    noMatch=!ts.length&&SH.mode!=='dim';
+  } const ids=new Set(ts.map(t=>t.id));
   const edges=[],ments=[],pair=new Set();
   for(const t of ts) for(const b of t.blocked_by) if(ids.has(b)&&b!==t.id){edges.push([b,t.id,BY.get(b).status!=='done']);pair.add(b+'|'+t.id);pair.add(t.id+'|'+b);}
   if($('gMentions').checked) for(const t of ts) for(const m of mentions(t)) if(ids.has(m)&&!pair.has(t.id+'|'+m)){ments.push([t.id,m]);pair.add(t.id+'|'+m);pair.add(m+'|'+t.id);}
-  if($('gLinked').checked){const d=new Set();for(const [a,b] of[...edges,...ments]){d.add(a);d.add(b);}ts=ts.filter(t=>d.has(t.id));}
+  if($('gLinked').checked&&!G.isolate){const d=new Set();for(const [a,b] of[...edges,...ments]){d.add(a);d.add(b);}ts=ts.filter(t=>d.has(t.id));}
   G.down=Object.fromEntries(T.map(t=>[t.id,t.unblocks||0]));
   const old=G.nodes; G.nodes=new Map();
   for(const t of ts){let n=old.get(t.id);
@@ -786,6 +798,7 @@ function syncGraph(){
   if(G.focus&&!G.nodes.has(G.focus))setFocus(null);
   if(G.selEdge&&!G.edges.some(e=>e.a.id===G.selEdge[0]&&e.b.id===G.selEdge[1]))clearEdge();
   flowLayout();recalcCrit();
+  if(G.isolate)G.focus=G.isolate;
   const key=[...G.nodes.keys()].join()+'/'+edges.map(e=>e[0]+'>'+e[1]).join()+'/'+ments.join(),lkey=G.layout+'|'+key,first=!old.size;
   if(G.layout==='flow'){ // new nodes appear in their slot on first draw; later ones glide in from beside a neighbour
     for(const n of G.nodes.values()){if(first||reduce.matches){n.x=n.gx;n.y=n.gy;}n.fresh=false;}
@@ -795,8 +808,10 @@ function syncGraph(){
       if(G.sized){if(!G.fitted||lkey!==G.lkey){fit();G.fitted=true;G.fitSettle=!reduce.matches&&!first;}}}
   }
   G.key=key;G.lkey=lkey;
+  if(G.restore){G.restore=false;const v=G.saved;G.saved=null;if(v&&v.layout===G.layout&&G.layout==='flow'&&G.sized){G.k=v.k;G.tx=v.tx;G.ty=v.ty;}} // Flow re-lays out the same tickets the same way, so the old zoom/pan fits again
+  const iso=$('gIso');iso.hidden=!G.isolate;if(G.isolate)iso.textContent=`Showing the chain of ${G.isolate} (${G.nodes.size} ticket${G.nodes.size===1?'':'s'}). Esc to go back.`;
   $('gEmpty').hidden=G.nodes.size>0;$('gEmpty').textContent=noMatch?'No tickets match these filters.':GEMPTY;
-  if(G.focus)renderPanel();else if(G.selEdge)renderEdgePanel();
+  if(G.selEdge)renderEdgePanel();else if(G.focus)renderPanel();
   renderChains();kick();
 }
 function step(){
@@ -922,9 +937,18 @@ function hitEdge(p){let best=null,bd=6; // screen pixels
 function tip(n,p){const el=$('gTip');if(!n){el.hidden=true;return;}const t=n.t,d=G.down[t.id]||0;
   el.innerHTML=`<strong>${esc(t.id)}</strong> <span class="status ${t.effective_status}">${NAME[t.effective_status]}</span><br>${inline(t.title)}${d?`<br><span class="hint">Unblocks ${d} open down the chain</span>`:''}${t.claim?`<br><span class="wk" style="margin-top:2px">${esc(t.claim.agent)} is on it${t.claim.note?': '+esc(t.claim.note):''}</span>`:''}`;
   el.hidden=false;const w=cv.clientWidth;el.style.left=Math.min(p.sx+14,w-290)+'px';el.style.top=(p.sy+14)+'px';}
-function setFocus(id){G.focus=id;G.selEdge=null;$('gPanel').hidden=!id;recalcCrit();if(id)renderPanel();kick();}
-function clearEdge(){if(!G.selEdge)return;G.selEdge=null;if(!G.focus)$('gPanel').hidden=true;kick();}
-function selectEdge(e){setFocus(null);G.selEdge=[e.a.id,e.b.id];$('gPanel').hidden=false;renderEdgePanel();kick();}
+function setFocus(id){if(!id&&G.isolate)id=G.isolate;G.focus=id;G.selEdge=null;$('gPanel').hidden=!id;recalcCrit();if(id)renderPanel();kick();} // while isolated, the focus can't be cleared, only isolation can
+// Isolate: draw only one ticket's whole chain (G.isolate, not persisted, independent of the filters and Show mode)
+function setIsolate(id){
+  if(!G.isolate)G.saved={k:G.k,tx:G.tx,ty:G.ty,layout:G.layout};
+  G.isolate=id;G.selEdge=null;G.restore=false;G.lkey='';G.fitted=false;
+  G.focus=id;$('gPanel').hidden=false;G.hover=null;tip(null);syncGraph();
+}
+function endIsolate(){G.isolate=null;G.focus=null;G.selEdge=null;G.restore=!!G.saved;G.lkey='';$('gPanel').hidden=true;recalcCrit();}
+function leaveIsolate(){if(!G.isolate)return;endIsolate();syncGraph();}
+const focusNode=id=>$('gIsolate').checked?(G.isolate===id?0:setIsolate(id)):setFocus(G.focus===id?null:id); // clicking the isolated ticket again keeps the isolation
+function clearEdge(){if(!G.selEdge)return;G.selEdge=null;if(G.focus)renderPanel();else $('gPanel').hidden=true;kick();}
+function selectEdge(e){if(!G.isolate)setFocus(null);G.selEdge=[e.a.id,e.b.id];$('gPanel').hidden=false;renderEdgePanel();kick();}
 function renderEdgePanel(){const [a,b]=G.selEdge,ta=BY.get(a),tb=BY.get(b);if(!ta||!tb)return clearEdge();
   $('gPanel').innerHTML=`<div class="top"><span class="tid">${esc(a)}</span><span>blocks</span><span class="tid">${esc(b)}</span></div>
     <div class="hint">${inline(ta.title)}<br>holds up<br>${inline(tb.title)}</div>
@@ -936,7 +960,7 @@ function renderPanel(){const t=BY.get(G.focus);if(!t)return setFocus(null);const
     <div class="ttl">${inline(t.title)}</div>
     <div class="hint">${up.length?`Waits on ${up.length} open: ${esc(up.join(', '))}.`:'Nothing open is in its way.'}${d?`<br>Unblocks ${d} open down the chain.`:''}</div>
     ${ch?`<div class="hint chain"><strong>Longest chain to here:</strong> ${ch.map(esc).join(' → ')}</div>`:''}
-    <div class="row"><button type="button" class="btn sm" data-open="${esc(t.id)}">Open ticket</button><button type="button" class="btn ghost sm" data-chainonly="${esc(t.id)}" title="Search this ticket's ID and switch to Paths, so only the chain through it is drawn">Show only this chain</button><button type="button" class="btn ghost sm" data-unfocus>Clear</button></div>`;}
+    <div class="row"><button type="button" class="btn sm" data-open="${esc(t.id)}">Open ticket</button>${G.isolate?'<button type="button" class="btn ghost sm" data-isoback>Back to all</button>':`<button type="button" class="btn ghost sm" data-chainonly="${esc(t.id)}" title="Search this ticket's ID and switch to Paths, so only the chain through it is drawn">Show only this chain</button><button type="button" class="btn ghost sm" data-unfocus>Clear</button>`}</div>`;}
 function gmsg(text,err){const m=$('gMsg');m.textContent=text;m.className='msg'+(err?' err':'');clearTimeout(G.msgT);G.msgT=setTimeout(()=>{m.textContent='';},5000);}
 async function addLink(aId,bId){ // A blocks B  =  B.blocked_by gains A
   const b=BY.get(bId);if(!b)return;
@@ -973,13 +997,13 @@ async function pointerEnd(e,cancel){
   if(!P){kick();return;}
   if(P.link){kick();if(!cancel&&L?.over&&L.over!==P.node)await addLink(P.node.id,L.over.id);return;}
   if(cancel||P.moved){kick();return;}
-  if(P.node){const was=G.focus===P.node.id;clearEdge();setFocus(was?null:P.node.id);return;}
-  const ed=hitEdge(world(e));if(ed)selectEdge(ed);else{clearEdge();setFocus(null);}
+  if(P.node){clearEdge();focusNode(P.node.id);return;}
+  const ed=hitEdge(world(e));if(ed)selectEdge(ed);else if(G.isolate)leaveIsolate();else{clearEdge();setFocus(null);}
 }
 cv.addEventListener('pointerup',e=>pointerEnd(e,false));
 cv.addEventListener('pointercancel',e=>pointerEnd(e,true));
 cv.addEventListener('pointerleave',()=>{if(!G.ptr){G.hover=null;tip(null);cv.classList.remove('onnode');kick();}});
-cv.addEventListener('dblclick',e=>{const n=hit(world(e));if(n){setFocus(n.id);showTicket(n.id);}});
+cv.addEventListener('dblclick',e=>{const n=hit(world(e));if(n){if(G.focus!==n.id)focusNode(n.id);showTicket(n.id);}});
 cv.addEventListener('wheel',e=>{e.preventDefault();const p=world(e),k=Math.max(.2,Math.min(4,G.k*Math.exp(-e.deltaY*.0015)));G.tx=p.sx-p.x*k;G.ty=p.sy-p.y*k;G.k=k;kick();},{passive:false});
 function cancelGraphGesture(){const had=!!(G.link||G.ptr?.link);G.link=null;if(G.ptr?.link)G.ptr=null;if(had)kick();return had;}
 // text version of the chains, for screen readers and keyboards: every root, then what it blocks, depth first
@@ -993,7 +1017,8 @@ function renderChains(){
   $('chainsBody').innerHTML=roots.length?`<ul class="chainlist">${roots.map(li).join('')}</ul>`:'<p class="none">No blocking links with these settings.</p>';
 }
 for(const id of['gLinked','gDone','gMentions','gCrit'])$(id).addEventListener('change',()=>{store.set(id,$(id).checked);if(id!=='gCrit'){G.fitted=false;syncGraph();}else kick();});
-for(const id of['gLinked','gDone','gMentions','gCrit']){const v=store.get(id,null);if(v!=null)$(id).checked=v;}
+for(const id of['gLinked','gDone','gMentions','gCrit','gIsolate']){const v=store.get(id,null);if(v!=null)$(id).checked=v;}
+$('gIsolate').addEventListener('change',()=>{store.set('gIsolate',$('gIsolate').checked);if(!$('gIsolate').checked)leaveIsolate();});
 function renderLayoutSeg(){chips($('gLayoutSeg'),[['flow','Flow'],['free','Free']],G.layout,'glayout');}
 function setLayout(v){if(v===G.layout)return;G.layout=v;store.set('gLayout',v);renderLayoutSeg();syncGraph();}
 renderLayoutSeg();
@@ -1002,7 +1027,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readCo
 readColors();
 
 // ---------- view switch ----------
-function setView(v){state.view=v;store.set('view',v);$('board').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
+function setView(v){if(v!=='graph')leaveIsolate();state.view=v;store.set('view',v);$('board').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
   chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderShow();renderWorking();renderNext();if(v==='graph'){resize();syncGraph();}}
 function render(){renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderNext();if(state.view==='graph')syncGraph();}
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
