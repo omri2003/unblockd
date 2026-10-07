@@ -29,6 +29,8 @@ static/index.html       The whole UI, one file, vanilla JS, no build step, no CD
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
                         test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
                         test_knowledge (context order, dedupe, links, path safety, attachments).
+tests/ui_smoke.mjs      Playwright smoke: example board + CLI claim/split, 1400/390px x light/dark; board, graph, docs,
+                        drawer, panels, toast; fails on page/console errors or horizontal overflow (CI job `ui`).
 docs/screenshots/       README images. Regenerate: copy example/ to a temp root, add tickets + a few claims via the CLI,
                         run the server, capture 1400px (2x) with Playwright (board light, graph dark, drawer, 390px mobile).
 example/tickets/        Demo board + config; what `docker compose up` shows with no .env.
@@ -170,13 +172,14 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 ## How to verify a change
 
 1. `python -m unittest` (all green).
-2. UI: run `UNBLOCKD_ROOT=<a temp folder with a copy of example/ or real tickets> PORT=8822
+2. `NODE_PATH=$(npm root -g) node tests/ui_smoke.mjs` (CI runs it; ~5 s). Fix what it reports before going on.
+3. UI: run `UNBLOCKD_ROOT=<a temp folder with a copy of example/ or real tickets> PORT=8822
    python -m unblockd.web`, then headless Chromium via Playwright (preinstalled in Claude's
    container; `NODE_PATH=$(npm root -g) node script.js`; never `playwright install`). Screenshot
    light, dark and 390 px wide; check zero page errors and `scrollWidth === 390` on mobile.
-3. Chat without a key: point `ANTHROPIC_BASE_URL` at a tiny fake server (pattern in
+4. Chat without a key: point `ANTHROPIC_BASE_URL` at a tiny fake server (pattern in
    tests/test_chat.py) and set `ANTHROPIC_API_KEY=x`.
-4. Say what you did NOT verify (real Docker, real API key, real MCP client, touch devices).
+5. Say what you did NOT verify (real Docker, real API key, real MCP client, touch devices).
 
 ## Traps that already bit
 

@@ -15,9 +15,23 @@ jobs:
           python-version: "3.12"
       - run: python -m unittest -v
 
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm i --no-save playwright@1
+      - run: npx playwright install --with-deps chromium
+      - run: node tests/ui_smoke.mjs
+
   image:
     # publishes ghcr.io/<owner>/unblockd on pushes to main (tag: latest) and on v* tags
-    needs: test
+    needs: [test, ui]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
