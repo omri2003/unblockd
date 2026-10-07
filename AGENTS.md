@@ -29,6 +29,8 @@ static/index.html       The whole UI, one file, vanilla JS, no build step, no CD
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
                         test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
                         test_knowledge (context order, dedupe, links, path safety, attachments).
+docs/screenshots/       README images. Regenerate: copy example/ to a temp root, add tickets + a few claims via the CLI,
+                        run the server, capture 1400px (2x) with Playwright (board light, graph dark, drawer, 390px mobile).
 example/tickets/        Demo board + config; what `docker compose up` shows with no .env.
 .github/workflows/ci.yml  tests, then builds + pushes ghcr.io/<owner>/unblockd on main / v* tags.
 ```
@@ -168,8 +170,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 
 1. Shared chat between people: needs server-side threads + some identity (there's no auth).
 2. Per-user identity (auth is only a shared token for now).
-3. README screenshots or a GIF, before a public launch.
-4. Knowledge graph view: draw docs + their `links` (+ which tickets link them) like the ticket
+3. Knowledge graph view: draw docs + their `links` (+ which tickets link them) like the ticket
    graph. The data is already in `context()`.
 
 Done since this list was written: the orchestrator lives as the user's `unblockd-work-all` skill

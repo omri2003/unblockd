@@ -1253,7 +1253,7 @@ readColors();
 
 // ---------- view switch ----------
 function setView(v){if(v!=='graph')leaveIsolate();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
-  chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderShow();renderWorking();renderNext();if(v==='graph'){resize();syncGraph();}}
+  chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}}
 function render(){renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;

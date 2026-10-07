@@ -1,5 +1,7 @@
 # unblockd
 
+![unblockd board: agents working, a digest of what changed, tickets in four columns](docs/screenshots/board.png)
+
 A dependency-aware ticket board for humans and AI agents. **One ticket = one
 JSON file** in your repo, so a ticket change is committed with the code it
 describes. Three front doors over one core:
@@ -12,6 +14,18 @@ describes. Three front doors over one core:
 
 All three go through `unblockd/store.py`, so they validate and number tickets
 the same way and can never disagree.
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/graph-dark.webp" alt="Dependency graph in dark mode: tickets as nodes, arrows from blocker to blocked, one lane per area"><br><sub>Blocking graph (dark)</sub></td>
+<td width="50%"><img src="docs/screenshots/drawer.webp" alt="Ticket drawer for a P0 ticket showing the agent working on it, details, blockers and what it blocks"><br><sub>Ticket drawer</sub></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><img src="docs/screenshots/mobile.png" alt="The board on a phone: one column at a time, with the Working now list" width="240"><br><sub>Phone, one column at a time</sub></td>
+</tr>
+</table>
 
 ## Quick start
 
