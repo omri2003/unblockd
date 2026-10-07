@@ -101,6 +101,13 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `BV` (set in `render()`); the graph filters in `syncGraph()` before edges/layout, so Flow re-lays out the subset.
   **Isolate on click** (`gIsolate`, default on) is separate from Show mode: `G.isolate = id` (not persisted) makes `syncGraph()` skip `showSet`, the filters and "Linked only" and draw `withChains(T,{id})` (ancestors + descendants over all of T; done tickets only if Show done, the root always). `G.focus` is pinned to it (`setFocus(null)` re-focuses the root); leave with `leaveIsolate()` (Esc, empty canvas, Back to all, board view, unticking the box), which restores zoom/pan in Flow. Don't reuse `state.q`/`showGraph` for it.
   Search `/re/` is parsed once in `setQ()`; it is tested against `id title` and against `id` alone, so `/^BUG-10$/` works.
+- **Filter chrome**: the bar holds search, a Filters `<details>` (`#fpanel`: pillar, owner, priority, agent, Show mode),
+  removable pills for active non-default filters (each pill carries the `data-*` of the chip that resets it, so the
+  existing click handler does the work) and the Free/Blocked chips. Header strip (`renderStrip`): status proportions,
+  "N ready", "N agents working"; segments scroll to their column. Next up is a ranked one-line strip (3, "show all").
+  Urgency on cards: `.p0` cinnabar wash, `.blocked` hatched + lock; claimed cards get an amber outline and an agent chip
+  with heartbeat age (`tickAges`, late after lease/2). Feedback goes through `toast(msg,{err,undo})`; status moves use
+  `moveTo()` (drag-drop and drawer menu) and Undo is one PATCH back.
 - **The UI polls every 4 s** and re-renders only when the tickets JSON text changes. So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).
