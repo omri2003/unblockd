@@ -42,6 +42,7 @@ DEFAULT_CONFIG = {
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 }
+ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
 # Field -> (default, validator). Add a field here and the API + MCP accept it.
@@ -497,7 +498,10 @@ class Store:
 
 	def _log(self, event: str, tid: str | None, agent: str | None, note: str = "") -> None:
 		line = {"ts": _now(), "event": event, "ticket": tid, "agent": agent, "note": note[:500]}
-		with open(self._rt() / "activity.jsonl", "a", encoding="utf-8") as f:
+		p = self._rt() / "activity.jsonl"
+		if p.exists() and p.stat().st_size > ACTIVITY_MAX:
+			self._locked(lambda: p.stat().st_size > ACTIVITY_MAX and os.replace(p, p.with_name("activity.1.jsonl")))
+		with open(p, "a", encoding="utf-8") as f:
 			f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 	def _live_claims(self) -> dict:
@@ -674,18 +678,22 @@ class Store:
 			except ValueError:
 				raise TicketError(f"since must be an ISO timestamp like 2026-10-08T18:40:00Z, got {since!r}")
 			floor = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()
-		p = self.dir / ".unblockd" / "activity.jsonl"
-		if not p.exists():
-			return []
+		limit = max(0, int(limit))
 		out = []
-		for line in p.read_text(encoding="utf-8").splitlines():
-			try:
-				e = json.loads(line)
-			except json.JSONDecodeError:
-				continue
-			if (tid is None or e.get("ticket") == tid) and (floor is None or _ts(e["ts"]) >= floor):
-				out.append(e)
-		return out[::-1][:max(0, int(limit))]
+		for name in ("activity.jsonl", "activity.1.jsonl"):  # newest first, so stop as soon as the limit or the floor is reached
+			p = self.dir / ".unblockd" / name
+			for line in (reversed(p.read_text(encoding="utf-8").splitlines()) if p.exists() else ()):
+				if len(out) >= limit:
+					return out
+				try:
+					e = json.loads(line)
+				except json.JSONDecodeError:
+					continue
+				if floor is not None and _ts(e["ts"]) < floor:
+					return out
+				if tid is None or e.get("ticket") == tid:
+					out.append(e)
+		return out
 
 	def agents_now(self) -> dict:
 		"""The live view: one row per working agent, plus recent activity."""

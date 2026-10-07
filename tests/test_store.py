@@ -4,6 +4,7 @@ import multiprocessing
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from unblockd.store import NotFound, Store, TicketError
 
@@ -60,6 +61,23 @@ class StoreTest(unittest.TestCase):
 		self.assertEqual(self.s.delete("E-4")["referenced_by"], [])
 		with self.assertRaises(NotFound):
 			self.s.delete("E-1")
+
+	def test_activity_rotates_and_reads_across_the_old_file(self):
+		self.s.create({"title": "x"}, tid="E-1")
+		with mock.patch("unblockd.store.ACTIVITY_MAX", 300):
+			for i in range(12):
+				self.s._log("note", "E-1", "a", f"n{i}")
+		rt = self.s.dir / ".unblockd"
+		self.assertTrue((rt / "activity.1.jsonl").exists())
+		self.assertLess((rt / "activity.jsonl").stat().st_size, 600)  # bounded
+		notes = [e["note"] for e in self.s.activity("E-1", limit=100)]
+		self.assertEqual(notes[:3], ["n11", "n10", "n9"])  # newest first, continuing into .1
+		nums = [int(n[1:]) for n in notes if n.startswith("n")]
+		self.assertEqual(nums, sorted(nums, reverse=True))
+		self.assertGreater(len(nums), 3)  # more than the current file holds (cap fits ~3 lines)
+		self.assertEqual(len(self.s.activity(limit=2)), 2)
+		self.assertEqual(len(self.s.activity(since="2999-01-01T00:00:00Z")), 0)
+		self.assertGreater(len(self.s.activity(since="2000-01-01T00:00:00Z", limit=100)), 3)
 
 	def test_parent_refusals(self):
 		self.s.create({"title": "a"}, tid="E-1")

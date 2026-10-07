@@ -147,6 +147,20 @@ class NotifyTest(unittest.TestCase):
 		n.poll()
 		self.assertTrue(self.msgs()[-1].endswith("after"))
 
+	def test_rotated_log_is_read_from_the_start(self):
+		n = self.notifier()
+		self.s.create({"title": "other", "owner": "Claude"}, tid="BUG-9")
+		for i in range(3):
+			self.s._log("release", "BUG-2", "w", f"old{i}")
+		n.poll()
+		self.assertEqual(len(self.msgs()), 1)
+		with mock.patch("unblockd.store.ACTIVITY_MAX", 100):
+			self.s._log("release", "BUG-2", "w", "new")  # rotates: activity.jsonl is now just this line
+		self.assertTrue((Path(self.tmp.name) / "game" / "tickets" / ".unblockd" / "activity.1.jsonl").exists())
+		n.poll()
+		self.assertEqual(len(Receiver.got), 2)
+		self.assertTrue(self.msgs()[-1].endswith("new") and "old" not in self.msgs()[-1])
+
 	def test_receiver_down_does_not_raise(self):
 		n = notify.Notifier(self.boards, "http://127.0.0.1:1/hook")
 		n.poll()
