@@ -549,13 +549,12 @@ class Store:
 					self._log("dropped", tid, c["agent"], why)
 			self._locked(drop)
 
-	def _claimable(self, t: dict, live: dict) -> bool:
+	def _claimable(self, t: dict, live: dict, by_id: dict) -> bool:
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		if t["effective_status"] != "todo" or t.get("owner") in humans or t["id"] in live:
 			return False
 		mine = t.get("touches", [])
 		if mine:
-			by_id = {x["id"]: x for x in self._all_raw()}
 			for other in live:
 				if any(_overlap(a, b) for a in mine for b in by_id.get(other, {}).get("touches", [])):
 					return False
@@ -575,18 +574,19 @@ class Store:
 
 		def take():
 			live = self._live_claims()
+			by_id = {x["id"]: x for x in self._all_raw()}  # read once: _claimable looks up live claims' touches in it
 			if tid:
 				t = self.get(tid)
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
-				if not self._claimable(t, live):
+				if not self._claimable(t, live, by_id):
 					raise TicketError(f"{tid} can't be claimed: it's {t['effective_status']}"
 					                  + (f", owned by {t['owner']}" if t["effective_status"] == "todo" else "")
 					                  + " (or its touches overlap a live claim)")
 				pick = t
 			else:
 				ready = self.next_ready(limit=10_000, agent=profile)
-				pick = next((t for t in ready if self._claimable(t, live)), None)
+				pick = next((t for t in ready if self._claimable(t, live, by_id)), None)
 				if pick is None:
 					return None
 			claims = self._claims()

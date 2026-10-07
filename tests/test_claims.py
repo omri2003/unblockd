@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from unblockd.store import Store, TicketError
 
@@ -99,6 +100,17 @@ class ClaimTest(unittest.TestCase):
 	def test_complete_without_review_is_done(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		self.assertEqual(self.s.complete("CMB-1", "godot-dev-1", "ok")["status"], "done")
+
+	def test_claim_reads_the_tickets_once_not_per_candidate(self):
+		for i in range(10, 40):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT", "priority": "P0", "touches": ["x/*" if i == 10 else "x/y.gd"]}, tid=f"CMB-{i}")
+		self.s.claim("a1", tid="CMB-10")  # a live claim: every other touches-ticket overlaps it
+		calls = []
+		real = Store._read
+		with mock.patch.object(Store, "_read", lambda self, p: (calls.append(p), real(self, p))[1]):
+			got = self.s.claim("godot-dev-1")
+		self.assertEqual(got["id"], "CMB-1")  # after 29 P0 tickets that overlap x/*
+		self.assertLess(len(calls), 4 * 35)  # per-candidate rescans were ~30 x 35
 
 	def test_split_wires_children_and_drops_the_claim(self):
 		self.s.create({"title": "gate", "pillar": "COMBAT"}, tid="CMB-9")
