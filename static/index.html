@@ -226,7 +226,7 @@ aside h3{font-size:.82rem;font-weight:700;color:var(--muted);border-top:1px soli
 .body ul,.body ol{margin:0 0 8px;padding-left:1.3em} .body li{margin:0 0 2px;overflow-wrap:anywhere}
 .body .mdh{font-family:var(--display);font-weight:700;margin:12px 0 4px;font-size:1rem} .body h5.mdh{font-size:.95rem} .body h6.mdh{font-size:.88rem;color:var(--muted)}
 .body a{color:var(--jade)}
-.idlink{background:none;border:0;padding:0;margin:0;font:inherit;font-weight:700;color:var(--jade);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
+.toast .idlink{color:inherit} .idlink{background:none;border:0;padding:0;margin:0;font:inherit;font-weight:700;color:var(--jade);cursor:pointer;text-decoration:underline dotted;text-underline-offset:2px}
 .dwarn{display:grid;gap:3px;margin:0 0 12px;font-weight:600;font-size:.9rem}
 .dwarn .miss{color:var(--cinnabar)} .dwarn .stale{color:var(--amber)}
 .know{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.88rem}
@@ -546,7 +546,7 @@ function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, error
   const el=document.createElement('div');el.className='toast'+(err?' err':'');el.append(msg);
   if(undo){const b=document.createElement('button');b.type='button';b.textContent='Undo';b.onclick=()=>{el.remove();undo();};el.append(b);}
   const box=$('toasts');box.append(el);while(box.children.length>3)box.firstChild.remove();
-  setTimeout(()=>el.remove(),err?6000:4000);
+  setTimeout(()=>el.remove(),err||msg.nodeType?6000:4000);
 }
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
 const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
@@ -1030,7 +1030,10 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-delete]')){
     const id=$('editForm')?.dataset.id||openId;
     if(!armedDelete){armedDelete=true;b.textContent='Click again to delete '+id;setTimeout(()=>{armedDelete=false;if(b.isConnected)b.textContent='Delete';},3000);return;}
-    try{await api('DELETE','/'+id);armedDelete=false;closeDrawer();load(true);toast(`Deleted ${id}`);}catch(er){toast('Delete failed: '+er.message,{err:1});}
+    try{const r=await api('DELETE','/'+id);armedDelete=false;closeDrawer();load(true);
+      const m=document.createElement('span');m.append(`Deleted ${id}.`);
+      if(r.referenced_by?.length){m.append(' Still pointing at it: ');r.referenced_by.forEach((x,i)=>{const l=document.createElement('button');l.type='button';l.className='idlink';l.dataset.open=x;l.textContent=x;m.append(i?', ':'',l);});}
+      toast(m);}catch(er){toast('Delete failed: '+er.message,{err:1});}
     return;
   }
   if(g('[data-close]')||e.target===$('scrim')){ editing&&openId ? showTicket(openId) : closeDrawer(); return; }

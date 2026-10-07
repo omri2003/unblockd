@@ -165,7 +165,7 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
   existing click handler does the work) and the Free/Blocked chips. Header strip (`renderStrip`): status proportions,
   "N ready", "N agents working" (opens the Agents panel); segments scroll to their column. Next up is a ranked one-line strip (3, "show all").
   Urgency on cards: `.p0` cinnabar wash, `.blocked` hatched + lock; claimed cards get an amber outline and an agent chip
-  with heartbeat age (`tickAges`, late after lease/2). Feedback goes through `toast(msg,{err,undo})`; status moves use
+  with heartbeat age (`tickAges`, late after lease/2). Feedback goes through `toast(msg,{err,undo})` (`msg` may be a DOM node: the Delete toast lists `referenced_by` as `.idlink` buttons, 6 s); status moves use
   `moveTo()` (drag-drop, the card's native "Move to" `<details>`, the drawer's segmented status; it refuses
   doing for a ticket with open blockers) and Undo is one PATCH back. Cards are wrapped in `.cw` (a button can't hold
   the move menu). To do has an inline quick-add (`quickAdd`; Enter creates, Shift+Enter keeps typing; prefix remembered
