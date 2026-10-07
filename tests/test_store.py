@@ -24,6 +24,35 @@ class StoreTest(unittest.TestCase):
 	def tearDown(self):
 		self.tmp.cleanup()
 
+	def test_parent_groups_tickets_with_progress(self):
+		e = self.s.create({"title": "epic"}, tid="E-1")
+		self.s.create({"title": "a", "parent": "E-1"}, tid="E-2")
+		self.s.create({"title": "b", "parent": "E-1", "status": "done"}, tid="E-3")
+		e = self.s.get("E-1")
+		self.assertEqual((e["children"], e["progress"], e["parent"]), (["E-2", "E-3"], {"done": 1, "total": 2}, None))
+		self.assertEqual([t["id"] for t in self.s.list(parent="E-1")], ["E-2", "E-3"])
+		self.assertEqual(e["effective_status"], "todo")  # a group is not a blocker
+		self.assertEqual(self.s.get("E-2")["children"], [])
+		self.s.update("E-2", {"parent": None})
+		self.assertEqual(self.s.get("E-1")["progress"], {"done": 1, "total": 1})
+
+	def test_split_sets_parent_on_the_parts(self):
+		self.s.create({"title": "big"}, tid="E-1")
+		r = self.s.split("E-1", ["a", "b"])
+		self.assertEqual([k["parent"] for k in r["children"]], ["E-1", "E-1"])
+		self.assertEqual(r["parent"]["progress"], {"done": 0, "total": 2})
+
+	def test_parent_refusals(self):
+		self.s.create({"title": "a"}, tid="E-1")
+		self.s.create({"title": "b", "parent": "E-1"}, tid="E-2")
+		self.s.create({"title": "c", "parent": "E-2"}, tid="E-3")
+		for tid, par in (("E-1", "E-1"), ("E-1", "E-3"), ("E-1", "E-2"), ("E-3", "NOPE-9")):
+			with self.assertRaises(TicketError, msg=f"{tid} -> {par}"):
+				self.s.update(tid, {"parent": par})
+		with self.assertRaises(TicketError):
+			self.s.create({"title": "x", "parent": "NOPE-9"}, tid="E-4")
+		self.assertFalse(self.s.dir.joinpath("E-4.json").exists())
+
 	def test_parallel_creates_lose_nothing(self):
 		d = Path(self.tmp.name) / "tickets"
 		with multiprocessing.Pool(6) as pool:

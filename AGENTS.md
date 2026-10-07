@@ -42,18 +42,18 @@ example/tickets/        Demo board + config; what `docker compose up` shows with
 
 Ticket fields (`FIELDS` in store.py; add a field there and API + MCP accept it): `title`,
 `status` (todo|doing|pending|done), `priority` (P0-P3|null), `owner`, `pillar`, `pillar_step`,
-`section`, `blocked_by` (ids), `waiting_on`, `body`, `tags` (lowercase; `agent:<name>` routes),
+`section`, `blocked_by` (ids), `parent` (id of the group/epic this ticket is a part of; NOT a blocker), `waiting_on`, `body`, `tags` (lowercase; `agent:<name>` routes),
 `touches` (paths/globs the work edits), `docs` (repo paths/folders/globs to read), plus `id`,
 `created`, `updated`.
 
 Derived on every read (`_decorate`): `effective_status` (todo with an open blocker = pending),
-`open_blockers`, `blocks`, `unblocks` (open tickets downstream, transitive), `missing_blockers`,
+`open_blockers`, `blocks`, `children` + `progress` {done, total} (direct children only), `unblocks` (open tickets downstream, transitive), `missing_blockers`,
 `stale_days` (doing only), `score` = PRIO_WEIGHT (P0 8, P1 4, P2 2, P3 1) x (1 + unblocks),
 `agent` (routed profile), `claim` (live claim: agent, profile, claimed_at, heartbeat_at, note),
 `files` (names attached in tickets/files/<ID>/).
 
 Rules enforced in the store: IDs `PREFIX-N` (create with a prefix -> next free number, also
-skipping numbers in `legacy_files`); `blocked_by` loops refused with the loop spelled out;
+skipping numbers in `legacy_files`); `blocked_by` loops refused with the loop spelled out; `parent` must exist and may not loop (create/update; `list(parent=X)`, CLI `list --parent`, MCP `list_tickets(parent=)`; no REST filter or UI yet; deleting a parent leaves children pointing at it, shown with no `children` on anyone);
 setting `doing` on a ticket with open blockers is refused (in `update`, so web/MCP/CLI all get it; `claim` only takes ready tickets);
 owners and pillars must be the configured ones; unknown `agent:<x>` tags refused.
 
@@ -84,7 +84,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   and `GET /activity?since=` filters it. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
 - **Split** (`store.split(id, titles, sequential, by)`; REST `POST tickets/<id>/split`, MCP `split_ticket`, CLI `split --title ...`, drawer
-  menu "Split…"): a ticket too big for one go becomes >=2 children (same prefix, next free ids; pillar, owner, priority, tags incl. `agent:<x>`,
+  menu "Split…"): a ticket too big for one go becomes >=2 children (same prefix, next free ids; `parent` = the split ticket; pillar, owner, priority, tags incl. `agent:<x>`,
   touches, docs copied; body "Split from X."; inherit the parent's `blocked_by`; `sequential` = child N also waits on child N-1) and the parent's
   `blocked_by` gains all children. A `doing` parent goes back to todo with its claim dropped (a doing ticket can't have open blockers).
   Refused: unknown or done parent, <2 non-empty titles, any invalid title (all validated before anything is created). Runs under the lock,

@@ -1,6 +1,6 @@
 """Command line over the same Store (for agents without the MCP server).
 
-    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [-q WORDS]
+    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent godot-dev-1 [--id ID] [--profile P]   # take the next (or one) ticket
@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
 	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
 	sub = ap.add_subparsers(dest="cmd", required=True)
 	ls = sub.add_parser("list")
-	for f in ("status", "pillar", "owner", "priority", "tag", "agent"):
+	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent"):
 		ls.add_argument(f"--{f}")
 	ls.add_argument("-q")
 	nx = sub.add_parser("next")
@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 	try:
 		s = st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
 		if a.cmd == "list":
-			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent)
+			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent)
 			out = [{k: t.get(k) for k in ("id", "title", "effective_status", "priority", "owner", "pillar", "agent", "open_blockers")} for t in res]
 		elif a.cmd == "next":
 			out = [{**{k: t.get(k) for k in ("id", "title", "priority", "owner", "pillar", "agent")}, "score": t["score"], "unblocks": t["unblocks"]}

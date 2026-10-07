@@ -53,6 +53,8 @@ FIELDS = {
 	"pillar_step": (None, lambda v: v is None or (isinstance(v, int) and v > 0)),
 	"section": ("", lambda v: isinstance(v, str) and len(v) <= 80),
 	"blocked_by": ([], lambda v: isinstance(v, list) and all(isinstance(x, str) and ID_RE.match(x) for x in v)),
+	# a group (epic), not a blocker: this ticket is a part of that one. Loop-checked, the parent must exist
+	"parent": (None, lambda v: v is None or (isinstance(v, str) and ID_RE.match(v) is not None)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
@@ -192,6 +194,22 @@ class Store:
 				raise TicketError("blocked_by makes a loop: " + " → ".join(reversed(path)) + " (each would wait on the other forever)")
 			stack += [(b, x) for b in graph.get(x, [])]
 
+	def _check_parent(self, tid: str, parent: str | None) -> None:
+		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor."""
+		if parent is None:
+			return
+		if parent == tid:
+			raise TicketError(f"{tid} can't be its own parent")
+		up = {t["id"]: t.get("parent") for t in self._all_raw()}
+		if parent not in up:
+			raise TicketError(f"parent {parent} doesn't exist: create it first or set parent to null")
+		chain, x = [tid, parent], up[parent]
+		while x and x not in chain:
+			chain.append(x)
+			x = up.get(x)
+		if x == tid:
+			raise TicketError("parent makes a loop: " + " → ".join(chain + [tid]) + " (a ticket can't be part of its own part)")
+
 	# ---------- derived view ----------
 	def _decorate(self, tickets: list[dict]) -> list[dict]:
 		"""Add derived fields. A todo with an open blocker shows as pending (effective_status).
@@ -202,6 +220,10 @@ class Store:
 		attached = {d.name: sorted(f.name for f in d.iterdir() if f.is_file()) for d in fd.iterdir() if d.is_dir()} if fd.is_dir() else {}
 		by_id = {t["id"]: t for t in tickets}
 		blocks: dict[str, list[str]] = {t["id"]: [] for t in tickets}
+		kids: dict[str, list[dict]] = {}
+		for t in tickets:
+			if t.get("parent") in by_id:
+				kids.setdefault(t["parent"], []).append(t)
 		for t in tickets:
 			for b in t.get("blocked_by", []):
 				if b in blocks:
@@ -229,7 +251,10 @@ class Store:
 					stale = max(0, (today - date.fromisoformat(str(t.get("updated"))[:10])).days)
 				except ValueError:
 					stale = None
-			out.append({**t, "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
+			ks = kids.get(t["id"], [])
+			out.append({**t, "parent": t.get("parent"), "children": [k["id"] for k in ks],
+			            "progress": {"done": sum(k.get("status") == "done" for k in ks), "total": len(ks)},
+			            "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
@@ -265,7 +290,7 @@ class Store:
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
-	         agent: str | None = None) -> list[dict]:
+	         agent: str | None = None, parent: str | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos)."""
 		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
 		res = self._decorate(self._all_raw())
@@ -281,6 +306,8 @@ class Store:
 			res = [t for t in res if tag.lower() in t["tags"]]
 		if agent:
 			res = [t for t in res if t["agent"] == agent]
+		if parent:
+			res = [t for t in res if t["parent"] == parent]
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]
@@ -328,6 +355,7 @@ class Store:
 		if self._path(tid).exists():
 			raise TicketError(f"{tid} already exists")
 		self._check_loop(tid, clean.get("blocked_by", []))
+		self._check_parent(tid, clean.get("parent"))
 		today = date.today().isoformat()
 		t = {"id": tid}
 		for k, (default, _) in FIELDS.items():
@@ -350,6 +378,8 @@ class Store:
 		clean = self._clean(changes, partial=True)
 		if "blocked_by" in clean:
 			self._check_loop(tid, clean["blocked_by"])
+		if "parent" in clean:
+			self._check_parent(tid, clean["parent"])
 		if clean.get("status") == "doing" and t.get("status") != "doing":
 			open_b = [b for b in clean.get("blocked_by", t.get("blocked_by", []))
 			          if self._path(b).exists() and self._read(self._path(b)).get("status") != "done"]
@@ -386,7 +416,7 @@ class Store:
 			kids: list[dict] = []
 			for x in titles_:
 				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
-				kids.append(self.create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked}, prefix=prefix))
+				kids.append(self.create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix))
 			ids = [k["id"] for k in kids]
 			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
 			if parent["status"] == "doing":

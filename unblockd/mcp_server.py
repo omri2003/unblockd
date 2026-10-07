@@ -105,11 +105,11 @@ def next_ready(board: str | None = None, owner: str | None = None, pillar: str |
 @tool
 def list_tickets(board: str | None = None, status: str | None = None, pillar: str | None = None,
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
-                 agent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
+                 agent: str | None = None, parent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
 	"""List tickets. Filters: status (todo|doing|pending|done, matches effective status), pillar,
-	owner, priority (P0-P3), tag, agent (profile name), q (words to search).
+	owner, priority (P0-P3), tag, agent (profile name), parent (id: that ticket's parts), q (words to search).
 	Returns short summaries unless full=true."""
-	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent)
+	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent)
 	return res if full else [_summary(t) for t in res]
 
 
@@ -123,13 +123,13 @@ def get_ticket(id: str, board: str | None = None) -> dict:
 def create_ticket(title: str, board: str | None = None, prefix: str | None = None, id: str | None = None,
                   status: str = "todo", priority: str | None = None, owner: str | None = None,
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
-                  blocked_by: list[str] | None = None, tags: list[str] | None = None,
+                  blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "") -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info)."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
-	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [],
+	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
 	        "tags": tags or [], "waiting_on": waiting_on, "body": body}
 	return store.create(data, tid=id, prefix=prefix)
 
@@ -138,7 +138,7 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
 def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
 	"""Change fields of a ticket. changes is an object of field -> new value, e.g.
 	{"status": "done", "body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, tags, touches, docs, waiting_on, body."""
+	pillar_step, section, blocked_by, parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
 	return BOARDS.get(board).update(id, changes)
 
 
