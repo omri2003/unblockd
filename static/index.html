@@ -320,6 +320,9 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .cm.bot p{margin:0 0 8px}.cm.bot p:last-child{margin:0}
 .cm.err{color:var(--cinnabar)}
 .cm .used{display:block;margin-top:4px;font-size:.76rem;color:var(--muted)}
+.prop{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:8px 10px;margin-top:8px;display:grid;gap:4px}
+.prop .pt{font-weight:600}.prop .pm{font-size:.8rem;color:var(--muted)}.prop .row{display:flex;gap:6px;align-items:center}
+.prop.off{opacity:.55}
 .cm table{border-collapse:collapse;font-size:.88rem}.cm td,.cm th{border:1px solid var(--line);padding:3px 6px;text-align:left}
 .ref{border:1px solid var(--line);background:var(--paper);border-radius:4px;padding:0 5px;font:inherit;font-weight:700;cursor:pointer;color:var(--ink);text-decoration:none;white-space:nowrap}
 .ref:hover{border-color:var(--ink)} .ref.bref{color:var(--slate)}
@@ -1612,10 +1615,23 @@ function renderChat(){
       <p><code data-ask="What is the longest chain still open, and who owns each step?">What is the longest chain still open?</code></p>
       <p><code data-ask="Which tickets are stale or point at a missing blocker?">Which tickets need attention?</code></p></div>`;
     return;}
-  log.innerHTML=CH.log.map(m=>m.role==='user'?`<div class="cm user">${chatHtml(m.content)}</div>`
-    :`<div class="cm bot${m.error?' err':''}">${m.error?esc(m.content):chatHtml(m.content)}${m.tools?.length?`<span class="used">Looked at: ${esc(summTools(m.tools))}</span>`:''}</div>`).join('')
+  log.innerHTML=CH.log.map((m,i)=>m.role==='user'?`<div class="cm user">${chatHtml(m.content)}</div>`
+    :`<div class="cm bot${m.error?' err':''}">${m.error?esc(m.content):chatHtml(m.content)}${m.tools?.length?`<span class="used">Looked at: ${esc(summTools(m.tools))}</span>`:''}${(m.proposals||[]).map((t,k)=>propHtml(i,k,t,m.pst?.[k])).join('')}</div>`).join('')
     +(CH.busy?'<div class="cm bot"><span class="dots">Thinking</span></div>':'');
   log.scrollTop=log.scrollHeight;
+}
+function propHtml(mi,pi,t,st){ // one proposed ticket: Create / Discard, or what happened to it
+  const meta=[t.priority,t.owner,t.pillar,t.parent&&'part of '+t.parent,t.blocked_by?.length&&'after '+t.blocked_by.join(', ')].filter(Boolean).join(' · ');
+  const act=st?`<span class="pm">${st==='discarded'?'Discarded':'Created '+esc(st)}</span>`
+    :`<button type="button" class="btn sm" data-prop="${mi}:${pi}" data-act="create">Create</button><button type="button" class="btn ghost sm" data-prop="${mi}:${pi}" data-act="discard">Discard</button>`;
+  return `<div class="prop${st==='discarded'?' off':''}"><span class="pt">${esc(t.title)}</span>${meta?`<span class="pm">${esc(meta)}</span>`:''}${t.body?`<span class="pm">${esc(t.body)}</span>`:''}<span class="row">${act}</span></div>`;
+}
+async function propAct(mi,pi,act){ // the only write the chat can cause, and it is the normal POST
+  const m=CH.log[mi],t=m?.proposals?.[pi];if(!t||m.pst[pi])return;
+  if(act==='discard') m.pst[pi]='discarded';
+  else try{const c=await api('POST','',{prefix:qaPrefix(),...t});m.pst[pi]=c.id;await load(true);toast(`Created ${c.id}`);}
+    catch(e){toast(e.message,{err:true});return;}
+  chatSave();renderChat();
 }
 const summTools=ts=>Object.entries(ts.reduce((a,n)=>(a[n]=(a[n]||0)+1,a),{})).map(([n,c])=>c>1?`${n.replace(/_/g,' ')} ×${c}`:n.replace(/_/g,' ')).join(', ');
 async function openChat(prefill){
@@ -1631,7 +1647,7 @@ async function sendChat(){
   CH.log.push({role:'user',content:text});$('cin').value='';CH.busy=true;hideAc();renderChat();
   try{
     const j=await jf('/api/chat','POST',{board:BOARD||null,messages:CH.log.filter(m=>!m.error).map(({role,content})=>({role,content})).slice(-20)});
-    CH.log.push({role:'assistant',content:j.reply,tools:j.tools});
+    CH.log.push({role:'assistant',content:j.reply,tools:j.tools,proposals:j.proposals||[],pst:{}});
   }catch(e){CH.log.push({role:'assistant',content:e.message,error:true});}
   CH.busy=false;chatSave();renderChat();
 }
@@ -1673,7 +1689,8 @@ $('ac').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac]');
 $('cform').addEventListener('submit',e=>{e.preventDefault();sendChat();});
 $('chatClose').addEventListener('click',closeChat);
 $('chatClear').addEventListener('click',()=>{CH.log=[];chatSave();renderChat();$('cin').focus();});
-$('clog').addEventListener('click',e=>{const c=e.target.closest('[data-ask]');if(c){$('cin').value=c.dataset.ask;sendChat();}});
+$('clog').addEventListener('click',e=>{const pb=e.target.closest('[data-prop]');if(pb){const [mi,pi]=pb.dataset.prop.split(':');propAct(+mi,+pi,pb.dataset.act);return;}
+  const c=e.target.closest('[data-ask]');if(c){$('cin').value=c.dataset.ask;sendChat();}});
 $('chatBtn').addEventListener('click',()=>$('chat').hidden?openChat():closeChat());
 chatLoad();
 // ---------- knowledge: docs linked to a ticket + files attached to it ----------

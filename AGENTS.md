@@ -123,7 +123,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `POST /api/chat`. The server resolves `#ID`, `#board/ID`, `@board` into the user message, then
   loops tool calls (max 8) against `ANTHROPIC_BASE_URL/v1/messages` with read-only tools.
   Needs `ANTHROPIC_API_KEY`; `UNBLOCKD_MODEL` defaults to `claude-sonnet-5-5` (not verified
-  against a live key). The chat can't write. It is person <-> Claude only: no shared threads.
+  against a live key). The chat can't write: its one "write" is the `propose_tickets` tool, which creates nothing (`ask()` returns the whitelisted fields as `proposals`; blank titles dropped). The UI renders each as a card (`propHtml`) with Create (the normal `POST /tickets` with `qaPrefix()`, so the store validates; `propAct`) or Discard; per-proposal state lives in the log message (`pst`). A split is proposed as children with `parent` = the split ticket; the parent's `blocked_by` is not touched (use the drawer's Split for that). Proposals can't reference each other (`blocked_by` = existing ids). It is person <-> Claude only: no shared threads.
 
 ## Why files, not a database
 
