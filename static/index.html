@@ -38,15 +38,39 @@ code{font-family:var(--mono);font-size:.88em;background:var(--jade-soft);padding
 header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px}
 h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .sub{color:var(--muted);margin-top:4px;font-size:.88rem}
+.logo{display:flex;align-items:center;gap:7px;font:800 .95rem var(--display);letter-spacing:-.02em;color:var(--muted);margin-bottom:6px}
+.mark{width:22px;height:14px;background:linear-gradient(90deg,var(--cinnabar) 0 40%,transparent 40% 56%,var(--jade) 56%);border-radius:3px} /* a block, a gap, a block: unblocked */
+/* status strip: proportions of the whole board; a segment scrolls to its column */
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px}
+.segbar{display:flex;gap:2px;flex:1 1 360px;min-width:0;border-radius:8px;overflow:hidden}
+.segbar button{flex:var(--n) 1 76px;min-width:0;border:0;padding:6px 8px;background:var(--c);color:var(--paper);cursor:pointer;text-align:left;line-height:1.1;font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.segbar button b{display:block;font:800 1.25rem var(--display);font-variant-numeric:tabular-nums}
+.segbar button:hover{filter:brightness(1.12)}
+.segbar .s-todo{--c:var(--muted)} .segbar .s-doing{--c:var(--amber)} .segbar .s-pending{--c:var(--slate)} .segbar .s-done{--c:var(--jade);opacity:.8}
+.ready{font-weight:700;white-space:nowrap} .ready b{font:800 1.25rem var(--display);color:var(--jade);margin-right:4px}
+.agbadge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--amber);background:var(--amber-soft);color:var(--amber);border-radius:99px;padding:3px 12px;font-weight:700;cursor:pointer}
+.col.ping{animation:ping 1.1s ease-out}
+@keyframes ping{from{box-shadow:0 0 0 3px var(--c)}to{box-shadow:0 0 0 3px transparent}}
+.wip{margin-left:8px;font-size:.74rem;font-weight:800;color:var(--paper);background:var(--cinnabar);border-radius:99px;padding:0 8px}
+[id],.col{scroll-margin-top:64px}
 .btn{border:1px solid var(--jade);background:var(--jade);color:var(--surface);padding:6px 13px;border-radius:var(--r);cursor:pointer;font-weight:600}
 .btn.ghost{background:transparent;color:var(--jade)}
 .btn.danger{border-color:var(--cinnabar);background:transparent;color:var(--cinnabar)}
 .btn:hover{filter:brightness(1.08)} .btn.ghost:hover{background:var(--jade-soft);filter:none}
 
 .bar{position:sticky;top:0;z-index:5;background:var(--paper);border-block:1px solid var(--line);padding:9px 0;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:14px}
-.bar input[type=search]{flex:1 1 220px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px}
+.bar input[type=search]{flex:1 1 240px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px}
 .seg{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.seg .seglab{font-size:.78rem;font-weight:600;color:var(--muted);margin-right:2px}
+/* filter panel: a native <details>; the bar keeps search, the button, the active pills and Free/Blocked */
+.fpanel{position:relative} .fpanel summary{list-style:none;display:inline-flex;align-items:center;gap:7px;user-select:none} .fpanel summary::-webkit-details-marker{display:none}
+.fpanel[open] summary{background:var(--jade-soft)}
+.fcount{background:var(--jade);color:var(--surface);border-radius:99px;min-width:18px;height:18px;line-height:18px;font-size:.74rem;text-align:center;padding:0 5px}
+.fpanel summary:has(.fcount:not([hidden])){border-width:2px;font-weight:700}
+.fbody{position:absolute;z-index:6;top:calc(100% + 8px);left:0;width:min(560px,calc(100vw - 32px));display:grid;gap:10px;background:var(--surface);border:1px solid var(--ink);border-radius:8px;padding:12px 14px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.fbody .seg::before{content:attr(data-l);flex:0 0 64px;font-size:.78rem;font-weight:700;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--jade);background:var(--jade-soft);color:var(--jade);border-radius:99px;padding:2px 6px 2px 10px;font-size:.82rem;font-weight:600;cursor:pointer}
+.pill::after{content:'×';font-size:1rem;line-height:1}
+.pill:hover{background:var(--jade);color:var(--surface)}
 .bar input[type=search].err{border-color:var(--cinnabar);box-shadow:0 0 0 1px var(--cinnabar)}
 .card.onpath{border-style:dashed;opacity:.75} .card.dimmed{opacity:.35}
 .card.onpath:hover,.card.dimmed:hover,.card.onpath:focus-visible,.card.dimmed:focus-visible{opacity:1}
@@ -80,13 +104,18 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .nexttog .n{font-family:var(--body);font-size:.85rem;color:var(--muted);font-weight:700}
 .nexttog .chev{font-family:var(--body);font-size:.8rem;color:var(--muted);transition:transform .15s}
 .nexttog[aria-expanded="false"] .chev{transform:rotate(-90deg)}
-.next .cards{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));margin-top:8px}
+.nxl{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:0 14px}
+.nx{display:grid;grid-template-columns:1.4rem auto auto 1fr;align-items:baseline;gap:8px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:5px 4px;cursor:pointer;min-width:0}
+.nx:hover{background:var(--surface)} .nx .rk{font:800 1.15rem var(--display);color:var(--jade);font-variant-numeric:tabular-nums}
+.nx .nt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600} .nx .tid{font-size:.8rem}
+.nx.p0 .tid{color:var(--cinnabar)}
+.nxh{display:flex;align-items:center;justify-content:space-between;gap:8px}
 
 .board{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;align-items:start}
-.col{background:var(--sunk);border-radius:8px;padding:10px;min-width:0}
-.colhead{display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 8px;border-bottom:2px solid var(--c);margin-bottom:10px}
+.col{--c:var(--muted);background:color-mix(in srgb,var(--c) 6%,var(--sunk));border-radius:8px;padding:10px;min-width:0}
+.colhead{display:flex;align-items:baseline;padding:2px 4px 8px;border-bottom:3px solid var(--c);margin-bottom:10px}
 .colhead h2{font-size:.95rem}
-.colhead .n{color:var(--muted);font-variant-numeric:tabular-nums;font-weight:700}
+.colhead .n{margin-left:auto;color:var(--c);font-variant-numeric:tabular-nums;font-weight:700}
 .col.todo{--c:var(--muted)} .col.doing{--c:var(--amber)} .col.pending{--c:var(--slate)} .col.done{--c:var(--jade)}
 .cards{display:grid;gap:8px}
 .card{--pc:var(--p-other);display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--pc);border-radius:var(--r);padding:8px 10px 8px 9px;cursor:pointer;min-width:0}
@@ -94,6 +123,16 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .card:hover{border-color:color-mix(in srgb,var(--ink) 40%,var(--line));border-left-color:var(--pc);box-shadow:0 1px 3px rgba(0,0,0,.1)}
 .col.done .card{border-left-color:color-mix(in srgb,var(--pc) 45%,transparent)}
 .col.done .card:hover{border-left-color:var(--pc)}
+/* urgency lives in surface + ID weight, not the pillar spine: P0 = cinnabar wash, blocked = muted + hatched, ready = plain full weight */
+.card.p0{background-color:color-mix(in srgb,var(--cinnabar) 10%,var(--surface));border-color:color-mix(in srgb,var(--cinnabar) 40%,var(--line))}
+.card.p0 .tid{color:var(--cinnabar);font-size:.98rem;font-weight:800}
+.card.blocked{background-color:color-mix(in srgb,var(--surface) 55%,var(--sunk));background-image:repeating-linear-gradient(135deg,transparent 0 5px,color-mix(in srgb,var(--slate) 13%,transparent) 5px 6px)}
+.card.p0.blocked{background-color:color-mix(in srgb,var(--cinnabar) 6%,var(--sunk))}
+.card.blocked .ttl{font-weight:500;color:color-mix(in srgb,var(--ink) 72%,var(--muted))}
+.lock{width:.8em;height:.8em;vertical-align:-1px;margin-right:4px}
+.card.claimed{outline:2px solid var(--amber);outline-offset:-2px}
+.agc{display:inline-flex;align-items:center;gap:5px;background:var(--amber-soft);color:var(--amber);border-radius:99px;padding:0 8px;font-size:.74rem;font-weight:700;white-space:nowrap;min-width:0}
+.agc time{font-weight:600;opacity:.85} .agc time.late{color:var(--cinnabar);opacity:1;font-weight:800}
 .wl{display:block;margin-top:5px;font-size:.78rem;font-weight:600}
 .wl.miss{color:var(--cinnabar)} .wl.stale{color:var(--amber)}
 .card.flash{animation:flash 1.2s ease-out}
@@ -115,11 +154,38 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .card[draggable="true"]{cursor:grab}
 .card.dragging{opacity:.45}
 .col.drop{outline:2px dashed var(--c);outline-offset:-4px}
-.emptycol{color:var(--muted);font-size:.85rem;padding:8px 4px}
+.emptycol{color:var(--muted);font-size:.85rem;padding:2px 4px;margin:0}
+/* drag target: tinted column + a ghost slot at the top; cinnabar when the drop will be refused */
+.col.drop{background:color-mix(in srgb,var(--c) 18%,var(--sunk));outline:2px solid var(--c);outline-offset:-2px}
+.col.drop .cards::before{content:attr(data-hint);border:2px dashed var(--c);border-radius:var(--r);padding:14px 10px;text-align:center;font-weight:700;color:var(--c)}
+.col.drop.no{--c:var(--cinnabar)}
+/* move menu: a native <details> beside each card (a button can't hold a button) */
+.cw{position:relative;min-width:0}
+.mv{position:absolute;right:6px;bottom:6px;z-index:2}
+.mv summary{list-style:none;cursor:pointer;font-size:.72rem;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:0 8px;opacity:0}
+.mv summary::-webkit-details-marker{display:none}
+.cw:hover .mv summary,.cw:focus-within .mv summary,.mv[open] summary{opacity:1}
+@media (hover:none){.mv summary{opacity:1}.cw .card{padding-bottom:30px}}
+.mvm{position:absolute;right:0;bottom:calc(100% + 4px);display:grid;min-width:130px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden}
+.mvm button,.ovm button{text-align:left;background:none;border:0;padding:7px 12px;cursor:pointer;font-weight:600} .mvm button:hover,.ovm button:hover{background:var(--jade-soft)}
+.qa{display:flex;gap:6px;margin-bottom:10px}
+.qa input{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:6px 8px;min-width:0}
+.qa-p{flex:0 0 5.4em;width:5.4em;font:700 .82rem var(--mono);text-transform:uppercase;color:var(--muted);text-align:center} .qa-t{flex:1}
+.age{white-space:nowrap} .age.late{color:var(--amber);font-weight:700}
+.tabs{display:none}
 @media (max-width:1100px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.board{grid-template-columns:1fr}
-  .bar{position:static} .bar .seg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px}
-  .btn{padding:8px 14px} .card{padding:10px}}
+  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
+  .btn{padding:8px 14px} .card{padding:10px}
+  .sub,.segbar{display:none}
+  .tabs{display:flex;position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line);margin:0 -16px 10px;padding:0 16px}
+  .tab{flex:1;border:0;border-bottom:3px solid transparent;background:none;padding:8px 2px 7px;font-weight:700;color:var(--muted);cursor:pointer;line-height:1.15}
+  .tab .n{display:block;font:800 1.1rem var(--display);font-variant-numeric:tabular-nums}
+  .tab.on{color:var(--ink)} .tab.todo.on{border-color:var(--muted)} .tab.doing.on{border-color:var(--amber)} .tab.pending.on{border-color:var(--slate)} .tab.done.on{border-color:var(--jade)}
+  .col{display:none} .col.active{display:block}
+  /* tabs right under the filters; Next up only on To do, Working now only on In progress */
+  .wrap{display:flex;flex-direction:column} header{order:0} .strip{order:1} .bar{order:2} .tabs{order:3} #working{order:4} #nextUp{order:5} #board{order:6} #graphWrap{order:7}
+  body:not([data-tab="todo"]) #nextUp,body:not([data-tab="doing"]) #working{display:none}}
 
 .scrim{position:fixed;inset:0;background:rgba(10,16,13,.35);z-index:20}
 aside{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:21;overflow-y:auto;padding:18px 20px 28px;box-shadow:-12px 0 32px rgba(0,0,0,.14)}
@@ -161,6 +227,16 @@ aside.dropping{outline:3px dashed var(--jade);outline-offset:-8px}
 .kb dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:.92rem} .kb dd{margin:0}
 kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 6px}
 .btn.q{padding:7px 11px}
+/* drawer: status as a segmented control, overflow menu for the quiet actions, knowledge collapsed */
+.srow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:8px} .srow .own{margin:0}
+.segc{display:flex;flex-wrap:wrap;gap:4px}
+.segc [data-setstatus="todo"][aria-pressed="true"]{background:var(--muted);border-color:var(--muted)} .segc [data-setstatus="doing"][aria-pressed="true"]{background:var(--amber);border-color:var(--amber);color:var(--surface)}
+.segc [data-setstatus="pending"][aria-pressed="true"]{background:var(--slate);border-color:var(--slate);color:var(--surface)} .segc [data-setstatus="done"][aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--surface)}
+.segc [data-setstatus="todo"][aria-pressed="true"]{color:var(--surface)}
+.dmeta{margin:0 0 6px}
+.ovf{position:relative} .ovf summary{list-style:none} .ovf summary::-webkit-details-marker{display:none}
+.ovm{position:absolute;right:0;top:calc(100% + 4px);z-index:3;display:grid;min-width:160px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden} .ovm .dz{color:var(--cinnabar)}
+.kn>summary{cursor:pointer;font-weight:700;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin-top:18px} .kn h3{border-top:0;padding-top:0}
 select.quick{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:2px 6px}
 
 form.edit{display:grid;gap:10px;grid-template-columns:1fr 1fr}
@@ -203,7 +279,10 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .gpanel{position:absolute;left:12px;bottom:12px;width:min(380px,calc(100% - 24px));background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:.88rem}
 .gpanel .ttl{font-weight:600;margin:4px 0 6px;overflow-wrap:anywhere}
 .gpanel .row{display:flex;gap:6px;margin-top:8px}
-.gempty{position:absolute;inset:auto 0 45% 0;text-align:center;color:var(--muted)}
+.empty,.gempty{border:2px dashed var(--line);border-radius:10px;padding:34px 20px;text-align:center;display:grid;gap:10px;justify-items:center;color:var(--muted);margin:0}
+.empty{grid-column:1/-1} .empty h2{color:var(--ink);font-size:1.2rem} .empty p{margin:0}
+.gempty{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);padding:18px 24px;background:var(--surface)}
+.fl{display:flex;flex-wrap:wrap;gap:6px;justify-content:center} .fl span{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:2px 10px;color:var(--ink);font-size:.85rem}
 /* chat: a docked panel on the right. Non-modal, so the board stays usable; a ticket drawer opens over it. */
 .chat{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:15;display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.08)}
 @media (min-width:1100px){body.chat-open .wrap{margin-right:420px}}
@@ -228,6 +307,12 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .ac li{display:grid;grid-template-columns:auto 1fr;gap:8px;padding:5px 7px;border-radius:4px;cursor:pointer;font-size:.88rem}
 .ac li[aria-selected="true"],.ac li:hover{background:var(--sunk)}
 .ac .lt{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.toasts{position:fixed;z-index:60;left:50%;bottom:18px;transform:translateX(-50%);display:grid;gap:8px;width:max-content;max-width:calc(100% - 32px);pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:14px;background:var(--ink);color:var(--paper);border-radius:8px;padding:9px 14px;box-shadow:0 8px 24px rgba(0,0,0,.28);font-weight:600;animation:toastin .18s ease-out}
+.toast.err{background:var(--cinnabar);color:var(--surface)}
+.toast button{background:none;border:0;border-bottom:1px solid currentColor;padding:0;font-weight:800;cursor:pointer;color:inherit}
+@keyframes toastin{from{opacity:0;transform:translateY(8px)}}
+@media (prefers-reduced-motion:reduce){.toast,.col.ping{animation:none}}
 .dots::after{content:'…';animation:dots 1.2s steps(3) infinite}
 @keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
 @media (prefers-reduced-motion:reduce){.dots::after{animation:none}}
@@ -236,21 +321,28 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 <body>
 <div class="wrap">
   <header>
-    <div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
+    <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><h1 id="appTitle">Tickets</h1><div class="sub" id="sub">Loading…</div></div>
     <div class="hdr"><label class="bsel"><span class="hint">Board</span><select id="boardSel" aria-label="Board"></select></label><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button">New ticket</button><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
+  <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
-    <div class="seg" id="pillarSeg"></div>
-    <div class="seg" id="ownerSeg"></div>
-    <div class="seg" id="prioSeg"></div>
+    <details class="fpanel" id="fpanel"><summary class="btn ghost">Filters <b class="fcount" id="fcount" hidden></b></summary>
+      <div class="fbody" id="fbody">
+        <div class="seg" id="pillarSeg" data-l="Pillar"></div>
+        <div class="seg" id="ownerSeg" data-l="Owner"></div>
+        <div class="seg" id="prioSeg" data-l="Priority"></div>
+        <div class="seg" id="agentSeg" data-l="Agent"></div>
+        <div class="seg" id="showSeg" data-l="Show" role="group" aria-label="Show" title="Only: just the matches. Paths: matches plus everything upstream and downstream of them. Dim: everything, matches highlighted."></div>
+      </div></details>
+    <div class="seg" id="pills"></div>
     <div class="seg" id="depSeg" role="group" aria-label="Blocked or free"></div>
-    <div class="seg" id="agentSeg"></div>
     <div class="seg" id="attnSeg"></div>
-    <div class="seg" id="showSeg" role="group" aria-label="Show" title="Only: just the matches. Paths: matches plus everything upstream and downstream of them. Dim: everything, matches highlighted."></div>
   </div>
+
   <section class="working" id="working" hidden aria-label="Agents working now"></section>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
+  <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
   <div class="board" id="board"></div>
   <section class="graphwrap" id="graphWrap" hidden aria-label="Blocking graph">
     <div class="gtools">
@@ -261,7 +353,6 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <label class="tog"><input type="checkbox" id="gCrit"> Critical path</label>
       <label class="tog" title="Click a ticket to draw only its whole chain, ignoring the filters. Esc goes back."><input type="checkbox" id="gIsolate" checked> Isolate on click</label>
       <button type="button" class="btn ghost sm" id="gFit">Fit to view</button>
-      <span class="msg" id="gMsg" role="status"></span>
       <span class="msg" id="gIso" role="status" hidden></span>
     </div>
     <div class="gleg">
@@ -296,6 +387,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 </section>
 <div class="docvscrim" id="docvScrim" hidden></div>
 <div class="docv" id="docv" hidden role="dialog" aria-modal="true" aria-labelledby="docT"></div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <div class="kbscrim" id="kbScrim" hidden></div>
 <div class="kb" id="kb" hidden role="dialog" aria-modal="true" aria-labelledby="kbT">
   <h2 id="kbT">Keyboard shortcuts</h2>
@@ -359,6 +451,16 @@ const PW={P0:8,P1:4,P2:2,P3:1};
 const pickShow=(v,d)=>['only','paths','dim'].includes(v)?v:d;
 const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickShow(store.get('showModeBoard','only'),'only'),showGraph:pickShow(store.get('showModeGraph','dim'),'dim')};
+const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
+const setTab=k=>{TAB=k;try{sessionStorage.setItem('unblockd.tab',k)}catch{}renderBoard();};
+const WIP=5; // more than this many in progress = warning on the column
+function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, errors a little longer
+  const el=document.createElement('div');el.className='toast'+(err?' err':'');el.append(msg);
+  if(undo){const b=document.createElement('button');b.type='button';b.textContent='Undo';b.onclick=()=>{el.remove();undo();};el.append(b);}
+  const box=$('toasts');box.append(el);while(box.children.length>3)box.firstChild.remove();
+  setTimeout(()=>el.remove(),err?6000:4000);
+}
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
@@ -370,8 +472,8 @@ async function api(method, path, body){
 }
 async function load(force){
   let text;
-  try{ text=await (await fetch(API+'/tickets',{cache:'no-store'})).text(); }
-  catch{ $('sub').textContent='Cannot reach the unblockd server. Is it running?'; return; }
+  try{ const r=await fetch(API+'/tickets',{cache:'no-store'}); text=await r.text(); if(!r.ok) throw 0; }
+  catch{ toast('Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
   if(text===raw && !force) return;
   raw=text; T=JSON.parse(text); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!matchMedia('(prefers-reduced-motion: reduce)').matches) noteFinished(prev);
@@ -444,9 +546,22 @@ function withChains(universe,M){ // M plus every ancestor and descendant of each
 let BV={mode:'only',M:new Set(),S:null}; // the board's current selection, set by render()
 const onBoard=t=>!BV.S||BV.S.has(t.id);
 function renderShow(){
-  $('showSeg').innerHTML='<span class="seglab">Show</span>';
-  const d=document.createElement('div');chips(d,[['only','Only'],['paths','Paths'],['dim','Dim']],showMode(),'show');
-  $('showSeg').append(...d.children);
+  chips($('showSeg'),[['only','Only'],['paths','Paths'],['dim','Dim']],showMode(),'show');renderPills();
+}
+// active non-default filters as removable pills; each pill carries the data-attr of the chip that resets it, so the same click handler does the work
+function activeFilters(){
+  const ps=[];
+  if(state.pillar!=='ALL') ps.push([`data-pillar="ALL"`,state.pillar==='OTHER'?'Other':pname(state.pillar)]);
+  if(state.owner!=='ALL') ps.push([`data-owner="ALL"`,state.owner]);
+  if(state.agent!=='ALL') ps.push([`data-agent="ALL"`,state.agent==='NONE'?'Unrouted':state.agent]);
+  for(const p of state.prio) ps.push([`data-prio="${p}"`,p]);
+  const dm=state.view==='graph'?'dim':'only'; if(showMode()!==dm) ps.push([`data-show="${dm}"`,'Show: '+showMode()]);
+  return ps;
+}
+function renderPills(){
+  const ps=activeFilters();
+  $('pills').innerHTML=ps.map(([a,l])=>`<button type="button" class="pill" ${a} aria-label="Remove filter ${esc(l)}">${esc(l)}</button>`).join('');
+  $('fcount').hidden=!ps.length;$('fcount').textContent=ps.length;
 }
 function setQ(v){ // one place that parses the search box: /pattern/ is a regex over "id title"
   $('q').value=v;state.q=v.trim();state.rx=null;state.rxErr='';
@@ -457,18 +572,21 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
-  if(s==='pending') why=t.open_blockers.length?`<span class="why">Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:'';
+  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
   const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
     t.agent&&s!=='done'?`<span class="ag" title="Agent profile that should work this">→ ${esc(t.agent)}</span>`:'',
     ...(t.tags||[]).filter(x=>!x.startsWith('agent:')).slice(0,3).map(x=>`<span class="tag">#${esc(x)}</span>`)].filter(Boolean);
-  if(s==='done') meta.length=0; // done cards show no meta line, except the path hint
+  if(s==='done') meta.length=0; // done cards show no meta line, except the age and the path hint
+  meta.push(`<span class="age" data-up="${esc(t.updated)}" data-st="${s}" title="Updated ${esc(t.updated)}"></span>`); // text filled by tickAges, never in the JSON
   if(onp) meta.push('<span class="onp" title="Doesn\'t match the filters; shown because it is on a chain through a match">on path</span>');
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
-  return `<button type="button" class="card${pc}${fl?' flash':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="wk"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)}${t.claim.note?': '+esc(t.claim.note):''}</span>`:''}${warn}</button>`;
+  const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
+  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
 }
+const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==t.status).map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;
 const ord=t=>[t.pillar?PILLARS.indexOf(t.pillar):9, t.pillar_step||99, ['P0','P1','P2','P3'].indexOf(t.priority)+1||9];
 function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;}
 const ago=iso=>{const s=Math.max(0,(Date.now()-Date.parse(iso))/1000);return s<60?'just now':s<3600?`${Math.round(s/60)} min ago`:s<86400?`${Math.round(s/3600)} h ago`:`${Math.round(s/86400)} d ago`;};
@@ -479,22 +597,56 @@ function renderWorking(){ // agents holding a claim right now; ages tick client-
   el.innerHTML=`<h2>Working now <span class="n">${ws.length}</span></h2><ul>${ws.map(t=>{const quiet=Date.now()-Date.parse(t.claim.heartbeat_at)>lease*.6;
     return `<li${BV.mode==='dim'&&!BV.M.has(t.id)?' class="dimmed"':''}><i class="pulse" aria-hidden="true"></i><span class="who">${esc(t.claim.agent)}</span><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button>${t.claim.note?`<span class="wn">“${esc(t.claim.note)}”</span>`:''}<span class="${quiet?'quiet':'wn'}" title="Started ${esc(ago(t.claim.claimed_at))}">${quiet?'quiet ':''}${esc(ago(t.claim.heartbeat_at))}</span></li>`;}).join('')}</ul>`;
 }
-setInterval(()=>{if(!$('working').hidden)renderWorking();},15000);
-function renderNext(){
-  const el=$('nextUp'),open=store.get('nextOpen',true);
-  const ts=T.filter(t=>t.effective_status==='todo'&&onBoard(t)).sort((a,b)=>(BV.M.has(b.id)-BV.M.has(a.id))||(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,5);
+// heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
+function tickAges(){const lim=(CFG.lease_minutes?CFG.lease_minutes/2:10)*60000;
+  document.querySelectorAll('[data-hb]').forEach(e=>{const t=Date.parse(e.dataset.hb);e.textContent=ago(e.dataset.hb).replace(' ago','');e.classList.toggle('late',Date.now()-t>lim);e.title=Date.now()-t>lim?'No heartbeat for a while':'';});
+  document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
+    e.textContent=done?(d<1?'closed today':`closed ${d}d ago`):(d<1?'today':d+'d');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
+setInterval(()=>{if(!$('working').hidden)renderWorking();tickAges();},15000);
+function renderNext(){ // compact ranked strip of the best ready tickets; >3 collapses behind "show all"
+  const el=$('nextUp'),open=store.get('nextOpen',true),all=store.get('nextAll',false);
+  const ts=T.filter(t=>t.effective_status==='todo'&&onBoard(t)).sort((a,b)=>(BV.M.has(b.id)-BV.M.has(a.id))||(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,6);
   el.hidden=!ts.length||state.view!=='board'; if(el.hidden) return;
-  el.innerHTML=`<h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="${open}">Next up <span class="n">${ts.length}</span><span class="chev" aria-hidden="true">▾</span></button></h2>${open?`<div class="cards">${ts.map(card).join('')}</div>`:''}`;
+  const shown=all?ts:ts.slice(0,3);
+  el.innerHTML=`<div class="nxh"><h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="${open}">Next up <span class="n">${ts.length}</span><span class="chev" aria-hidden="true">▾</span></button></h2>${open&&ts.length>3?`<button type="button" class="btn ghost sm" data-nextall>${all?'Show top 3':`Show all ${ts.length}`}</button>`:''}</div>${open?`<ol class="nxl">${shown.map((t,i)=>`<li><button type="button" class="nx${t.priority==='P0'?' p0':''}" data-open="${esc(t.id)}" title="Score ${t.score} (priority x tickets unblocked)"><span class="rk">${i+1}</span><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="nt">${inline(t.title)}</span></button></li>`).join('')}</ol>`:''}`;
+}
+const qaKey=()=>'qaPrefix.'+(BOARD||'default');
+function qaPrefix(){ // remembered per board, else the prefix most tickets here use
+  const m=store.get(qaKey(),null); if(m) return m;
+  const c={};for(const t of T){const x=t.id.match(/^(.+)-\d+[a-z]?$/);if(x)c[x[1]]=(c[x[1]]||0)+1;}
+  return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]||'TASK';
+}
+const qaForm=()=>`<form class="qa" autocomplete="off"><input class="qa-p" value="${esc(qaPrefix())}" aria-label="ID prefix" maxlength="12" title="ID prefix, remembered"><input class="qa-t" placeholder="Add a ticket" aria-label="New ticket title" maxlength="200" title="Enter creates. Shift+Enter creates and keeps typing."></form>`;
+let qaBusy=false;
+async function quickAdd(f,again){
+  const ti=f.querySelector('.qa-t'),prefix=f.querySelector('.qa-p').value.trim().toUpperCase(),title=ti.value.trim(); if(!title||qaBusy) return;
+  qaBusy=true;
+  try{ const t=await api('POST','',{prefix,title}); store.set(qaKey(),prefix); ti.value=''; await load(true); toast(`Created ${t.id}`); }
+  catch(er){ toast('Create failed: '+er.message,{err:1}); qaBusy=false; return; }
+  qaBusy=false; const n=document.querySelector('.qa-t'); if(again) n?.focus(); else n?.blur();
+}
+function emptyState(){
+  if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
+  const fl=[...activeFilters().map(x=>x[1]),state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.attn&&'Needs attention',state.q&&`“${state.q}”`].filter(Boolean);
+  return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
+}
+function clearFilters(){
+  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',prio:[],dep:'ALL',attn:false});
+  for(const k of['pillar','owner','dep'])store.set(k,'ALL'); store.set('prio',[]); setQ(''); renderBar(); render();
 }
 function renderBoard(){
-  const vis=T.filter(onBoard);
+  const vis=T.filter(onBoard),qa=document.querySelector('.qa-t'),keep=qa&&{v:qa.value,p:document.querySelector('.qa-p').value,f:document.activeElement===qa,s:qa.selectionStart}; // a re-render must not eat a half-typed ticket
+  document.body.dataset.tab=TAB;
+  $('tabs').innerHTML=vis.length?COLS.map(([k,name])=>`<button type="button" role="tab" class="tab ${k}${k===TAB?' on':''}" data-tab="${k}" aria-selected="${k===TAB}">${name}<span class="n">${vis.filter(t=>t.effective_status===k).length}</span></button>`).join(''):'';
+  if(!vis.length){ $('board').innerHTML=emptyState(); return; }
   $('board').innerHTML=COLS.map(([k,name])=>{
     let ts=vis.filter(t=>t.effective_status===k);
     ts = k==='done' ? ts.sort((a,b)=>(b.updated||'').localeCompare(a.updated||'')) : ts.sort(cmp);
     const total=ts.length; if(k==='done'&&!state.allDone&&!state.q) ts=ts.slice(0,10);
     const more=k==='done'&&total>ts.length?`<button type="button" class="btn ghost more" data-alldone>Show all ${total} done</button>`:'';
-    return `<section class="col ${k}" data-col="${k}" aria-label="${name}"><div class="colhead"><h2>${name}</h2><span class="n">${total}</span></div><div class="cards">${ts.map(card).join('')||'<p class="emptycol">Nothing here with these filters.</p>'}</div>${more}</section>`;
+    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead"><h2>${name}</h2>${k==='doing'&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}<span class="n">${total}</span></div>${k==='todo'?qaForm():''}<div class="cards">${ts.map(card).join('')||'<p class="emptycol">None</p>'}</div>${more}</section>`;
   }).join('');
+  if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
 }
 
 // ---------- drawer ----------
@@ -539,28 +691,24 @@ function showTicket(id,refresh){
   const s=t.effective_status;
   const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
   const ms=mentions(t);
-  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn ghost" data-ask-about="${esc(t.id)}">Ask</button><button type="button" class="btn ghost" data-ingraph>Show in graph</button><button type="button" class="btn ghost" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button></span></div>
+  const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
+    t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
+    t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
+    t.waiting_on&&!why?`<span>Waiting on ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
+  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm"><button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
-    <dl class="facts">
-      <dt>Status</dt><dd><label class="hint" for="quickStatus" hidden>Status</label><select class="quick" id="quickStatus">${COLS.map(([k,n])=>`<option value="${k}" ${t.status===k?'selected':''}>${n}</option>`).join('')}</select>${s!==t.status?` <span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?` <span class="why">${esc(why)}</span>`:''}</dd>
-      <dt>Owner</dt><dd>${esc(t.owner)}</dd>
-      <dt>Agent</dt><dd>${t.agent?`<span class="ag">${esc(t.agent)}</span>${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' <span class="hint">(no such profile)</span>'}`:'<span class="hint">None: add a tag or pillar an agent profile claims</span>'}</dd>
-      <dt>Tags</dt><dd>${(t.tags||[]).length?t.tags.map(x=>`<span class="tag">#${esc(x)}</span>`).join(' '):'None'}</dd>
-      <dt>${esc(CFG.pillar_label)}</dt><dd>${t.pillar?esc(pname(t.pillar))+(t.pillar_step?`, step ${t.pillar_step}`:''):'None'}</dd>
-      <dt>Section</dt><dd>${esc(t.section)||'None'}</dd>
-      ${t.waiting_on&&!why?`<dt>Waiting on</dt><dd>${esc(t.waiting_on)}</dd>`:''}
-      <dt>Updated</dt><dd>${esc(t.updated)} (created ${esc(t.created)})</dd>
-    </dl>
+    <div class="srow"><div class="segc" role="group" aria-label="Status">${COLS.map(([k,n])=>`<button type="button" class="chip" data-setstatus="${k}" aria-pressed="${t.status===k}">${n}</button>`).join('')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
+    <div class="meta dmeta">${dm.join('')}</div>
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
+    <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
+    <details class="kn" id="kn"${store.get('knOpen',false)?' open':''}><summary>Knowledge and agent activity</summary>
     <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
-    <div class="formrow" style="margin-top:6px"><button type="button" class="btn ghost sm" data-attach>Attach files</button><span class="hint">or drop text files here</span><input type="file" id="kfile" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.toml,.csv,.py,.gd,.js,.ts,.html,.css,.sh,.xml"><span class="msg" id="kmsg" role="status"></span></div>
-    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
-    <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
-    <p class="msg" id="dMsg" role="status"></p>`, refresh);
+    <div class="formrow" style="margin-top:6px"><button type="button" class="btn ghost sm" data-attach>Attach files</button><span class="hint">or drop text files here</span><input type="file" id="kfile" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.toml,.csv,.py,.gd,.js,.ts,.html,.css,.sh,.xml"></div>
+    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul></details>`, refresh);
   loadActs(id); loadKnowledge(id);
 }
 const ACTS=new Map(); // ticket id -> last rendered activity, so a refresh doesn't flicker
@@ -603,7 +751,7 @@ async function submitForm(f){
     docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
-    editing=false; await load(true); showTicket(t.id);
+    editing=false; await load(true); showTicket(t.id); toast(f.dataset.id?`Saved ${t.id}`:`Created ${t.id}`);
   }catch(e){ m.className='msg err'; m.textContent=e.message; }
 }
 
@@ -611,6 +759,8 @@ async function submitForm(f){
 let armedDelete=false;
 document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
+  if(!g('.fpanel')) $('fpanel').open=false;
+  document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.contains(e.target)||(d.open=false));
   if(b=g('[data-pillar]')){state.pillar=b.dataset.pillar;store.set('pillar',state.pillar);renderBar();render();return;}
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
@@ -620,6 +770,14 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
   if(g('[data-alldone]')){state.allDone=true;render();return;}
   if(g('[data-attn]')){state.attn=!state.attn;renderBar();render();return;}
+  if(b=g('[data-moveto]')){b.closest('.mv').open=false;moveTo(b.dataset.id,b.dataset.moveto);return;}
+  if(b=g('[data-setstatus]')){moveTo(openId,b.dataset.setstatus);return;}
+  if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
+  if(g('[data-clear]')){clearFilters();return;}
+  if(g('[data-new]')){openId=null;editForm(null);return;}
+  if(g('[data-nextall]')){store.set('nextAll',!store.get('nextAll',false));renderNext();return;}
+  if(b=g('[data-seg]')){if(state.view!=='board')setView('board');if(matchMedia('(max-width:600px)').matches)setTab(b.dataset.seg);goTo(document.querySelector(`[data-col="${b.dataset.seg}"]`));return;}
+  if(g('[data-toworking]')){if(state.view!=='board')setView('board');goTo($('working'));return;}
   if(g('[data-nexttoggle]')){store.set('nextOpen',!store.get('nextOpen',true));renderNext();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
@@ -633,25 +791,36 @@ document.addEventListener('click',async e=>{
   if(g('[data-ingraph]')){const id=openId;closeDrawer();setView('graph');focusNode(id);return;}
   if(g('[data-edit]')){editForm(BY.get(openId));return;}
   if(b=g('[data-delete]')){
-    const id=$('editForm').dataset.id;
+    const id=$('editForm')?.dataset.id||openId;
     if(!armedDelete){armedDelete=true;b.textContent='Click again to delete '+id;setTimeout(()=>{armedDelete=false;if(b.isConnected)b.textContent='Delete';},3000);return;}
-    try{await api('DELETE','/'+id);armedDelete=false;closeDrawer();load(true);}catch(er){$('fMsg').className='msg err';$('fMsg').textContent=er.message;}
+    try{await api('DELETE','/'+id);armedDelete=false;closeDrawer();load(true);toast(`Deleted ${id}`);}catch(er){toast('Delete failed: '+er.message,{err:1});}
     return;
   }
   if(g('[data-close]')||e.target===$('scrim')){ editing&&openId ? showTicket(openId) : closeDrawer(); return; }
 });
-document.addEventListener('change',async e=>{
-  if(e.target.id!=='quickStatus'||!openId) return;
-  try{ await api('PATCH','/'+openId,{status:e.target.value}); await load(true); }
-  catch(er){ $('dMsg').className='msg err'; $('dMsg').textContent=er.message; }
-});
+// one status move for drag-drop and the drawer's menu; Undo = one PATCH back to the old status
+async function moveTo(id,to,undoable=true){
+  const t=BY.get(id),from=t?.status; if(!t||from===to) return;
+  if(to==='doing'&&t.open_blockers.length) return toast(`${id} is blocked by ${t.open_blockers.join(', ')}: it can't start yet.`,{err:1});
+  try{ await api('PATCH','/'+id,{status:to}); await load(true);
+    const n=BY.get(id);
+    toast(n.effective_status!==to?`${id} is ${NAME[to]} but shows as ${NAME[n.effective_status]}: blocked by ${n.open_blockers.join(', ')}.`:undoable?`${id} moved to ${NAME[to]}`:`${id} back in ${NAME[to]}`,undoable&&from?{undo:()=>moveTo(id,from,false)}:{});
+  }catch(er){ toast('Move failed: '+er.message,{err:1}); load(true); }
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches?.('.qa-t,.qa-p')){e.preventDefault();quickAdd(e.target.form,e.shiftKey);} }); // two fields = no implicit submit, so Enter is handled here
+document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remember the knowledge fold; keep the filter panel inside the viewport
+  if(e.target.id==='kn') store.set('knOpen',e.target.open);
+  if(e.target.id==='fpanel'){const b=$('fbody');b.style.translate='';if(e.target.open)b.style.translate=Math.min(0,innerWidth-16-b.getBoundingClientRect().right)+'px';}
+},true);
 document.addEventListener('submit',e=>{ if(e.target.id==='editForm'){e.preventDefault();submitForm(e.target);} });
 let kbFocus=null;
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
-const visibleCards=()=>[...document.querySelectorAll('#nextUp .card, #board .card')].filter(c=>c.offsetParent!==null);
+const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card')].filter(c=>c.offsetParent!==null);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(!$('kb').hidden) toggleKb(false);
+    else if($('fpanel').open) $('fpanel').open=false;
+    else if(document.querySelector('.mv[open],.ovf[open]')) document.querySelectorAll('.mv[open],.ovf[open]').forEach(d=>d.open=false);
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(cancelGraphGesture()){}
     else if(G.selEdge) {clearEdge();}
@@ -675,14 +844,14 @@ document.addEventListener('keydown',e=>{
 // drag a card onto a column = set that status (same PATCH as the drawer's status menu)
 let dragId=null;
 document.addEventListener('dragstart',e=>{ const c=e.target.closest?.('.card'); if(!c) return; dragId=c.dataset.open; e.dataTransfer.setData('text/plain',dragId); e.dataTransfer.effectAllowed='move'; c.classList.add('dragging'); });
-document.addEventListener('dragend',e=>{ e.target.closest?.('.card')?.classList.remove('dragging'); document.querySelectorAll('.col.drop').forEach(c=>c.classList.remove('drop')); dragId=null; });
-document.addEventListener('dragover',e=>{ const col=e.target.closest?.('[data-col]'); if(!col||!dragId) return; e.preventDefault(); document.querySelectorAll('.col.drop').forEach(c=>c!==col&&c.classList.remove('drop')); col.classList.add('drop'); });
-document.addEventListener('drop',async e=>{
+document.addEventListener('dragend',e=>{ e.target.closest?.('.card')?.classList.remove('dragging'); document.querySelectorAll('.col.drop').forEach(c=>c.classList.remove('drop','no')); dragId=null; });
+document.addEventListener('dragover',e=>{ const col=e.target.closest?.('[data-col]'); if(!col||!dragId) return; e.preventDefault(); document.querySelectorAll('.col.drop').forEach(c=>c!==col&&c.classList.remove('drop','no'));
+  const t=BY.get(dragId); if(!t||t.effective_status===col.dataset.col) return; const bl=col.dataset.col==='doing'&&t.open_blockers.length?t.open_blockers.join(', '):'';
+  col.querySelector('.cards').dataset.hint=bl?`Blocked by ${bl}: can't start`:`Move ${t.id} here`; col.classList.add('drop'); col.classList.toggle('no',!!bl); });
+document.addEventListener('drop',e=>{
   const col=e.target.closest?.('[data-col]'); const id=e.dataTransfer.getData('text/plain')||dragId; if(!col||!id) return; e.preventDefault();
   col.classList.remove('drop'); const t=BY.get(id); const to=col.dataset.col; if(!t||t.status===to) return;
-  try{ await api('PATCH','/'+id,{status:to}); await load(true);
-    const n=BY.get(id); if(n && n.effective_status!==to) $('sub').textContent=`${id} is ${NAME[to]} but shows as ${NAME[n.effective_status]}: blocked by ${n.open_blockers.join(', ')}.`;
-  }catch(er){ $('sub').textContent='Move failed: '+er.message; }
+  moveTo(id,to);
 });
 // ---------- graph ----------
 // Nodes = tickets, arrow A→B = "A blocks B" (B.blocked_by has A). Size = how many
@@ -814,7 +983,7 @@ function syncGraph(){
   G.key=key;G.lkey=lkey;
   if(G.restore){G.restore=false;const v=G.saved;G.saved=null;if(v&&v.layout===G.layout&&G.layout==='flow'&&G.sized){G.k=v.k;G.tx=v.tx;G.ty=v.ty;}} // Flow re-lays out the same tickets the same way, so the old zoom/pan fits again
   const iso=$('gIso');iso.hidden=!G.isolate;if(G.isolate)iso.textContent=`Showing the chain of ${G.isolate} (${G.nodes.size} ticket${G.nodes.size===1?'':'s'}). Esc to go back.`;
-  $('gEmpty').hidden=G.nodes.size>0;$('gEmpty').textContent=noMatch?'No tickets match these filters.':GEMPTY;
+  $('gEmpty').hidden=G.nodes.size>0;if(noMatch)$('gEmpty').innerHTML='<b>No tickets match these filters.</b><button type="button" class="btn sm" data-clear>Clear filters</button>';else $('gEmpty').textContent=GEMPTY;
   if(G.selEdge)renderEdgePanel();else if(G.focus)renderPanel();
   renderChains();kick();
 }
@@ -965,7 +1134,7 @@ function renderPanel(){const t=BY.get(G.focus);if(!t)return setFocus(null);const
     <div class="hint">${up.length?`Waits on ${up.length} open: ${esc(up.join(', '))}.`:'Nothing open is in its way.'}${d?`<br>Unblocks ${d} open down the chain.`:''}</div>
     ${ch?`<div class="hint chain"><strong>Longest chain to here:</strong> ${ch.map(esc).join(' → ')}</div>`:''}
     <div class="row"><button type="button" class="btn sm" data-open="${esc(t.id)}">Open ticket</button>${G.isolate?'<button type="button" class="btn ghost sm" data-isoback>Back to all</button>':`<button type="button" class="btn ghost sm" data-chainonly="${esc(t.id)}" title="Search this ticket's ID and switch to Paths, so only the chain through it is drawn">Show only this chain</button><button type="button" class="btn ghost sm" data-unfocus>Clear</button>`}</div>`;}
-function gmsg(text,err){const m=$('gMsg');m.textContent=text;m.className='msg'+(err?' err':'');clearTimeout(G.msgT);G.msgT=setTimeout(()=>{m.textContent='';},5000);}
+const gmsg=(text,err)=>toast(text,{err});
 async function addLink(aId,bId){ // A blocks B  =  B.blocked_by gains A
   const b=BY.get(bId);if(!b)return;
   if(b.blocked_by.includes(aId)){gmsg(`${aId} already blocks ${bId}.`);return;}
@@ -1031,9 +1200,16 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{readCo
 readColors();
 
 // ---------- view switch ----------
-function setView(v){if(v!=='graph')leaveIsolate();state.view=v;store.set('view',v);$('board').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
+function setView(v){if(v!=='graph')leaveIsolate();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';
   chips($('viewSeg'),[['board','Board'],['graph','Graph']],v,'view');renderShow();renderWorking();renderNext();if(v==='graph'){resize();syncGraph();}}
-function render(){renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderNext();if(state.view==='graph')syncGraph();}
+function render(){renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
+function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
+  const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
+  const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
+  $('strip').hidden=!T.length;
+  $('strip').innerHTML=`<div class="segbar" role="group" aria-label="Tickets by status">${COLS.map(([k,l])=>`<button type="button" class="s-${k}" style="--n:${n[k]}" data-seg="${k}" title="${l}: ${n[k]}. Jump to the column"><b>${n[k]}</b>${l}</button>`).join('')}</div><span class="ready"><b>${ready}</b>ready</span>${ag?`<button type="button" class="agbadge" data-toworking><i class="pulse" aria-hidden="true"></i>${ag} agent${ag>1?'s':''} working</button>`:''}`;
+}
+const goTo=el=>{if(!el||el.hidden)return;el.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});el.classList.remove('ping');void el.offsetWidth;el.classList.add('ping');};
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
 $('q').addEventListener('input',e=>{setQ(e.target.value);render();});
 async function loadBoards(){
@@ -1211,13 +1387,12 @@ async function viewDoc(path,file){
 function closeDoc(){$('docv').hidden=true;$('docvScrim').hidden=true;}
 const TEXT_OK=/\.(md|txt|json|ya?ml|toml|ini|cfg|csv|py|gd|js|ts|html|css|sh|ps1|xml|tscn|tres|gdshader)$/i;
 async function attachFiles(files){
-  const id=openId,m=$('kmsg');if(!id||!files?.length)return;
+  const id=openId;if(!id||!files?.length)return;
   for(const f of files){
-    if(!TEXT_OK.test(f.name)){m.className='msg err';m.textContent=`${f.name}: only text files can be attached`;continue;}
-    m.className='msg';m.textContent=`Attaching ${f.name}…`;
+    if(!TEXT_OK.test(f.name)){toast(`${f.name}: only text files can be attached`,{err:1});continue;}
     try{const r=await fetch(`${API}/tickets/${encodeURIComponent(id)}/files`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name.replace(/[^A-Za-z0-9._-]/g,'_'),content:await f.text()})});
-      const j=await r.json();if(!r.ok)throw new Error(j.error);m.textContent=`Attached ${j.name}.`;}
-    catch(e){m.className='msg err';m.textContent=e.message;}
+      const j=await r.json();if(!r.ok)throw new Error(j.error);toast(`Attached ${j.name}`);}
+    catch(e){toast(`Attach failed: ${e.message}`,{err:1});}
   }
   await load(true);loadKnowledge(id);
 }
@@ -1226,7 +1401,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-doc],[data-file]')){if(b.disabled)return;const f=b.dataset.file,p=b.dataset.doc;if(f||p){e.preventDefault();viewDoc(p,f);}return;}
   if(g('[data-docclose]')||e.target===$('docvScrim')){closeDoc();return;}
   if(g('[data-attach]')){$('kfile').click();return;}
-  if(b=g('[data-detach]')){const id=openId;try{const r=await fetch(`${API}/tickets/${encodeURIComponent(id)}/files/${encodeURIComponent(b.dataset.detach)}`,{method:'DELETE'});if(!r.ok)throw new Error((await r.json()).error);}catch(er){$('kmsg').className='msg err';$('kmsg').textContent=er.message;}
+  if(b=g('[data-detach]')){const id=openId;try{const r=await fetch(`${API}/tickets/${encodeURIComponent(id)}/files/${encodeURIComponent(b.dataset.detach)}`,{method:'DELETE'});if(!r.ok)throw new Error((await r.json()).error);toast(`Removed ${b.dataset.detach}`);}catch(er){toast('Remove failed: '+er.message,{err:1});}
     await load(true);loadKnowledge(id);return;}
 },true);
 document.addEventListener('change',e=>{if(e.target.id==='kfile'){attachFiles([...e.target.files]);e.target.value='';}});
