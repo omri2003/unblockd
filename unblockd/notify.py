@@ -42,26 +42,35 @@ class Notifier:
 			except Exception as e:  # one broken board must not stop the others
 				print(f"notify: {bid}: {e}", flush=True)
 
+	@staticmethod
+	def _read(p, off: int, size: int) -> tuple[list, int]:
+		with open(p, "rb") as f:
+			f.seek(off)
+			chunk = f.read(size - off)
+		chunk = chunk[:chunk.rfind(b"\n") + 1]  # a half-written last line waits for the next tick
+		events = []
+		for raw in chunk.decode("utf-8", "replace").splitlines():
+			try:
+				events.append(json.loads(raw))
+			except json.JSONDecodeError:
+				pass
+		return events, off + len(chunk)
+
 	def _board(self, bid: str, tdir) -> None:
 		store = self.boards.get(bid)
 		ts = store.list()  # also sweeps expired claims, which logs `expired` even when nobody has the UI open
 		p = tdir / ".unblockd" / "activity.jsonl"
 		size = p.stat().st_size if p.exists() else 0
 		off = self.offset.setdefault(str(p), size)  # first sight: start at the end, never replay history
-		if size < off:  # truncated / rotated
-			off = 0
 		events = []
+		if size < off:  # rotated (or truncated): first finish the old file, which `_log` renamed to activity.1.jsonl
+			old = p.with_name("activity.1.jsonl")
+			if old.exists() and old.stat().st_size >= off:  # smaller = not our file (plain truncation)
+				events += self._read(old, off, old.stat().st_size)[0]
+			off = 0
 		if size > off:
-			with open(p, "rb") as f:
-				f.seek(off)
-				chunk = f.read(size - off)
-			chunk = chunk[:chunk.rfind(b"\n") + 1]  # a half-written last line waits for the next tick
-			off += len(chunk)
-			for raw in chunk.decode("utf-8", "replace").splitlines():
-				try:
-					events.append(json.loads(raw))
-				except json.JSONDecodeError:
-					pass
+			new, off = self._read(p, off, size)
+			events += new
 		self.offset[str(p)] = off
 		humans = {o["name"] for o in store.config["owners"] if o.get("kind") == "human"}
 		busy = any(t.get("claim") for t in ts) or any(
