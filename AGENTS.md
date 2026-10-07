@@ -163,9 +163,10 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   profile name the agent equals or starts with `<name>-`, else "other"). Finished = `complete`; median = claim -> complete of the same ticket+agent (a complete whose claim is before the range counts as
   finished but has no duration); stuck rate = (`expired` + `release`) / `claim`s, highlighted (amber + warning sign) at >= 30%; splits = `split` events with an agent; working now = live claims in `T`.
   Events don't carry the profile, so it is derived from the agent name. No server change.
-- **The UI polls every 4 s** and re-renders only when the tickets JSON text changes (and, while a card's Move-to, the drawer's `.ovf` or `#fpanel` `<details>` is open, `load()` keeps the data but defers the render to `paint`, flushed on their `toggle`; heartbeats must not close menus). So the
+- **The UI polls every 4 s** and re-renders only when the tickets JSON text changes (and, while any popover `<details>` is open (`MENUS`: a card's Move-to, the drawer's `.ovf`, `#fpanel`, `#spanel`, `#apanel`), `load()` keeps the data but defers the render to `paint`, flushed on their `toggle`; heartbeats must not close menus). `MENUS` + `closeMenus(keep)` are also the one outside-click and Esc closer for those popovers (at most one is open at a time: opening one is a click outside the others). A new popover goes into `MENUS`, nowhere else. So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).
+- **Shared UI helpers, use them instead of writing another**: `jf(url,method,body)` (every fetch: JSON in/out, throws `Error(server message)`; `api()` is `jf` on `/tickets`), `chips`/`chipsHtml` (every segmented control: filters, settings, drawer status, agents range), `store` (localStorage with JSON + try/catch), `pickOf(v,allowed,default)` (guard stored values), `hm`/`ago` (clock time / relative age), `toast`.
 - Errors are `TicketError` with a message that says how to fix it; HTTP 400/404, MCP tool error.
 - Commits: author `omri2003 <omri2003@users.noreply.github.com>`. Run `python -m unittest` first.
 
