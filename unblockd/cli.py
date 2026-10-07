@@ -6,6 +6,7 @@
     python -m unblockd.cli claim --agent godot-dev-1 [--id ID] [--profile P]   # take the next (or one) ticket
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
     python -m unblockd.cli release ID --agent A [--reason "..."]
+    python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
     python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..."
     python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli context ID              # docs + attached files to read before working ID
@@ -63,11 +64,11 @@ def main(argv: list[str] | None = None) -> int:
 	cl.add_argument("--id")
 	cl.add_argument("--profile")
 	cl.add_argument("--note", default="")
-	for name, extra in (("heartbeat", "--note"), ("release", "--reason"), ("complete", "--summary")):
+	for name, extra in (("heartbeat", "--note"), ("release", "--reason"), ("ask", "--question"), ("complete", "--summary")):
 		x = sub.add_parser(name)
 		x.add_argument("id")
 		x.add_argument("--agent", required=True)
-		x.add_argument(extra, required=name == "complete", default="")
+		x.add_argument(extra, required=name in ("ask", "complete"), default="")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
 	sub.add_parser("doc").add_argument("path")
@@ -105,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.heartbeat(a.id, a.agent, a.note)
 		elif a.cmd == "release":
 			out = s.release(a.id, a.agent, a.reason)
+		elif a.cmd == "ask":
+			out = s.ask(a.id, a.agent, a.question)
 		elif a.cmd == "complete":
 			out = s.complete(a.id, a.agent, a.summary)
 		elif a.cmd == "agents":

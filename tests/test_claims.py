@@ -57,6 +57,23 @@ class ClaimTest(unittest.TestCase):
 		self.assertIsNone(self.s.get("CMB-1")["claim"])
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "dropped")
 
+	def test_ask_parks_the_ticket_until_a_human_answers(self):
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		with self.assertRaises(TicketError):
+			self.s.ask("CMB-2", "godot-dev-2", "who?")  # not the holder
+		with self.assertRaises(TicketError):
+			self.s.ask("CMB-2", "godot-dev-1", "  ")
+		t = self.s.ask("CMB-2", "godot-dev-1", "Omri: keep the dodge i-frames?")
+		self.assertEqual((t["status"], t["effective_status"], t["claim"], t["waiting_on"]), ("todo", "pending", None, "Omri: keep the dodge i-frames?"))
+		self.assertNotIn("CMB-2", [x["id"] for x in self.s.next_ready(limit=50)])
+		with self.assertRaises(TicketError):
+			self.s.claim("godot-dev-1", tid="CMB-2")
+		ev = self.s.activity("CMB-2")[0]
+		self.assertEqual((ev["event"], ev["agent"]), ("question", "godot-dev-1"))
+		self.s.update("CMB-2", {"waiting_on": ""})  # answered: back in the pool
+		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
+		self.assertEqual(self.s.claim("godot-dev-1", tid="CMB-2")["id"], "CMB-2")
+
 	def test_split_wires_children_and_drops_the_claim(self):
 		self.s.create({"title": "gate", "pillar": "COMBAT"}, tid="CMB-9")
 		self.s.update("CMB-1", {"blocked_by": ["CMB-9"], "tags": ["agent:godot-dev"], "docs": ["AGENTS.md"]})

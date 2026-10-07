@@ -79,8 +79,8 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   claimed, `touches` not overlapping a live claim. Sets status doing. A file lock
   (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes; `create`, `update`, `delete` and `split` take it too (next-id + write, and read-modify-write, would otherwise race).
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next
-  read. `complete` needs a summary and appends it to the body, signed. Moving a claimed ticket
-  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `created`, `split` and `done` (moved to done by hand),
+  read. `complete` needs a summary and appends it to the body, signed. `ask(id, agent, question)` (MCP `ask_human`, CLI `ask --question`) is for a decision only a human can make: it ends the claim, sets `waiting_on` = question (status stays todo) and logs `question`; a todo with a non-empty `waiting_on` has `effective_status` pending, so it is neither ready nor claimable until a human clears `waiting_on` (answer goes in the body). Moving a claimed ticket
+  off doing by hand drops the claim. The log (`activity.jsonl`) also records `expired` (sweep), `dropped`, `question`, `created`, `split` and `done` (moved to done by hand),
   and `GET /activity?since=` filters it. Runtime files (`claims.json`, `activity.jsonl`) live in
   `tickets/.unblockd/`, which writes its own `.gitignore` (`*`).
 - **Split** (`store.split(id, titles, sequential, by)`; REST `POST tickets/<id>/split`, MCP `split_ticket`, CLI `split --title ...`, drawer
@@ -111,7 +111,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   (`authFail`; no reload). MCP and CLI use the store directly and are unaffected. Compared with `hmac.compare_digest`.
 - **Notifications** (`notify.py`, started by `web.main` only if `UNBLOCKD_WEBHOOK` is set; `UNBLOCKD_WEBHOOK_FORMAT` json|text, `UNBLOCKD_PUBLIC_URL`
   optional board link): every 30 s `Notifier.poll()` reads NEW bytes of each board's `activity.jsonl` (offset per file; first sight = end of file so history
-  is never replayed; size < offset = rotated, restart at 0; a half-written last line waits). Sends `complete`, `expired`, `release` and a derived "ran dry"
+  is never replayed; size < offset = rotated, restart at 0; a half-written last line waits). Sends `complete`, `expired`, `release`, `question` and a derived "ran dry"
   (no ready non-human ticket and no live claim, announced once after activity, re-armed when work appears), ONE batched message per board per tick (10 lines, "+N more").
   It lives in the web server, not the store, because agents log from their own CLI/MCP processes: a store hook would never see them. It calls `store.list()`
   first, which sweeps expired claims, so `expired` is reported even with no browser open. Env, not board config: webhook URLs are secrets and the config is

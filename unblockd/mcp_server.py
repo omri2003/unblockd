@@ -2,7 +2,7 @@
 
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
-release, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
+release, ask_human, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ mcp = MCPServer(
 		"note) at least every few minutes with what you're doing (a claim with no heartbeat for "
 		"lease_minutes expires and goes back to todo); finish with complete(id, agent, summary: "
 		"cause -> fix -> tests, and what was NOT verified), or release(id, agent, reason) if you "
-		"can't finish, or update_ticket to pending with waiting_on when a human must decide. Never "
+		"can't finish, or ask_human(id, agent, question) when only a human can decide (it releases your claim and parks the ticket until the answer is written back). Never "
 		"work a ticket you didn't claim. agents_now shows who is on what.\n"
 		"KNOWLEDGE: claim_next / claim_ticket return the ticket's `context`: the docs linked on the "
 		"board, the agent profile and the ticket, plus files attached to it, inlined up to a budget. "
@@ -179,6 +179,13 @@ def heartbeat(id: str, agent: str, note: str = "", board: str | None = None) -> 
 	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
 	least every few minutes."""
 	return BOARDS.get(board).heartbeat(id, agent, note)
+
+
+@tool
+def ask_human(id: str, agent: str, question: str, board: str | None = None) -> dict:
+	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
+	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket."""
+	return BOARDS.get(board).ask(id, agent, question)
 
 
 @tool

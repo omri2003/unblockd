@@ -84,6 +84,15 @@ class NotifyTest(unittest.TestCase):
 		                                          "⚠ game: BUG-2 stuck — w-3 no heartbeat for 10 min; back to todo"])
 		self.assertEqual([e["event"] for e in p["events"]], ["release", "expired"])
 
+	def test_question_line(self):
+		n = self.notifier()
+		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")
+		self.s.create({"title": "a", "owner": "Claude"}, tid="BUG-2")
+		self.s.claim("w-2", tid="BUG-2")
+		self.s.ask("BUG-2", "w-2", "Omri: ship or wait?")
+		n.poll()
+		self.assertEqual(self.msgs(), ["❓ game: BUG-2 a needs a human — w-2 asks: Omri: ship or wait?"])
+
 	def test_batching(self):
 		n = self.notifier()
 		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")

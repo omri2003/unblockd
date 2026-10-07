@@ -212,7 +212,7 @@ class Store:
 
 	# ---------- derived view ----------
 	def _decorate(self, tickets: list[dict]) -> list[dict]:
-		"""Add derived fields. A todo with an open blocker shows as pending (effective_status).
+		"""Add derived fields. A todo with an open blocker or a waiting_on (a question for a human) shows as pending (effective_status).
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
 		live = self._live_claims()
@@ -243,7 +243,7 @@ class Store:
 		out = []
 		for t in tickets:
 			open_b = [b for b in t.get("blocked_by", []) if b in by_id and by_id[b].get("status") != "done"]
-			eff = "pending" if t.get("status") == "todo" and open_b else t.get("status")
+			eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on")) else t.get("status")
 			n = unblocks(t["id"])
 			stale = None
 			if t.get("status") == "doing":
@@ -620,6 +620,25 @@ class Store:
 				self._write(raw)
 			self._log("release", tid, agent, reason)
 		self._locked(rel)
+		return self.get(tid)
+
+	def ask(self, tid: str, agent: str, question: str) -> dict:
+		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
+		pending (not ready, not claimable) until someone clears it."""
+		q = question.strip() if isinstance(question, str) else ""
+		if not q:
+			raise TicketError("ask needs a question: say what the human must decide")
+		self._clean({"waiting_on": q}, partial=True)  # length check
+		def run():
+			self._holder(tid, agent)
+			claims = self._claims()
+			claims.pop(tid, None)
+			self._save_claims(claims)
+			raw = self._read(self._path(tid))
+			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
+			self._write(raw)
+			self._log("question", tid, agent, q)
+		self._locked(run)
 		return self.get(tid)
 
 	def complete(self, tid: str, agent: str, summary: str) -> dict:
