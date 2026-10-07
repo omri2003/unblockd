@@ -187,6 +187,8 @@ Every ticket comes back with derived fields: `effective_status`,
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Warnings**: missing blocker, doing with no update for `stale_days`; a *Needs attention* filter.
 - **Free / Blocked** filter: *Free* = open, nothing open blocks it, not waiting on a person; *Blocked* = an open ticket blocks it. Counts on the chips; the graph dims the rest.
+- **Show: Only / Paths / Dim** (next to the filters, remembered per view): *Only* shows just the tickets the filters match; *Paths* adds every ticket upstream and downstream of a match (the whole chain, not siblings); *Dim* shows everything and fades the rest. Works with every filter, so "owner Omri, Paths" is every chain that touches one of his tickets. Board default is Only, graph default is Dim.
+- **Regex search**: wrap the search in slashes, `/^CMB-|BUG-10/`, to match ids and titles (case-insensitive). An invalid pattern turns the box red and matches nothing.
 - Drag a card between columns to change its status. Polls every 4 s, so agent edits show up live.
 
 **Graph** (Board / Graph switch): arrow A -> B means A blocks B. Fill =
@@ -196,6 +198,7 @@ status, ring = pillar, size = how much is waiting on it.
   crossings reduced by barycenter sweeps. **Free**: force layout.
 - Hover = direct links; click = the whole chain and the longest open chain
   to it; **Critical path** toggle; double-click opens the ticket.
+- In Only / Paths the graph drops hidden tickets and re-lays out what's left; in Paths, chain-only tickets are drawn faded. Click a ticket, then **Show only this chain** to search its id and switch to Paths. Clear the search to go back.
 - **Shift-drag A onto B** makes A block B; click a link to remove it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 

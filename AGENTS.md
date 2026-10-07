@@ -96,6 +96,10 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 - **Stdlib only** in Python (except `mcp` for the MCP server). Tabs. Python 3.10+.
 - **One-file UI**: vanilla JS in `static/index.html`. Colours are CSS tokens on `:root` with a
   dark-mode block; pillar colours are generated from config at runtime (`applyConfig`).
+- **Show mode** (`showSet` in index.html): M = `matches()`, then Only = M, Paths = M + ancestors + descendants over the
+  visible universe (two separate walks), Dim = all. Mode is per view (`showModeBoard` / `showModeGraph`). The board uses
+  `BV` (set in `render()`); the graph filters in `syncGraph()` before edges/layout, so Flow re-lays out the subset.
+  Search `/re/` is parsed once in `setQ()`; it is tested against `id title` and against `id` alone, so `/^BUG-10$/` works.
 - **The UI polls every 4 s** and re-renders only when the tickets JSON text changes. So the
   ticket JSON must be stable while nothing happens: give timestamps, never "seconds ago"
   (that's why `claim` carries `claimed_at`/`heartbeat_at`, and ages are computed in the browser).
@@ -127,6 +131,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 - `_locked` must stay re-entrant: `claim()` holds the lock and calls `next_ready()`, which may
   sweep expired claims under the same lock.
 - urllib capitalises header names (`X-api-key`); compare headers case-insensitively in tests.
+- A regex like `/^BUG-10$/` never matches `id + ' ' + title` (the `$` meets the title), hence the extra test on the bare id in `matches()`.
 - Closing the drawer rewrites the URL: keep `location.search` (`?board=`) when clearing the hash.
 - `compose.yaml` must pass `.env` values into the container explicitly (`environment:`); `.env`
   alone only feeds `${...}` interpolation.
