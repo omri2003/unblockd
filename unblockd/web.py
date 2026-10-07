@@ -45,6 +45,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from . import boards as bd
 from . import chat
 from . import knowledge as kn
+from . import notify
 from . import store as st
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -203,6 +204,8 @@ def main():
 		print(f"WARNING: bound to {host} with no auth: set UNBLOCKD_TOKEN, or anyone who can reach the port can edit tickets", flush=True)
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
 	      + (", ".join(f"{k} ({v})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
+	if notify.start(BOARDS):
+		print("notifications: webhook on", flush=True)
 	ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 

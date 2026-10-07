@@ -17,4 +17,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # enables the chat; put it in .env
       UNBLOCKD_TOKEN: ${UNBLOCKD_TOKEN:-}   # optional shared token for the API (see README)
       UNBLOCKD_MODEL: ${UNBLOCKD_MODEL:-claude-sonnet-5-5}
+      UNBLOCKD_WEBHOOK: ${UNBLOCKD_WEBHOOK:-}   # optional push notifications (see README)
+      UNBLOCKD_WEBHOOK_FORMAT: ${UNBLOCKD_WEBHOOK_FORMAT:-json}
+      UNBLOCKD_PUBLIC_URL: ${UNBLOCKD_PUBLIC_URL:-}
     restart: unless-stopped

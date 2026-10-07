@@ -22,13 +22,14 @@ unblockd/boards.py      Several boards: discovers <root>/<project>/tickets/unblo
 unblockd/web.py         Stdlib HTTP server + REST API (Handler._route). Serves static/index.html.
 unblockd/mcp_server.py  MCP tools (needs the `mcp` package; the only dependency).
 unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools).
+unblockd/notify.py      Webhook notifications: one daemon thread started by web.main (UNBLOCKD_WEBHOOK).
 unblockd/chat.py        Messages API over urllib, read-only tool loop, #ID / @board resolution.
 unblockd/knowledge.py   Docs linked to tickets (board / profile / ticket `docs`) + files attached
                         to tickets (tickets/files/<ID>/); context() = the bundle a worker reads.
 static/index.html       The whole UI, one file, vanilla JS, no build step, no CDN libraries.
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
                         test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
-                        test_knowledge (context order, dedupe, links, path safety, attachments).
+                        test_notify (fake webhook receiver), test_knowledge (context order, dedupe, links, path safety, attachments).
 tests/ui_smoke.mjs      Playwright smoke: example board + CLI claim/split, 1400/390px x light/dark; board, graph, docs,
                         drawer, panels, toast; fails on page/console errors or horizontal overflow (CI job `ui`).
 docs/screenshots/       README images. Regenerate: copy example/ to a temp root, add tickets + a few claims via the CLI,
@@ -108,6 +109,13 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   Set = every `/api/*` needs `Authorization: Bearer` or the `unblockd_token` cookie; any URL with `?token=` (correct) sets the cookie
   and 302s to the same URL without it. 401 JSON says how to fix it; the page loads anyway and the UI shows that message once
   (`authFail`; no reload). MCP and CLI use the store directly and are unaffected. Compared with `hmac.compare_digest`.
+- **Notifications** (`notify.py`, started by `web.main` only if `UNBLOCKD_WEBHOOK` is set; `UNBLOCKD_WEBHOOK_FORMAT` json|text, `UNBLOCKD_PUBLIC_URL`
+  optional board link): every 30 s `Notifier.poll()` reads NEW bytes of each board's `activity.jsonl` (offset per file; first sight = end of file so history
+  is never replayed; size < offset = rotated, restart at 0; a half-written last line waits). Sends `complete`, `expired`, `release` and a derived "ran dry"
+  (no ready non-human ticket and no live claim, announced once after activity, re-armed when work appears), ONE batched message per board per tick (10 lines, "+N more").
+  It lives in the web server, not the store, because agents log from their own CLI/MCP processes: a store hook would never see them. It calls `store.list()`
+  first, which sweeps expired claims, so `expired` is reported even with no browser open. Env, not board config: webhook URLs are secrets and the config is
+  committed. Failures print once per streak and the batch is dropped (no retry queue).
 - **Chat**: browser keeps history per board (localStorage) and sends the last 20 messages to
   `POST /api/chat`. The server resolves `#ID`, `#board/ID`, `@board` into the user message, then
   loops tool calls (max 8) against `ANTHROPIC_BASE_URL/v1/messages` with read-only tools.

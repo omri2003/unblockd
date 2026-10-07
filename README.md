@@ -52,7 +52,15 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
 | `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional. |
 | `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
+| `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
+| `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
+
+## Notifications
+
+Set `UNBLOCKD_WEBHOOK` and the server posts a batched message every ~30 s when agents finish (✅), get stuck (⚠: expired lease or released) or the board runs dry (🏁). Keep the URL in `.env`, it is a secret.
+Slack / Discord: `UNBLOCKD_WEBHOOK=https://hooks.slack.com/services/...` or `https://discord.com/api/webhooks/...` (json is the default; one payload carries both `text` and `content`).
+ntfy: `UNBLOCKD_WEBHOOK=https://ntfy.sh/my-topic UNBLOCKD_WEBHOOK_FORMAT=text`. Only events after startup are sent.
 
 ## Agent profiles: which agent works which ticket
 
