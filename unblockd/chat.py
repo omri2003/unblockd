@@ -51,7 +51,7 @@ TOOLS = [
 	{"name": "board_info", "description": "A board's settings: owners, pillars, agent profiles, stale_days.",
 	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}}}},
 	{"name": "list_tickets",
-	 "description": "Ticket summaries on a board. Filters: status (todo|doing|pending|done, the effective status), "
+	 "description": "Ticket summaries on a board. Filters: status (todo|doing|review|done, or pending = a todo with an open blocker; the effective status), "
 	                "pillar, owner, priority (P0-P3), tag, agent (profile name), q (words to search in all fields).",
 	 "input_schema": {"type": "object", "properties": {k: {"type": "string"} for k in
 	                  ("board", "status", "pillar", "owner", "priority", "tag", "agent", "q")}}},
@@ -140,7 +140,7 @@ def _system(boards: bd.Boards, board: str | None) -> str:
 	cur = board or (ids[0] if ids else None)
 	return (
 		"You answer questions about software project boards in unblockd, a ticket tracker where one ticket is "
-		"one JSON file and tickets block each other (blocked_by). status: todo, doing, pending, done; a todo "
+		"one JSON file and tickets block each other (blocked_by). status: todo, doing, review, done; a todo "
 		"with an open blocker shows as pending (effective_status). 'Ready' = effective todo. score = priority "
 		"weight x (1 + open tickets it unblocks). Agent profiles route tickets to agents by tag or pillar.\n"
 		f"Today is {date.today().isoformat()}. Boards: {', '.join(ids) or 'none'}. The person is looking at "

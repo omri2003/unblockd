@@ -166,7 +166,7 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
 
 @tool
 def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) -> dict:
-	"""Change fields of a ticket. agent = your worker name: you can't change status or waiting_on of a
+	"""Change fields of a ticket. agent = your worker name: you can't change a
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
 	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
@@ -174,18 +174,18 @@ def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) 
 
 
 @tool
-def split_ticket(id: str, titles: list[str], sequential: bool = False, board: str | None = None) -> dict:
+def split_ticket(id: str, titles: list[str], agent: str, sequential: bool = False, board: str | None = None) -> dict:
 	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it, then
 	claim_next. One child per title (pillar, owner, priority, tags, touches, docs copied); the parent
 	then waits on all of them. sequential=true makes each part wait on the one before. If you hold the
-	claim, the parent goes back to todo and your claim ends. Returns {parent, children}."""
-	return BOARDS.get(board).split(id, titles, sequential=sequential)
+	claim, the parent goes back to todo and your claim ends. agent = your worker name (a ticket another agent holds can't be split). Returns {parent, children}."""
+	return BOARDS.get(board).split(id, titles, sequential=sequential, by=agent)
 
 
 @tool
-def delete_ticket(id: str, board: str | None = None) -> dict:
-	"""Delete a ticket file. Prefer status=done for finished work; delete is for mistakes and duplicates."""
-	return BOARDS.get(board).delete(id)
+def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
+	"""Delete a ticket file. Prefer status=done for finished work; delete is for mistakes and duplicates. agent = your worker name (a ticket another agent holds can't be deleted)."""
+	return BOARDS.get(board).delete(id, agent=agent)
 
 
 @tool

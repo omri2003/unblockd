@@ -403,10 +403,7 @@ class Store:
 			raise NotFound(f"no ticket {tid}")
 		t = self._read(path)
 		clean = self._clean(changes, partial=True)
-		held = self._live_claims().get(tid) if agent else None
-		if held and held["agent"] != agent and ("status" in clean or "waiting_on" in clean):
-			raise TicketError(f"{tid} is claimed by {held['agent']}, so {agent} can't change its status or waiting_on: "
-			                  "finish your own ticket with complete(id, agent, summary), give it back with release, or ask a human with ask_human")
+		self._holder_only(tid, agent)
 		if "blocked_by" in clean:
 			self._check_blockers(clean["blocked_by"], t.get("blocked_by", []))
 			self._check_loop(tid, clean["blocked_by"])
@@ -427,6 +424,13 @@ class Store:
 			self._log("done", tid, None)
 		return self.get(tid)
 
+	def _holder_only(self, tid: str, agent: str | None) -> None:
+		"""An agent that is not the live holder of tid may not change, split or delete it. agent None = a human: unchanged."""
+		held = self._live_claims().get(tid) if agent else None
+		if held and held["agent"] != agent:
+			raise TicketError(f"{tid} is claimed by {held['agent']}; only the holder can change it "
+			                  "(use add_note to leave a note / ask the holder / wait for the lease to expire)")
+
 	def split(self, tid: str, titles: list[str], sequential: bool = False, by: str | None = None) -> dict:
 		"""Break a ticket that is too big into parts. One child per title (same prefix; pillar, owner, priority,
 		tags, touches, docs copied; inherits the parent's blocked_by; sequential = each also waits on the one before),
@@ -434,6 +438,7 @@ class Store:
 		Returns {"parent": ..., "children": [...]}."""
 		def run():
 			parent = self.get(tid)
+			self._holder_only(tid, by)
 			if parent["status"] == "done":
 				raise TicketError(f"{tid} is already done: split a ticket that is still open")
 			if not (isinstance(titles, list) and all(isinstance(x, str) for x in titles)):
@@ -458,14 +463,15 @@ class Store:
 			return {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
 		return self._locked(run)
 
-	def delete(self, tid: str) -> dict:
+	def delete(self, tid: str, agent: str | None = None) -> dict:
 		"""Remove a ticket, its claim and attachments. Returns it plus `referenced_by`: tickets still pointing at it."""
-		return self._locked(lambda: self._delete(tid))
+		return self._locked(lambda: self._delete(tid, agent))
 
-	def _delete(self, tid: str) -> dict:
+	def _delete(self, tid: str, agent: str | None = None) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
+		self._holder_only(tid, agent)
 		t = self._read(path)
 		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
 		path.unlink()
@@ -498,8 +504,7 @@ class Store:
 			except FileExistsError:
 				try:
 					if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
-						self._steal(lock)
-						continue
+						self._steal(lock)  # then fall through: deadline + sleep, so a stuck guard can't spin us
 				except FileNotFoundError:
 					continue
 				if time.monotonic() > deadline:
@@ -541,8 +546,8 @@ class Store:
 		try:
 			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 		except json.JSONDecodeError as e:
-			raise TicketError(f"{p} is not valid JSON ({e}), so no claim can be read: fix it by hand, or delete it to drop ALL live claims "
-			                  "(their tickets stay 'doing': release them from the board or set them back to todo)")
+			raise TicketError(f"{p} is not valid JSON ({e}), so no claim can be read: fix it by hand, or delete {p}: claims are runtime state "
+			                  "and live workers will re-claim (tickets they held stay 'doing' until then)")
 
 	def _save_claims(self, claims: dict) -> None:
 		p = self._rt() / "claims.json"

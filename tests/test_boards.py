@@ -179,6 +179,8 @@ class ApiTest(unittest.TestCase):
 		code, msg = self.cli("update", other["id"], "--json", '{"status": "done"}', "--agent", "godot-dev-2")  # --agent travels to the server
 		self.assertEqual(code, 1)
 		self.assertIn("claimed by godot-dev-1", msg)
+		code, msg = self.cli("delete", other["id"], "--agent", "godot-dev-2")  # delete carries the agent over REST too
+		self.assertEqual((code, "only the holder" in msg), (1, True))
 		self.cli("release", other["id"], "--agent", "godot-dev-1")
 		self.assertEqual(self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])[1]["id"], other["id"])
 		self.assertEqual(self.cli("release", other["id"], "--agent", "godot-dev-1", "--reason", "x")[1]["status"], "todo")

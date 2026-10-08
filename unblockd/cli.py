@@ -15,6 +15,7 @@
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
     python -m unblockd.cli update ID --json '{"status": "done"}' [--agent A]'
+    python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text"        # appends a dated paragraph to the body
 
@@ -70,6 +71,7 @@ class Remote:
 	def create(self, data, tid=None, prefix=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {})})
 	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
+	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
 	def claim(self, agent, tid=None, profile=None, note=""):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note})
 	def claim_next(self, agent, profile=None, note=""): return self.claim(agent, profile=profile, note=note)  # the server answers with the reason when empty
@@ -106,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", required=True)
-	up.add_argument("--agent", help="the worker making the change: it can't change status/waiting_on of a ticket another agent holds")
+	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
@@ -129,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
 	sp.add_argument("--title", action="append", default=[])
 	sp.add_argument("--sequential", action="store_true")
 	sp.add_argument("--by")
+	de = sub.add_parser("delete")
+	de.add_argument("id")
+	de.add_argument("--agent", help="the worker deleting: it can't delete a ticket another agent holds")
 	no = sub.add_parser("note")
 	no.add_argument("id")
 	no.add_argument("text")
@@ -173,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
 			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
+		elif a.cmd == "delete":
+			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":

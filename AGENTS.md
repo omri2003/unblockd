@@ -219,7 +219,9 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
   grid. (Board links in chat use `.bref`.)
 - `[hidden]{display:none!important}` is required: component classes set `display` and would
   override the attribute.
-- `_locked` steals a lock older than 30 s through `_steal`, which holds `lock.steal` and re-checks the age first. A bare `lock.unlink()` after reading the stale mtime lets two processes both "steal": the second deletes the fresh lock the first just created and both run the critical section. `claims.json` that is not valid JSON raises `TicketError` (it used to read as `{}`, silently dropping every live claim).
+- `_locked` steals a lock older than 30 s through `_steal`, which holds `lock.steal` and re-checks the age first. A bare `lock.unlink()` after reading the stale mtime lets two processes both "steal": the second deletes the fresh lock the first just created and both run the critical section. `claims.json` that is not valid JSON raises `TicketError` telling the user to delete that file (claims are runtime state, live workers re-claim); it used to read as `{}`, silently dropping every live claim. After `_steal` the loop falls through to the deadline check and sleep (a stuck `lock.steal` guard must not busy-spin or outlive the 10 s deadline).
+- **Holder rule** (`Store._holder_only`): when a ticket has a live claim and the caller names itself as an agent that is not the holder, `update` (any field), `split` (`by`) and `delete` (`agent`) are refused; no agent identity (web without `agent`, human CLI) is unchanged. MCP `split_ticket`/`delete_ticket` require `agent`; CLI `--agent` on update/delete (`split --by`); REST `DELETE tickets/<id>?agent=`, `Remote.delete`.
+- `pending` is derived, never settable: the bulk bar, move menu and drawer omit it, and the chat prompt lists it only as a filter value.
 - `pkill -f <pattern>` in a shell whose own command line contains the pattern kills the shell
   (exit 144). Use `pgrep -f "[u]nblockd.web" | xargs -r kill` in a command that doesn't start a
   server too.
