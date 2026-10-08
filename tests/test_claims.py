@@ -54,7 +54,7 @@ class ClaimTest(unittest.TestCase):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		self.assertEqual(self.s.release("CMB-1", "godot-dev-1", "blocked on a decision")["status"], "todo")
 		self.s.claim("godot-dev-1", tid="CMB-1")
-		self.s.update("CMB-1", {"status": "pending", "waiting_on": "Omri: pick a parry window"})
+		self.s.update("CMB-1", {"status": "todo", "waiting_on": "Omri: pick a parry window"})
 		self.assertIsNone(self.s.get("CMB-1")["claim"])
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "dropped")
 

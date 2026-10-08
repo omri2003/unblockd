@@ -760,7 +760,7 @@ async function bulk(field,val){ // one PATCH per ticket through api(); failures 
   if(ok.length) toast(`${ok.length} updated`,{undo:async()=>{for(const id of ok)try{await api('PATCH','/'+id,{[field]:was.get(id)});}catch{} await load(true);toast('Reverted');}});
 }
 document.addEventListener('change',e=>{const f=e.target.dataset?.bulk,v=e.target.value.trim();if(f&&v)bulk(f,v);});
-const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==t.status).map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;
+const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==t.status&&k!=='pending').map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;
 const ord=t=>[t.pillar?PILLARS.indexOf(t.pillar):9, t.pillar_step||99, prioIdx(t.priority)];
 function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;}
 const hm=d=>d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -953,7 +953,7 @@ function showTicket(id,refresh){
     t.waiting_on&&!why?`<span>Waiting on ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
-    <div class="srow"><div class="segc" role="group" aria-label="Status">${chipsHtml(COLS,t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
+    <div class="srow"><div class="segc" role="group" aria-label="Status">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
     <div class="meta dmeta">${dm.join('')}</div>
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
@@ -1083,6 +1083,7 @@ document.addEventListener('click',async e=>{
 // one status move for drag-drop and the drawer's menu; Undo = one PATCH back to the old status
 async function moveTo(id,to,undoable=true){
   const t=BY.get(id),from=t?.status; if(!t||from===to) return;
+  if(to==='pending') return toast('Pending is derived: add a blocker (Blocked by) or a Waiting on note and the ticket shows there.',{err:1});
   if(to==='doing'&&t.open_blockers.length) return toast(`${id} is blocked by ${t.open_blockers.join(', ')}: it can't start yet.`,{err:1});
   try{ await api('PATCH','/'+id,{status:to}); await load(true);
     const n=BY.get(id);

@@ -131,6 +131,17 @@ class StoreTest(unittest.TestCase):
 		self.s.update("PORT-1", {"status": "done"})
 		self.assertEqual(self.s.get("EMP-12")["effective_status"], "todo")
 
+	def test_pending_is_derived_only(self):
+		with self.assertRaisesRegex(TicketError, "derived.*ask_human"):
+			self.s.create({"title": "x", "status": "pending"}, tid="P-1")
+		self.s.create({"title": "y"}, tid="P-2")
+		with self.assertRaisesRegex(TicketError, "derived"):
+			self.s.update("P-2", {"status": "pending"})
+		path = self.s.dir / "P-2.json"  # an old file that stored pending reads as todo, and is claimable once waiting_on is clear
+		path.write_text(json.dumps({**json.loads(path.read_text()), "status": "pending"}))
+		self.assertEqual((self.s.get("P-2")["status"], self.s.get("P-2")["effective_status"]), ("todo", "todo"))
+		self.assertEqual(self.s.claim("w-1")["id"], "P-2")
+
 	def test_rejects_blocking_loops(self):
 		self.s.create({"title": "A"}, tid="CMB-1")
 		self.s.create({"title": "B", "blocked_by": ["CMB-1"]}, tid="CMB-2")

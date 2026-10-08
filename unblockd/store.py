@@ -133,7 +133,10 @@ class Store:
 
 	def _read(self, path: Path) -> dict:
 		with open(path, encoding="utf-8") as f:
-			return json.load(f)
+			t = json.load(f)
+		if t.get("status") == "pending":  # derived only (effective_status); old files stored it, read as todo
+			t["status"] = "todo"
+		return t
 
 	def _write(self, t: dict) -> None:
 		path = self._path(t["id"])
@@ -165,6 +168,9 @@ class Store:
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
 				v = list(dict.fromkeys(x.strip().lower() for x in v if isinstance(x, str) and x.strip()))
+			if k == "status" and v == "pending":
+				raise TicketError("status can't be set to pending: it is derived. A todo with an open blocker (blocked_by) or a waiting_on shows as pending; "
+				                  "agents use ask_human(id, agent, question), humans set waiting_on or blocked_by")
 			if not FIELDS[k][1](v):
 				raise TicketError(f"invalid {k}: {v!r}" + (" (tags: lowercase a-z 0-9 : . _ -, max 40 chars, max 20)" if k == "tags" else ""))
 			if k == "tags" and self.config["agents"]:
