@@ -385,6 +385,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .tk .mk{border-radius:50%} .tk .mk.doing{background:var(--amber);border-color:var(--amber)} .tk .mk.pending{background:var(--slate);border-color:var(--slate)} .tk .mk.review{background:var(--plum);border-color:var(--plum)}
 .dk .mk{border-radius:3px;border-color:var(--muted)} .dk.orph .mk{border-style:dashed} .dk.bad .mk{border-color:var(--cinnabar);background:var(--cinnabar)}
 .dk.hub .mk{background:var(--jade);border-color:var(--jade)}
+.dk.brd .mk,.sw.brd{border-color:var(--ink);background:linear-gradient(90deg,var(--ink) 50%,var(--surface) 50%)}
 .dk .pth{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.82rem} .dk .pth i{font-style:normal;color:var(--muted)}
 .dn .tag{flex:none;font-size:.74rem;color:var(--muted);white-space:nowrap} .dn .tag.bad,.dn .tag.warn{color:var(--cinnabar);font-weight:700}
 .dn .tag.bad{flex:0 1 auto;min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis}
@@ -441,6 +442,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <span><i class="sw" style="border:2px dashed var(--muted);border-radius:3px"></i>Only linked from another doc</span>
       <span><i class="sw" style="background:var(--cinnabar);border-radius:3px"></i>Broken reference</span>
       <span><i class="sw" style="background:var(--jade);border-radius:3px"></i>Hub</span>
+      <span><i class="sw brd" style="border:2px solid;border-radius:3px"></i>Board-wide (every ticket reads it)</span>
       <span class="hint">Dashed lines: doc links to doc. Board-wide docs are every ticket's; their lines show on hover.</span></div>
     <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs they will read</h2><ol id="dD"></ol></div></div></div>
   </section>
@@ -1566,7 +1568,7 @@ function renderDocs(){
   const docs=[...g.docs].sort((a,b)=>b.readers-a.readers||a.path.localeCompare(b.path));
   T_.innerHTML=g.tickets.length?g.tickets.map(t=>`<li><button type="button" class="dn tk" data-open="${esc(t.id)}" data-n="t:${esc(t.id)}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}<i class="mk ${t.status}"></i></button></li>`).join('')
     :'<li class="dempty">No open tickets.</li>';
-  D_.innerHTML=docs.length?docs.map(d=>`<li><button type="button" class="dn dk${bad.has(d.path)?' bad':''}${hubs.has(d.path)?' hub':''}${d.linked_only?' orph':''}" data-dnode="${esc(d.path)}" data-n="d:${esc(d.path)}"><i class="mk"></i><span class="pth" title="${esc(d.path)}"><i>${esc(dDir(d.path))}</i>${esc(dBase(d.path))}</span>${d.error?`<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`:`<span class="tag">${dKind[d.kind]}</span>`}<span class="tag">${d.readers?'×'+d.readers:''}</span></button></li>`).join('')
+  D_.innerHTML=docs.length?docs.map(d=>`<li><button type="button" class="dn dk${bad.has(d.path)?' bad':''}${hubs.has(d.path)?' hub':''}${d.linked_only?' orph':''}${d.kind==='board'&&!bad.has(d.path)?' brd':''}" data-dnode="${esc(d.path)}" data-n="d:${esc(d.path)}"><i class="mk" title="${bad.has(d.path)?'Broken reference':d.kind==='board'?'Board-wide: every ticket reads it':hubs.has(d.path)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':'Doc'}"></i><span class="pth" title="${esc(d.path)}"><i>${esc(dDir(d.path))}</i>${esc(dBase(d.path))}</span>${d.error?`<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`:`<span class="tag">${dKind[d.kind]}</span>`}<span class="tag">${d.readers?'×'+d.readers:''}</span></button></li>`).join('')
     :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board or an agent profile in unblockd.json, or to a ticket.</li>`;
   markDocs();
 }
