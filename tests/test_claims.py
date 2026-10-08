@@ -97,6 +97,40 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
 		self.assertEqual(self.s.claim("godot-dev-1", tid="CMB-2")["id"], "CMB-2")
 
+	def test_add_note_appends_signed_lines_and_survives_a_concurrent_complete(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		t = self.s.add_note("CMB-1", "godot-dev-1", "found the cause")
+		self.assertRegex(t["body"], r"^— godot-dev-1, \d{4}-\d\d-\d\dT[\d:]+\+00:00: found the cause$")
+		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "note")
+		for bad in (("", "x"), ("a", "  ")):
+			with self.assertRaises(TicketError):
+				self.s.add_note("CMB-1", *bad)
+		with self.assertRaises(TicketError):
+			self.s.add_note("NOPE-1", "a", "x")
+		ts = [threading.Thread(target=lambda i=i: Store(self.dir).add_note("CMB-1", "human", f"n{i}")) for i in range(8)]
+		ts.append(threading.Thread(target=lambda: Store(self.dir).complete("CMB-1", "godot-dev-1", "all done")))
+		[x.start() for x in ts]
+		[x.join() for x in ts]
+		body = self.s.get("CMB-1")["body"]
+		self.assertEqual([f"n{i}" in body for i in range(8)], [True] * 8)  # nothing lost, whatever the order
+		self.assertIn("all done", body)
+		self.assertIn("found the cause", body)
+
+	def test_ask_release_and_expiry_leave_notes(self):
+		with self.assertRaisesRegex(TicketError, "limit is 1000"):
+			self.s.claim("godot-dev-1", tid="CMB-1")
+			self.s.ask("CMB-1", "godot-dev-1", "x" * 1001)
+		long_q = "q" * 900
+		self.assertEqual(self.s.ask("CMB-1", "godot-dev-1", long_q)["waiting_on"], long_q)
+		self.assertIn("question: " + long_q, self.s.get("CMB-1")["body"])  # kept after waiting_on is cleared
+		self.s.update("CMB-1", {"waiting_on": ""})
+		self.assertIn("question: ", self.s.get("CMB-1")["body"])
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		self.assertIn("released: too big", self.s.release("CMB-2", "godot-dev-1", "too big")["body"])
+		self.s.claim("godot-dev-1", tid="CMB-3")
+		with mock.patch("time.time", return_value=time.time() + 3600):
+			self.assertIn("claim by godot-dev-1 expired", self.s.get("CMB-3")["body"])
+
 	def test_review_gate_lands_complete_in_review_and_does_not_unblock(self):
 		d = Path(self.tmp.name) / "r" / "tickets"
 		d.mkdir(parents=True)

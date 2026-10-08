@@ -183,6 +183,7 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])[1]["id"], other["id"])
 		self.assertEqual(self.cli("release", other["id"], "--agent", "godot-dev-1", "--reason", "x")[1]["status"], "todo")
 		self.assertEqual(self.cli("get", "CMB-2")[1]["id"], "CMB-2")
+		self.assertIn("— ana, ", self.cli("note", "CMB-2", "hi", "--by", "ana")[1]["body"])  # Remote.add_note -> POST notes
 		self.assertEqual(self.cli("plan")[1]["agents"][0]["ready"], 1)
 		self.assertEqual(self.cli("agents")[1]["working"], [])
 		kids = self.cli("split", "CMB-2", "--title", "a", "--title", "b")[1]["children"]
@@ -249,6 +250,14 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/split", {"titles": ["a", "b"]})[0], 404)
 		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
 			self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-2/split", {"titles": ["a", "b"]})[0], 401)
+
+	def test_notes_route_defaults_by_to_human(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"text": "looks right"})
+		self.assertEqual(code, 200)
+		self.assertRegex(t["body"], r"^— human, .*: looks right$")
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"by": "ana"})[0], 400)
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/notes", {"text": "x"})[0], 404)
 
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})

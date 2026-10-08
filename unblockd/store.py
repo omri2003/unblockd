@@ -43,6 +43,8 @@ DEFAULT_CONFIG = {
 	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 }
+BODY_MAX = 50_000
+QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
@@ -61,7 +63,7 @@ FIELDS = {
 	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
 	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
-	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
+	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
 	# repo paths / folders / globs this ticket's worker should read (knowledge.py); files attached
@@ -579,6 +581,7 @@ class Store:
 						if t.get("status") == "doing":
 							t["status"] = "todo"
 							t["updated"] = date.today().isoformat()
+							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)")
 							self._write(t)
 					self._log("expired", tid, c["agent"], f"no heartbeat for {int(lease // 60)} min; back to todo")
 				self._save_claims(cur)
@@ -712,7 +715,9 @@ class Store:
 			raw = self._read(self._path(tid))
 			if raw.get("status") == "doing":
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
-				self._write(raw)
+			if reason.strip():
+				_append_note(raw, agent, f"released: {reason.strip()}")
+			self._write(raw)
 			self._log("release", tid, agent, reason)
 		self._locked(rel)
 		return self.get(tid)
@@ -723,7 +728,8 @@ class Store:
 		q = question.strip() if isinstance(question, str) else ""
 		if not q:
 			raise TicketError("ask needs a question: say what the human must decide")
-		self._clean({"waiting_on": q}, partial=True)  # length check
+		if len(q) > QUESTION_MAX:
+			raise TicketError(f"question is {len(q)} chars, the limit is {QUESTION_MAX}: shorten it, or put the background in add_note and ask the decision")
 		def run():
 			self._holder(tid, agent)
 			claims = self._claims()
@@ -731,8 +737,30 @@ class Store:
 			self._save_claims(claims)
 			raw = self._read(self._path(tid))
 			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
+			_append_note(raw, agent, f"question: {q}")
 			self._write(raw)
 			self._log("question", tid, agent, q)
+		self._locked(run)
+		return self.get(tid)
+
+	def add_note(self, tid: str, by: str, text: str) -> dict:
+		"""Append a signed, timestamped line to the body, under the lock: it can't clobber a concurrent complete or answer
+		(update(body=...) replaces the whole body; use this to report progress)."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("add_note needs `by`: who is writing (your worker name, or a person's name)")
+		if not (isinstance(text, str) and text.strip()):
+			raise TicketError("add_note needs text: what to record")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			_append_note(raw, by.strip(), text.strip())
+			if len(raw["body"]) > BODY_MAX:
+				raise TicketError(f"{tid}'s body would pass {BODY_MAX} chars: move old notes into an attached file (attach_file) first")
+			raw["updated"] = date.today().isoformat()
+			self._write(raw)
+			self._log("note", tid, by.strip(), text.strip())
 		self._locked(run)
 		return self.get(tid)
 
@@ -790,6 +818,12 @@ class Store:
 		            "note": c.get("note", ""), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
 		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
+
+
+def _append_note(raw: dict, by: str, text: str) -> None:
+	"""Add `— by, time: text` to raw's body after a blank line (caller holds the lock and writes)."""
+	line = f"— {by}, {_now()}: {text}"
+	raw["body"] = (raw.get("body", "") + "\n\n" if raw.get("body") else "") + line
 
 
 def _now() -> str:

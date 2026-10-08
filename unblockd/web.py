@@ -21,6 +21,7 @@ POST   tickets/<id>/claim                {"agent", "note"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?}
 POST   tickets/<id>/release              {"agent", "reason"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
+POST   tickets/<id>/notes                {"by"?, "text"}  append a signed line to the body (by defaults to "human") -> the ticket
 POST   tickets/<id>/complete             {"agent", "summary"}
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
@@ -174,6 +175,9 @@ class Handler(BaseHTTPRequestHandler):
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
 				return self._send(200, store.complete(tid, agent, str(b.get("summary", ""))))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
+				b = self._body()
+				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))

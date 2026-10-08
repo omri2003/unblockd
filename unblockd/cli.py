@@ -16,7 +16,7 @@
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
     python -m unblockd.cli update ID --json '{"status": "done"}' [--agent A]'
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
-    python -m unblockd.cli note ID "text"        # appends a dated paragraph to the body
+    python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped line to the body (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets. With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
 command goes to that server's REST API instead of a local folder, so agents on other machines share one board and one lock. Settings come from
@@ -32,7 +32,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
 from pathlib import Path
 
 from . import knowledge as kn
@@ -76,6 +75,7 @@ class Remote:
 	def heartbeat(self, tid, agent, note=""): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note})
 	def release(self, tid, agent, reason=""): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
+	def add_note(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text})
 	def complete(self, tid, agent, summary): return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
@@ -132,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 	no = sub.add_parser("note")
 	no.add_argument("id")
 	no.add_argument("text")
+	no.add_argument("--by", default="human")
 	a = ap.parse_args(argv)
 
 	try:
@@ -180,8 +181,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "update":
 			out = s.update(a.id, json.loads(a.json), agent=a.agent)
 		else:
-			body = s.get(a.id).get("body", "")
-			out = s.update(a.id, {"body": (body + "\n\n" if body else "") + f"{date.today().isoformat()}: {a.text}"})
+			out = s.add_note(a.id, a.by, a.text)
 	except (st.TicketError, json.JSONDecodeError) as e:
 		print(f"error: {e}", file=sys.stderr)
 		return 1

@@ -3,7 +3,7 @@
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
-release, ask_human, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
+release, ask_human, add_note, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ mcp = MCPServer(
 		"per agent profile with that profile's instructions and model, ready to fan out; a single "
 		"agent uses next_ready(agent=its name). Create with a prefix (BUG, UI...) and the next free "
 		"number is picked. blocked_by lists tickets that must be done first; loops are refused. "
-		"Put the reasoning in body, not just the change.\n"
+		"Put the reasoning in body, not just the change; report progress with add_note (append-only, signed), not update_ticket(body=...), which replaces the whole body.\n"
 		"WORKER PROTOCOL (when you are one of several agents): pick a unique agent name like "
 		"godot-dev-1 (profile name + number). Loop: claim_next(agent) -> it sets the ticket to doing "
 		"and returns it, or {ticket: null, reason, counts} when nothing can be taken (see the work loop for what each reason means); work it; call heartbeat(id, agent, "
@@ -219,6 +219,13 @@ def ask_human(id: str, agent: str, question: str, board: str | None = None) -> d
 	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
 	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket."""
 	return BOARDS.get(board).ask(id, agent, question)
+
+
+@tool
+def add_note(id: str, agent: str, text: str, board: str | None = None) -> dict:
+	"""Record progress or a finding on a ticket: appends a signed, timestamped line to its body, safely (never replaces the body, so it can't
+	clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not."""
+	return BOARDS.get(board).add_note(id, agent, text)
 
 
 @tool
