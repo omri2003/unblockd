@@ -298,6 +298,11 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 @media (max-width:480px){form.edit{grid-template-columns:1fr}}
 /* view switch + graph. Graph = Obsidian-style force layout: arrows point from
    the blocker to what it blocks, and blockers drift left of what they block. */
+.trow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vico-g{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r)}
+.vico{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 7px;border:0;background:none;color:var(--muted);border-radius:calc(var(--r) - 2px);cursor:pointer;font:inherit;font-size:.82rem;font-weight:600}
+.vico:hover{color:var(--ink)} .vico[aria-pressed="true"]{background:var(--ink);color:var(--paper)} .vi{display:block;flex:none}
+@media (max-width:600px){.vico{height:34px;padding:0 10px}}
 .hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .graphwrap{position:relative;background:var(--sunk);border-radius:8px;overflow:hidden}
 .gtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:.85rem}
@@ -409,8 +414,8 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 <body>
 <div class="wrap">
   <header>
-    <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="sub" id="sub">Loading…</div><button type="button" class="khint" id="kbHint">Press ? for shortcuts</button></div>
-    <div class="hdr"><div class="seg" id="viewSeg" role="group" aria-label="View"></div><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" title="Per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
+    <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><div class="trow"><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div></div><div class="sub" id="sub">Loading…</div><button type="button" class="khint" id="kbHint">Press ? for shortcuts</button></div>
+    <div class="hdr"><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" title="Per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
       <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
       <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
@@ -1624,8 +1629,10 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
  addEventListener('resize',()=>{if(state.view==='docs')markDocs();});}
 
 // ---------- view switch ----------
+const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d']];
+function paintViews(v){$('viewSeg').innerHTML=VIEWS.map(([n,l,k])=>`<button type="button" class="vico" data-view="${n}" aria-pressed="${v===n}" aria-label="${l}" title="${l}${k?` (${k})`:''}">${VICON[n]}${v===n?l:''}</button>`).join('');}
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
-  chips($('viewSeg'),[['board','Board'],['graph','Graph'],['docs','Docs']],v,'view');$('viewSeg').querySelector('[data-view=graph]').title='Graph (g)';$('viewSeg').querySelector('[data-view=docs]').title='Docs (d)';renderShow();renderNeeds();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
+  paintViews(v);renderShow();renderNeeds();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
 function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();renderNeeds();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
