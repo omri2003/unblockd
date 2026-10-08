@@ -201,6 +201,13 @@ class Store:
 				raise TicketError("blocked_by makes a loop: " + " → ".join(reversed(path)) + " (each would wait on the other forever)")
 			stack += [(b, x) for b in graph.get(x, [])]
 
+	def _check_blockers(self, new: list[str], old: list[str]) -> None:
+		"""Refuse blocked_by ids that don't exist, unless already on the ticket (a blocker deleted later keeps it editable)."""
+		have = {t["id"] for t in self._all_raw()}
+		bad = [b for b in new if b not in have and b not in old]
+		if bad:
+			raise TicketError("; ".join(f"no ticket {b} on this board" for b in bad) + ": fix the id or create it first")
+
 	def _check_parent(self, tid: str, parent: str | None) -> None:
 		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor."""
 		if parent is None:
@@ -353,7 +360,7 @@ class Store:
 		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number."""
 		return self._locked(lambda: self._create(data, tid, prefix))
 
-	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None) -> dict:
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = ()) -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -361,6 +368,7 @@ class Store:
 			tid = self.next_id(prefix)
 		if self._path(tid).exists():
 			raise TicketError(f"{tid} already exists")
+		self._check_blockers(clean.get("blocked_by", []), inherited)
 		self._check_loop(tid, clean.get("blocked_by", []))
 		self._check_parent(tid, clean.get("parent"))
 		today = date.today().isoformat()
@@ -384,6 +392,7 @@ class Store:
 		t = self._read(path)
 		clean = self._clean(changes, partial=True)
 		if "blocked_by" in clean:
+			self._check_blockers(clean["blocked_by"], t.get("blocked_by", []))
 			self._check_loop(tid, clean["blocked_by"])
 		if "parent" in clean:
 			self._check_parent(tid, clean["parent"])
@@ -423,7 +432,7 @@ class Store:
 			kids: list[dict] = []
 			for x in titles_:
 				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
-				kids.append(self.create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix))
+				kids.append(self._create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix, inherited=parent["blocked_by"]))
 			ids = [k["id"] for k in kids]
 			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
 			if parent["status"] == "doing":

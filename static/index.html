@@ -266,6 +266,15 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 
 form.edit{display:grid;gap:10px;grid-template-columns:1fr 1fr}
 form.edit .full{grid-column:1/-1}
+.pick{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:5px} .pcs{display:contents}
+.pc{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:1px 3px 1px 9px;font-size:.82rem;font-weight:600}
+.pc button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0 4px} .pc button:hover{color:var(--cinnabar)}
+form.edit .pick .pq{flex:1 1 140px}
+.pl{position:absolute;z-index:30;left:0;top:100%;margin:2px 0 0;padding:4px;list-style:none;width:min(420px,100%);min-width:220px;max-height:240px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.bulk .pl{top:auto;bottom:100%;margin:0 0 6px}
+.pl li{padding:5px 8px;border-radius:5px;cursor:pointer;font-size:.85rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .pl li:hover,.pl li.on{background:var(--sunk)} .pl li.dn{opacity:.55} .pl li b{margin-right:6px} .pl li.none{cursor:default;color:var(--muted)}
+.bulk .pick .pq{width:130px;max-width:150px}
+form.edit .lbl{display:grid;gap:4px;font-size:.85rem;font-weight:600}
 form.edit label{display:grid;gap:4px;font-size:.85rem;font-weight:600}
 form.edit input,form.edit select,form.edit textarea{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:7px 9px;font-weight:400;min-width:0}
 form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font-size:.86rem}
@@ -552,6 +561,36 @@ function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, error
   setTimeout(()=>el.remove(),err||msg.nodeType?6000:4000);
 }
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
+// Ticket picker (blocked_by in the edit form, Parent in the bulk bar): only tickets on this board can be chosen, so no free-text id is ever submitted.
+// multi: chips (.pc) are the value, read with pickIds(). single: choosing calls bulk('parent', id|'-') and keeps no chips.
+const pickChip=id=>`<span class="pc" data-id="${esc(id)}">${esc(id)}<button type="button" data-pkrm aria-label="Remove ${esc(id)}">×</button></span>`;
+const pickIds=id=>[...$(id).querySelectorAll('.pc')].map(c=>c.dataset.id);
+const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''}><span class="pcs">${sel.filter(x=>BY.has(x)).map(pickChip).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.ph||'Search id or title…'}" aria-label="${o.ph?'Parent':'Blocked by'}: search tickets"><ul class="pl" hidden></ul></div>`;
+function pickList(box){
+  const q=box.querySelector('.pq').value.trim().toLowerCase(),have=new Set([box.dataset.skip,...[...box.querySelectorAll('.pc')].map(c=>c.dataset.id)]);
+  const m=T.filter(t=>!have.has(t.id)&&(t.id+' '+t.title).toLowerCase().includes(q)).sort((a,b)=>(a.status==='done')-(b.status==='done')||a.id.localeCompare(b.id,undefined,{numeric:true})).slice(0,8);
+  const ul=box.querySelector('.pl'),none=box.dataset.none&&!q?'<li data-pk="-"><b>None</b>remove the parent</li>':'';
+  ul.innerHTML=none+m.map(t=>`<li data-pk="${esc(t.id)}"${t.status==='done'?' class="dn"':''}><b>${esc(t.id)}</b>${esc(t.title)}</li>`).join('')||(none?'':'<li class="none">No matching ticket</li>');
+  ul.hidden=false; ul.querySelector('[data-pk]')?.classList.add('on');
+}
+function pickAdd(box,id){
+  const q=box.querySelector('.pq'); q.value='';
+  if(box.dataset.single){box.querySelector('.pl').hidden=true;bulk('parent',id);return;}
+  box.querySelector('.pcs').insertAdjacentHTML('beforeend',pickChip(id)); pickList(box); q.focus();
+}
+document.addEventListener('input',e=>{const b=e.target.closest?.('.pick');if(b)pickList(b);});
+document.addEventListener('focusin',e=>{const b=e.target.closest?.('.pick');if(b&&e.target.matches('.pq'))pickList(b);});
+document.addEventListener('focusout',e=>{const b=e.target.closest?.('.pick');if(b)b.querySelector('.pl').hidden=true;});
+document.addEventListener('mousedown',e=>{const li=e.target.closest?.('.pl [data-pk]');if(li){e.preventDefault();pickAdd(li.closest('.pick'),li.dataset.pk);}}); // mousedown: before focusout hides the list
+document.addEventListener('click',e=>{const x=e.target.closest?.('[data-pkrm]');if(x)x.closest('.pc').remove();});
+document.addEventListener('keydown',e=>{
+  const b=e.target.closest?.('.pick');if(!b||!e.target.matches('.pq'))return;
+  const ul=b.querySelector('.pl'),on=ul.querySelector('.on'),all=[...ul.querySelectorAll('[data-pk]')];
+  if(e.key==='Enter'){e.preventDefault();if(!ul.hidden&&on)pickAdd(b,on.dataset.pk);}
+  else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(ul.hidden)return pickList(b);const i=all.indexOf(on)+(e.key==='ArrowDown'?1:-1);if(all.length){on?.classList.remove('on');all[(i+all.length)%all.length].classList.add('on');}}
+  else if(e.key==='Backspace'&&!e.target.value){b.querySelector('.pc:last-child')?.remove();}
+  else if(e.key==='Escape'&&!ul.hidden){e.stopImmediatePropagation();ul.hidden=true;}
+},true);
 const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
@@ -707,13 +746,13 @@ function card(t){
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
   const sel=(f,l,o)=>`<select data-bulk="${f}" aria-label="${esc(l)}"><option value="">${esc(l)}…</option>${o.map(([v,x])=>`<option value="${esc(v)}">${esc(x)}</option>`).join('')}</select>`;
-  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS)}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag"><input data-bulk="parent" placeholder="Parent ID or -" aria-label="Parent ID, or - for none"><button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
+  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS)}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
   document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
 }
 async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
   const ids=[...SEL].filter(id=>BY.has(id)),was=new Map(ids.map(id=>[id,BY.get(id)[field]])),ok=[],bad=[];
   for(const id of ids){
-    const v=field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:val==='-'?null:field==='parent'?val.toUpperCase():val;
+    const v=field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:val==='-'?null:val;
     try{await api('PATCH','/'+id,{[field]:v});ok.push(id);}catch(er){bad.push(`${id}: ${er.message}`);}
   }
   await load(true); renderBulk();
@@ -955,7 +994,7 @@ function editForm(t){
     <label class="full" for="f-done">Done when <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
     <label class="full" for="f-docs">Docs <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
-    <label class="full" for="f-blocked">Blocked by <span class="hint">IDs, comma separated</span><input id="f-blocked" value="${esc(t.blocked_by.join(', '))}"></label>
+    <div class="full lbl"><span class="lt">Blocked by <span class="hint">search by id or title</span></span>${pickHtml('f-blocked',t.blocked_by,{skip:t.id})}</div>
     <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="200" value="${esc(t.waiting_on)}"></label>
     <label class="full" for="f-body">Details <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body)}</textarea></label>
     <div class="full formrow"><button class="btn" type="submit">${isNew?'Create ticket':'Save changes'}</button>${isNew?'':'<button class="btn danger" type="button" data-delete>Delete</button>'}<span class="msg" id="fMsg" role="status"></span></div>
@@ -966,7 +1005,7 @@ async function submitForm(f){
   const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
-    blocked_by:$('f-blocked').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean),waiting_on:$('f-waiting').value,body:$('f-body').value,
+    blocked_by:pickIds('f-blocked'),waiting_on:$('f-waiting').value,body:$('f-body').value,
     tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean),
     docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
