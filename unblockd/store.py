@@ -629,6 +629,34 @@ class Store:
 		got = self._locked(take)
 		return self.get(got) if got else None
 
+	def claim_next(self, agent: str, profile: str | None = None, note: str = "") -> dict:
+		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
+		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}}.
+		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
+		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
+		got = self.claim(agent, profile=profile, note=note)
+		if got:
+			return got
+		if profile is None:
+			profile = self.profile_of(agent)
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		counts = dict.fromkeys(("in_flight", "ready_conflicting", "in_review", "waiting_on_human", "blocked"), 0)
+		for t in self.list():
+			if t["status"] == "done" or (profile and t["agent"] != profile):
+				continue
+			if t["status"] == "doing":
+				counts["in_flight"] += 1
+			elif t["status"] == "review":
+				counts["in_review"] += 1
+			elif t.get("waiting_on") or t.get("owner") in humans:
+				counts["waiting_on_human"] += 1
+			elif t["effective_status"] == "todo":
+				counts["ready_conflicting"] += 1
+			else:
+				counts["blocked"] += 1
+		reason = "conflict" if counts["ready_conflicting"] else "waiting" if any(counts.values()) else "dry"
+		return {"ticket": None, "reason": reason, "counts": counts}
+
 	def _holder(self, tid: str, agent: str) -> None:
 		c = self._live_claims().get(tid)
 		if not c:

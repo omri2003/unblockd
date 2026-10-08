@@ -33,7 +33,7 @@ mcp = MCPServer(
 		"Put the reasoning in body, not just the change.\n"
 		"WORKER PROTOCOL (when you are one of several agents): pick a unique agent name like "
 		"godot-dev-1 (profile name + number). Loop: claim_next(agent) -> it sets the ticket to doing "
-		"and returns it, or null when nothing is left for you; work it; call heartbeat(id, agent, "
+		"and returns it, or {ticket: null, reason, counts} when nothing can be taken (see the work loop for what each reason means); work it; call heartbeat(id, agent, "
 		"note) at least every few minutes with what you're doing (a claim with no heartbeat for "
 		"lease_minutes expires and goes back to todo); finish with complete(id, agent, summary: "
 		"cause -> fix -> tests, and what was NOT verified), or release(id, agent, reason) if you "
@@ -47,9 +47,9 @@ mcp = MCPServer(
 )
 
 
-WORK_LOOP = """You are a worker on the unblockd board {board}{profile_line}. Loop until step 2 returns null:
+WORK_LOOP = """You are a worker on the unblockd board {board}{profile_line}. Loop until step 2 says to stop:
 1. Your worker name is unique: {agent_hint}. Use it as `agent` in every call below.
-2. claim_next(agent=<your name>{claim_args}) -> a ticket plus its `context`, or null: then stop and report what you did.
+2. claim_next(agent=<your name>{claim_args}) -> a ticket plus its `context`, or {{ticket: null, reason, counts}}: reason "conflict" = ready tickets exist but overlap other workers' live claims (touches): wait about a minute and call again, up to 5 times, then stop and report; reason "waiting" (everything open is in flight, in review, waiting on a human or blocked) or "dry" (nothing open): stop and report what you did and the reason and counts.
 3. Read every doc in `context` in order before touching anything (read_doc(path) for items without content; report entries with an `error`). `done_when`, if present, is the bar for done.
 4. Work it. Call heartbeat(id, agent, note) with what you are doing at least every 5 minutes: 15 minutes of silence expires the claim and the ticket goes back to todo.
 5. Needs a decision only a human can make: ask_human(id, agent, question), then go on to the next ticket. Cannot finish for another reason: release(id, agent, reason).
@@ -189,13 +189,15 @@ def delete_ticket(id: str, board: str | None = None) -> dict:
 
 
 @tool
-def claim_next(agent: str, profile: str | None = None, note: str = "", board: str | None = None) -> dict | None:
+def claim_next(agent: str, profile: str | None = None, note: str = "", board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
 	name (<profile>-N, e.g. godot-dev-1; on a board with agent profiles a name matching none is refused); profile defaults to the profile your name starts with. Skips tickets
-	owned by humans, already claimed, or whose `touches` overlap a live claim. Returns null when
-	there's nothing left for you."""
+	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
+	take it returns {ticket: null, reason, counts}: reason "conflict" = ready tickets are blocked by
+	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
+	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report."""
 	store = BOARDS.get(board)
-	return kn.with_context(store, store.claim(agent, profile=profile, note=note))
+	return kn.with_context(store, store.claim_next(agent, profile=profile, note=note))
 
 
 @tool

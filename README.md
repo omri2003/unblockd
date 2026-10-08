@@ -87,7 +87,7 @@ Several agents can work one board at once without stepping on each other.
 Each worker uses a unique name (`godot-dev-1`: profile + number) and loops:
 
 ```
-claim_next(agent)          -> best ready ticket for its profile, set to doing (or null: nothing left)
+claim_next(agent)          -> best ready ticket for its profile, set to doing (or {ticket: null, reason, counts}: why nothing)
 heartbeat(id, agent, note) -> "what I'm doing now", at least every few minutes
 complete(id, agent, summary)   or   release(id, agent, reason)
 ```
@@ -113,7 +113,7 @@ ignores itself in git.
 
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
-and each worker runs the loop above until `claim_next` returns null.
+and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report.
 
 ## Knowledge: tickets come with their instructions
 

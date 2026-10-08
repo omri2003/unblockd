@@ -23,7 +23,7 @@ class WorkLoopTest(unittest.TestCase):
 	def test_prompt_and_resource_carry_the_protocol(self):
 		from unblockd import mcp_server as m
 		text = m.work_loop_text("game", "godot-dev")
-		for word in ("claim_next(agent=<your name>, profile=godot-dev, board=game)", "godot-dev-1", "heartbeat", "ask_human", "release", "complete", "done_when"):
+		for word in ("claim_next(agent=<your name>, profile=godot-dev, board=game)", "godot-dev-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry"):
 			self.assertIn(word, text)
 		self.assertIn("board_info", m.work_loop_text())
 		self.assertEqual(m.work_loop_resource(), m.work_loop_text())

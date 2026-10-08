@@ -189,6 +189,24 @@ class ClaimTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "already claimed by godot-dev-9"):
 			self.s.claim("godot-dev-8", tid="CMB-1")
 
+	def test_claim_next_says_why_it_is_empty(self):
+		why = lambda agent="godot-dev-2": self.s.claim_next(agent)
+		self.assertEqual(self.s.claim_next("godot-dev-1")["id"], "CMB-1")
+		got = why()  # CMB-3 is free; take it so only the overlapping CMB-2 is left
+		self.assertEqual(got["id"], "CMB-3")
+		r = why("godot-dev-3")  # CMB-2 is ready but overlaps CMB-1's touches: retry later
+		self.assertEqual((r["ticket"], r["reason"]), (None, "conflict"))
+		self.assertEqual(r["counts"], {"in_flight": 2, "ready_conflicting": 1, "in_review": 0, "waiting_on_human": 0, "blocked": 0})
+		self.s.release("CMB-1", "godot-dev-1")
+		self.s.update("CMB-2", {"status": "done"})
+		self.s.update("CMB-1", {"waiting_on": "Omri: ok?"})
+		self.assertEqual(why("godot-dev-3")["reason"], "waiting")  # CMB-3 in flight, CMB-1 waits on a human
+		self.s.update("CMB-1", {"status": "done"})
+		self.s.complete("CMB-3", "godot-dev-2", "ok")
+		r = why("godot-dev-3")
+		self.assertEqual((r["reason"], sum(r["counts"].values())), ("dry", 0))  # ART-1 is blender's: not counted for godot-dev
+		self.assertEqual(why("blender-1")["counts"]["waiting_on_human"], 1)
+
 	def test_unknown_worker_name_is_refused_on_a_board_with_profiles(self):
 		with self.assertRaisesRegex(TicketError, "matches no agent profile.*godot-dev, blender.*godot-dev-1"):
 			self.s.claim("claude-1")

@@ -72,6 +72,7 @@ class Remote:
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def claim(self, agent, tid=None, profile=None, note=""):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note})
+	def claim_next(self, agent, profile=None, note=""): return self.claim(agent, profile=profile, note=note)  # the server answers with the reason when empty
 	def heartbeat(self, tid, agent, note=""): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note})
 	def release(self, tid, agent, reason=""): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
@@ -151,8 +152,8 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note)
-			out = {**got, "context": ctx(got["id"])} if got else None
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note) if a.id else s.claim_next(a.agent, profile=a.profile, note=a.note)
+			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
 			out = s.heartbeat(a.id, a.agent, a.note)
 		elif a.cmd == "release":

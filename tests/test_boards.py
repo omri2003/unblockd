@@ -169,7 +169,8 @@ class ApiTest(unittest.TestCase):
 		other = self.cli("claim", "--agent", "godot-dev-1")[1]
 		asked = self.cli("ask", other["id"], "--agent", "godot-dev-1", "--question", "Omri: ok?")[1]
 		self.assertEqual((asked["effective_status"], asked["claim"]), ("pending", None))
-		self.assertIsNone(self.cli("claim", "--agent", "godot-dev-1")[1])
+		empty = self.cli("claim", "--agent", "godot-dev-1")[1]  # nothing left, and why
+		self.assertEqual((empty["ticket"], empty["reason"], empty["counts"]["waiting_on_human"]), (None, "waiting", 1))
 		self.assertEqual(self.cli("update", other["id"], "--json", '{"waiting_on": ""}')[1]["effective_status"], "todo")
 		self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])
 		code, msg = self.cli("update", other["id"], "--json", '{"status": "done"}', "--agent", "godot-dev-2")  # --agent travels to the server
@@ -250,7 +251,8 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})
 		self.assertEqual((code, t["id"], t["claim"]["agent"]), (200, "CMB-1", "godot-dev-1"))
-		self.assertEqual(self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-2"})[1], None)
+		empty = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-2"})[1]
+		self.assertEqual((empty["ticket"], empty["reason"], empty["counts"]["in_flight"]), (None, "waiting", 1))
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/heartbeat", {"agent": "godot-dev-1", "note": "tests"})[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/agents")[1]["working"][0]["note"], "tests")
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "nope", "summary": "x"})[0], 400)

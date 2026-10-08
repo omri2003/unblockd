@@ -158,8 +158,9 @@ def sources(store, t: dict) -> list[tuple[str, str]]:
 
 
 def with_context(store, t: dict | None) -> dict | None:
-	"""A freshly claimed ticket plus its context bundle (None passes through): what a worker reads first."""
-	return {**t, "context": context(store, t["id"])} if t else None
+	"""A freshly claimed ticket plus its context bundle: what a worker reads first. Anything without an id
+	(None, or claim_next's "nothing, and why" answer) passes through."""
+	return {**t, "context": context(store, t["id"])} if t and "id" in t else t
 
 
 def context(store, tid: str, budget: int | None = None, inline: bool = True) -> dict:

@@ -145,7 +145,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50), q.get("since")))
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
-				return self._send(200, store.claim(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
+				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["doc"]:
