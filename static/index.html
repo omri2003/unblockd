@@ -111,6 +111,14 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
 .dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
+.needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:8px 12px;margin-bottom:14px}
+.needs h2{font-size:.95rem;margin:0 0 4px} .needs h2 .n{color:var(--plum)}
+.needs ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
+.nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)}
+.nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
+.nd-f{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 0} .nd-f input,.nd-f textarea{flex:1 1 200px;min-width:0}
+.rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere}
 .dg-g{margin:10px 0 0;font-size:.82rem;font-weight:800;color:var(--muted)}
 .dg-l{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px;max-height:40vh;overflow:auto}
 .dg-l li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem}
@@ -401,6 +409,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
+  <section class="needs" id="needs" hidden aria-label="Needs you"></section>
   <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" id="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
@@ -789,6 +798,31 @@ function renderDigest(){
   el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}">${dgOpen?'Collapse':'Expand'}</button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
    +(dgOpen?gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''):'');
 }
+// Needs you: questions (waiting_on) + reviews, oldest first. Drafts live in DRAFTS (keyed by data-draft), so the 4 s refresh and the drawer re-render keep half-typed text.
+const DRAFTS={}; let needsSig='';
+const sinceOf=t=>t.result?.at||t.updated+'T00:00:00'; // review: when the worker finished; question: only the date is on the ticket
+const needsItems=()=>T.filter(t=>t.status==='review'||(t.waiting_on&&t.status!=='done')).sort((a,b)=>Date.parse(sinceOf(a))-Date.parse(sinceOf(b)));
+const draftField=(key,name,ph,tag='input')=>`<${tag} name="t" data-draft="${esc(key)}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${tag==='input'?` value="${esc(DRAFTS[key]||'')}">`:`>${esc(DRAFTS[key]||'')}</textarea>`}`;
+function keepFocus(fn){ // re-render without losing the caret in a draft field
+  const a=document.activeElement,k=a?.dataset?.draft,pos=k?a.selectionStart:0; fn();
+  if(k){const n=[...document.querySelectorAll('[data-draft]')].find(x=>x.dataset.draft===k); if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch{}}}
+}
+function renderNeeds(){
+  const el=$('needs'),L=state.view==='board'?needsItems():[]; el.hidden=!L.length; if(el.hidden){needsSig='';return;}
+  const sig=L.map(t=>[t.id,t.status,t.title,t.waiting_on].join('\0')).join('\n'); if(sig===needsSig){tickAges();return;} needsSig=sig;
+  keepFocus(()=>{el.innerHTML=`<h2>Needs you <span class="n">${L.length}</span></h2><ul>${L.map(t=>{const q=!!t.waiting_on;
+    return `<li><div class="nd-h"><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button><span class="nb${q?'':' r'}">${q?'Question':'Review'}</span><time class="nd-age" data-since="${esc(sinceOf(t))}"></time></div>`
+     +(q?`<p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('a:'+t.id,'','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+        :`<form class="nd-f" data-nform="reject" data-id="${esc(t.id)}"><button type="button" class="btn sm" data-approve="${esc(t.id)}">Approve</button>${draftField('r:'+t.id,'','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`)+'</li>';}).join('')}</ul>`;});
+  tickAges();
+}
+const NFORM={answer:['text','Answered'],reject:['reason','Rejected'],notes:['text','Note added']};
+async function submitNeeds(f){ // strip + drawer forms: POST tickets/<id>/<answer|reject|notes>
+  const id=f.dataset.id,kind=f.dataset.nform,i=f.elements.t,text=i.value.trim(); if(!text) return i.focus();
+  try{ await jf(`${API}/tickets/${id}/${kind}`,'POST',{[NFORM[kind][0]]:text}); delete DRAFTS[i.dataset.draft]; await load(true); toast(`${NFORM[kind][1]}: ${id}`); }
+  catch(er){ toast(er.message,{err:1}); }
+}
+const resultHtml=r=>!r?'':`<div class="rbox"><p>${md(r.summary)}</p>${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 function renderWorking(){ // agents holding a claim right now; ages tick client-side
   const el=$('working'),ws=T.filter(t=>t.claim&&onBoard(t)).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
   el.hidden=!ws.length||state.view!=='board'; if(el.hidden) return;
@@ -827,7 +861,8 @@ function renderAgents(){
   $('abody').innerHTML=seg+body;
 }
 // heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
-function tickAges(){const lim=(CFG.lease_minutes?CFG.lease_minutes/2:10)*60000;
+function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const d=e.dataset.since,n=Math.floor((Date.now()-Date.parse(d))/864e5);e.textContent=d.includes('T00:00:00')?(n<1?'today':n+'d'):ago(d);e.title=e.dataset.since;});
+  const lim=(CFG.lease_minutes?CFG.lease_minutes/2:10)*60000;
   document.querySelectorAll('[data-hb]').forEach(e=>{const t=Date.parse(e.dataset.hb);e.textContent=ago(e.dataset.hb).replace(' ago','');e.classList.toggle('late',Date.now()-t>lim);e.title=Date.now()-t>lim?'No heartbeat for a while':'';});
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
     e.textContent=done?(d<1?'closed today':`closed ${d}d ago`):(d<1?'today':d+'d');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
@@ -888,7 +923,7 @@ function renderBoard(){
 
 // ---------- drawer ----------
 let lastFocus=null;
-function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;d.innerHTML=html;d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
+function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
 function closeDrawer(){SPLIT=null;syncSel();$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
@@ -946,7 +981,7 @@ function showTicket(id,refresh){
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status;
   const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
-  const ms=mentions(t);
+  const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
@@ -958,12 +993,15 @@ function showTicket(id,refresh){
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
-    ${(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:''}
+    ${t.waiting_on?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
+    ${t.status==='review'?`<h3>Result, for review</h3>${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
+    ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
+    <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
-    <details class="kn" id="kn"${store.get('knOpen',false)?' open':''}><summary>Knowledge and agent activity</summary>
+    <details class="kn" id="kn"${t.status==='review'||store.get('knOpen',false)?' open':''}><summary>Knowledge and agent activity</summary>
     <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
     <div class="formrow" style="margin-top:6px"><button type="button" class="btn ghost sm" data-attach>Attach files</button><span class="hint">or drop text files here</span><input type="file" id="kfile" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.toml,.csv,.py,.gd,.js,.ts,.html,.css,.sh,.xml"></div>
     <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul></details>`, refresh);
@@ -1054,6 +1092,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
+  if(b=g('[data-approve]')){moveTo(b.dataset.approve,'done');return;}
   if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
   if(g('#kbBtn')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
@@ -1093,13 +1132,14 @@ async function moveTo(id,to,undoable=true){
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches?.('.qa-t,.qa-p')){e.preventDefault();quickAdd(e.target.form,e.shiftKey);} }); // two fields = no implicit submit, so Enter is handled here
 document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remember the knowledge fold; keep the panels inside the viewport; flush a deferred paint
   const d=e.target;
-  if(d.id==='kn') store.set('knOpen',d.open);
+  if(d.id==='kn'&&BY.get(openId)?.status!=='review') store.set('knOpen',d.open);
   if(d.id==='apanel'&&d.open) loadAgents();
   if(d.matches('.fpanel,.spanel')){const b=d.querySelector('.fbody');b.style.translate='';if(d.open){const r=b.getBoundingClientRect();b.style.translate=(r.left<16?16-r.left:Math.min(0,innerWidth-16-r.right))+'px';}}
   flushPaint();
 },true);
-document.addEventListener('input',e=>{ if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
-document.addEventListener('submit',e=>{ const h={splitForm:submitSplit,editForm:submitForm,boardForm:submitBoard}[e.target.id]; if(h){e.preventDefault();h(e.target);} });
+document.addEventListener('input',e=>{ const k=e.target.dataset?.draft; if(k) DRAFTS[k]=e.target.value; if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
+document.addEventListener('submit',e=>{ if(e.target.dataset.nform){e.preventDefault();submitNeeds(e.target);return;}
+  const h={splitForm:submitSplit,editForm:submitForm,boardForm:submitBoard}[e.target.id]; if(h){e.preventDefault();h(e.target);} });
 let kbFocus=null;
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
 const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card')].filter(c=>c.offsetParent!==null);
@@ -1575,7 +1615,7 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
 // ---------- view switch ----------
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
   chips($('viewSeg'),[['board','Board'],['graph','Graph'],['docs','Docs']],v,'view');renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
-function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
+function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();renderNeeds();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;

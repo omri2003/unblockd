@@ -127,6 +127,32 @@ try {
 		await visible('#toasts .toast:has-text("back in")', 'undo confirmation toast');
 		await page.keyboard.press('Escape');
 
+		// Needs you: a review ticket + a question ticket -> strip lists both; answer one, approve the other, strip empties
+		cli('create', '--prefix', 'NY', '--title', 'review me', '--json', JSON.stringify({ owner: 'Claude', status: 'review', done_when: ['it works'], result: { summary: 'Did the **thing**', files: ['a.py'], refs: ['https://example.com/pull/1'], handoff: 'nothing', by: 'backend-1', at: new Date().toISOString() } }));
+		cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","waiting_on":"Which one?"}');
+		await visible('#needs li', 'Needs you strip');
+		ok((await page.locator('#needs li').count()) === 2, `[${tag}] Needs you should list the review and the question`);
+		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
+		await noOverflow('needs strip');
+		await page.click('#needs li:has(.nb.r) [data-open]'); // review drawer: result + done_when on top, activity open
+		await visible('#drawer .rbox a[href^="https://example.com"]', 'review result with link');
+		ok(await page.locator('#drawer details.kn[open]').count(), `[${tag}] review drawer should open Knowledge and activity`);
+		await noOverflow('review drawer');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/ui6-drawer-${w}-${theme}.png` });
+		await page.keyboard.press('Escape');
+		await page.fill('#needs [data-nform="answer"] input', 'half typed'); // survives the 4 s poll
+		await page.waitForTimeout(4500);
+		ok((await page.inputValue('#needs [data-nform="answer"] input')) === 'half typed', `[${tag}] draft lost on poll`);
+		await page.evaluate(() => scrollTo(0, 0));
+		await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/ui6-${w}-${theme}.png` : tmpdir() + '/ui6.png' });
+		await page.fill('#needs [data-nform="answer"] input', 'The first one');
+		await page.click('#needs [data-nform="answer"] button[type=submit]');
+		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 1);
+		await page.click('#needs [data-approve]');
+		await page.waitForFunction(() => document.getElementById('needs').hidden);
+		ok(await page.locator('.col.done .card:has-text("review me")').count(), `[${tag}] approved ticket should be in Done`);
+		await noOverflow('board after needs');
+
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
 		await ctx.close();
 	}
