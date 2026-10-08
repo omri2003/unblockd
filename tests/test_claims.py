@@ -50,6 +50,16 @@ class ClaimTest(unittest.TestCase):
 		self.assertIn("(godot-dev-1, done): fixed; tests pass", t["body"])
 		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")], ["complete", "heartbeat", "claim", "created"])
 
+	def test_update_by_another_agent_cannot_touch_a_claimed_ticket(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		for ch in ({"status": "done"}, {"status": "doing"}, {"waiting_on": ""}):
+			with self.assertRaisesRegex(TicketError, "claimed by godot-dev-1.*complete.*release.*ask_human"):
+				self.s.update("CMB-1", ch, agent="godot-dev-2")
+		self.assertEqual(self.s.update("CMB-1", {"body": "note"}, agent="godot-dev-2")["body"], "note")  # other fields are fine
+		self.assertEqual(self.s.update("CMB-1", {"priority": "P0"}, agent="godot-dev-1")["priority"], "P0")
+		self.assertEqual(self.s.update("CMB-2", {"status": "doing"}, agent="godot-dev-2")["status"], "doing")  # unclaimed: fine
+		self.assertEqual(self.s.update("CMB-1", {"status": "todo"})["claim"], None)  # no agent = a human: as before
+
 	def test_release_and_manual_status_change_end_the_claim(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		self.assertEqual(self.s.release("CMB-1", "godot-dev-1", "blocked on a decision")["status"], "todo")

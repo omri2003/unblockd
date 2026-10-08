@@ -171,6 +171,11 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual((asked["effective_status"], asked["claim"]), ("pending", None))
 		self.assertIsNone(self.cli("claim", "--agent", "godot-dev-1")[1])
 		self.assertEqual(self.cli("update", other["id"], "--json", '{"waiting_on": ""}')[1]["effective_status"], "todo")
+		self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])
+		code, msg = self.cli("update", other["id"], "--json", '{"status": "done"}', "--agent", "godot-dev-2")  # --agent travels to the server
+		self.assertEqual(code, 1)
+		self.assertIn("claimed by godot-dev-1", msg)
+		self.cli("release", other["id"], "--agent", "godot-dev-1")
 		self.assertEqual(self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])[1]["id"], other["id"])
 		self.assertEqual(self.cli("release", other["id"], "--agent", "godot-dev-1", "--reason", "x")[1]["status"], "todo")
 		self.assertEqual(self.cli("get", "CMB-2")[1]["id"], "CMB-2")

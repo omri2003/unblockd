@@ -14,7 +14,7 @@
     python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
-    python -m unblockd.cli update ID --json '{"status": "done"}'
+    python -m unblockd.cli update ID --json '{"status": "done"}' [--agent A]'
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text"        # appends a dated paragraph to the body
 
@@ -68,7 +68,7 @@ class Remote:
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
 	def create(self, data, tid=None, prefix=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {})})
-	def update(self, tid, changes): return self._call("PATCH", f"/tickets/{tid}", changes)
+	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def claim(self, agent, tid=None, profile=None, note=""):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note})
@@ -105,6 +105,7 @@ def main(argv: list[str] | None = None) -> int:
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", required=True)
+	up.add_argument("--agent", help="the worker making the change: it can't change status/waiting_on of a ticket another agent holds")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
@@ -176,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "create":
 			out = s.create({**json.loads(a.json), "title": a.title}, tid=a.id, prefix=a.prefix)
 		elif a.cmd == "update":
-			out = s.update(a.id, json.loads(a.json))
+			out = s.update(a.id, json.loads(a.json), agent=a.agent)
 		else:
 			body = s.get(a.id).get("body", "")
 			out = s.update(a.id, {"body": (body + "\n\n" if body else "") + f"{date.today().isoformat()}: {a.text}"})

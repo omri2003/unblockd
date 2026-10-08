@@ -42,7 +42,7 @@ mcp = MCPServer(
 		"KNOWLEDGE: claim_next / claim_ticket return the ticket's `context`: the docs linked on the "
 		"board, the agent profile and the ticket, plus files attached to it, inlined up to a budget. "
 		"Read them before working; they are the instructions you would otherwise be told. Items without "
-		"content: read_doc(path). Link more with update_ticket(docs=[...]) or attach_file."
+		"content: read_doc(path). Link more with update_ticket(id, {docs: [...]}, agent) or attach_file."
 	),
 )
 
@@ -165,11 +165,12 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
 
 
 @tool
-def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
-	"""Change fields of a ticket. changes is an object of field -> new value, e.g.
-	{"status": "done", "body": "..."}. Fields: title, status, priority, owner, pillar,
+def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) -> dict:
+	"""Change fields of a ticket. agent = your worker name: you can't change status or waiting_on of a
+	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
+	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
-	return BOARDS.get(board).update(id, changes)
+	return BOARDS.get(board).update(id, changes, agent=agent)
 
 
 @tool

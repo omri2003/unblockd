@@ -388,15 +388,20 @@ class Store:
 		self._log("created", tid, None, t["title"])
 		return self.get(tid)
 
-	def update(self, tid: str, changes: dict) -> dict:
-		return self._locked(lambda: self._update(tid, changes))
+	def update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
+		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI)."""
+		return self._locked(lambda: self._update(tid, changes, agent))
 
-	def _update(self, tid: str, changes: dict) -> dict:
+	def _update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
 		t = self._read(path)
 		clean = self._clean(changes, partial=True)
+		held = self._live_claims().get(tid) if agent else None
+		if held and held["agent"] != agent and ("status" in clean or "waiting_on" in clean):
+			raise TicketError(f"{tid} is claimed by {held['agent']}, so {agent} can't change its status or waiting_on: "
+			                  "finish your own ticket with complete(id, agent, summary), give it back with release, or ask a human with ask_human")
 		if "blocked_by" in clean:
 			self._check_blockers(clean["blocked_by"], t.get("blocked_by", []))
 			self._check_loop(tid, clean["blocked_by"])

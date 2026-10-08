@@ -188,7 +188,8 @@ class Handler(BaseHTTPRequestHandler):
 				b = self._body()
 				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None)))
 			if method == "PATCH" and tid:
-				return self._send(200, store.update(tid, self._body()))
+				b = self._body()
+				return self._send(200, store.update(tid, b, agent=b.pop("agent", None)))  # agent: a remote worker's name (cli.Remote)
 			if method == "DELETE" and tid:
 				return self._send(200, store.delete(tid))
 			return self._send(405, {"error": "method not allowed"})
