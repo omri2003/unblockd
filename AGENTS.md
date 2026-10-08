@@ -33,6 +33,8 @@ tests/                  stdlib unittest: test_store, test_boards (routing, board
                         test_notify (fake webhook receiver), test_mcp (work_loop prompt + resource; skipped without `mcp`), test_knowledge (context order, dedupe, links, path safety, attachments).
 tests/ui_smoke.mjs      Playwright smoke: example board + CLI claim/split, 1400/390px x light/dark; board, graph, docs,
                         drawer, panels, toast; fails on page/console errors or horizontal overflow (CI job `ui`).
+README.md               60-second pitch + 5-minute walkthrough + glossary (keep under ~1000 words); every command in it must have been run.
+docs/reference.md       Everything long: env vars, boards, profiles, claims, knowledge, chat, config, ticket format, UI, MCP, CLI, REST API.
 docs/screenshots/       README images. Regenerate: copy example/ to a temp root, add tickets + a few claims via the CLI,
                         run the server, capture 1400px (2x) with Playwright (board light, graph dark, drawer, 390px mobile).
 example/tickets/        Demo board + config; what `docker compose up` shows with no .env.
