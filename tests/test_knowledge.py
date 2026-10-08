@@ -64,9 +64,10 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(kn.context(self.s, "CMB-1")["upstream"], [])
 		self.s.claim("godot-dev-1", tid="CMB-2")
 		self.assertEqual(self.s.complete("CMB-2", "godot-dev-1", "ok")["result"]["files"], [])  # all optional
-		with self.assertRaises(TicketError):
-			self.s.update("CMB-3", {"result": {"summary": 5}})
-		self.assertEqual(self.s.update("CMB-3", {"result": {"summary": "by hand"}})["result"]["summary"], "by hand")
+		with self.assertRaisesRegex(TicketError, "only by complete"):  # can't be forged
+			self.s.update("CMB-3", {"result": {"summary": "by hand"}})
+		with self.assertRaisesRegex(TicketError, "only by complete"):
+			self.s.create({"title": "x", "result": {"summary": "forged"}}, tid="CMB-9")
 
 	def test_done_when_leads_the_context_and_is_echoed_by_complete(self):
 		self.assertEqual(kn.context(self.s, "CMB-1")["done_when"], [])

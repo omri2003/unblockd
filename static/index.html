@@ -995,7 +995,7 @@ function editForm(t){
     <label class="full" for="f-docs">Docs <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
     <div class="full lbl"><span class="lt">Blocked by <span class="hint">search by id or title</span></span>${pickHtml('f-blocked',t.blocked_by,{skip:t.id})}</div>
-    <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="200" value="${esc(t.waiting_on)}"></label>
+    <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="1000" value="${esc(t.waiting_on)}"></label>
     <label class="full" for="f-body">Details <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body)}</textarea></label>
     <div class="full formrow"><button class="btn" type="submit">${isNew?'Create ticket':'Save changes'}</button>${isNew?'':'<button class="btn danger" type="button" data-delete>Delete</button>'}<span class="msg" id="fMsg" role="status"></span></div>
   </form>`);

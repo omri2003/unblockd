@@ -45,6 +45,7 @@ DEFAULT_CONFIG = {
 }
 BODY_MAX = 50_000
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
+SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
@@ -62,7 +63,7 @@ FIELDS = {
 	"parent": (None, lambda v: v is None or (isinstance(v, str) and ID_RE.match(v) is not None)),
 	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
 	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
-	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
+	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= QUESTION_MAX),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
@@ -176,6 +177,8 @@ class Store:
 		for k, v in data.items():
 			if k in ("id", "created", "updated"):
 				continue
+			if k == "result":
+				raise TicketError("result is set only by complete(): it can be read, not written")
 			if k == "title" and isinstance(v, str):
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
@@ -596,7 +599,7 @@ class Store:
 						if t.get("status") == "doing":
 							t["status"] = "todo"
 							t["updated"] = date.today().isoformat()
-							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)")
+							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)", strict=False)
 							self._write(t)
 					self._log("expired", tid, c["agent"], f"no heartbeat for {int(lease // 60)} min; back to todo")
 				self._save_claims(cur)
@@ -731,7 +734,7 @@ class Store:
 			if raw.get("status") == "doing":
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			if reason.strip():
-				_append_note(raw, agent, f"released: {reason.strip()}")
+				_append_note(raw, agent, f"released: {reason.strip()}", strict=False)
 			self._write(raw)
 			self._log("release", tid, agent, reason)
 		self._locked(rel)
@@ -747,12 +750,12 @@ class Store:
 			raise TicketError(f"question is {len(q)} chars, the limit is {QUESTION_MAX}: shorten it, or put the background in add_note and ask the decision")
 		def run():
 			self._holder(tid, agent)
+			raw = self._read(self._path(tid))
+			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
+			_append_note(raw, agent, f"question: {q}")  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
-			raw = self._read(self._path(tid))
-			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
-			_append_note(raw, agent, f"question: {q}")
 			self._write(raw)
 			self._log("question", tid, agent, q)
 		self._locked(run)
@@ -771,8 +774,6 @@ class Store:
 				raise NotFound(f"no ticket {tid}")
 			raw = self._read(path)
 			_append_note(raw, by.strip(), text.strip())
-			if len(raw["body"]) > BODY_MAX:
-				raise TicketError(f"{tid}'s body would pass {BODY_MAX} chars: move old notes into an attached file (attach_file) first")
 			raw["updated"] = date.today().isoformat()
 			self._write(raw)
 			self._log("note", tid, by.strip(), text.strip())
@@ -781,6 +782,8 @@ class Store:
 
 	def answer(self, tid: str, by: str, text: str) -> dict:
 		"""A human answers an ask(): appends "Answer to: <question> — <text>" as a note, clears waiting_on (the ticket is ready again), logs `answered`."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("answer needs `by`: who is answering")
 		if not (isinstance(text, str) and text.strip()):
 			raise TicketError("answer needs text: what you decide")
 		def run():
@@ -790,7 +793,7 @@ class Store:
 			raw = self._read(path)
 			if not raw.get("waiting_on"):
 				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
-			_append_note(raw, by, f"Answer to: {raw['waiting_on']} — {text.strip()}")
+			_append_note(raw, by.strip(), f"Answer to: {raw['waiting_on']} — {text.strip()}")
 			raw["waiting_on"], raw["updated"] = "", date.today().isoformat()
 			self._write(raw)
 			self._log("answered", tid, by, text.strip())
@@ -799,6 +802,8 @@ class Store:
 
 	def reject(self, tid: str, by: str, reason: str) -> dict:
 		"""A human sends a ticket in review back: status todo, "Rejected: <reason>" appended as a note, logs `rejected`."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("reject needs `by`: who is rejecting")
 		if not (isinstance(reason, str) and reason.strip()):
 			raise TicketError("reject needs a reason: say what is wrong, the worker reads it before redoing the ticket")
 		def run():
@@ -808,8 +813,9 @@ class Store:
 			raw = self._read(path)
 			if raw.get("status") != "review":
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
-			_append_note(raw, by, f"Rejected: {reason.strip()}")
+			_append_note(raw, by.strip(), f"Rejected: {reason.strip()}")
 			raw["status"], raw["updated"] = "todo", date.today().isoformat()
+			raw.pop("result", None)  # rejected work must not show as upstream
 			self._write(raw)
 			self._log("rejected", tid, by, reason.strip())
 		self._locked(run)
@@ -825,20 +831,21 @@ class Store:
 		for name, v in (("files", files), ("refs", refs)):
 			if v is not None and not _short_list(v):
 				raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {'[\"unblockd/store.py\"]' if name == 'files' else '[\"https://github.com/o/r/pull/7\"]'}")
+		if len(summary.strip()) > SUMMARY_MAX:
+			raise TicketError(f"summary is {len(summary.strip())} chars, the limit is {SUMMARY_MAX}: keep cause -> fix -> tests, move detail into an attached file")
 		if handoff is not None and not (isinstance(handoff, str) and len(handoff) <= 2000):
 			raise TicketError("handoff must be text up to 2000 chars: what the tickets that wait on this one need to know")
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
 			self._holder(tid, agent)
+			raw = self._read(self._path(tid))
+			status = "review" if self.config["review"] else "done"
+			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
+			_append(raw, f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else ""))  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
-			raw = self._read(self._path(tid))
-			body = raw.get("body", "")
-			status = "review" if self.config["review"] else "done"
-			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
-			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else "")
 			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
 			self._write(raw)
 			self._log("complete", tid, agent, summary)
@@ -881,10 +888,22 @@ class Store:
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
 
 
-def _append_note(raw: dict, by: str, text: str) -> None:
-	"""Add `— by, time: text` to raw's body after a blank line (caller holds the lock and writes)."""
-	line = f"— {by}, {_now()}: {text}"
-	raw["body"] = (raw.get("body", "") + "\n\n" if raw.get("body") else "") + line
+def _append(raw: dict, line: str, strict: bool = True) -> bool:
+	"""The one way a note enters a body (caller holds the lock and writes). Over BODY_MAX: strict raises (explicit writes),
+	otherwise the note is skipped and False comes back (automatic ones: expiry, release reason; the activity log keeps the event)."""
+	body = raw.get("body", "")
+	new = (body + "\n\n" if body else "") + line
+	if len(new) > BODY_MAX:
+		if strict:
+			raise TicketError(f"{raw['id']}'s body would pass {BODY_MAX} chars: move old notes into an attached file (attach_file) first")
+		return False
+	raw["body"] = new
+	return True
+
+
+def _append_note(raw: dict, by: str, text: str, strict: bool = True) -> bool:
+	"""Add `— by, time: text` to raw's body after a blank line."""
+	return _append(raw, f"— {by}, {_now()}: {text}", strict)
 
 
 def _now() -> str:
