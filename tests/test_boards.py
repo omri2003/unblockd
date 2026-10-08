@@ -167,8 +167,8 @@ class ApiTest(unittest.TestCase):
 		code, msg = self.cli("heartbeat", got["id"], "--agent", "someone-else")  # server's message, exit 1
 		self.assertEqual(code, 1)
 		self.assertIn("claimed by godot-dev-1", msg)
-		done = self.cli("complete", got["id"], "--agent", "godot-dev-1", "--summary", "did it")[1]
-		self.assertEqual(done["status"], "done")
+		done = self.cli("complete", got["id"], "--agent", "godot-dev-1", "--summary", "did it", "--file", "a.py", "--file", "b.py", "--ref", "PR-1", "--handoff", "h")[1]
+		self.assertEqual((done["status"], done["result"]["files"], done["result"]["refs"], done["result"]["handoff"]), ("done", ["a.py", "b.py"], ["PR-1"], "h"))
 		other = self.cli("claim", "--agent", "godot-dev-1")[1]
 		asked = self.cli("ask", other["id"], "--agent", "godot-dev-1", "--question", "Omri: ok?")[1]
 		self.assertEqual((asked["effective_status"], asked["claim"]), ("pending", None))
@@ -185,6 +185,9 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])[1]["id"], other["id"])
 		self.assertEqual(self.cli("release", other["id"], "--agent", "godot-dev-1", "--reason", "x")[1]["status"], "todo")
 		self.assertEqual(self.cli("get", "CMB-2")[1]["id"], "CMB-2")
+		self.assertIn("— ana, ", self.cli("note", "CMB-2", "hi", "--by", "ana")[1]["body"])
+		self.assertEqual(self.cli("answer", "CMB-2", "x")[0], 1)  # Remote.answer / reject reach the server's refusals
+		self.assertIn("not review", self.cli("reject", "CMB-2", "x")[1])  # Remote.add_note -> POST notes
 		self.assertEqual(self.cli("plan")[1]["agents"][0]["ready"], 1)
 		self.assertEqual(self.cli("agents")[1]["working"], [])
 		kids = self.cli("split", "CMB-2", "--title", "a", "--title", "b")[1]["children"]
@@ -251,6 +254,29 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/split", {"titles": ["a", "b"]})[0], 404)
 		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
 			self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-2/split", {"titles": ["a", "b"]})[0], 401)
+
+	def test_notes_route_defaults_by_to_human(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"text": "looks right"})
+		self.assertEqual(code, 200)
+		self.assertRegex(t["body"], r"^— human, .*: looks right$")
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"by": "ana"})[0], 400)
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/notes", {"text": "x"})[0], 404)
+
+	def test_answer_and_reject_routes(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "x"})[0], 400)  # nothing asked
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/reject", {"reason": "x"})[0], 400)  # not in review
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "godot-dev-1", "question": "which?"})
+		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
+		self.assertEqual((code, t["waiting_on"]), (200, ""))
+		self.assertRegex(t["body"], r"— human, .*Answer to: which\? — this one$")
+		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
+		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/reject", {"by": "ana", "reason": "redo"})
+		self.assertEqual((code, t["status"]), (200, "todo"))
+		self.assertIn("— ana, ", t["body"])
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/answer", {"text": "x"})[0], 404)
 
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})

@@ -3,7 +3,7 @@
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
-release, ask_human, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
+release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ mcp = MCPServer(
 		"per agent profile with that profile's instructions and model, ready to fan out; a single "
 		"agent uses next_ready(agent=its name). Create with a prefix (BUG, UI...) and the next free "
 		"number is picked. blocked_by lists tickets that must be done first; loops are refused. "
-		"Put the reasoning in body, not just the change.\n"
+		"Put the reasoning in body, not just the change; report progress with add_note (append-only, signed), not update_ticket(body=...), which replaces the whole body.\n"
 		"WORKER PROTOCOL (when you are one of several agents): pick a unique agent name like "
 		"godot-dev-1 (profile name + number). Loop: claim_next(agent) -> it sets the ticket to doing "
 		"and returns it, or {ticket: null, reason, counts} when nothing can be taken (see the work loop for what each reason means); work it; call heartbeat(id, agent, "
@@ -50,7 +50,7 @@ mcp = MCPServer(
 WORK_LOOP = """You are a worker on the unblockd board {board}{profile_line}. Loop until step 2 says to stop:
 1. Your worker name is unique: {agent_hint}. Use it as `agent` in every call below.
 2. claim_next(agent=<your name>{claim_args}) -> a ticket plus its `context`, or {{ticket: null, reason, counts}}: reason "conflict" = ready tickets exist but overlap other workers' live claims (touches): wait about a minute and call again, up to 5 times, then stop and report; reason "waiting" (everything open is in flight, in review, waiting on a human or blocked) or "dry" (nothing open): stop and report what you did and the reason and counts.
-3. Read every doc in `context` in order before touching anything (read_doc(path) for items without content; report entries with an `error`). `done_when`, if present, is the bar for done.
+3. If the ticket's body has notes (lines starting with "—"), read the latest ones first: a human's "Answer to: ..." to your earlier question or a "Rejected: ..." after review overrides the original brief. Then read every doc in `context` in order before touching anything (read_doc(path) for items without content; report entries with an `error`). `done_when`, if present, is the bar for done.
 4. Work it. Call heartbeat(id, agent, note) with what you are doing at least every 5 minutes: 15 minutes of silence expires the claim and the ticket goes back to todo.
 5. Needs a decision only a human can make: ask_human(id, agent, question), then go on to the next ticket. Cannot finish for another reason: release(id, agent, reason).
 6. Done: complete(id, agent, summary) with "cause -> fix -> tests; NOT verified: ..." and an answer for each `done_when` item. On boards with review=true it lands in review for a human instead of done.
@@ -154,13 +154,15 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
                   status: str = "todo", priority: str | None = None, owner: str | None = None,
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
-                  waiting_on: str = "", body: str = "") -> dict:
+                  waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
+                  done_when: list[str] | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). Pass prefix (e.g. "BUG") to get
-	the next free number, or an explicit id. tags route it to an agent profile (see board_info)."""
+	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
+	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each)."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
-	        "tags": tags or [], "waiting_on": waiting_on, "body": body}
+	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or []}
 	return store.create(data, tid=id, prefix=prefix)
 
 
@@ -222,16 +224,38 @@ def ask_human(id: str, agent: str, question: str, board: str | None = None) -> d
 
 
 @tool
+def add_note(id: str, agent: str, text: str, board: str | None = None) -> dict:
+	"""Record progress or a finding on a ticket: appends a signed, timestamped line to its body, safely (never replaces the body, so it can't
+	clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not."""
+	return BOARDS.get(board).add_note(id, agent, text)
+
+
+@tool
+def answer(id: str, by: str, text: str, board: str | None = None) -> dict:
+	"""The human side of ask_human: record the answer (note "Answer to: <question> — <text>"), clear waiting_on so the ticket is ready again.
+	Refused unless the ticket is waiting_on a question."""
+	return BOARDS.get(board).answer(id, by, text)
+
+
+@tool
+def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
+	"""The human side of review: send a ticket in review back to todo with the reason as a note. Refused unless its status is review."""
+	return BOARDS.get(board).reject(id, by, reason)
+
+
+@tool
 def release(id: str, agent: str, reason: str = "", board: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). Say why."""
 	return BOARDS.get(board).release(id, agent, reason)
 
 
 @tool
-def complete(id: str, agent: str, summary: str, board: str | None = None) -> dict:
+def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
+             handoff: str | None = None, board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
-	fix -> tests, and what was NOT verified."""
-	return BOARDS.get(board).complete(id, agent, summary)
+	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
+	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`."""
+	return BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff)
 
 
 @tool
