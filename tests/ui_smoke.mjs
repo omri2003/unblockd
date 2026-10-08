@@ -2,7 +2,7 @@
 // Local: NODE_PATH=$(npm root -g) node tests/ui_smoke.mjs   (CI: npm i --no-save playwright)
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, cp } from 'node:fs/promises';
+import { mkdtemp, cp, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -21,6 +21,9 @@ try {
 	const root = await mkdtemp(join(tmpdir(), 'unblockd-ui-'));
 	await cp(join(repo, 'example'), join(root, 'example'), { recursive: true });
 	const cli = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'example/tickets'), ...a], { cwd: repo, stdio: 'pipe' });
+	await cp(join(repo, 'example'), join(root, 'zsecond'), { recursive: true }); // second board: the title becomes a switcher
+	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
+	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board' }));
 	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
 	cli('claim', '--agent', 'backend-1', '--note', 'smoke');
 	cli('split', 'DOC-1', '--title', 'part one', '--title', 'part two');
@@ -66,6 +69,28 @@ try {
 		ok(await page.evaluate((t) => document.documentElement.dataset.theme === t, theme), `[${tag}] theme not applied`);
 		ok(await page.locator('.col.doing .agc').count(), `[${tag}] claimed card chip missing (claim made via CLI)`);
 		await noOverflow('board');
+
+		const title0 = await page.locator('#appTitle').innerText(); // board switcher: the title is the menu
+		ok(!(await page.locator('#bsum').evaluate((e) => e.inert)), `[${tag}] two boards: title should be a button`);
+		await page.click('#bsum');
+		await visible('#bbody .bi', 'board list');
+		ok((await page.locator('#bbody .bi').count()) === 3, `[${tag}] board list: 2 boards + New board`);
+		ok((await page.locator('#bbody [aria-current=true]').innerText()).includes(title0), `[${tag}] current board not marked`);
+		await noOverflow('board list');
+		await page.keyboard.press('Escape');
+		ok(!(await page.locator('#bpanel').evaluate((e) => e.open)), `[${tag}] Escape should close the board list`);
+		if (w > 600) { await page.keyboard.press('Shift+B'); ok(await page.locator('#bpanel').evaluate((e) => e.open), `[${tag}] Shift+B should open the board list`); await page.keyboard.press('Escape'); }
+		await page.click('#bsum');
+		await page.waitForFunction(() => document.activeElement.classList.contains('bi')); // the list focuses the current board
+		await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); // focus starts on the current board, so Down = the other one
+		await page.waitForURL(/board=zsecond/);
+		await page.waitForFunction(() => document.getElementById('appTitle').textContent === 'Second board');
+		await page.click('#bsum'); await page.click('#bbody [data-bd="example"]'); // and back
+		await page.waitForFunction((t) => document.getElementById('appTitle').textContent === t, title0);
+		await page.waitForSelector('.card', { state: 'attached' });
+		await page.evaluate(() => document.getElementById('kbHint').click()); // hidden at <=600px (no keyboard there), so click it directly
+		await visible('#kb', 'shortcuts sheet from the hint');
+		await page.keyboard.press('Escape');
 
 		await page.click('[data-view="graph"]');
 		await visible('#graph', 'graph canvas');
