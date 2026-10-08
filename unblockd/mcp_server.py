@@ -191,7 +191,7 @@ def delete_ticket(id: str, board: str | None = None) -> dict:
 @tool
 def claim_next(agent: str, profile: str | None = None, note: str = "", board: str | None = None) -> dict | None:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
-	name (e.g. godot-dev-1); profile defaults to the profile your name starts with. Skips tickets
+	name (<profile>-N, e.g. godot-dev-1; on a board with agent profiles a name matching none is refused); profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. Returns null when
 	there's nothing left for you."""
 	store = BOARDS.get(board)

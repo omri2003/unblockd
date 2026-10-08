@@ -77,7 +77,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   tag or its pillar. `work_plan` = ready tickets NOT owned by a human, grouped per profile with
   its instructions/model, for an orchestrator to fan out.
 - **Claims**: `claim(agent)` takes the best claimable ticket for the worker's profile (profile =
-  the one its name starts with, e.g. godot-dev-1 -> godot-dev): ready, not human-owned, not
+  the one its name equals or starts with `<name>-`, e.g. godot-dev-1 -> godot-dev: `Store.profile_of`. On a board WITH profiles a name matching none is refused, listing the profiles; an explicit `profile=` is allowed; boards without profiles accept any name): ready, not human-owned, not
   claimed, `touches` not overlapping a live claim. Sets status doing. A file lock
   (`tickets/.unblockd/lock`, re-entrant within one Store) makes it atomic across processes; `create`, `update`, `delete` and `split` take it too (next-id + write, and read-modify-write, would otherwise race).
   `heartbeat` keeps it alive; no heartbeat for `lease_minutes` -> swept back to todo on the next

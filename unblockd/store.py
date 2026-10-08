@@ -294,6 +294,10 @@ class Store:
 				return ag["name"]
 		return None
 
+	def profile_of(self, agent: str) -> str | None:
+		"""The agent profile a worker name belongs to: the profile named exactly like it, or the one it starts with (godot-dev-1 -> godot-dev)."""
+		return next((a["name"] for a in self.config["agents"] if agent == a["name"] or agent.startswith(a["name"] + "-")), None)
+
 	def work_plan(self, per_agent: int = 3) -> dict:
 		"""Ready tickets not owned by a human, grouped by the agent profile that should take them
 		(best first), for an orchestrator to fan out: {"agents": [{profile..., "tickets": [...]}], "unrouted": [...]}."""
@@ -588,7 +592,10 @@ class Store:
 			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. godot-dev-1)")
 		profiles = [a["name"] for a in self.config["agents"]]
 		if profile is None:
-			profile = next((p for p in profiles if agent == p or agent.startswith(p + "-")), None)
+			profile = self.profile_of(agent)
+			if profiles and profile is None:
+				raise TicketError(f"worker {agent!r} matches no agent profile, so its tickets can't be routed: name workers <profile>-N "
+				                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1) or pass profile=")
 		elif profile not in profiles:
 			raise TicketError(f"unknown profile {profile!r}: {', '.join(profiles) or 'none configured'}")
 

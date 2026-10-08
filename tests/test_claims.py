@@ -114,7 +114,7 @@ class ClaimTest(unittest.TestCase):
 	def test_claim_reads_the_tickets_once_not_per_candidate(self):
 		for i in range(10, 40):
 			self.s.create({"title": f"t{i}", "pillar": "COMBAT", "priority": "P0", "touches": ["x/*" if i == 10 else "x/y.gd"]}, tid=f"CMB-{i}")
-		self.s.claim("a1", tid="CMB-10")  # a live claim: every other touches-ticket overlaps it
+		self.s.claim("godot-dev-9", tid="CMB-10")  # a live claim: every other touches-ticket overlaps it
 		calls = []
 		real = Store._read
 		with mock.patch.object(Store, "_read", lambda self, p: (calls.append(p), real(self, p))[1]):
@@ -184,10 +184,21 @@ class ClaimTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "bad agent name"):
 			self.s.claim("Bad Name")
 		with self.assertRaisesRegex(TicketError, "can't be claimed"):
-			self.s.claim("x", tid="ART-1")
-		self.s.claim("a1", tid="CMB-1")
-		with self.assertRaisesRegex(TicketError, "already claimed by a1"):
-			self.s.claim("a2", tid="CMB-1")
+			self.s.claim("godot-dev-1", tid="ART-1")
+		self.s.claim("godot-dev-9", tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "already claimed by godot-dev-9"):
+			self.s.claim("godot-dev-8", tid="CMB-1")
+
+	def test_unknown_worker_name_is_refused_on_a_board_with_profiles(self):
+		with self.assertRaisesRegex(TicketError, "matches no agent profile.*godot-dev, blender.*godot-dev-1"):
+			self.s.claim("claude-1")
+		with self.assertRaisesRegex(TicketError, "matches no agent profile"):
+			self.s.claim("claude-1", tid="CMB-1")
+		self.assertEqual(self.s.claim("claude-1", profile="godot-dev")["id"], "CMB-1")  # an explicit profile is a choice
+		with tempfile.TemporaryDirectory() as d:  # no profiles: any name works
+			s = Store(d)
+			s.create({"title": "x"}, tid="E-1")
+			self.assertEqual(s.claim("whoever")["id"], "E-1")
 
 	def test_parallel_claims_never_collide(self):
 		for i in range(4, 14):
@@ -196,7 +207,7 @@ class ClaimTest(unittest.TestCase):
 
 		def worker(n):
 			s = Store(self.dir)  # its own Store, like a separate process
-			while (t := s.claim(f"w{n}")) is not None:
+			while (t := s.claim(f"godot-dev-{n}")) is not None:
 				with lock:
 					got.append(t["id"])
 		ths = [threading.Thread(target=worker, args=(n,)) for n in range(6)]
@@ -213,7 +224,7 @@ class ClaimTest(unittest.TestCase):
 
 		def claimer():
 			s = Store(self.dir)
-			while (t := s.claim("w1")) is not None:
+			while (t := s.claim("godot-dev-w1")) is not None:
 				got.append(t["id"])
 
 		def editor():
