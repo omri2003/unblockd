@@ -22,7 +22,7 @@ POST   tickets/<id>/heartbeat            {"agent", "note"?}
 POST   tickets/<id>/release              {"agent", "reason"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/notes                {"by"?, "text"}  append a signed line to the body (by defaults to "human") -> the ticket
-POST   tickets/<id>/complete             {"agent", "summary"}
+POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
@@ -174,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.release(tid, agent, str(b.get("reason", ""))))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", ""))))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))

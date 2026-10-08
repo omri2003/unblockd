@@ -167,8 +167,8 @@ class ApiTest(unittest.TestCase):
 		code, msg = self.cli("heartbeat", got["id"], "--agent", "someone-else")  # server's message, exit 1
 		self.assertEqual(code, 1)
 		self.assertIn("claimed by godot-dev-1", msg)
-		done = self.cli("complete", got["id"], "--agent", "godot-dev-1", "--summary", "did it")[1]
-		self.assertEqual(done["status"], "done")
+		done = self.cli("complete", got["id"], "--agent", "godot-dev-1", "--summary", "did it", "--file", "a.py", "--file", "b.py", "--ref", "PR-1", "--handoff", "h")[1]
+		self.assertEqual((done["status"], done["result"]["files"], done["result"]["refs"], done["result"]["handoff"]), ("done", ["a.py", "b.py"], ["PR-1"], "h"))
 		other = self.cli("claim", "--agent", "godot-dev-1")[1]
 		asked = self.cli("ask", other["id"], "--agent", "godot-dev-1", "--question", "Omri: ok?")[1]
 		self.assertEqual((asked["effective_status"], asked["claim"]), ("pending", None))

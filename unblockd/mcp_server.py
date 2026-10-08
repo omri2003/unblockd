@@ -154,13 +154,15 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
                   status: str = "todo", priority: str | None = None, owner: str | None = None,
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
-                  waiting_on: str = "", body: str = "") -> dict:
+                  waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
+                  done_when: list[str] | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). Pass prefix (e.g. "BUG") to get
-	the next free number, or an explicit id. tags route it to an agent profile (see board_info)."""
+	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
+	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each)."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
-	        "tags": tags or [], "waiting_on": waiting_on, "body": body}
+	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or []}
 	return store.create(data, tid=id, prefix=prefix)
 
 
@@ -235,10 +237,12 @@ def release(id: str, agent: str, reason: str = "", board: str | None = None) -> 
 
 
 @tool
-def complete(id: str, agent: str, summary: str, board: str | None = None) -> dict:
+def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
+             handoff: str | None = None, board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
-	fix -> tests, and what was NOT verified."""
-	return BOARDS.get(board).complete(id, agent, summary)
+	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
+	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`."""
+	return BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff)
 
 
 @tool

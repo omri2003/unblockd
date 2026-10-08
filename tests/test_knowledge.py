@@ -46,6 +46,28 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(agents["links"], ["docs/HANDOFF.md", "docs/MECHANICS.md"])  # md link + @import; web link ignored
 		self.assertIn("Start here", agents["content"])
 
+	def test_complete_stores_a_result_and_dependents_get_it_as_upstream(self):
+		self.s.create({"title": "riposte", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-2")
+		self.s.create({"title": "unrelated", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-3")
+		self.assertEqual(kn.context(self.s, "CMB-2")["upstream"], [])  # CMB-1 has no result yet
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		for bad in ({"files": "a.gd"}, {"refs": [""]}, {"files": ["x" * 301]}, {"handoff": "h" * 2001}):
+			with self.assertRaises(TicketError):
+				self.s.complete("CMB-1", "godot-dev-1", "did it", **bad)
+		self.assertEqual(self.s.get("CMB-1")["status"], "doing")  # a refused complete changes nothing
+		r = self.s.complete("CMB-1", "godot-dev-1", "did it", files=["scripts/parry.gd"], refs=["https://x/pull/1"], handoff="use Parry.window()")["result"]
+		self.assertEqual({k: r[k] for k in ("summary", "files", "refs", "handoff", "by")},
+		                 {"summary": "did it", "files": ["scripts/parry.gd"], "refs": ["https://x/pull/1"], "handoff": "use Parry.window()", "by": "godot-dev-1"})
+		self.assertTrue(r["at"])
+		up = kn.context(self.s, "CMB-2")["upstream"]
+		self.assertEqual(up, [{"id": "CMB-1", "title": "parry", "summary": "did it", "files": ["scripts/parry.gd"], "refs": ["https://x/pull/1"], "handoff": "use Parry.window()"}])
+		self.assertEqual(kn.context(self.s, "CMB-1")["upstream"], [])
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		self.assertEqual(self.s.complete("CMB-2", "godot-dev-1", "ok")["result"]["files"], [])  # all optional
+		with self.assertRaises(TicketError):
+			self.s.update("CMB-3", {"result": {"summary": 5}})
+		self.assertEqual(self.s.update("CMB-3", {"result": {"summary": "by hand"}})["result"]["summary"], "by hand")
+
 	def test_done_when_leads_the_context_and_is_echoed_by_complete(self):
 		self.assertEqual(kn.context(self.s, "CMB-1")["done_when"], [])
 		self.s.update("CMB-1", {"done_when": ["parry window is 0.2s", "tests pass"]})

@@ -197,7 +197,15 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			item["content"] = read_file(store, tid, f["name"])
 			left -= len(item["content"])
 		docs.append(item)
-	return {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "inlined_chars": budget - left,
+	up = []
+	for b in t.get("blocked_by", []):  # what the tickets this one waited on produced (complete()'s result)
+		try:
+			u = store.get(b)
+		except TicketError:
+			continue
+		if (r := u.get("result")):
+			up.append({"id": b, "title": u["title"], **{k: r.get(k, [] if k in ("files", "refs") else "") for k in ("summary", "files", "refs", "handoff")}})
+	return {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "inlined_chars": budget - left,
 	        "note": "Read these before working the ticket. Items without content: read_doc(path)."
 	                + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
 

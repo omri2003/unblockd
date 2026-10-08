@@ -70,7 +70,17 @@ FIELDS = {
 	# to the ticket live in tickets/files/<ID>/ and show up as the derived `files`
 	"docs": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 and ".." not in x for x in v)),
 	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
+	# what complete() produced, for reviewers and downstream tickets (context().upstream): {summary, files, refs, handoff, by, at}
+	"result": (None, lambda v: v is None or (isinstance(v, dict) and set(v) <= RESULT_KEYS and isinstance(v.get("summary"), str)
+	                                          and all(_short_list(v.get(k, [])) for k in ("files", "refs")) and isinstance(v.get("handoff", ""), str) and len(v.get("handoff", "")) <= 2000)),
 }
+
+
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at"}
+
+
+def _short_list(v) -> bool:
+	return isinstance(v, list) and len(v) <= 50 and all(isinstance(x, str) and 0 < len(x.strip()) <= 300 for x in v)
 
 
 class TicketError(ValueError):
@@ -764,10 +774,20 @@ class Store:
 		self._locked(run)
 		return self.get(tid)
 
-	def complete(self, tid: str, agent: str, summary: str) -> dict:
-		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed)."""
+	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
+	             refs: list[str] | None = None, handoff: str | None = None) -> dict:
+		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
+		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
+		downstream ticket must know. Tickets that wait on this one get it in their context() as `upstream`."""
 		if not (isinstance(summary, str) and summary.strip()):
 			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
+		for name, v in (("files", files), ("refs", refs)):
+			if v is not None and not _short_list(v):
+				raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {'[\"unblockd/store.py\"]' if name == 'files' else '[\"https://github.com/o/r/pull/7\"]'}")
+		if handoff is not None and not (isinstance(handoff, str) and len(handoff) <= 2000):
+			raise TicketError("handoff must be text up to 2000 chars: what the tickets that wait on this one need to know")
+		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
+		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
 			self._holder(tid, agent)
 			claims = self._claims()
@@ -778,7 +798,7 @@ class Store:
 			status = "review" if self.config["review"] else "done"
 			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
 			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else "")
-			raw["status"], raw["updated"] = status, date.today().isoformat()
+			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
 			self._write(raw)
 			self._log("complete", tid, agent, summary)
 		self._locked(done)
