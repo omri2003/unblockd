@@ -74,7 +74,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
 - **Boards**: `UNBLOCKD_ROOT` (folders of projects) is scanned on every call; a `tickets/` folder
   is a board only if it has `unblockd.json` (opt-in). `TICKETS_DIR` / `UNBLOCKD_BOARDS` add
   explicit folders. First board = default. API: `/api/b/<board>/...`; un-prefixed paths = default.
-  The UI keeps the board in `?board=` and localStorage.
+  The UI keeps the board in `?board=` and localStorage. The board switcher is the page title: `#bpanel` (a `.spanel` `<details>` whose `<summary>` holds the h1 + chevron, in `MENUS`), list built by `loadBoards()` into `#bbody` from `BOARDS` (also what chat `@board` completion and `#board/ID` refs read; there is no `<select>` any more). One board: `#bsum` is `inert` (plain title, no chevron). `Shift+B` opens it, arrows/Enter pick, Esc closes. `b` stays free for a planned add-blocker shortcut (UI-8). Header tooltips carry their key (`New ticket (n)`, `Graph (g)`...) and `#kbHint` opens the `?` sheet: when adding a shortcut, update the sheet AND the tooltip.
 - **Routing**: a ticket's `agent` = explicit `agent:<name>` tag, else the first profile sharing a
   tag or its pillar. `list`/`next_ready` `agent=` takes a profile or a worker name (resolved with `profile_of`, same as claim). `work_plan` = ready tickets NOT owned by a human, grouped per profile with
   its instructions/model, for an orchestrator to fan out.
