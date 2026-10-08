@@ -256,11 +256,13 @@ claude mcp add unblockd --scope user -- docker run -i --rm -v /path/to/projects:
 Build the image once first (`docker compose build`), or use
 `ghcr.io/omri2003/unblockd` in place of `unblockd`.
 
+Workers: the `work_loop` prompt (`board`, `profile`) and the `unblockd://work-loop` resource carry the claim, heartbeat, complete / release / `ask_human` protocol, so any MCP client can run it without the orchestrator skill.
+
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
 start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket`,
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
-`heartbeat`, `release`, `complete`, `agents_now`; for knowledge `get_context`,
+`heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
 `read_doc`, `attach_file`, `detach_file`. Every tool takes `board=`
 (default: the first board).
 

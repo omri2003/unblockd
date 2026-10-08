@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from unblockd.store import Store, TicketError
 
@@ -56,6 +57,60 @@ class ClaimTest(unittest.TestCase):
 		self.s.update("CMB-1", {"status": "pending", "waiting_on": "Omri: pick a parry window"})
 		self.assertIsNone(self.s.get("CMB-1")["claim"])
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "dropped")
+
+	def test_ask_parks_the_ticket_until_a_human_answers(self):
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		with self.assertRaises(TicketError):
+			self.s.ask("CMB-2", "godot-dev-2", "who?")  # not the holder
+		with self.assertRaises(TicketError):
+			self.s.ask("CMB-2", "godot-dev-1", "  ")
+		t = self.s.ask("CMB-2", "godot-dev-1", "Omri: keep the dodge i-frames?")
+		self.assertEqual((t["status"], t["effective_status"], t["claim"], t["waiting_on"]), ("todo", "pending", None, "Omri: keep the dodge i-frames?"))
+		self.assertNotIn("CMB-2", [x["id"] for x in self.s.next_ready(limit=50)])
+		with self.assertRaises(TicketError):
+			self.s.claim("godot-dev-1", tid="CMB-2")
+		ev = self.s.activity("CMB-2")[0]
+		self.assertEqual((ev["event"], ev["agent"]), ("question", "godot-dev-1"))
+		self.s.update("CMB-2", {"waiting_on": ""})  # answered: back in the pool
+		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
+		self.assertEqual(self.s.claim("godot-dev-1", tid="CMB-2")["id"], "CMB-2")
+
+	def test_review_gate_lands_complete_in_review_and_does_not_unblock(self):
+		d = Path(self.tmp.name) / "r" / "tickets"
+		d.mkdir(parents=True)
+		(d / "unblockd.json").write_text(json.dumps({**CFG, "review": True}), encoding="utf-8")
+		s = Store(d)
+		s.create({"title": "a", "pillar": "COMBAT"}, tid="CMB-1")
+		s.create({"title": "b", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-2")
+		s.claim("godot-dev-1", tid="CMB-1")
+		t = s.complete("CMB-1", "godot-dev-1", "did it")
+		self.assertEqual((t["status"], t["claim"]), ("review", None))
+		self.assertIn("(godot-dev-1, review): did it", t["body"])
+		b = s.get("CMB-2")
+		self.assertEqual((b["effective_status"], b["open_blockers"]), ("pending", ["CMB-1"]))  # review is not done
+		self.assertIsNone(s.claim("godot-dev-2"))  # nothing claimable, review is for a human
+		self.assertEqual(s.update("CMB-1", {"status": "done"})["status"], "done")  # the human's decision
+		self.assertEqual(s.get("CMB-2")["effective_status"], "todo")
+		bad = Path(self.tmp.name) / "bad" / "tickets"
+		bad.mkdir(parents=True)
+		(bad / "unblockd.json").write_text(json.dumps({"review": "yes"}), encoding="utf-8")
+		with self.assertRaises(TicketError):
+			Store(bad)
+
+	def test_complete_without_review_is_done(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.assertEqual(self.s.complete("CMB-1", "godot-dev-1", "ok")["status"], "done")
+
+	def test_claim_reads_the_tickets_once_not_per_candidate(self):
+		for i in range(10, 40):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT", "priority": "P0", "touches": ["x/*" if i == 10 else "x/y.gd"]}, tid=f"CMB-{i}")
+		self.s.claim("a1", tid="CMB-10")  # a live claim: every other touches-ticket overlaps it
+		calls = []
+		real = Store._read
+		with mock.patch.object(Store, "_read", lambda self, p: (calls.append(p), real(self, p))[1]):
+			got = self.s.claim("godot-dev-1")
+		self.assertEqual(got["id"], "CMB-1")  # after 29 P0 tickets that overlap x/*
+		self.assertLess(len(calls), 4 * 35)  # per-candidate rescans were ~30 x 35
 
 	def test_split_wires_children_and_drops_the_claim(self):
 		self.s.create({"title": "gate", "pillar": "COMBAT"}, tid="CMB-9")
@@ -140,6 +195,27 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(len(got), len(set(got)))  # nobody got the same ticket twice
 		view = self.s.agents_now()
 		self.assertEqual(len(view["working"]), len(got))
+
+	def test_update_does_not_lose_a_concurrent_claim(self):
+		for i in range(4, 24):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+		got = []
+
+		def claimer():
+			s = Store(self.dir)
+			while (t := s.claim("w1")) is not None:
+				got.append(t["id"])
+
+		def editor():
+			s = Store(self.dir)
+			for _ in range(3):
+				for i in range(1, 24):
+					s.update(f"CMB-{i}", {"body": "edit"})
+		ths = [threading.Thread(target=claimer), threading.Thread(target=editor), threading.Thread(target=editor)]
+		[t.start() for t in ths]
+		[t.join() for t in ths]
+		for tid in got:  # an unlocked update re-writes the old status over the claim
+			self.assertEqual(self.s.get(tid)["status"], "doing", tid)
 
 
 if __name__ == "__main__":

@@ -84,6 +84,15 @@ class NotifyTest(unittest.TestCase):
 		                                          "⚠ game: BUG-2 stuck — w-3 no heartbeat for 10 min; back to todo"])
 		self.assertEqual([e["event"] for e in p["events"]], ["release", "expired"])
 
+	def test_question_line(self):
+		n = self.notifier()
+		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")
+		self.s.create({"title": "a", "owner": "Claude"}, tid="BUG-2")
+		self.s.claim("w-2", tid="BUG-2")
+		self.s.ask("BUG-2", "w-2", "Omri: ship or wait?")
+		n.poll()
+		self.assertEqual(self.msgs(), ["❓ game: BUG-2 a needs a human — w-2 asks: Omri: ship or wait?"])
+
 	def test_batching(self):
 		n = self.notifier()
 		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")
@@ -137,6 +146,33 @@ class NotifyTest(unittest.TestCase):
 		self.s._log("release", "BUG-2", "w", "after")
 		n.poll()
 		self.assertTrue(self.msgs()[-1].endswith("after"))
+
+	def test_rotated_log_is_read_from_the_start(self):
+		n = self.notifier()
+		self.s.create({"title": "other", "owner": "Claude"}, tid="BUG-9")
+		for i in range(3):
+			self.s._log("release", "BUG-2", "w", f"old{i}")
+		n.poll()
+		self.assertEqual(len(self.msgs()), 1)
+		with mock.patch("unblockd.store.ACTIVITY_MAX", 100):
+			self.s._log("release", "BUG-2", "w", "new")  # rotates: activity.jsonl is now just this line
+		self.assertTrue((Path(self.tmp.name) / "game" / "tickets" / ".unblockd" / "activity.1.jsonl").exists())
+		n.poll()
+		self.assertEqual(len(Receiver.got), 2)
+		self.assertTrue(self.msgs()[-1].endswith("new") and "old" not in self.msgs()[-1])
+
+	def test_events_before_rotation_are_not_lost(self):
+		n = self.notifier()
+		self.s.create({"title": "other", "owner": "Claude"}, tid="BUG-9")
+		self.s._log("release", "BUG-2", "w", "seen")
+		n.poll()
+		self.s._log("release", "BUG-2", "w", "unpolled")  # written after the last poll, then the file rotates
+		with mock.patch("unblockd.store.ACTIVITY_MAX", 100):
+			self.s._log("release", "BUG-2", "w", "new")
+		n.poll()
+		self.assertEqual(self.msgs()[-1].splitlines()[-2:], ["⚠ game: BUG-2 stuck — w unpolled", "⚠ game: BUG-2 stuck — w new"])
+		self.assertEqual(len(Receiver.got), 2)
+		self.assertNotIn("seen", self.msgs()[-1])
 
 	def test_receiver_down_does_not_raise(self):
 		n = notify.Notifier(self.boards, "http://127.0.0.1:1/hook")

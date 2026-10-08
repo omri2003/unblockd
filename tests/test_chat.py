@@ -19,7 +19,13 @@ class FakeClaude(BaseHTTPRequestHandler):
 		req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
 		FakeClaude.seen.append({"headers": {k.lower(): v for k, v in self.headers.items()}, "body": req})
 		last = req["messages"][-1]["content"]
-		if isinstance(last, list) and last[0].get("type") == "tool_result":
+		if "propose" in str(req["messages"][0]["content"]):
+			if isinstance(last, list) and last[0].get("type") == "tool_result":
+				out = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Proposed."}]}
+			else:
+				out = {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "toolu_2", "name": "propose_tickets", "input": {
+					"tickets": [{"title": "Do A", "priority": "P1", "evil": "x"}, {"title": "  "}, {"title": "Do B", "parent": "BUG-1"}]}}]}
+		elif isinstance(last, list) and last[0].get("type") == "tool_result":
 			t = json.loads(last[0]["content"])
 			out = {"stop_reason": "end_turn", "content": [{"type": "text", "text": f"#{t['id']} is {t['effective_status']}."}]}
 		else:
@@ -78,6 +84,14 @@ class ChatTest(unittest.TestCase):
 		sent = FakeClaude.seen[0]["body"]["messages"][-1]["content"]
 		self.assertIn('"title": "readme"', sent[0]["text"])  # the other board's ticket, inlined
 		self.assertIn("no ticket NOPE-9", sent[0]["text"])
+
+	def test_propose_tickets_returns_cards_and_writes_nothing(self):
+		before = len(self.b.get("game").list())
+		out = chat.ask(self.b, "game", [{"role": "user", "content": "propose two tickets"}])
+		self.assertEqual(out["reply"], "Proposed.")
+		self.assertEqual(out["proposals"], [{"title": "Do A", "priority": "P1"}, {"title": "Do B", "parent": "BUG-1"}])  # blank title and unknown key dropped
+		self.assertEqual(len(self.b.get("game").list()), before)
+		self.assertIn("Nothing was created", FakeClaude.seen[1]["body"]["messages"][-1]["content"][0]["content"])
 
 	def test_needs_a_key(self):
 		os.environ.pop("ANTHROPIC_API_KEY")

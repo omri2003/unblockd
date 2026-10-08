@@ -1,8 +1,9 @@
 """MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
 
+Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
-release, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
+release, ask_human, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -22,7 +23,7 @@ mcp = MCPServer(
 	instructions=(
 		"unblockd: dependency-aware ticket boards. One ticket = one JSON file; several boards may be "
 		"served (list_boards; every tool takes board=, default = the first). status is "
-		"todo|doing|pending|done; a todo with an open blocker reads as pending (effective_status). "
+		"todo|doing|pending|review|done; a todo with an open blocker reads as pending (effective_status). review (boards with review=true) = finished by an agent, waiting for a human to set done; it does not unblock dependents. "
 		"Priorities P0 (blocking) to P3 (later). Each board's owners, pillars and agent profiles: "
 		"board_info. A ticket's `agent` says which agent profile should work it (from its tags or "
 		"pillar; an `agent:<name>` tag overrides). To work a board: work_plan groups ready tickets "
@@ -36,7 +37,7 @@ mcp = MCPServer(
 		"note) at least every few minutes with what you're doing (a claim with no heartbeat for "
 		"lease_minutes expires and goes back to todo); finish with complete(id, agent, summary: "
 		"cause -> fix -> tests, and what was NOT verified), or release(id, agent, reason) if you "
-		"can't finish, or update_ticket to pending with waiting_on when a human must decide. Never "
+		"can't finish, or ask_human(id, agent, question) when only a human can decide (it releases your claim and parks the ticket until the answer is written back). Never "
 		"work a ticket you didn't claim. agents_now shows who is on what.\n"
 		"KNOWLEDGE: claim_next / claim_ticket return the ticket's `context`: the docs linked on the "
 		"board, the agent profile and the ticket, plus files attached to it, inlined up to a budget. "
@@ -44,6 +45,35 @@ mcp = MCPServer(
 		"content: read_doc(path). Link more with update_ticket(docs=[...]) or attach_file."
 	),
 )
+
+
+WORK_LOOP = """You are a worker on the unblockd board {board}{profile_line}. Loop until step 2 returns null:
+1. Your worker name is unique: {agent_hint}. Use it as `agent` in every call below.
+2. claim_next(agent=<your name>{claim_args}) -> a ticket plus its `context`, or null: then stop and report what you did.
+3. Read every doc in `context` in order before touching anything (read_doc(path) for items without content; report entries with an `error`). `done_when`, if present, is the bar for done.
+4. Work it. Call heartbeat(id, agent, note) with what you are doing at least every 5 minutes: 15 minutes of silence expires the claim and the ticket goes back to todo.
+5. Needs a decision only a human can make: ask_human(id, agent, question), then go on to the next ticket. Cannot finish for another reason: release(id, agent, reason).
+6. Done: complete(id, agent, summary) with "cause -> fix -> tests; NOT verified: ..." and an answer for each `done_when` item. On boards with review=true it lands in review for a human instead of done.
+Rules: never work a ticket you did not claim; never edit outside what the ticket needs; a new problem becomes its own ticket (create_ticket with blocked_by and touches), not a wider change here. agents_now shows who is on what."""
+
+
+def work_loop_text(board: str | None = None, profile: str | None = None) -> str:
+	return WORK_LOOP.format(
+		board=board or "(the default board; list_boards shows the others)", profile_line=f" with the agent profile {profile}" if profile else "",
+		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. godot-dev-1 (board_info lists the profiles)",
+		claim_args=(f", profile={profile}" if profile else "") + (f", board={board}" if board else ""))
+
+
+@mcp.prompt()
+def work_loop(board: str | None = None, profile: str | None = None) -> str:
+	"""The worker protocol: claim -> read context -> heartbeat -> complete / release / ask_human, in a loop."""
+	return work_loop_text(board, profile)
+
+
+@mcp.resource("unblockd://work-loop", mime_type="text/plain")
+def work_loop_resource() -> str:
+	"""The same worker protocol as the work_loop prompt, for clients that read resources."""
+	return work_loop_text()
 
 
 def tool(fn):
@@ -105,11 +135,11 @@ def next_ready(board: str | None = None, owner: str | None = None, pillar: str |
 @tool
 def list_tickets(board: str | None = None, status: str | None = None, pillar: str | None = None,
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
-                 agent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
-	"""List tickets. Filters: status (todo|doing|pending|done, matches effective status), pillar,
-	owner, priority (P0-P3), tag, agent (profile name), q (words to search).
+                 agent: str | None = None, parent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
+	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
+	owner, priority (P0-P3), tag, agent (profile name), parent (id: that ticket's parts), q (words to search).
 	Returns short summaries unless full=true."""
-	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent)
+	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent)
 	return res if full else [_summary(t) for t in res]
 
 
@@ -123,13 +153,13 @@ def get_ticket(id: str, board: str | None = None) -> dict:
 def create_ticket(title: str, board: str | None = None, prefix: str | None = None, id: str | None = None,
                   status: str = "todo", priority: str | None = None, owner: str | None = None,
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
-                  blocked_by: list[str] | None = None, tags: list[str] | None = None,
+                  blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "") -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info)."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
-	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [],
+	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
 	        "tags": tags or [], "waiting_on": waiting_on, "body": body}
 	return store.create(data, tid=id, prefix=prefix)
 
@@ -138,7 +168,7 @@ def create_ticket(title: str, board: str | None = None, prefix: str | None = Non
 def update_ticket(id: str, changes: dict, board: str | None = None) -> dict:
 	"""Change fields of a ticket. changes is an object of field -> new value, e.g.
 	{"status": "done", "body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, tags, touches, docs, waiting_on, body."""
+	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
 	return BOARDS.get(board).update(id, changes)
 
 
@@ -182,6 +212,13 @@ def heartbeat(id: str, agent: str, note: str = "", board: str | None = None) -> 
 
 
 @tool
+def ask_human(id: str, agent: str, question: str, board: str | None = None) -> dict:
+	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
+	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket."""
+	return BOARDS.get(board).ask(id, agent, question)
+
+
+@tool
 def release(id: str, agent: str, reason: str = "", board: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). Say why."""
 	return BOARDS.get(board).release(id, agent, reason)
@@ -189,7 +226,7 @@ def release(id: str, agent: str, reason: str = "", board: str | None = None) -> 
 
 @tool
 def complete(id: str, agent: str, summary: str, board: str | None = None) -> dict:
-	"""Finish your claimed ticket: status done, summary appended to its body. summary = cause ->
+	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified."""
 	return BOARDS.get(board).complete(id, agent, summary)
 

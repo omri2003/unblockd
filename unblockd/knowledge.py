@@ -196,8 +196,9 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			item["content"] = read_file(store, tid, f["name"])
 			left -= len(item["content"])
 		docs.append(item)
-	return {"ticket": tid, "docs": docs, "inlined_chars": budget - left,
-	        "note": "Read these before working the ticket. Items without content: read_doc(path)."}
+	return {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "inlined_chars": budget - left,
+	        "note": "Read these before working the ticket. Items without content: read_doc(path)."
+	                + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
 
 
 HUBS = 5  # how many hub docs graph() lists

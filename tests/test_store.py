@@ -1,10 +1,18 @@
 """python -m unittest  (stdlib only)"""
 import json
+import multiprocessing
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from unblockd.store import NotFound, Store, TicketError
+
+
+def _make(args):
+	d, n = args
+	s = Store(Path(d))
+	return [s.create({"title": "x"}, prefix="R")["id"] for _ in range(n)]
 
 
 class StoreTest(unittest.TestCase):
@@ -16,6 +24,78 @@ class StoreTest(unittest.TestCase):
 
 	def tearDown(self):
 		self.tmp.cleanup()
+
+	def test_parent_groups_tickets_with_progress(self):
+		e = self.s.create({"title": "epic"}, tid="E-1")
+		self.s.create({"title": "a", "parent": "E-1"}, tid="E-2")
+		self.s.create({"title": "b", "parent": "E-1", "status": "done"}, tid="E-3")
+		e = self.s.get("E-1")
+		self.assertEqual((e["children"], e["progress"], e["parent"]), (["E-2", "E-3"], {"done": 1, "total": 2}, None))
+		self.assertEqual([t["id"] for t in self.s.list(parent="E-1")], ["E-2", "E-3"])
+		self.assertEqual(e["effective_status"], "todo")  # a group is not a blocker
+		self.assertEqual(self.s.get("E-2")["children"], [])
+		self.s.update("E-2", {"parent": None})
+		self.assertEqual(self.s.get("E-1")["progress"], {"done": 1, "total": 1})
+
+	def test_split_sets_parent_on_the_parts(self):
+		self.s.create({"title": "big"}, tid="E-1")
+		r = self.s.split("E-1", ["a", "b"])
+		self.assertEqual([k["parent"] for k in r["children"]], ["E-1", "E-1"])
+		self.assertEqual(r["parent"]["progress"], {"done": 0, "total": 2})
+
+	def test_delete_cleans_up_and_reports_who_points_at_it(self):
+		self.s.create({"title": "gone"}, tid="E-1")
+		self.s.create({"title": "waits", "blocked_by": ["E-1"]}, tid="E-2")
+		self.s.create({"title": "part", "parent": "E-1"}, tid="E-3")
+		self.s.create({"title": "other"}, tid="E-4")
+		self.s.claim("w-1", tid="E-1")
+		files = self.s.dir / "files" / "E-1"
+		files.mkdir(parents=True)
+		(files / "spec.md").write_text("x", encoding="utf-8")
+		r = self.s.delete("E-1")
+		self.assertEqual((r["id"], r["referenced_by"]), ("E-1", ["E-2", "E-3"]))
+		self.assertFalse(files.exists())
+		self.assertEqual(self.s.agents_now()["working"], [])  # claim gone with it
+		self.assertEqual([e["event"] for e in self.s.activity("E-1")[:2]], ["deleted", "dropped"])
+		self.assertEqual(self.s.get("E-2")["missing_blockers"], ["E-1"])  # not edited
+		self.assertEqual(self.s.delete("E-4")["referenced_by"], [])
+		with self.assertRaises(NotFound):
+			self.s.delete("E-1")
+
+	def test_activity_rotates_and_reads_across_the_old_file(self):
+		self.s.create({"title": "x"}, tid="E-1")
+		with mock.patch("unblockd.store.ACTIVITY_MAX", 300):
+			for i in range(12):
+				self.s._log("note", "E-1", "a", f"n{i}")
+		rt = self.s.dir / ".unblockd"
+		self.assertTrue((rt / "activity.1.jsonl").exists())
+		self.assertLess((rt / "activity.jsonl").stat().st_size, 600)  # bounded
+		notes = [e["note"] for e in self.s.activity("E-1", limit=100)]
+		self.assertEqual(notes[:3], ["n11", "n10", "n9"])  # newest first, continuing into .1
+		nums = [int(n[1:]) for n in notes if n.startswith("n")]
+		self.assertEqual(nums, sorted(nums, reverse=True))
+		self.assertGreater(len(nums), 3)  # more than the current file holds (cap fits ~3 lines)
+		self.assertEqual(len(self.s.activity(limit=2)), 2)
+		self.assertEqual(len(self.s.activity(since="2999-01-01T00:00:00Z")), 0)
+		self.assertGreater(len(self.s.activity(since="2000-01-01T00:00:00Z", limit=100)), 3)
+
+	def test_parent_refusals(self):
+		self.s.create({"title": "a"}, tid="E-1")
+		self.s.create({"title": "b", "parent": "E-1"}, tid="E-2")
+		self.s.create({"title": "c", "parent": "E-2"}, tid="E-3")
+		for tid, par in (("E-1", "E-1"), ("E-1", "E-3"), ("E-1", "E-2"), ("E-3", "NOPE-9")):
+			with self.assertRaises(TicketError, msg=f"{tid} -> {par}"):
+				self.s.update(tid, {"parent": par})
+		with self.assertRaises(TicketError):
+			self.s.create({"title": "x", "parent": "NOPE-9"}, tid="E-4")
+		self.assertFalse(self.s.dir.joinpath("E-4.json").exists())
+
+	def test_parallel_creates_lose_nothing(self):
+		d = Path(self.tmp.name) / "tickets"
+		with multiprocessing.Pool(6) as pool:
+			ids = sum(pool.map(_make, [(str(d), 10)] * 6), [])
+		self.assertEqual(len(ids), len(set(ids)), "same id handed out twice")
+		self.assertEqual(len(list(d.glob("R-*.json"))), 60)
 
 	def test_crud_and_next_id_continues_legacy_numbering(self):
 		t = self.s.create({"title": "Search ignores accents", "priority": "P1"}, prefix="BUG")

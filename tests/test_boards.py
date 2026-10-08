@@ -1,5 +1,7 @@
 """Agent routing, work plans, several boards, and the multi-board HTTP API."""
+import contextlib
 import http.client
+import io
 import json
 import os
 import tempfile
@@ -10,6 +12,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+from unblockd import cli
 from unblockd.boards import Boards
 from unblockd.store import NotFound, Store, TicketError
 
@@ -125,6 +128,70 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("GET", "/api/meta")[1]["board"], "a")
 		self.assertEqual([x["id"] for x in self.call("GET", "/api/boards")[1]], ["a", "b"])
 		self.assertEqual(self.call("GET", "/api/b/zzz/tickets")[0], 404)
+
+	def test_etag_304_when_the_board_is_unchanged(self):
+		self.call("POST", "/api/tickets", {"prefix": "BUG", "title": "x"})
+
+		def get(etag=None):
+			c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)
+			c.request("GET", "/api/tickets", headers={"If-None-Match": etag} if etag else {})
+			r = c.getresponse()
+			return r.status, r.getheader("ETag"), r.read()
+		code, etag, body = get()
+		self.assertEqual(code, 200)
+		self.assertTrue(etag and body)
+		self.assertEqual(get(etag), (304, etag, b""))
+		self.call("PATCH", "/api/tickets/BUG-1", {"title": "y"})
+		code2, etag2, _ = get(etag)  # stale tag after an update: full 200 with a new tag
+		self.assertEqual(code2, 200)
+		self.assertNotEqual(etag2, etag)
+
+	def cli(self, *args, **env):
+		"""Run the CLI as a remote worker (UNBLOCKD_URL) -> (exit code, parsed stdout)."""
+		out, err = io.StringIO(), io.StringIO()
+		e = {"UNBLOCKD_URL": self.base, "UNBLOCKD_BOARD": "a", **env}
+		with mock.patch.dict(os.environ, e), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+			code = cli.main(list(args))
+		return code, (json.loads(out.getvalue()) if out.getvalue() else err.getvalue().strip())
+
+	def test_remote_cli_round_trip(self):
+		self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", "parry", "--json", '{"pillar": "COMBAT"}')[1]["id"], "CMB-1")
+		self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", "dodge", "--json", '{"pillar": "COMBAT"}')[1]["id"], "CMB-2")
+		self.assertEqual([t["id"] for t in self.cli("list", "--status", "todo")[1]], ["CMB-1", "CMB-2"])
+		code, got = self.cli("claim", "--agent", "godot-dev-1")
+		self.assertEqual((code, got["status"], got["claim"]["agent"], got["context"]["ticket"]), (0, "doing", "godot-dev-1", got["id"]))
+		self.assertEqual(self.cli("heartbeat", got["id"], "--agent", "godot-dev-1", "--note", "working")[1]["claim"]["note"], "working")
+		code, msg = self.cli("heartbeat", got["id"], "--agent", "someone-else")  # server's message, exit 1
+		self.assertEqual(code, 1)
+		self.assertIn("claimed by godot-dev-1", msg)
+		done = self.cli("complete", got["id"], "--agent", "godot-dev-1", "--summary", "did it")[1]
+		self.assertEqual(done["status"], "done")
+		other = self.cli("claim", "--agent", "godot-dev-1")[1]
+		asked = self.cli("ask", other["id"], "--agent", "godot-dev-1", "--question", "Omri: ok?")[1]
+		self.assertEqual((asked["effective_status"], asked["claim"]), ("pending", None))
+		self.assertIsNone(self.cli("claim", "--agent", "godot-dev-1")[1])
+		self.assertEqual(self.cli("update", other["id"], "--json", '{"waiting_on": ""}')[1]["effective_status"], "todo")
+		self.assertEqual(self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])[1]["id"], other["id"])
+		self.assertEqual(self.cli("release", other["id"], "--agent", "godot-dev-1", "--reason", "x")[1]["status"], "todo")
+		self.assertEqual(self.cli("get", "CMB-2")[1]["id"], "CMB-2")
+		self.assertEqual(self.cli("plan")[1]["agents"][0]["ready"], 1)
+		self.assertEqual(self.cli("agents")[1]["working"], [])
+		kids = self.cli("split", "CMB-2", "--title", "a", "--title", "b")[1]["children"]
+		self.assertEqual([k["parent"] for k in kids], ["CMB-2", "CMB-2"])
+		self.assertEqual(len(self.cli("list", "--parent", "CMB-2")[1]), 2)
+		self.assertEqual(len(self.call("GET", "/api/b/a/tickets")[1]), 4)  # it all landed on the server's board
+
+	def test_remote_cli_token_and_errors(self):
+		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
+			self.assertEqual(self.cli("list", UNBLOCKD_TOKEN="s3cret")[0], 0)
+			with self.assertRaisesRegex(TicketError, "unauthorized"):  # (env is shared with the in-process server, so use Remote directly)
+				cli.Remote(self.base, "nope", "a").list()
+		code, msg = self.cli("get", "NOPE-1")
+		self.assertEqual(code, 1)
+		self.assertIn("no ticket NOPE-1", msg)
+		code, msg = self.cli("list", UNBLOCKD_URL="http://127.0.0.1:1")
+		self.assertEqual(code, 1)
+		self.assertIn("can't reach", msg)
 
 	def test_token_auth(self):
 		self.assertEqual(self.call("GET", "/api/tickets")[0], 200)  # unset: open

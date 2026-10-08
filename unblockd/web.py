@@ -5,7 +5,7 @@ POST   /api/boards                       {"id": "my-game", "title": "My game"}  
 GET    /api/chat                         {"enabled": bool, "model": ...}
 POST   /api/chat                         {"board": id, "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 Per board, under /api/b/<board>/ ; the same paths without the prefix use the default (first) board:
-GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
+GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&parent=&q=
 GET    next?owner=&pillar=&agent=&tag=&limit=   ready tickets ranked by priority x tickets unblocked
 GET    plan?per_agent=                   ready tickets grouped by agent profile (work_plan)
 GET    tickets/<id>
@@ -20,6 +20,7 @@ POST   claim                             {"agent", "profile"?, "note"?}  best cl
 POST   tickets/<id>/claim                {"agent", "note"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?}
 POST   tickets/<id>/release              {"agent", "reason"?}
+POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/complete             {"agent", "summary"}
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
@@ -34,6 +35,7 @@ or the `unblockd_token` cookie, which any page visited with `?token=<token>` set
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -65,8 +67,13 @@ class Handler(BaseHTTPRequestHandler):
 
 	def _send(self, code: int, payload, ctype="application/json; charset=utf-8"):
 		data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode()
+		etag = f'"{hashlib.md5(data).hexdigest()}"' if code == 200 and self.command == "GET" else None
+		if etag and etag in [x.strip() for x in (self.headers.get("If-None-Match") or "").split(",")]:
+			code, data = 304, b""  # unchanged: the 4 s poll costs headers, not the whole board
 		self.send_response(code)
 		self.send_header("Content-Type", ctype)
+		if etag:
+			self.send_header("ETag", etag)
 		self.send_header("Content-Length", str(len(data)))
 		self.send_header("Cache-Control", "no-store")
 		self.end_headers()
@@ -155,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
 				if method == "DELETE" and len(rest) == 4:
 					return self._send(200, kn.detach(store, tid, rest[3]))
 				return self._send(405, {"error": "method not allowed"})
-			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("claim", "heartbeat", "release", "complete"):
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("claim", "heartbeat", "release", "ask", "complete"):
 				b, tid, act = self._body(), rest[1], rest[2]
 				agent = str(b.get("agent", ""))
 				if act == "claim":
@@ -164,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.heartbeat(tid, agent, str(b.get("note", ""))))
 				if act == "release":
 					return self._send(200, store.release(tid, agent, str(b.get("reason", ""))))
+				if act == "ask":
+					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
 				return self._send(200, store.complete(tid, agent, str(b.get("summary", ""))))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
@@ -172,7 +181,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None
 			if method == "GET" and tid is None:
-				return self._send(200, store.list(**{k: q.get(k) for k in ("status", "pillar", "owner", "priority", "q", "tag", "agent")}))
+				return self._send(200, store.list(**{k: q.get(k) for k in ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent")}))
 			if method == "GET":
 				return self._send(200, store.get(tid))
 			if method == "POST" and tid is None:

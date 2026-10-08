@@ -10,12 +10,13 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-STATUSES = ("todo", "doing", "pending", "done")
+STATUSES = ("todo", "doing", "pending", "review", "done")
 PRIORITIES = ("P0", "P1", "P2", "P3")
 ID_RE = re.compile(r"^[A-Z0-9]+-\d+[a-z]?$")  # also the filename: blocks path traversal
 PREFIX_RE = re.compile(r"^[A-Z0-9]+$")
@@ -39,8 +40,10 @@ DEFAULT_CONFIG = {
 	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
 	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
+	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 }
+ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
 # Field -> (default, validator). Add a field here and the API + MCP accept it.
@@ -53,6 +56,10 @@ FIELDS = {
 	"pillar_step": (None, lambda v: v is None or (isinstance(v, int) and v > 0)),
 	"section": ("", lambda v: isinstance(v, str) and len(v) <= 80),
 	"blocked_by": ([], lambda v: isinstance(v, list) and all(isinstance(x, str) and ID_RE.match(x) for x in v)),
+	# a group (epic), not a blocker: this ticket is a part of that one. Loop-checked, the parent must exist
+	"parent": (None, lambda v: v is None or (isinstance(v, str) and ID_RE.match(v) is not None)),
+	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
+	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
@@ -87,6 +94,8 @@ def load_config(tickets_dir: Path) -> dict:
 		if unknown:
 			raise TicketError(f"{path}: unknown key(s) {', '.join(sorted(unknown))}. Known: {', '.join(DEFAULT_CONFIG)}")
 		cfg.update(user)
+	if not isinstance(cfg["review"], bool):
+		raise TicketError(f"{CONFIG_FILE}: review must be true or false")
 	if cfg["wip_limit"] is not None and not (type(cfg["wip_limit"]) is int and cfg["wip_limit"] > 0):
 		raise TicketError(f"{CONFIG_FILE}: wip_limit must be a positive number or null")
 	if not cfg["owners"] or not all(isinstance(o, dict) and o.get("name") for o in cfg["owners"]):
@@ -192,9 +201,25 @@ class Store:
 				raise TicketError("blocked_by makes a loop: " + " → ".join(reversed(path)) + " (each would wait on the other forever)")
 			stack += [(b, x) for b in graph.get(x, [])]
 
+	def _check_parent(self, tid: str, parent: str | None) -> None:
+		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor."""
+		if parent is None:
+			return
+		if parent == tid:
+			raise TicketError(f"{tid} can't be its own parent")
+		up = {t["id"]: t.get("parent") for t in self._all_raw()}
+		if parent not in up:
+			raise TicketError(f"parent {parent} doesn't exist: create it first or set parent to null")
+		chain, x = [tid, parent], up[parent]
+		while x and x not in chain:
+			chain.append(x)
+			x = up.get(x)
+		if x == tid:
+			raise TicketError("parent makes a loop: " + " → ".join(chain + [tid]) + " (a ticket can't be part of its own part)")
+
 	# ---------- derived view ----------
 	def _decorate(self, tickets: list[dict]) -> list[dict]:
-		"""Add derived fields. A todo with an open blocker shows as pending (effective_status).
+		"""Add derived fields. A todo with an open blocker or a waiting_on (a question for a human) shows as pending (effective_status).
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
 		live = self._live_claims()
@@ -202,6 +227,10 @@ class Store:
 		attached = {d.name: sorted(f.name for f in d.iterdir() if f.is_file()) for d in fd.iterdir() if d.is_dir()} if fd.is_dir() else {}
 		by_id = {t["id"]: t for t in tickets}
 		blocks: dict[str, list[str]] = {t["id"]: [] for t in tickets}
+		kids: dict[str, list[dict]] = {}
+		for t in tickets:
+			if t.get("parent") in by_id:
+				kids.setdefault(t["parent"], []).append(t)
 		for t in tickets:
 			for b in t.get("blocked_by", []):
 				if b in blocks:
@@ -221,7 +250,7 @@ class Store:
 		out = []
 		for t in tickets:
 			open_b = [b for b in t.get("blocked_by", []) if b in by_id and by_id[b].get("status") != "done"]
-			eff = "pending" if t.get("status") == "todo" and open_b else t.get("status")
+			eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on")) else t.get("status")
 			n = unblocks(t["id"])
 			stale = None
 			if t.get("status") == "doing":
@@ -229,7 +258,10 @@ class Store:
 					stale = max(0, (today - date.fromisoformat(str(t.get("updated"))[:10])).days)
 				except ValueError:
 					stale = None
-			out.append({**t, "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
+			ks = kids.get(t["id"], [])
+			out.append({**t, "parent": t.get("parent"), "children": [k["id"] for k in ks],
+			            "progress": {"done": sum(k.get("status") == "done" for k in ks), "total": len(ks)},
+			            "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
@@ -265,7 +297,7 @@ class Store:
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
-	         agent: str | None = None) -> list[dict]:
+	         agent: str | None = None, parent: str | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos)."""
 		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
 		res = self._decorate(self._all_raw())
@@ -281,6 +313,8 @@ class Store:
 			res = [t for t in res if tag.lower() in t["tags"]]
 		if agent:
 			res = [t for t in res if t["agent"] == agent]
+		if parent:
+			res = [t for t in res if t["parent"] == parent]
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]
@@ -317,6 +351,9 @@ class Store:
 
 	def create(self, data: dict, tid: str | None = None, prefix: str | None = None) -> dict:
 		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number."""
+		return self._locked(lambda: self._create(data, tid, prefix))
+
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None) -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -325,6 +362,7 @@ class Store:
 		if self._path(tid).exists():
 			raise TicketError(f"{tid} already exists")
 		self._check_loop(tid, clean.get("blocked_by", []))
+		self._check_parent(tid, clean.get("parent"))
 		today = date.today().isoformat()
 		t = {"id": tid}
 		for k, (default, _) in FIELDS.items():
@@ -337,6 +375,9 @@ class Store:
 		return self.get(tid)
 
 	def update(self, tid: str, changes: dict) -> dict:
+		return self._locked(lambda: self._update(tid, changes))
+
+	def _update(self, tid: str, changes: dict) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
@@ -344,6 +385,8 @@ class Store:
 		clean = self._clean(changes, partial=True)
 		if "blocked_by" in clean:
 			self._check_loop(tid, clean["blocked_by"])
+		if "parent" in clean:
+			self._check_parent(tid, clean["parent"])
 		if clean.get("status") == "doing" and t.get("status") != "doing":
 			open_b = [b for b in clean.get("blocked_by", t.get("blocked_by", []))
 			          if self._path(b).exists() and self._read(self._path(b)).get("status") != "done"]
@@ -380,7 +423,7 @@ class Store:
 			kids: list[dict] = []
 			for x in titles_:
 				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
-				kids.append(self.create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked}, prefix=prefix))
+				kids.append(self.create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix))
 			ids = [k["id"] for k in kids]
 			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
 			if parent["status"] == "doing":
@@ -391,12 +434,20 @@ class Store:
 		return self._locked(run)
 
 	def delete(self, tid: str) -> dict:
+		"""Remove a ticket, its claim and attachments. Returns it plus `referenced_by`: tickets still pointing at it."""
+		return self._locked(lambda: self._delete(tid))
+
+	def _delete(self, tid: str) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
 		t = self._read(path)
+		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
 		path.unlink()
-		return t
+		self._drop_claim(tid, "ticket deleted")
+		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)  # attachments
+		self._log("deleted", tid, None, t["title"])
+		return {**t, "referenced_by": refs}  # still list it in blocked_by / parent: not edited, now dangling
 
 	# ---------- claims: which agent is working what, right now ----------
 	# Runtime state, not ticket content: kept in <tickets>/.unblockd/ (git-ignored by a .gitignore
@@ -404,7 +455,7 @@ class Store:
 	def _rt(self) -> Path:
 		d = self.dir / ".unblockd"
 		if not d.is_dir():
-			d.mkdir()
+			d.mkdir(exist_ok=True)  # parallel first calls race here
 			(d / ".gitignore").write_text("*\n", encoding="utf-8")
 		return d
 
@@ -452,7 +503,10 @@ class Store:
 
 	def _log(self, event: str, tid: str | None, agent: str | None, note: str = "") -> None:
 		line = {"ts": _now(), "event": event, "ticket": tid, "agent": agent, "note": note[:500]}
-		with open(self._rt() / "activity.jsonl", "a", encoding="utf-8") as f:
+		p = self._rt() / "activity.jsonl"
+		if p.exists() and p.stat().st_size > ACTIVITY_MAX:
+			self._locked(lambda: p.stat().st_size > ACTIVITY_MAX and os.replace(p, p.with_name("activity.1.jsonl")))
+		with open(p, "a", encoding="utf-8") as f:
 			f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
 	def _live_claims(self) -> dict:
@@ -495,13 +549,12 @@ class Store:
 					self._log("dropped", tid, c["agent"], why)
 			self._locked(drop)
 
-	def _claimable(self, t: dict, live: dict) -> bool:
+	def _claimable(self, t: dict, live: dict, by_id: dict) -> bool:
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		if t["effective_status"] != "todo" or t.get("owner") in humans or t["id"] in live:
 			return False
 		mine = t.get("touches", [])
 		if mine:
-			by_id = {x["id"]: x for x in self._all_raw()}
 			for other in live:
 				if any(_overlap(a, b) for a in mine for b in by_id.get(other, {}).get("touches", [])):
 					return False
@@ -521,18 +574,19 @@ class Store:
 
 		def take():
 			live = self._live_claims()
+			by_id = {x["id"]: x for x in self._all_raw()}  # read once: _claimable looks up live claims' touches in it
 			if tid:
 				t = self.get(tid)
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
-				if not self._claimable(t, live):
+				if not self._claimable(t, live, by_id):
 					raise TicketError(f"{tid} can't be claimed: it's {t['effective_status']}"
 					                  + (f", owned by {t['owner']}" if t["effective_status"] == "todo" else "")
 					                  + " (or its touches overlap a live claim)")
 				pick = t
 			else:
 				ready = self.next_ready(limit=10_000, agent=profile)
-				pick = next((t for t in ready if self._claimable(t, live)), None)
+				pick = next((t for t in ready if self._claimable(t, live, by_id)), None)
 				if pick is None:
 					return None
 			claims = self._claims()
@@ -583,8 +637,27 @@ class Store:
 		self._locked(rel)
 		return self.get(tid)
 
+	def ask(self, tid: str, agent: str, question: str) -> dict:
+		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
+		pending (not ready, not claimable) until someone clears it."""
+		q = question.strip() if isinstance(question, str) else ""
+		if not q:
+			raise TicketError("ask needs a question: say what the human must decide")
+		self._clean({"waiting_on": q}, partial=True)  # length check
+		def run():
+			self._holder(tid, agent)
+			claims = self._claims()
+			claims.pop(tid, None)
+			self._save_claims(claims)
+			raw = self._read(self._path(tid))
+			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
+			self._write(raw)
+			self._log("question", tid, agent, q)
+		self._locked(run)
+		return self.get(tid)
+
 	def complete(self, tid: str, agent: str, summary: str) -> dict:
-		"""Finish a claimed ticket: status done, summary appended to the body (dated, signed)."""
+		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed)."""
 		if not (isinstance(summary, str) and summary.strip()):
 			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
 		def done():
@@ -594,8 +667,10 @@ class Store:
 			self._save_claims(claims)
 			raw = self._read(self._path(tid))
 			body = raw.get("body", "")
-			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, done): {summary.strip()}"
-			raw["status"], raw["updated"] = "done", date.today().isoformat()
+			status = "review" if self.config["review"] else "done"
+			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
+			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else "")
+			raw["status"], raw["updated"] = status, date.today().isoformat()
 			self._write(raw)
 			self._log("complete", tid, agent, summary)
 		self._locked(done)
@@ -610,18 +685,22 @@ class Store:
 			except ValueError:
 				raise TicketError(f"since must be an ISO timestamp like 2026-10-08T18:40:00Z, got {since!r}")
 			floor = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()
-		p = self.dir / ".unblockd" / "activity.jsonl"
-		if not p.exists():
-			return []
+		limit = max(0, int(limit))
 		out = []
-		for line in p.read_text(encoding="utf-8").splitlines():
-			try:
-				e = json.loads(line)
-			except json.JSONDecodeError:
-				continue
-			if (tid is None or e.get("ticket") == tid) and (floor is None or _ts(e["ts"]) >= floor):
-				out.append(e)
-		return out[::-1][:max(0, int(limit))]
+		for name in ("activity.jsonl", "activity.1.jsonl"):  # newest first, so stop as soon as the limit or the floor is reached
+			p = self.dir / ".unblockd" / name
+			for line in (reversed(p.read_text(encoding="utf-8").splitlines()) if p.exists() else ()):
+				if len(out) >= limit:
+					return out
+				try:
+					e = json.loads(line)
+				except json.JSONDecodeError:
+					continue
+				if floor is not None and _ts(e["ts"]) < floor:
+					return out
+				if tid is None or e.get("ticket") == tid:
+					out.append(e)
+		return out
 
 	def agents_now(self) -> dict:
 		"""The live view: one row per working agent, plus recent activity."""
