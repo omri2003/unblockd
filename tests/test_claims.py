@@ -152,6 +152,45 @@ class ClaimTest(unittest.TestCase):
 		with self.assertRaises(TicketError):
 			self.s.answer("CMB-2", "Omri", "again")  # already answered
 
+	def test_long_waiting_on_survives_an_edit_and_notes_respect_body_max(self):
+		from unblockd import store as st
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		q = "q" * 1000
+		self.s.ask("CMB-1", "godot-dev-1", q)
+		self.assertEqual(self.s.update("CMB-1", {"title": "parry2", "waiting_on": q})["waiting_on"], q)  # the edit form's save
+		with self.assertRaises(TicketError):
+			self.s.update("CMB-1", {"waiting_on": "q" * 1001})
+		# complete: summary and handoff caps, refused before the claim is touched
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		with self.assertRaisesRegex(TicketError, "limit is 10000"):
+			self.s.complete("CMB-2", "godot-dev-1", "s" * 10001)
+		with self.assertRaisesRegex(TicketError, "2000"):
+			self.s.complete("CMB-2", "godot-dev-1", "ok", handoff="h" * 2001)
+		self.assertEqual(self.s.get("CMB-2")["claim"]["agent"], "godot-dev-1")
+		# a nearly full body: explicit writes are refused (claim kept), automatic ones skip the note
+		raw = self.s._read(self.s._path("CMB-2"))
+		raw["body"] = "b" * (st.BODY_MAX - 20)
+		self.s._write(raw)
+		for call in (lambda: self.s.complete("CMB-2", "godot-dev-1", "done it"),
+		             lambda: self.s.ask("CMB-2", "godot-dev-1", "what now?"),
+		             lambda: self.s.add_note("CMB-2", "Omri", "hello there")):
+			with self.assertRaisesRegex(TicketError, "body would pass"):
+				call()
+		t = self.s.get("CMB-2")
+		self.assertEqual((t["status"], t["claim"]["agent"], t["waiting_on"], t["result"]), ("doing", "godot-dev-1", "", None))
+		self.s.release("CMB-2", "godot-dev-1", "reason that does not fit")
+		t = self.s.get("CMB-2")
+		self.assertEqual((t["status"], len(t["body"])), ("todo", st.BODY_MAX - 20))
+		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "release")
+
+	def test_answer_and_reject_need_by(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.s.ask("CMB-1", "godot-dev-1", "ok?")
+		with self.assertRaisesRegex(TicketError, "needs `by`"):
+			self.s.answer("CMB-1", "", "yes")
+		with self.assertRaisesRegex(TicketError, "needs `by`"):
+			self.s.reject("CMB-1", " ", "no")
+
 	def test_reject_sends_review_back_with_the_reason(self):
 		d = Path(self.tmp.name) / "r" / "tickets"
 		d.mkdir(parents=True)
@@ -168,6 +207,7 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual((t["status"], t["effective_status"]), ("todo", "todo"))
 		self.assertRegex(t["body"], r"— Omri, [^\n]*: Rejected: window is 0.3s, not 0.2s$")
 		self.assertEqual(s.activity("CMB-1")[0]["event"], "rejected")
+		self.assertIsNone(t.get("result"))  # rejected work is not upstream
 		self.assertEqual(s.claim("godot-dev-1", tid="CMB-1")["id"], "CMB-1")  # claimable again
 
 	def test_review_gate_lands_complete_in_review_and_does_not_unblock(self):
