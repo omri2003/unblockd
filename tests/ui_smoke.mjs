@@ -139,6 +139,10 @@ try {
 		ok((await page.locator('#needs li').count()) === 2, `[${tag}] Needs you should list the review and the question`);
 		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
 		await noOverflow('needs strip');
+		await page.click('[data-view="graph"]'); // the strip is a board thing: hidden in Graph, back on return
+		ok(await page.locator('#needs').isHidden(), `[${tag}] Needs you strip should be hidden in graph view`);
+		await page.click('[data-view="board"]');
+		await visible('#needs li', 'Needs you strip back on board');
 		await page.click('#needs li:has(.nb.r) [data-open]'); // review drawer: result + done_when on top, activity open
 		await visible('#drawer .rbox a[href^="https://example.com"]', 'review result with link');
 		ok(await page.locator('#drawer details.kn[open]').count(), `[${tag}] review drawer should open Knowledge and activity`);

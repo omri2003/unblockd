@@ -113,7 +113,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
 .needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .needs h2{font-size:.95rem;margin:0 0 4px} .needs h2 .n{color:var(--plum)}
-.needs ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.needs ul{list-style:none;margin:0;padding:0;display:grid;gap:10px;max-height:19rem;overflow-y:auto}
 .nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
 .nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
@@ -822,7 +822,7 @@ async function submitNeeds(f){ // strip + drawer forms: POST tickets/<id>/<answe
   try{ await jf(`${API}/tickets/${id}/${kind}`,'POST',{[NFORM[kind][0]]:text}); delete DRAFTS[i.dataset.draft]; await load(true); toast(`${NFORM[kind][1]}: ${id}`); }
   catch(er){ toast(er.message,{err:1}); }
 }
-const resultHtml=r=>!r?'':`<div class="rbox"><p>${md(r.summary)}</p>${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
+const resultHtml=r=>!r?'':`<div class="rbox">${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 function renderWorking(){ // agents holding a claim right now; ages tick client-side
   const el=$('working'),ws=T.filter(t=>t.claim&&onBoard(t)).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
   el.hidden=!ws.length||state.view!=='board'; if(el.hidden) return;
@@ -1614,7 +1614,7 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
 
 // ---------- view switch ----------
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
-  chips($('viewSeg'),[['board','Board'],['graph','Graph'],['docs','Docs']],v,'view');renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
+  chips($('viewSeg'),[['board','Board'],['graph','Graph'],['docs','Docs']],v,'view');renderShow();renderNeeds();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
 function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();renderNeeds();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
