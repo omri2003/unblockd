@@ -7,16 +7,19 @@
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
-    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..."
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"]
+    python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
+    python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
     python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli context ID              # docs + attached files to read before working ID
     python -m unblockd.cli doc PATH                # one file from the project repo
     python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
-    python -m unblockd.cli update ID --json '{"status": "done"}'
+    python -m unblockd.cli update ID --json '{"status": "done"}' [--agent A]'
+    python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
-    python -m unblockd.cli note ID "text"        # appends a dated paragraph to the body
+    python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped line to the body (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets. With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
 command goes to that server's REST API instead of a local folder, so agents on other machines share one board and one lock. Settings come from
@@ -32,7 +35,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
 from pathlib import Path
 
 from . import knowledge as kn
@@ -68,14 +70,20 @@ class Remote:
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
 	def create(self, data, tid=None, prefix=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {})})
-	def update(self, tid, changes): return self._call("PATCH", f"/tickets/{tid}", changes)
+	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
+	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
 	def claim(self, agent, tid=None, profile=None, note=""):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note})
+	def claim_next(self, agent, profile=None, note=""): return self.claim(agent, profile=profile, note=note)  # the server answers with the reason when empty
 	def heartbeat(self, tid, agent, note=""): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note})
 	def release(self, tid, agent, reason=""): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
-	def complete(self, tid, agent, summary): return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary})
+	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
+	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
+	def add_note(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text})
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None):
+		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
@@ -105,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", required=True)
+	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
@@ -115,6 +124,10 @@ def main(argv: list[str] | None = None) -> int:
 		x.add_argument("id")
 		x.add_argument("--agent", required=True)
 		x.add_argument(extra, required=name in ("ask", "complete"), default="")
+	cp = sub.choices["complete"]
+	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
+	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
+	cp.add_argument("--handoff", help="what tickets waiting on this one must know")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
 	sub.add_parser("doc").add_argument("path")
@@ -127,9 +140,18 @@ def main(argv: list[str] | None = None) -> int:
 	sp.add_argument("--title", action="append", default=[])
 	sp.add_argument("--sequential", action="store_true")
 	sp.add_argument("--by")
+	de = sub.add_parser("delete")
+	de.add_argument("id")
+	de.add_argument("--agent", help="the worker deleting: it can't delete a ticket another agent holds")
 	no = sub.add_parser("note")
 	no.add_argument("id")
 	no.add_argument("text")
+	no.add_argument("--by", default="human")
+	for name in ("answer", "reject"):
+		x = sub.add_parser(name)
+		x.add_argument("id")
+		x.add_argument("text")
+		x.add_argument("--by", default="human")
 	a = ap.parse_args(argv)
 
 	try:
@@ -150,8 +172,8 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note)
-			out = {**got, "context": ctx(got["id"])} if got else None
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note) if a.id else s.claim_next(a.agent, profile=a.profile, note=a.note)
+			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
 			out = s.heartbeat(a.id, a.agent, a.note)
 		elif a.cmd == "release":
@@ -159,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "ask":
 			out = s.ask(a.id, a.agent, a.question)
 		elif a.cmd == "complete":
-			out = s.complete(a.id, a.agent, a.summary)
+			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff)
 		elif a.cmd == "agents":
 			out = s.agents_now()
 		elif a.cmd == "context":
@@ -171,15 +193,20 @@ def main(argv: list[str] | None = None) -> int:
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
 			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
+		elif a.cmd == "answer":
+			out = s.answer(a.id, a.by, a.text)
+		elif a.cmd == "reject":
+			out = s.reject(a.id, a.by, a.text)
+		elif a.cmd == "delete":
+			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":
 			out = s.create({**json.loads(a.json), "title": a.title}, tid=a.id, prefix=a.prefix)
 		elif a.cmd == "update":
-			out = s.update(a.id, json.loads(a.json))
+			out = s.update(a.id, json.loads(a.json), agent=a.agent)
 		else:
-			body = s.get(a.id).get("body", "")
-			out = s.update(a.id, {"body": (body + "\n\n" if body else "") + f"{date.today().isoformat()}: {a.text}"})
+			out = s.add_note(a.id, a.by, a.text)
 	except (st.TicketError, json.JSONDecodeError) as e:
 		print(f"error: {e}", file=sys.stderr)
 		return 1

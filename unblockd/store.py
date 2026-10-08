@@ -43,6 +43,9 @@ DEFAULT_CONFIG = {
 	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 }
+BODY_MAX = 50_000
+QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
+SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
@@ -60,15 +63,25 @@ FIELDS = {
 	"parent": (None, lambda v: v is None or (isinstance(v, str) and ID_RE.match(v) is not None)),
 	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
 	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
-	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= 200),
-	"body": ("", lambda v: isinstance(v, str) and len(v) <= 50_000),
+	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= QUESTION_MAX),
+	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
 	# repo paths / folders / globs this ticket's worker should read (knowledge.py); files attached
 	# to the ticket live in tickets/files/<ID>/ and show up as the derived `files`
 	"docs": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 and ".." not in x for x in v)),
 	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
+	# what complete() produced, for reviewers and downstream tickets (context().upstream): {summary, files, refs, handoff, by, at}
+	"result": (None, lambda v: v is None or (isinstance(v, dict) and set(v) <= RESULT_KEYS and isinstance(v.get("summary"), str)
+	                                          and all(_short_list(v.get(k, [])) for k in ("files", "refs")) and isinstance(v.get("handoff", ""), str) and len(v.get("handoff", "")) <= 2000)),
 }
+
+
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at"}
+
+
+def _short_list(v) -> bool:
+	return isinstance(v, list) and len(v) <= 50 and all(isinstance(x, str) and 0 < len(x.strip()) <= 300 for x in v)
 
 
 class TicketError(ValueError):
@@ -133,7 +146,10 @@ class Store:
 
 	def _read(self, path: Path) -> dict:
 		with open(path, encoding="utf-8") as f:
-			return json.load(f)
+			t = json.load(f)
+		if t.get("status") == "pending":  # derived only (effective_status); old files stored it, read as todo
+			t["status"] = "todo"
+		return t
 
 	def _write(self, t: dict) -> None:
 		path = self._path(t["id"])
@@ -161,10 +177,15 @@ class Store:
 		for k, v in data.items():
 			if k in ("id", "created", "updated"):
 				continue
+			if k == "result":
+				raise TicketError("result is set only by complete(): it can be read, not written")
 			if k == "title" and isinstance(v, str):
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
 				v = list(dict.fromkeys(x.strip().lower() for x in v if isinstance(x, str) and x.strip()))
+			if k == "status" and v == "pending":
+				raise TicketError("status can't be set to pending: it is derived. A todo with an open blocker (blocked_by) or a waiting_on shows as pending; "
+				                  "agents use ask_human(id, agent, question), humans set waiting_on or blocked_by")
 			if not FIELDS[k][1](v):
 				raise TicketError(f"invalid {k}: {v!r}" + (" (tags: lowercase a-z 0-9 : . _ -, max 40 chars, max 20)" if k == "tags" else ""))
 			if k == "tags" and self.config["agents"]:
@@ -288,6 +309,10 @@ class Store:
 				return ag["name"]
 		return None
 
+	def profile_of(self, agent: str) -> str | None:
+		"""The agent profile a worker name belongs to: the profile named exactly like it, or the one it starts with (godot-dev-1 -> godot-dev)."""
+		return next((a["name"] for a in self.config["agents"] if agent == a["name"] or agent.startswith(a["name"] + "-")), None)
+
 	def work_plan(self, per_agent: int = 3) -> dict:
 		"""Ready tickets not owned by a human, grouped by the agent profile that should take them
 		(best first), for an orchestrator to fan out: {"agents": [{profile..., "tickets": [...]}], "unrouted": [...]}."""
@@ -319,6 +344,7 @@ class Store:
 		if tag:
 			res = [t for t in res if tag.lower() in t["tags"]]
 		if agent:
+			agent = self.profile_of(agent) or agent  # a worker name (godot-dev-1) means its profile, as in claim
 			res = [t for t in res if t["agent"] == agent]
 		if parent:
 			res = [t for t in res if t["parent"] == parent]
@@ -382,15 +408,17 @@ class Store:
 		self._log("created", tid, None, t["title"])
 		return self.get(tid)
 
-	def update(self, tid: str, changes: dict) -> dict:
-		return self._locked(lambda: self._update(tid, changes))
+	def update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
+		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI)."""
+		return self._locked(lambda: self._update(tid, changes, agent))
 
-	def _update(self, tid: str, changes: dict) -> dict:
+	def _update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
 		t = self._read(path)
 		clean = self._clean(changes, partial=True)
+		self._holder_only(tid, agent)
 		if "blocked_by" in clean:
 			self._check_blockers(clean["blocked_by"], t.get("blocked_by", []))
 			self._check_loop(tid, clean["blocked_by"])
@@ -411,6 +439,13 @@ class Store:
 			self._log("done", tid, None)
 		return self.get(tid)
 
+	def _holder_only(self, tid: str, agent: str | None) -> None:
+		"""An agent that is not the live holder of tid may not change, split or delete it. agent None = a human: unchanged."""
+		held = self._live_claims().get(tid) if agent else None
+		if held and held["agent"] != agent:
+			raise TicketError(f"{tid} is claimed by {held['agent']}; only the holder can change it "
+			                  "(use add_note to leave a note / ask the holder / wait for the lease to expire)")
+
 	def split(self, tid: str, titles: list[str], sequential: bool = False, by: str | None = None) -> dict:
 		"""Break a ticket that is too big into parts. One child per title (same prefix; pillar, owner, priority,
 		tags, touches, docs copied; inherits the parent's blocked_by; sequential = each also waits on the one before),
@@ -418,6 +453,7 @@ class Store:
 		Returns {"parent": ..., "children": [...]}."""
 		def run():
 			parent = self.get(tid)
+			self._holder_only(tid, by)
 			if parent["status"] == "done":
 				raise TicketError(f"{tid} is already done: split a ticket that is still open")
 			if not (isinstance(titles, list) and all(isinstance(x, str) for x in titles)):
@@ -442,14 +478,15 @@ class Store:
 			return {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
 		return self._locked(run)
 
-	def delete(self, tid: str) -> dict:
+	def delete(self, tid: str, agent: str | None = None) -> dict:
 		"""Remove a ticket, its claim and attachments. Returns it plus `referenced_by`: tickets still pointing at it."""
-		return self._locked(lambda: self._delete(tid))
+		return self._locked(lambda: self._delete(tid, agent))
 
-	def _delete(self, tid: str) -> dict:
+	def _delete(self, tid: str, agent: str | None = None) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
+		self._holder_only(tid, agent)
 		t = self._read(path)
 		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
 		path.unlink()
@@ -482,8 +519,7 @@ class Store:
 			except FileExistsError:
 				try:
 					if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
-						lock.unlink()
-						continue
+						self._steal(lock)  # then fall through: deadline + sleep, so a stuck guard can't spin us
 				except FileNotFoundError:
 					continue
 				if time.monotonic() > deadline:
@@ -497,12 +533,36 @@ class Store:
 			os.close(fd)
 			lock.unlink(missing_ok=True)
 
+	@staticmethod
+	def _steal(lock: Path) -> None:
+		"""Remove a stale lock. Only the holder of lock.steal may, and it re-checks the age under it: two processes that both
+		read the same stale mtime can't then delete the fresh lock the first one just created."""
+		guard = lock.with_name("lock.steal")
+		try:
+			fd = os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+		except FileExistsError:  # someone else is stealing; the caller retries. A guard left by a crash goes after 30 s too
+			try:
+				if time.time() - guard.stat().st_mtime > 30:
+					guard.unlink()
+			except FileNotFoundError:
+				pass
+			return
+		try:
+			if time.time() - lock.stat().st_mtime > 30:
+				lock.unlink()
+		except FileNotFoundError:
+			pass
+		finally:
+			os.close(fd)
+			guard.unlink(missing_ok=True)
+
 	def _claims(self) -> dict:
 		p = self.dir / ".unblockd" / "claims.json"
 		try:
 			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-		except json.JSONDecodeError:
-			return {}
+		except json.JSONDecodeError as e:
+			raise TicketError(f"{p} is not valid JSON ({e}), so no claim can be read: fix it by hand, or delete {p}: claims are runtime state "
+			                  "and live workers will re-claim (tickets they held stay 'doing' until then)")
 
 	def _save_claims(self, claims: dict) -> None:
 		p = self._rt() / "claims.json"
@@ -539,6 +599,7 @@ class Store:
 						if t.get("status") == "doing":
 							t["status"] = "todo"
 							t["updated"] = date.today().isoformat()
+							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)", strict=False)
 							self._write(t)
 					self._log("expired", tid, c["agent"], f"no heartbeat for {int(lease // 60)} min; back to todo")
 				self._save_claims(cur)
@@ -577,7 +638,10 @@ class Store:
 			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. godot-dev-1)")
 		profiles = [a["name"] for a in self.config["agents"]]
 		if profile is None:
-			profile = next((p for p in profiles if agent == p or agent.startswith(p + "-")), None)
+			profile = self.profile_of(agent)
+			if profiles and profile is None:
+				raise TicketError(f"worker {agent!r} matches no agent profile, so its tickets can't be routed: name workers <profile>-N "
+				                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1) or pass profile=")
 		elif profile not in profiles:
 			raise TicketError(f"unknown profile {profile!r}: {', '.join(profiles) or 'none configured'}")
 
@@ -611,6 +675,34 @@ class Store:
 		got = self._locked(take)
 		return self.get(got) if got else None
 
+	def claim_next(self, agent: str, profile: str | None = None, note: str = "") -> dict:
+		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
+		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}}.
+		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
+		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
+		got = self.claim(agent, profile=profile, note=note)
+		if got:
+			return got
+		if profile is None:
+			profile = self.profile_of(agent)
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		counts = dict.fromkeys(("in_flight", "ready_conflicting", "in_review", "waiting_on_human", "blocked"), 0)
+		for t in self.list():
+			if t["status"] == "done" or (profile and t["agent"] != profile):
+				continue
+			if t["status"] == "doing":
+				counts["in_flight"] += 1
+			elif t["status"] == "review":
+				counts["in_review"] += 1
+			elif t.get("waiting_on") or t.get("owner") in humans:
+				counts["waiting_on_human"] += 1
+			elif t["effective_status"] == "todo":
+				counts["ready_conflicting"] += 1
+			else:
+				counts["blocked"] += 1
+		reason = "conflict" if counts["ready_conflicting"] else "waiting" if any(counts.values()) else "dry"
+		return {"ticket": None, "reason": reason, "counts": counts}
+
 	def _holder(self, tid: str, agent: str) -> None:
 		c = self._live_claims().get(tid)
 		if not c:
@@ -641,7 +733,9 @@ class Store:
 			raw = self._read(self._path(tid))
 			if raw.get("status") == "doing":
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
-				self._write(raw)
+			if reason.strip():
+				_append_note(raw, agent, f"released: {reason.strip()}", strict=False)
+			self._write(raw)
 			self._log("release", tid, agent, reason)
 		self._locked(rel)
 		return self.get(tid)
@@ -652,34 +746,107 @@ class Store:
 		q = question.strip() if isinstance(question, str) else ""
 		if not q:
 			raise TicketError("ask needs a question: say what the human must decide")
-		self._clean({"waiting_on": q}, partial=True)  # length check
+		if len(q) > QUESTION_MAX:
+			raise TicketError(f"question is {len(q)} chars, the limit is {QUESTION_MAX}: shorten it, or put the background in add_note and ask the decision")
 		def run():
 			self._holder(tid, agent)
+			raw = self._read(self._path(tid))
+			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
+			_append_note(raw, agent, f"question: {q}")  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
-			raw = self._read(self._path(tid))
-			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
 			self._write(raw)
 			self._log("question", tid, agent, q)
 		self._locked(run)
 		return self.get(tid)
 
-	def complete(self, tid: str, agent: str, summary: str) -> dict:
-		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed)."""
+	def add_note(self, tid: str, by: str, text: str) -> dict:
+		"""Append a signed, timestamped line to the body, under the lock: it can't clobber a concurrent complete or answer
+		(update(body=...) replaces the whole body; use this to report progress)."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("add_note needs `by`: who is writing (your worker name, or a person's name)")
+		if not (isinstance(text, str) and text.strip()):
+			raise TicketError("add_note needs text: what to record")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			_append_note(raw, by.strip(), text.strip())
+			raw["updated"] = date.today().isoformat()
+			self._write(raw)
+			self._log("note", tid, by.strip(), text.strip())
+		self._locked(run)
+		return self.get(tid)
+
+	def answer(self, tid: str, by: str, text: str) -> dict:
+		"""A human answers an ask(): appends "Answer to: <question> — <text>" as a note, clears waiting_on (the ticket is ready again), logs `answered`."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("answer needs `by`: who is answering")
+		if not (isinstance(text, str) and text.strip()):
+			raise TicketError("answer needs text: what you decide")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			if not raw.get("waiting_on"):
+				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
+			_append_note(raw, by.strip(), f"Answer to: {raw['waiting_on']} — {text.strip()}")
+			raw["waiting_on"], raw["updated"] = "", date.today().isoformat()
+			self._write(raw)
+			self._log("answered", tid, by, text.strip())
+		self._locked(run)
+		return self.get(tid)
+
+	def reject(self, tid: str, by: str, reason: str) -> dict:
+		"""A human sends a ticket in review back: status todo, "Rejected: <reason>" appended as a note, logs `rejected`."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("reject needs `by`: who is rejecting")
+		if not (isinstance(reason, str) and reason.strip()):
+			raise TicketError("reject needs a reason: say what is wrong, the worker reads it before redoing the ticket")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			if raw.get("status") != "review":
+				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
+			_append_note(raw, by.strip(), f"Rejected: {reason.strip()}")
+			raw["status"], raw["updated"] = "todo", date.today().isoformat()
+			raw.pop("result", None)  # rejected work must not show as upstream
+			self._write(raw)
+			self._log("rejected", tid, by, reason.strip())
+		self._locked(run)
+		return self.get(tid)
+
+	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
+	             refs: list[str] | None = None, handoff: str | None = None) -> dict:
+		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
+		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
+		downstream ticket must know. Tickets that wait on this one get it in their context() as `upstream`."""
 		if not (isinstance(summary, str) and summary.strip()):
 			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
+		for name, v in (("files", files), ("refs", refs)):
+			if v is not None and not _short_list(v):
+				raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {'[\"unblockd/store.py\"]' if name == 'files' else '[\"https://github.com/o/r/pull/7\"]'}")
+		if len(summary.strip()) > SUMMARY_MAX:
+			raise TicketError(f"summary is {len(summary.strip())} chars, the limit is {SUMMARY_MAX}: keep cause -> fix -> tests, move detail into an attached file")
+		if handoff is not None and not (isinstance(handoff, str) and len(handoff) <= 2000):
+			raise TicketError("handoff must be text up to 2000 chars: what the tickets that wait on this one need to know")
+		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
+		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
 			self._holder(tid, agent)
+			raw = self._read(self._path(tid))
+			status = "review" if self.config["review"] else "done"
+			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
+			_append(raw, f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else ""))  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
-			raw = self._read(self._path(tid))
-			body = raw.get("body", "")
-			status = "review" if self.config["review"] else "done"
-			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
-			raw["body"] = (body + "\n\n" if body else "") + f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else "")
-			raw["status"], raw["updated"] = status, date.today().isoformat()
+			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
 			self._write(raw)
 			self._log("complete", tid, agent, summary)
 		self._locked(done)
@@ -719,6 +886,24 @@ class Store:
 		            "note": c.get("note", ""), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
 		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
+
+
+def _append(raw: dict, line: str, strict: bool = True) -> bool:
+	"""The one way a note enters a body (caller holds the lock and writes). Over BODY_MAX: strict raises (explicit writes),
+	otherwise the note is skipped and False comes back (automatic ones: expiry, release reason; the activity log keeps the event)."""
+	body = raw.get("body", "")
+	new = (body + "\n\n" if body else "") + line
+	if len(new) > BODY_MAX:
+		if strict:
+			raise TicketError(f"{raw['id']}'s body would pass {BODY_MAX} chars: move old notes into an attached file (attach_file) first")
+		return False
+	raw["body"] = new
+	return True
+
+
+def _append_note(raw: dict, by: str, text: str, strict: bool = True) -> bool:
+	"""Add `— by, time: text` to raw's body after a blank line."""
+	return _append(raw, f"— {by}, {_now()}: {text}", strict)
 
 
 def _now() -> str:
