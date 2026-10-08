@@ -128,8 +128,13 @@ try {
 		await page.keyboard.press('Escape');
 
 		// Needs you: a review ticket + a question ticket -> strip lists both; answer one, approve the other, strip empties
-		cli('create', '--prefix', 'NY', '--title', 'review me', '--json', JSON.stringify({ owner: 'Claude', status: 'review', done_when: ['it works'], result: { summary: 'Did the **thing**', files: ['a.py'], refs: ['https://example.com/pull/1'], handoff: 'nothing', by: 'backend-1', at: new Date().toISOString() } }));
+		const rid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'review me', '--json', '{"owner":"Claude","done_when":["it works"]}')).id;
+		cli('claim', '--agent', 'backend-1', '--id', rid); // result is only written by complete(); the example board has no review gate, so move it to review by hand
+		cli('complete', rid, '--agent', 'backend-1', '--summary', 'Did the **thing**', '--file', 'a.py', '--ref', 'https://example.com/pull/1', '--handoff', 'nothing');
+		cli('update', rid, '--json', '{"status":"review"}');
 		cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","waiting_on":"Which one?"}');
+		// the CLI wrote the files; the page only sees them on its next 4 s poll, so wait for the condition (default 30 s), not a fixed delay
+		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
 		await visible('#needs li', 'Needs you strip');
 		ok((await page.locator('#needs li').count()) === 2, `[${tag}] Needs you should list the review and the question`);
 		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
