@@ -182,6 +182,20 @@ class DerivedTest(unittest.TestCase):
 		self.assertEqual(t["missing_blockers"], ["B-99"])
 		self.assertEqual(t["open_blockers"], [])
 
+	def test_unknown_blocker_refused_but_old_dangling_tolerated(self):
+		self.s.create({"title": "a"}, tid="B-1")
+		with self.assertRaisesRegex(TicketError, "no ticket B-99 on this board"):
+			self.s.create({"title": "x", "blocked_by": ["B-1", "B-99"]}, tid="B-2")
+		self.assertFalse((self.dir / "B-2.json").exists())
+		self.s.create({"title": "x", "blocked_by": ["B-1"]}, tid="B-2")
+		with self.assertRaisesRegex(TicketError, "B-98"):
+			self.s.update("B-2", {"blocked_by": ["B-1", "B-98"]})
+		self.s.delete("B-1")  # B-2's blocker is gone: still editable, id kept
+		self.s.update("B-2", {"blocked_by": ["B-1"], "title": "y"})
+		with self.assertRaisesRegex(TicketError, "B-97"):
+			self.s.update("B-2", {"blocked_by": ["B-1", "B-97"]})
+		self.s.split("B-2", ["p", "q"])  # children inherit the dangling id without being refused
+
 	def test_stale_days_only_for_doing(self):
 		from datetime import date, timedelta
 		old = (date.today() - timedelta(days=9)).isoformat()
