@@ -21,8 +21,8 @@ try {
 	const root = await mkdtemp(join(tmpdir(), 'unblockd-ui-'));
 	await cp(join(repo, 'example'), join(root, 'example'), { recursive: true });
 	const cli = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'example/tickets'), ...a], { cwd: repo, stdio: 'pipe' });
-	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude"}');
-	cli('claim', '--agent', 'smoke-1', '--note', 'smoke');
+	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
+	cli('claim', '--agent', 'backend-1', '--note', 'smoke');
 	cli('split', 'DOC-1', '--title', 'part one', '--title', 'part two');
 
 	// 2. server on a free port
