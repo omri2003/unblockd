@@ -74,7 +74,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   explicit folders. First board = default. API: `/api/b/<board>/...`; un-prefixed paths = default.
   The UI keeps the board in `?board=` and localStorage.
 - **Routing**: a ticket's `agent` = explicit `agent:<name>` tag, else the first profile sharing a
-  tag or its pillar. `work_plan` = ready tickets NOT owned by a human, grouped per profile with
+  tag or its pillar. `list`/`next_ready` `agent=` takes a profile or a worker name (resolved with `profile_of`, same as claim). `work_plan` = ready tickets NOT owned by a human, grouped per profile with
   its instructions/model, for an orchestrator to fan out.
 - **Claims**: `claim(agent)` takes the best claimable ticket for the worker's profile (profile =
   the one its name equals or starts with `<name>-`, e.g. godot-dev-1 -> godot-dev: `Store.profile_of`. On a board WITH profiles a name matching none is refused, listing the profiles; an explicit `profile=` is allowed; boards without profiles accept any name): ready, not human-owned, not

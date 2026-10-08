@@ -127,7 +127,7 @@ def work_plan(board: str | None = None, per_agent: int = 3) -> dict:
 def next_ready(board: str | None = None, owner: str | None = None, pillar: str | None = None,
                agent: str | None = None, tag: str | None = None, limit: int = 5) -> list[dict]:
 	"""What to work on next: ready tickets ranked by priority x how many open tickets they unblock.
-	An agent with a profile passes agent=<its name> to get only its own work."""
+	agent = a profile name or your worker name (godot-dev-1 means profile godot-dev, the same rule claim_next uses): only that profile's work."""
 	return [{**_summary(t), "score": t["score"], "unblocks": t["unblocks"]}
 	        for t in BOARDS.get(board).next_ready(owner=owner, pillar=pillar, agent=agent, tag=tag, limit=limit)]
 
@@ -137,7 +137,7 @@ def list_tickets(board: str | None = None, status: str | None = None, pillar: st
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
                  agent: str | None = None, parent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
 	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
-	owner, priority (P0-P3), tag, agent (profile name), parent (id: that ticket's parts), q (words to search).
+	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts), q (words to search).
 	Returns short summaries unless full=true."""
 	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent)
 	return res if full else [_summary(t) for t in res]

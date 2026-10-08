@@ -45,6 +45,9 @@ class RoutingTest(unittest.TestCase):
 		self.assertEqual([t["agent"] for t in (a, b, c, d)], ["godot-dev", "godot-dev", "artist", None])
 		self.assertEqual([t["id"] for t in self.s.list(agent="artist")], [c["id"]])
 		self.assertEqual([t["id"] for t in self.s.next_ready(tag="gdscript")], [b["id"]])
+		self.assertEqual([t["id"] for t in self.s.next_ready(agent="artist-1")], [c["id"]])  # a worker name means its profile
+		self.assertEqual([t["id"] for t in self.s.list(agent="godot-dev-2")], sorted([a["id"], b["id"]]))
+		self.assertEqual(self.s.list(agent="nobody-1"), [])
 
 	def test_bad_tags_and_unknown_agents_are_refused(self):
 		with self.assertRaisesRegex(TicketError, "unknown agent"):

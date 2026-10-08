@@ -329,6 +329,7 @@ class Store:
 		if tag:
 			res = [t for t in res if tag.lower() in t["tags"]]
 		if agent:
+			agent = self.profile_of(agent) or agent  # a worker name (godot-dev-1) means its profile, as in claim
 			res = [t for t in res if t["agent"] == agent]
 		if parent:
 			res = [t for t in res if t["parent"] == parent]
