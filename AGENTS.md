@@ -219,6 +219,7 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
   grid. (Board links in chat use `.bref`.)
 - `[hidden]{display:none!important}` is required: component classes set `display` and would
   override the attribute.
+- `_locked` steals a lock older than 30 s through `_steal`, which holds `lock.steal` and re-checks the age first. A bare `lock.unlink()` after reading the stale mtime lets two processes both "steal": the second deletes the fresh lock the first just created and both run the critical section. `claims.json` that is not valid JSON raises `TicketError` (it used to read as `{}`, silently dropping every live claim).
 - `pkill -f <pattern>` in a shell whose own command line contains the pattern kills the shell
   (exit 144). Use `pgrep -f "[u]nblockd.web" | xargs -r kill` in a command that doesn't start a
   server too.

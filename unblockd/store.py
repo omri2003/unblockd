@@ -498,7 +498,7 @@ class Store:
 			except FileExistsError:
 				try:
 					if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
-						lock.unlink()
+						self._steal(lock)
 						continue
 				except FileNotFoundError:
 					continue
@@ -513,12 +513,36 @@ class Store:
 			os.close(fd)
 			lock.unlink(missing_ok=True)
 
+	@staticmethod
+	def _steal(lock: Path) -> None:
+		"""Remove a stale lock. Only the holder of lock.steal may, and it re-checks the age under it: two processes that both
+		read the same stale mtime can't then delete the fresh lock the first one just created."""
+		guard = lock.with_name("lock.steal")
+		try:
+			fd = os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+		except FileExistsError:  # someone else is stealing; the caller retries. A guard left by a crash goes after 30 s too
+			try:
+				if time.time() - guard.stat().st_mtime > 30:
+					guard.unlink()
+			except FileNotFoundError:
+				pass
+			return
+		try:
+			if time.time() - lock.stat().st_mtime > 30:
+				lock.unlink()
+		except FileNotFoundError:
+			pass
+		finally:
+			os.close(fd)
+			guard.unlink(missing_ok=True)
+
 	def _claims(self) -> dict:
 		p = self.dir / ".unblockd" / "claims.json"
 		try:
 			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-		except json.JSONDecodeError:
-			return {}
+		except json.JSONDecodeError as e:
+			raise TicketError(f"{p} is not valid JSON ({e}), so no claim can be read: fix it by hand, or delete it to drop ALL live claims "
+			                  "(their tickets stay 'doing': release them from the board or set them back to todo)")
 
 	def _save_claims(self, claims: dict) -> None:
 		p = self._rt() / "claims.json"

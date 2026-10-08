@@ -1,7 +1,10 @@
 """Claims: who is working what, leases, parallel safety, and the live view."""
 import json
+import multiprocessing
+import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,6 +14,15 @@ from unblockd.store import Store, TicketError
 CFG = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
        "pillars": [{"key": "ART"}, {"key": "COMBAT"}],
        "agents": [{"name": "godot-dev", "pillars": ["COMBAT"]}, {"name": "blender", "pillars": ["ART"]}]}
+
+
+def _claim_all(args):
+	d, n = args
+	s = Store(Path(d))
+	got = []
+	while (t := s.claim(f"godot-dev-{n}")) is not None:
+		got.append(t["id"])
+	return got
 
 
 class ClaimTest(unittest.TestCase):
@@ -217,6 +229,42 @@ class ClaimTest(unittest.TestCase):
 			s = Store(d)
 			s.create({"title": "x"}, tid="E-1")
 			self.assertEqual(s.claim("whoever")["id"], "E-1")
+
+	def test_processes_never_claim_the_same_ticket_even_over_a_stale_lock(self):
+		for i in range(4, 34):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+		lock = self.s._rt() / "lock"
+		lock.write_text("")
+		os.utime(lock, (time.time() - 120, time.time() - 120))  # a crashed holder's lock: every process tries to steal it at once
+		with multiprocessing.Pool(4) as pool:
+			lists = pool.map(_claim_all, [(str(self.dir), n) for n in range(1, 5)])
+		got = [x for g in lists for x in g]
+		self.assertEqual(len(got), len(set(got)))  # nobody got a ticket twice
+		self.assertEqual(len(self.s.agents_now()["working"]), len(got))
+		self.assertFalse(lock.exists())
+
+	def test_steal_rechecks_age_so_a_fresh_lock_survives(self):
+		lock = self.s._rt() / "lock"
+		lock.write_text("")
+		Store._steal(lock)  # a process that read an old, stale mtime arrives after another already replaced the lock
+		self.assertTrue(lock.exists())
+		os.utime(lock, (time.time() - 120,) * 2)
+		Store._steal(lock)
+		self.assertFalse(lock.exists())
+		self.assertFalse(lock.with_name("lock.steal").exists())  # the guard is always removed
+		guard = lock.with_name("lock.steal")
+		guard.write_text("")
+		os.utime(guard, (time.time() - 120,) * 2)  # a guard left by a crash is cleared on the next try
+		Store._steal(lock)
+		self.assertFalse(guard.exists())
+
+	def test_corrupt_claims_file_is_an_error_not_an_empty_dict(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		(self.dir / ".unblockd" / "claims.json").write_text("{not json", encoding="utf-8")
+		with self.assertRaisesRegex(TicketError, "claims.json is not valid JSON.*delete it"):
+			self.s.list()
+		with self.assertRaisesRegex(TicketError, "claims.json"):
+			self.s.claim("godot-dev-2")
 
 	def test_parallel_claims_never_collide(self):
 		for i in range(4, 14):
