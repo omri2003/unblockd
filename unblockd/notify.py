@@ -23,6 +23,10 @@ def _line(board: str, e: dict, titles: dict) -> str | None:
 		return f"⚠ {board}: {tid} stuck — {who} {note}".rstrip()
 	if ev == "question":
 		return f"❓ {board}: {tid} {titles.get(tid, '')} needs a human — {who} asks: {note}"
+	if ev == "answered":
+		return f"💬 {board}: {tid} {titles.get(tid, '')} answered by {who} — {note}"
+	if ev == "rejected":
+		return f"↩ {board}: {tid} {titles.get(tid, '')} rejected by {who} — {note}"
 	if ev == "ran_dry":
 		return f"🏁 {board} ran dry: no ready tickets and no agent working"
 	return None

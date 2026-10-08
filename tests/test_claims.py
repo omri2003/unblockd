@@ -131,6 +131,38 @@ class ClaimTest(unittest.TestCase):
 		with mock.patch("time.time", return_value=time.time() + 3600):
 			self.assertIn("claim by godot-dev-1 expired", self.s.get("CMB-3")["body"])
 
+	def test_answer_clears_the_question_and_leaves_a_note(self):
+		with self.assertRaisesRegex(TicketError, "isn't waiting"):
+			self.s.answer("CMB-2", "Omri", "yes")
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		self.s.ask("CMB-2", "godot-dev-1", "keep i-frames?")
+		with self.assertRaises(TicketError):
+			self.s.answer("CMB-2", "Omri", " ")
+		t = self.s.answer("CMB-2", "Omri", "keep them")
+		self.assertEqual((t["waiting_on"], t["effective_status"]), ("", "todo"))
+		self.assertRegex(t["body"], r"— Omri, [^\n]*: Answer to: keep i-frames\? — keep them$")
+		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "answered")
+		with self.assertRaises(TicketError):
+			self.s.answer("CMB-2", "Omri", "again")  # already answered
+
+	def test_reject_sends_review_back_with_the_reason(self):
+		d = Path(self.tmp.name) / "r" / "tickets"
+		d.mkdir(parents=True)
+		(d / "unblockd.json").write_text(json.dumps({**CFG, "review": True}), encoding="utf-8")
+		s = Store(d)
+		s.create({"title": "a", "pillar": "COMBAT"}, tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "not review"):
+			s.reject("CMB-1", "Omri", "no")
+		s.claim("godot-dev-1", tid="CMB-1")
+		s.complete("CMB-1", "godot-dev-1", "did it")
+		with self.assertRaises(TicketError):
+			s.reject("CMB-1", "Omri", "")
+		t = s.reject("CMB-1", "Omri", "window is 0.3s, not 0.2s")
+		self.assertEqual((t["status"], t["effective_status"]), ("todo", "todo"))
+		self.assertRegex(t["body"], r"— Omri, [^\n]*: Rejected: window is 0.3s, not 0.2s$")
+		self.assertEqual(s.activity("CMB-1")[0]["event"], "rejected")
+		self.assertEqual(s.claim("godot-dev-1", tid="CMB-1")["id"], "CMB-1")  # claimable again
+
 	def test_review_gate_lands_complete_in_review_and_does_not_unblock(self):
 		d = Path(self.tmp.name) / "r" / "tickets"
 		d.mkdir(parents=True)

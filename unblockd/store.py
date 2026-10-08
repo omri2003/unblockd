@@ -774,6 +774,42 @@ class Store:
 		self._locked(run)
 		return self.get(tid)
 
+	def answer(self, tid: str, by: str, text: str) -> dict:
+		"""A human answers an ask(): appends "Answer to: <question> — <text>" as a note, clears waiting_on (the ticket is ready again), logs `answered`."""
+		if not (isinstance(text, str) and text.strip()):
+			raise TicketError("answer needs text: what you decide")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			if not raw.get("waiting_on"):
+				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
+			_append_note(raw, by, f"Answer to: {raw['waiting_on']} — {text.strip()}")
+			raw["waiting_on"], raw["updated"] = "", date.today().isoformat()
+			self._write(raw)
+			self._log("answered", tid, by, text.strip())
+		self._locked(run)
+		return self.get(tid)
+
+	def reject(self, tid: str, by: str, reason: str) -> dict:
+		"""A human sends a ticket in review back: status todo, "Rejected: <reason>" appended as a note, logs `rejected`."""
+		if not (isinstance(reason, str) and reason.strip()):
+			raise TicketError("reject needs a reason: say what is wrong, the worker reads it before redoing the ticket")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			if raw.get("status") != "review":
+				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
+			_append_note(raw, by, f"Rejected: {reason.strip()}")
+			raw["status"], raw["updated"] = "todo", date.today().isoformat()
+			self._write(raw)
+			self._log("rejected", tid, by, reason.strip())
+		self._locked(run)
+		return self.get(tid)
+
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
 	             refs: list[str] | None = None, handoff: str | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).

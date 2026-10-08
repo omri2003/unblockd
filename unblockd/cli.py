@@ -8,6 +8,8 @@
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
     python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"]
+    python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
+    python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
     python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli context ID              # docs + attached files to read before working ID
     python -m unblockd.cli doc PATH                # one file from the project repo
@@ -75,6 +77,8 @@ class Remote:
 	def heartbeat(self, tid, agent, note=""): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note})
 	def release(self, tid, agent, reason=""): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
+	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
+	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
 	def add_note(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text})
 	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None):
 		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff})
@@ -138,6 +142,11 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("id")
 	no.add_argument("text")
 	no.add_argument("--by", default="human")
+	for name in ("answer", "reject"):
+		x = sub.add_parser(name)
+		x.add_argument("id")
+		x.add_argument("text")
+		x.add_argument("--by", default="human")
 	a = ap.parse_args(argv)
 
 	try:
@@ -179,6 +188,10 @@ def main(argv: list[str] | None = None) -> int:
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
 			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
+		elif a.cmd == "answer":
+			out = s.answer(a.id, a.by, a.text)
+		elif a.cmd == "reject":
+			out = s.reject(a.id, a.by, a.text)
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":
