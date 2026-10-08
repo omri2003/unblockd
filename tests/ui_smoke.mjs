@@ -98,11 +98,29 @@ try {
 		await visible('#toasts .toast:has-text("2 updated")', 'bulk update toast');
 		await page.click('#toasts .toast button');
 		await visible('#toasts .toast:has-text("Reverted")', 'bulk undo toast');
+		await page.click('#bulkParent .pq'); // Parent picker: lists tickets, no free text
+		await visible('#bulkParent .pl [data-pk]', 'bulk parent picker list');
+		await noOverflow('bulk parent picker');
+		await page.keyboard.press('Escape'); // closes the list only
+		ok(await page.locator('#bulk').isVisible(), `[${tag}] Escape in the picker should only close its list`);
 		await page.keyboard.press('Escape');
 		ok(await page.locator('#bulk').isHidden(), `[${tag}] Escape should clear the selection`);
 		await page.click('.card >> visible=true');
 		await visible('#drawer', 'ticket drawer');
 		await noOverflow('drawer');
+		await page.click('[data-edit]'); // Blocked by picker: search, pick, chip appears, remove it
+		const nChips = await page.locator('#f-blocked .pc').count();
+		await page.fill('#f-blocked .pq', 'smoke');
+		await page.keyboard.press('Enter');
+		ok((await page.locator('#f-blocked .pc').count()) === nChips + 1, `[${tag}] picking a blocker should add a chip`);
+		ok(await page.locator('#f-blocked .pc[data-id="SM-1"]').count(), `[${tag}] picked chip should be SM-1`);
+		await page.fill('#f-blocked .pq', 'zzz-nothing');
+		await visible('#f-blocked .pl .none', 'picker no-match row');
+		await noOverflow('edit form');
+		await page.click('#f-blocked .pc[data-id="SM-1"] [data-pkrm]');
+		ok((await page.locator('#f-blocked .pc').count()) === nChips, `[${tag}] removing the chip should drop it`);
+		await page.keyboard.press('Escape'); // list already closed by the click: back to the ticket
+		await visible('[data-setstatus="done"]', 'drawer back in view mode');
 		await page.click('[data-setstatus="done"]'); // status change through the UI -> toast
 		await visible('#toasts .toast', 'status-change toast');
 		await page.click('#toasts .toast button'); // Undo, so the next run sees the same board
