@@ -167,8 +167,8 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
  "created": "2026-10-03", "updated": "2026-10-03"}
 ```
 
-`status` is `todo` · `doing` · `pending` · `done`; a `todo` with an open
-blocker *shows* as pending on its own. Create with a prefix (`BUG`) and the
+`status` is `todo` · `doing` · `review` · `done`; `pending` is derived: a `todo`
+with an open blocker or a `waiting_on` question *shows* as pending on its own. Create with a prefix (`BUG`) and the
 next free number is picked. A `blocked_by` that would make a loop (A waits on
 B waits on A) is refused with the loop spelled out.
 
@@ -186,6 +186,8 @@ Every ticket comes back with derived fields: `effective_status`,
 - **Show: Only / Paths / Dim** (next to the filters, remembered per view): *Only* shows just the tickets the filters match; *Paths* adds every ticket upstream and downstream of a match (the whole chain, not siblings); *Dim* shows everything and fades the rest. Works with every filter, so "owner Omri, Paths" is every chain that touches one of his tickets. Board default is Only, graph default is Dim.
 - **Regex search**: wrap the search in slashes, `/^CMB-|BUG-10/`, to match ids and titles (case-insensitive). An invalid pattern turns the box red and matches nothing.
 - Drag a card between columns to change its status. Polls every 4 s, so agent edits show up live.
+
+![The board at phone width: one column at a time behind tabs](screenshots/mobile.png)
 
 **Graph** (Board / Graph switch): arrow A -> B means A blocks B. Fill =
 status, ring = pillar, size = how much is waiting on it.
