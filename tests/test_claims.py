@@ -65,9 +65,16 @@ class ClaimTest(unittest.TestCase):
 	def test_update_by_another_agent_cannot_touch_a_claimed_ticket(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		for ch in ({"status": "done"}, {"status": "doing"}, {"waiting_on": ""}):
-			with self.assertRaisesRegex(TicketError, "claimed by godot-dev-1.*complete.*release.*ask_human"):
+			with self.assertRaisesRegex(TicketError, "claimed by godot-dev-1; only the holder"):
 				self.s.update("CMB-1", ch, agent="godot-dev-2")
-		self.assertEqual(self.s.update("CMB-1", {"body": "note"}, agent="godot-dev-2")["body"], "note")  # other fields are fine
+		with self.assertRaisesRegex(TicketError, "only the holder"):  # any field, not just status/waiting_on
+			self.s.update("CMB-1", {"body": "note"}, agent="godot-dev-2")
+		self.assertEqual(self.s.update("CMB-1", {"body": "human note"})["body"], "human note")  # no agent identity = a human
+		for call in (lambda: self.s.split("CMB-1", ["a", "b"], by="godot-dev-2"), lambda: self.s.delete("CMB-1", agent="godot-dev-2")):
+			with self.assertRaisesRegex(TicketError, "only the holder"):
+				call()
+		self.assertEqual(len(self.s.list()), 4)  # nothing split or deleted
+		self.assertIn("hello", self.s.add_note("CMB-1", "godot-dev-2", "hello")["body"])  # notes from anyone, even on a held ticket
 		self.assertEqual(self.s.update("CMB-1", {"priority": "P0"}, agent="godot-dev-1")["priority"], "P0")
 		self.assertEqual(self.s.update("CMB-2", {"status": "doing"}, agent="godot-dev-2")["status"], "doing")  # unclaimed: fine
 		self.assertEqual(self.s.update("CMB-1", {"status": "todo"})["claim"], None)  # no agent = a human: as before
@@ -324,10 +331,23 @@ class ClaimTest(unittest.TestCase):
 		Store._steal(lock)
 		self.assertFalse(guard.exists())
 
+	def test_stuck_steal_guard_times_out_instead_of_spinning(self):
+		lock = self.s._rt() / "lock"
+		for f in (lock, lock.with_name("lock.steal")):
+			f.write_text("")
+		os.utime(lock, (time.time() - 100,) * 2)  # crashed holder's lock, and a fresh guard held by someone alive
+		os.utime(lock.with_name("lock.steal"), None)
+		calls, ticks = [], iter([0, 11, 11, 11])  # deadline set at 0+10, then the clock jumps past it
+		with mock.patch("unblockd.store.time.monotonic", lambda: next(ticks)), \
+		     mock.patch.object(Store, "_steal", side_effect=lambda l: calls.append(1)):
+			with self.assertRaisesRegex(TicketError, "try again"):
+				self.s.update("CMB-1", {"body": "x"})
+		self.assertLess(len(calls), 3)  # one look, then the deadline; no busy loop
+
 	def test_corrupt_claims_file_is_an_error_not_an_empty_dict(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		(self.dir / ".unblockd" / "claims.json").write_text("{not json", encoding="utf-8")
-		with self.assertRaisesRegex(TicketError, "claims.json is not valid JSON.*delete it"):
+		with self.assertRaisesRegex(TicketError, "claims.json is not valid JSON.*delete .*claims.json: claims are runtime state"):
 			self.s.list()
 		with self.assertRaisesRegex(TicketError, "claims.json"):
 			self.s.claim("godot-dev-2")

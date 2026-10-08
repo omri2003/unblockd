@@ -746,7 +746,7 @@ function card(t){
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
   const sel=(f,l,o)=>`<select data-bulk="${f}" aria-label="${esc(l)}"><option value="">${esc(l)}…</option>${o.map(([v,x])=>`<option value="${esc(v)}">${esc(x)}</option>`).join('')}</select>`;
-  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS)}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
+  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
   document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
 }
 async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
