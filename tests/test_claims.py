@@ -1,7 +1,10 @@
 """Claims: who is working what, leases, parallel safety, and the live view."""
 import json
+import multiprocessing
+import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,6 +14,15 @@ from unblockd.store import Store, TicketError
 CFG = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
        "pillars": [{"key": "ART"}, {"key": "COMBAT"}],
        "agents": [{"name": "godot-dev", "pillars": ["COMBAT"]}, {"name": "blender", "pillars": ["ART"]}]}
+
+
+def _claim_all(args):
+	d, n = args
+	s = Store(Path(d))
+	got = []
+	while (t := s.claim(f"godot-dev-{n}")) is not None:
+		got.append(t["id"])
+	return got
 
 
 class ClaimTest(unittest.TestCase):
@@ -50,11 +62,28 @@ class ClaimTest(unittest.TestCase):
 		self.assertIn("(godot-dev-1, done): fixed; tests pass", t["body"])
 		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")], ["complete", "heartbeat", "claim", "created"])
 
+	def test_update_by_another_agent_cannot_touch_a_claimed_ticket(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		for ch in ({"status": "done"}, {"status": "doing"}, {"waiting_on": ""}):
+			with self.assertRaisesRegex(TicketError, "claimed by godot-dev-1; only the holder"):
+				self.s.update("CMB-1", ch, agent="godot-dev-2")
+		with self.assertRaisesRegex(TicketError, "only the holder"):  # any field, not just status/waiting_on
+			self.s.update("CMB-1", {"body": "note"}, agent="godot-dev-2")
+		self.assertEqual(self.s.update("CMB-1", {"body": "human note"})["body"], "human note")  # no agent identity = a human
+		for call in (lambda: self.s.split("CMB-1", ["a", "b"], by="godot-dev-2"), lambda: self.s.delete("CMB-1", agent="godot-dev-2")):
+			with self.assertRaisesRegex(TicketError, "only the holder"):
+				call()
+		self.assertEqual(len(self.s.list()), 4)  # nothing split or deleted
+		self.assertIn("hello", self.s.add_note("CMB-1", "godot-dev-2", "hello")["body"])  # notes from anyone, even on a held ticket
+		self.assertEqual(self.s.update("CMB-1", {"priority": "P0"}, agent="godot-dev-1")["priority"], "P0")
+		self.assertEqual(self.s.update("CMB-2", {"status": "doing"}, agent="godot-dev-2")["status"], "doing")  # unclaimed: fine
+		self.assertEqual(self.s.update("CMB-1", {"status": "todo"})["claim"], None)  # no agent = a human: as before
+
 	def test_release_and_manual_status_change_end_the_claim(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		self.assertEqual(self.s.release("CMB-1", "godot-dev-1", "blocked on a decision")["status"], "todo")
 		self.s.claim("godot-dev-1", tid="CMB-1")
-		self.s.update("CMB-1", {"status": "pending", "waiting_on": "Omri: pick a parry window"})
+		self.s.update("CMB-1", {"status": "todo", "waiting_on": "Omri: pick a parry window"})
 		self.assertIsNone(self.s.get("CMB-1")["claim"])
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "dropped")
 
@@ -74,6 +103,112 @@ class ClaimTest(unittest.TestCase):
 		self.s.update("CMB-2", {"waiting_on": ""})  # answered: back in the pool
 		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
 		self.assertEqual(self.s.claim("godot-dev-1", tid="CMB-2")["id"], "CMB-2")
+
+	def test_add_note_appends_signed_lines_and_survives_a_concurrent_complete(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		t = self.s.add_note("CMB-1", "godot-dev-1", "found the cause")
+		self.assertRegex(t["body"], r"^— godot-dev-1, \d{4}-\d\d-\d\dT[\d:]+\+00:00: found the cause$")
+		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "note")
+		for bad in (("", "x"), ("a", "  ")):
+			with self.assertRaises(TicketError):
+				self.s.add_note("CMB-1", *bad)
+		with self.assertRaises(TicketError):
+			self.s.add_note("NOPE-1", "a", "x")
+		ts = [threading.Thread(target=lambda i=i: Store(self.dir).add_note("CMB-1", "human", f"n{i}")) for i in range(8)]
+		ts.append(threading.Thread(target=lambda: Store(self.dir).complete("CMB-1", "godot-dev-1", "all done")))
+		[x.start() for x in ts]
+		[x.join() for x in ts]
+		body = self.s.get("CMB-1")["body"]
+		self.assertEqual([f"n{i}" in body for i in range(8)], [True] * 8)  # nothing lost, whatever the order
+		self.assertIn("all done", body)
+		self.assertIn("found the cause", body)
+
+	def test_ask_release_and_expiry_leave_notes(self):
+		with self.assertRaisesRegex(TicketError, "limit is 1000"):
+			self.s.claim("godot-dev-1", tid="CMB-1")
+			self.s.ask("CMB-1", "godot-dev-1", "x" * 1001)
+		long_q = "q" * 900
+		self.assertEqual(self.s.ask("CMB-1", "godot-dev-1", long_q)["waiting_on"], long_q)
+		self.assertIn("question: " + long_q, self.s.get("CMB-1")["body"])  # kept after waiting_on is cleared
+		self.s.update("CMB-1", {"waiting_on": ""})
+		self.assertIn("question: ", self.s.get("CMB-1")["body"])
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		self.assertIn("released: too big", self.s.release("CMB-2", "godot-dev-1", "too big")["body"])
+		self.s.claim("godot-dev-1", tid="CMB-3")
+		with mock.patch("time.time", return_value=time.time() + 3600):
+			self.assertIn("claim by godot-dev-1 expired", self.s.get("CMB-3")["body"])
+
+	def test_answer_clears_the_question_and_leaves_a_note(self):
+		with self.assertRaisesRegex(TicketError, "isn't waiting"):
+			self.s.answer("CMB-2", "Omri", "yes")
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		self.s.ask("CMB-2", "godot-dev-1", "keep i-frames?")
+		with self.assertRaises(TicketError):
+			self.s.answer("CMB-2", "Omri", " ")
+		t = self.s.answer("CMB-2", "Omri", "keep them")
+		self.assertEqual((t["waiting_on"], t["effective_status"]), ("", "todo"))
+		self.assertRegex(t["body"], r"— Omri, [^\n]*: Answer to: keep i-frames\? — keep them$")
+		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "answered")
+		with self.assertRaises(TicketError):
+			self.s.answer("CMB-2", "Omri", "again")  # already answered
+
+	def test_long_waiting_on_survives_an_edit_and_notes_respect_body_max(self):
+		from unblockd import store as st
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		q = "q" * 1000
+		self.s.ask("CMB-1", "godot-dev-1", q)
+		self.assertEqual(self.s.update("CMB-1", {"title": "parry2", "waiting_on": q})["waiting_on"], q)  # the edit form's save
+		with self.assertRaises(TicketError):
+			self.s.update("CMB-1", {"waiting_on": "q" * 1001})
+		# complete: summary and handoff caps, refused before the claim is touched
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		with self.assertRaisesRegex(TicketError, "limit is 10000"):
+			self.s.complete("CMB-2", "godot-dev-1", "s" * 10001)
+		with self.assertRaisesRegex(TicketError, "2000"):
+			self.s.complete("CMB-2", "godot-dev-1", "ok", handoff="h" * 2001)
+		self.assertEqual(self.s.get("CMB-2")["claim"]["agent"], "godot-dev-1")
+		# a nearly full body: explicit writes are refused (claim kept), automatic ones skip the note
+		raw = self.s._read(self.s._path("CMB-2"))
+		raw["body"] = "b" * (st.BODY_MAX - 20)
+		self.s._write(raw)
+		for call in (lambda: self.s.complete("CMB-2", "godot-dev-1", "done it"),
+		             lambda: self.s.ask("CMB-2", "godot-dev-1", "what now?"),
+		             lambda: self.s.add_note("CMB-2", "Omri", "hello there")):
+			with self.assertRaisesRegex(TicketError, "body would pass"):
+				call()
+		t = self.s.get("CMB-2")
+		self.assertEqual((t["status"], t["claim"]["agent"], t["waiting_on"], t["result"]), ("doing", "godot-dev-1", "", None))
+		self.s.release("CMB-2", "godot-dev-1", "reason that does not fit")
+		t = self.s.get("CMB-2")
+		self.assertEqual((t["status"], len(t["body"])), ("todo", st.BODY_MAX - 20))
+		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "release")
+
+	def test_answer_and_reject_need_by(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		self.s.ask("CMB-1", "godot-dev-1", "ok?")
+		with self.assertRaisesRegex(TicketError, "needs `by`"):
+			self.s.answer("CMB-1", "", "yes")
+		with self.assertRaisesRegex(TicketError, "needs `by`"):
+			self.s.reject("CMB-1", " ", "no")
+
+	def test_reject_sends_review_back_with_the_reason(self):
+		d = Path(self.tmp.name) / "r" / "tickets"
+		d.mkdir(parents=True)
+		(d / "unblockd.json").write_text(json.dumps({**CFG, "review": True}), encoding="utf-8")
+		s = Store(d)
+		s.create({"title": "a", "pillar": "COMBAT"}, tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "not review"):
+			s.reject("CMB-1", "Omri", "no")
+		s.claim("godot-dev-1", tid="CMB-1")
+		s.complete("CMB-1", "godot-dev-1", "did it")
+		with self.assertRaises(TicketError):
+			s.reject("CMB-1", "Omri", "")
+		t = s.reject("CMB-1", "Omri", "window is 0.3s, not 0.2s")
+		self.assertEqual((t["status"], t["effective_status"]), ("todo", "todo"))
+		self.assertRegex(t["body"], r"— Omri, [^\n]*: Rejected: window is 0.3s, not 0.2s$")
+		self.assertEqual(s.activity("CMB-1")[0]["event"], "rejected")
+		self.assertIsNone(t.get("result"))  # rejected work is not upstream
+		self.assertEqual(s.claim("godot-dev-1", tid="CMB-1")["id"], "CMB-1")  # claimable again
 
 	def test_review_gate_lands_complete_in_review_and_does_not_unblock(self):
 		d = Path(self.tmp.name) / "r" / "tickets"
@@ -104,7 +239,7 @@ class ClaimTest(unittest.TestCase):
 	def test_claim_reads_the_tickets_once_not_per_candidate(self):
 		for i in range(10, 40):
 			self.s.create({"title": f"t{i}", "pillar": "COMBAT", "priority": "P0", "touches": ["x/*" if i == 10 else "x/y.gd"]}, tid=f"CMB-{i}")
-		self.s.claim("a1", tid="CMB-10")  # a live claim: every other touches-ticket overlaps it
+		self.s.claim("godot-dev-9", tid="CMB-10")  # a live claim: every other touches-ticket overlaps it
 		calls = []
 		real = Store._read
 		with mock.patch.object(Store, "_read", lambda self, p: (calls.append(p), real(self, p))[1]):
@@ -174,10 +309,88 @@ class ClaimTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "bad agent name"):
 			self.s.claim("Bad Name")
 		with self.assertRaisesRegex(TicketError, "can't be claimed"):
-			self.s.claim("x", tid="ART-1")
-		self.s.claim("a1", tid="CMB-1")
-		with self.assertRaisesRegex(TicketError, "already claimed by a1"):
-			self.s.claim("a2", tid="CMB-1")
+			self.s.claim("godot-dev-1", tid="ART-1")
+		self.s.claim("godot-dev-9", tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "already claimed by godot-dev-9"):
+			self.s.claim("godot-dev-8", tid="CMB-1")
+
+	def test_claim_next_says_why_it_is_empty(self):
+		why = lambda agent="godot-dev-2": self.s.claim_next(agent)
+		self.assertEqual(self.s.claim_next("godot-dev-1")["id"], "CMB-1")
+		got = why()  # CMB-3 is free; take it so only the overlapping CMB-2 is left
+		self.assertEqual(got["id"], "CMB-3")
+		r = why("godot-dev-3")  # CMB-2 is ready but overlaps CMB-1's touches: retry later
+		self.assertEqual((r["ticket"], r["reason"]), (None, "conflict"))
+		self.assertEqual(r["counts"], {"in_flight": 2, "ready_conflicting": 1, "in_review": 0, "waiting_on_human": 0, "blocked": 0})
+		self.s.release("CMB-1", "godot-dev-1")
+		self.s.update("CMB-2", {"status": "done"})
+		self.s.update("CMB-1", {"waiting_on": "Omri: ok?"})
+		self.assertEqual(why("godot-dev-3")["reason"], "waiting")  # CMB-3 in flight, CMB-1 waits on a human
+		self.s.update("CMB-1", {"status": "done"})
+		self.s.complete("CMB-3", "godot-dev-2", "ok")
+		r = why("godot-dev-3")
+		self.assertEqual((r["reason"], sum(r["counts"].values())), ("dry", 0))  # ART-1 is blender's: not counted for godot-dev
+		self.assertEqual(why("blender-1")["counts"]["waiting_on_human"], 1)
+
+	def test_unknown_worker_name_is_refused_on_a_board_with_profiles(self):
+		with self.assertRaisesRegex(TicketError, "matches no agent profile.*godot-dev, blender.*godot-dev-1"):
+			self.s.claim("claude-1")
+		with self.assertRaisesRegex(TicketError, "matches no agent profile"):
+			self.s.claim("claude-1", tid="CMB-1")
+		self.assertEqual(self.s.claim("claude-1", profile="godot-dev")["id"], "CMB-1")  # an explicit profile is a choice
+		with tempfile.TemporaryDirectory() as d:  # no profiles: any name works
+			s = Store(d)
+			s.create({"title": "x"}, tid="E-1")
+			self.assertEqual(s.claim("whoever")["id"], "E-1")
+
+	def test_processes_never_claim_the_same_ticket_even_over_a_stale_lock(self):
+		for i in range(4, 34):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+		lock = self.s._rt() / "lock"
+		lock.write_text("")
+		os.utime(lock, (time.time() - 120, time.time() - 120))  # a crashed holder's lock: every process tries to steal it at once
+		with multiprocessing.Pool(4) as pool:
+			lists = pool.map(_claim_all, [(str(self.dir), n) for n in range(1, 5)])
+		got = [x for g in lists for x in g]
+		self.assertEqual(len(got), len(set(got)))  # nobody got a ticket twice
+		self.assertEqual(len(self.s.agents_now()["working"]), len(got))
+		self.assertFalse(lock.exists())
+
+	def test_steal_rechecks_age_so_a_fresh_lock_survives(self):
+		lock = self.s._rt() / "lock"
+		lock.write_text("")
+		Store._steal(lock)  # a process that read an old, stale mtime arrives after another already replaced the lock
+		self.assertTrue(lock.exists())
+		os.utime(lock, (time.time() - 120,) * 2)
+		Store._steal(lock)
+		self.assertFalse(lock.exists())
+		self.assertFalse(lock.with_name("lock.steal").exists())  # the guard is always removed
+		guard = lock.with_name("lock.steal")
+		guard.write_text("")
+		os.utime(guard, (time.time() - 120,) * 2)  # a guard left by a crash is cleared on the next try
+		Store._steal(lock)
+		self.assertFalse(guard.exists())
+
+	def test_stuck_steal_guard_times_out_instead_of_spinning(self):
+		lock = self.s._rt() / "lock"
+		for f in (lock, lock.with_name("lock.steal")):
+			f.write_text("")
+		os.utime(lock, (time.time() - 100,) * 2)  # crashed holder's lock, and a fresh guard held by someone alive
+		os.utime(lock.with_name("lock.steal"), None)
+		calls, ticks = [], iter([0, 11, 11, 11])  # deadline set at 0+10, then the clock jumps past it
+		with mock.patch("unblockd.store.time.monotonic", lambda: next(ticks)), \
+		     mock.patch.object(Store, "_steal", side_effect=lambda l: calls.append(1)):
+			with self.assertRaisesRegex(TicketError, "try again"):
+				self.s.update("CMB-1", {"body": "x"})
+		self.assertLess(len(calls), 3)  # one look, then the deadline; no busy loop
+
+	def test_corrupt_claims_file_is_an_error_not_an_empty_dict(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		(self.dir / ".unblockd" / "claims.json").write_text("{not json", encoding="utf-8")
+		with self.assertRaisesRegex(TicketError, "claims.json is not valid JSON.*delete .*claims.json: claims are runtime state"):
+			self.s.list()
+		with self.assertRaisesRegex(TicketError, "claims.json"):
+			self.s.claim("godot-dev-2")
 
 	def test_parallel_claims_never_collide(self):
 		for i in range(4, 14):
@@ -186,7 +399,7 @@ class ClaimTest(unittest.TestCase):
 
 		def worker(n):
 			s = Store(self.dir)  # its own Store, like a separate process
-			while (t := s.claim(f"w{n}")) is not None:
+			while (t := s.claim(f"godot-dev-{n}")) is not None:
 				with lock:
 					got.append(t["id"])
 		ths = [threading.Thread(target=worker, args=(n,)) for n in range(6)]
@@ -203,7 +416,7 @@ class ClaimTest(unittest.TestCase):
 
 		def claimer():
 			s = Store(self.dir)
-			while (t := s.claim("w1")) is not None:
+			while (t := s.claim("godot-dev-w1")) is not None:
 				got.append(t["id"])
 
 		def editor():

@@ -21,7 +21,10 @@ POST   tickets/<id>/claim                {"agent", "note"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?}
 POST   tickets/<id>/release              {"agent", "reason"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
-POST   tickets/<id>/complete             {"agent", "summary"}
+POST   tickets/<id>/notes                {"by"?, "text"}  append a signed line to the body (by defaults to "human") -> the ticket
+POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
+POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
+POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
@@ -145,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50), q.get("since")))
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
-				return self._send(200, store.claim(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
+				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["doc"]:
@@ -173,7 +176,14 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.release(tid, agent, str(b.get("reason", ""))))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", ""))))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff")))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
+				b = self._body()
+				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject"):
+				b = self._body()
+				by = str(b.get("by") or "human")
+				return self._send(200, store.answer(rest[1], by, b.get("text")) if rest[2] == "answer" else store.reject(rest[1], by, b.get("reason")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
@@ -188,9 +198,10 @@ class Handler(BaseHTTPRequestHandler):
 				b = self._body()
 				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None)))
 			if method == "PATCH" and tid:
-				return self._send(200, store.update(tid, self._body()))
+				b = self._body()
+				return self._send(200, store.update(tid, b, agent=b.pop("agent", None)))  # agent: a remote worker's name (cli.Remote)
 			if method == "DELETE" and tid:
-				return self._send(200, store.delete(tid))
+				return self._send(200, store.delete(tid, agent=q.get("agent")))
 			return self._send(405, {"error": "method not allowed"})
 		except st.NotFound as e:
 			return self._send(404, {"error": str(e)})
