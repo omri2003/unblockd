@@ -54,6 +54,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from . import boards as bd
 from . import chat
+from . import github
 from . import knowledge as kn
 from . import notify
 from . import store as st
@@ -84,7 +85,7 @@ def _needs() -> list[dict]:
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items, by_id, failing = [], {t["id"]: t for t in ts}, s.failing()
+		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), github.load(path)
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -104,6 +105,7 @@ def _needs() -> list[dict]:
 			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
 			              "body": (t.get("body") or "")[-NEEDS_BODY:],
+			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
 			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
 			                  "attempts": tries, "failed": f"Failed {len(tries)} times ({', '.join(f'{k} ×{v}' for k, v in outcomes.items())})" if tries else ""} if stuck else {})})
@@ -276,6 +278,8 @@ def main():
 	      + (", ".join(f"{k} ({v})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	if notify.start(BOARDS):
 		print("notifications: webhook on", flush=True)
+	if github.start(BOARDS):
+		print("github: syncing PRs of tickets in review", flush=True)
 	ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 

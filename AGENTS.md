@@ -24,6 +24,7 @@ unblockd/mcp_server.py  MCP tools + the `work_loop` prompt / `unblockd://work-lo
 unblockd/WORK_LOOP.md   THE worker protocol, as a doc (incl. "Never go silent" and "Your board's policy"); read via Path(__file__), Dockerfile copies the package dir. Not per-board.
                         (needs the `mcp` package; the only dependency).
 unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools); `Remote` = the same over REST (UNBLOCKD_URL).
+unblockd/github.py      PR sync for tickets in review (GITHUB_TOKEN): one daemon thread started by web.main.
 unblockd/notify.py      Webhook notifications: one daemon thread started by web.main (UNBLOCKD_WEBHOOK).
 unblockd/chat.py        Messages API over urllib, read-only tool loop, #ID / @board resolution.
 unblockd/knowledge.py   Docs linked to tickets (board / profile / ticket `docs`) + files attached
@@ -31,7 +32,7 @@ unblockd/knowledge.py   Docs linked to tickets (board / profile / ticket `docs`)
 static/index.html       The whole UI, one file, vanilla JS, no build step, no CDN libraries.
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
                         test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
-                        test_notify (fake webhook receiver), test_mcp (work_loop prompt + resource; skipped without `mcp`), test_knowledge (context order, dedupe, links, path safety, attachments).
+                        test_notify (fake webhook receiver), test_github (fake GitHub API), test_mcp (work_loop prompt + resource; skipped without `mcp`), test_knowledge (context order, dedupe, links, path safety, attachments).
 tests/ui_smoke.mjs      Playwright smoke: example + second board, CLI claim/split, Needs you panel (badge, expand, Ctrl+Enter, cross-board answer, Stuck release), `p` priority, 1400/390px x light/dark; board, graph, docs,
                         drawer, panels, toast; fails on page/console errors or horizontal overflow (CI job `ui`).
 README.md               60-second pitch + 5-minute walkthrough + glossary (keep under ~1000 words); every command in it must have been run.
@@ -125,6 +126,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   It lives in the web server, not the store, because agents log from their own CLI/MCP processes: a store hook would never see them. It calls `store.list()`
   first, which sweeps expired claims, so `expired` is reported even with no browser open. Env, not board config: webhook URLs are secrets and the config is
   committed. Failures print once per streak and the batch is dropped (no retry queue).
+- **GitHub PR sync** (`github.py`, started by `web.main` only if `GITHUB_TOKEN` / `UNBLOCKD_GITHUB_TOKEN` is set; `UNBLOCKD_GITHUB_API` = API base, default api.github.com, tests point it at a fake server): same shape as the notifier (web server, not the store, because agents run elsewhere). Every 60 s, per board, for each `review` ticket whose `result.refs` has a `https://github.com/<o>/<r>/pull/<n>` URL: GET the PR, then check-runs and combined status of the head sha, summarised to `checks` {passed, failed, pending} (failure/cancelled/timed_out/action_required/error = failed; not completed/pending = pending). Cached in `tickets/.unblockd/prs.json` {ticket: {url, number, title, state open|closed|merged, merged, checks, at, noted}}, NEVER in the ticket JSON (it must stay stable for the 4 s poll); entries of tickets that left review are dropped. Merged -> `store.update(status=done)` + note by `github` (`PR #n merged — moved to done`), so the activity log has `done` and notify reports it (merge = approval; this bypasses the review gate on purpose). Closed unmerged -> one note (`noted` flag), ticket stays in review. Errors print once per failure streak and keep the old cache entry; no retry queue. `/api/needs` review items carry `pr` (cache entry minus `noted`); the UI shows it with `prHtml` (`.prb`, red with `.bad` when a check failed) in the review row's Result and the drawer's review section. Only the first PR URL in `refs` is used.
 - **Chat**: browser keeps history per board (localStorage) and sends the last 20 messages to
   `POST /api/chat`. The server resolves `#ID`, `#board/ID`, `@board` into the user message, then
   loops tool calls (max 8) against `ANTHROPIC_BASE_URL/v1/messages` with read-only tools.

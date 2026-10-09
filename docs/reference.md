@@ -20,6 +20,7 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
 | `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
 | `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
+| `GITHUB_TOKEN` (or `UNBLOCKD_GITHUB_TOKEN`), `UNBLOCKD_GITHUB_API` | Optional GitHub token: every 60 s the server reads the PRs in `result.refs` of tickets in `review` (see GitHub PR sync). Unset: off. API base defaults to `https://api.github.com`. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
 
 ## Notifications
@@ -27,6 +28,10 @@ default; the board you last opened is remembered.
 Set `UNBLOCKD_WEBHOOK` and the server posts a batched message every ~30 s when agents finish (✅), get stuck (⚠: expired lease or released) or the board runs dry (🏁). Keep the URL in `.env`, it is a secret.
 Slack / Discord: `UNBLOCKD_WEBHOOK=https://hooks.slack.com/services/...` or `https://discord.com/api/webhooks/...` (json is the default; one payload carries both `text` and `content`).
 ntfy: `UNBLOCKD_WEBHOOK=https://ntfy.sh/my-topic UNBLOCKD_WEBHOOK_FORMAT=text`. Only events after startup are sent.
+
+## GitHub PR sync
+
+With `GITHUB_TOKEN` set, a ticket in `review` whose `result.refs` has `https://github.com/<owner>/<repo>/pull/<n>` shows the PR's state and CI (`PR #12 · open · ✓3 ✗0 …1`, red when a check failed) in the Needs you review row and the drawer. A merged PR moves the ticket to done (merge = approval; note signed `github`). A PR closed without merging adds one note and the ticket stays in review. The token needs read access to the repo's pull requests, checks and statuses. State is cached in `tickets/.unblockd/prs.json`, not in the ticket.
 
 ## Agent profiles: which agent works which ticket
 

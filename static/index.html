@@ -146,6 +146,7 @@ a.btn{display:inline-block;text-decoration:none}
 .nd-f{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0} .nd-f input,.nd-f textarea{flex:1 1 200px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:5px 8px}
 .nd-f textarea{field-sizing:content;min-height:4.4em;max-height:45vh;resize:vertical}
 .nr.open .nd-f textarea{flex-basis:100%;order:-1;background:var(--surface)}
+.prb{display:inline-block;margin:6px 0;padding:1px 8px;border:1px solid var(--line);border-radius:10px;font-size:12px} .prb.bad{color:var(--cinnabar);border-color:var(--cinnabar)}
 .rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere}
 .dg-g{margin:10px 0 0;font-size:.82rem;font-weight:800;color:var(--muted)}
 .dg-l{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px;max-height:40vh;overflow:auto}
@@ -923,7 +924,7 @@ function needsRow(g,i){
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
   const notes=parseNotes(i.body).filter(n=>!(i.kind==='question'&&n.text==='question: '+i.waiting_on)).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
-  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
+  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
   const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
   const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
     !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
@@ -976,6 +977,7 @@ async function nPatch(bd,id,ch,back,msg){ // approve / release from the panel; U
   try{ await jf(`/api/b/${bd}/tickets/${id}`,'PATCH',ch); await refreshAfter(bd); toast(msg,{undo:()=>nPatch(bd,id,back,ch,`${id} restored`)}); }
   catch(er){ toast(er.message,{err:1}); }
 }
+const prHtml=p=>{if(!p||!/^https:\/\/github\.com\//.test(p.url||''))return '';const c=p.checks||{};return `<a class="prb${c.failed?' bad':''}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(p.title||'')}">PR #${+p.number} · ${esc(p.state)} · ✓${+c.passed} ✗${+c.failed} …${+c.pending}</a>`};
 const resultHtml=r=>!r?'':`<div class="rbox">${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 function renderWorking(){ // agents holding a claim right now; ages tick client-side
   const el=$('working'),ws=T.filter(t=>t.claim&&onBoard(t)).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
@@ -1180,7 +1182,7 @@ function showTicket(id,refresh){
     ${SPLIT===t.id?splitForm(t):''}
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
-    ${t.status==='review'?`<h3>Result, for review</h3>${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
+    ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
     <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
