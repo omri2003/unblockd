@@ -284,6 +284,29 @@ try {
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
 		await ctx.close();
 	}
+	// 4b. the view lives in the URL: a link restores it, a change rewrites it, junk is ignored
+	{
+		const ok0 = (c, msg) => { if (!c) throw new Error(msg); };
+		const W = async (page, f, what) => page.waitForFunction(f).catch(async () => { throw new Error('url: ' + what + ' (search=' + await page.evaluate(() => location.search) + ')'); });
+		const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+		const page = await ctx.newPage(); page.setDefaultTimeout(5000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+		await page.goto(base + '?q=a&priority=P0,P9&view=graph&group=nope&pillar=zzz');
+		await W(page, () => !document.getElementById('graphWrap').hidden, 'wait');
+		ok0(await page.inputValue('#q') === 'a', 'url: q not restored');
+		ok0(await page.locator('#prioSeg [aria-pressed=true]').allTextContents().then((a) => a.join() === 'P0'), 'url: priority not restored / junk P9 kept');
+		ok0(!(await page.evaluate(() => location.search)).includes('nope'), 'url: junk value survived the rewrite');
+		await page.click('#depSeg [data-dep=FREE]');
+		await W(page, () => location.search.includes('dep=FREE'), 'wait');
+		await page.click('#viewSeg [data-view=board]');
+		await W(page, () => !location.search.includes('view=') && !location.search.includes('dep='), 'wait');
+		await page.fill('#q', '');
+		await page.click('#fpanel > summary');
+		await page.click('#prioSeg [data-prio=P0]');
+		await W(page, () => location.search === '', 'wait');
+		ok0(!errs.length, 'url: browser errors ' + errs.join('; '));
+		await ctx.close();
+	}
 	// 5. motion: a ticket moved behind the page's back slides (WAAPI) and ends in its new column with no leftover transform; under reduced motion nothing animates and everything still works
 	for (const reducedMotion of ['no-preference', 'reduce']) {
 		const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion });

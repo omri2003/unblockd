@@ -194,6 +194,7 @@ Every ticket comes back with derived fields: `effective_status`,
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
+- **Links**: the view is in the address bar, so a link reproduces it: `?view=graph&q=auth&priority=P0,P1&pillar=…&owner=…&agent=…&parent=…&show=paths&group=pillar&dep=FREE` (`dep` only in the Graph; only non-default values appear; `?board=` and `#ID` are kept; bad values are ignored). A link with any of these defines the whole view; without them your remembered filters apply. Switching board drops them.
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Warnings**: missing blocker, doing with no update for `stale_days` (an amber dot in the graph, and a *Stuck* row in the Needs you panel).

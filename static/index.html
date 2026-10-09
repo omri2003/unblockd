@@ -809,6 +809,30 @@ function renderPills(){
   $('pills').innerHTML=ps.map(([a,l])=>`<button type="button" class="pill" ${a} aria-label="Remove filter ${esc(l)}">${esc(l)}</button>`).join('');
   $('fcount').hidden=!ps.length;$('fcount').textContent=ps.length;
 }
+const VIEWK=['board','graph','docs'], DEPS=['ALL','FREE','BLOCKED'];
+function urlWrite(){ // the view lives in the address bar (non-default values only): a link reproduces it. replaceState, so no history spam; ?board= and #ID stay
+  const g=state.view==='graph',u=new URLSearchParams(location.search),sk=g?'showGraph':'showBoard';
+  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,
+    priority:state.prio.join(','),show:state[sk]===(g?'dim':'only')?'':state[sk],group:state.group==='none'?'':state.group,dep:g&&state.dep!=='ALL'?state.dep:''};
+  for(const k in v)v[k]?u.set(k,v[k]):u.delete(k);
+  const qs=u+'',now=location.search.slice(1);
+  if(qs!==now.replace(/\+/g,'%20'))history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
+}
+function urlRead(){ // after applyConfig. Any of our params present = the link defines the whole view (the rest back to defaults); bad values are ignored
+  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','agent','parent','priority','show','group','dep'];
+  if(!K.some(k=>u.has(k)))return;
+  const g=k=>u.get(k)||'';
+  state.view=pickOf(g('view'),VIEWK,'board');
+  state.pillar=pickOf(g('pillar'),['OTHER',...PILLARS],'ALL');
+  state.owner=pickOf(g('owner'),CFG.owners.map(o=>o.name),'ALL');
+  state.agent=pickOf(g('agent'),['NONE',...CFG.agents.map(a=>a.name)],'ALL');
+  state.parent=/^[A-Za-z0-9_-]+$/.test(g('parent'))?g('parent'):'ALL';
+  state.prio=g('priority').split(',').filter(p=>PRIOS.includes(p));
+  state.group=pickOf(g('group'),GROUPS,'none');
+  state.dep=pickOf(g('dep'),DEPS,'ALL');
+  state[state.view==='graph'?'showGraph':'showBoard']=pickOf(g('show'),SHOWS,state.view==='graph'?'dim':'only');
+  setQ(g('q'));
+}
 function setQ(v){ // one place that parses the search box: /pattern/ is a regex over "id title"
   $('q').value=v;state.q=v.trim();state.rx=null;state.rxErr='';
   const m=state.q.match(/^\/(.+)\/(i?)$/);
@@ -1838,9 +1862,9 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	if(!document.startViewTransition||reduce.matches) return setView(v);
 	document.startViewTransition(()=>setView(v));
 }
-function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
   paintViews(v);renderShow();if(v!=='graph')render();else{renderWorking();renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
-function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
+function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
@@ -1888,7 +1912,7 @@ async function submitBoard(){
 }
 loadBoards().then(loadNeeds);
 fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
-  readColors(); renderBar(); setView(state.view);
+  urlRead(); readColors(); renderBar(); setView(state.view);
   load(true).then(loadDigest).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
 });
 // ---------- chat ----------
