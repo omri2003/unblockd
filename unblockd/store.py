@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
 	"pillar_label": "Pillar",
 	"pillars": [],  # [{"key": "ART", "name": "Art", "color": "#8A4FB5", "color_dark": "#B58CE6"}]
 	"stale_days": STALE_DAYS,
+	"done_window_days": 7,  # the UI's Done column shows tickets done within this many days (the API still returns all)
 	"wip_limit": None,  # int: the UI warns when more tickets than this are in progress; None = no warning
 	"lease_minutes": 15,  # a claim with no heartbeat for this long expires and the ticket goes back to todo
 	"legacy_files": [],  # old ticket lists (relative to the tickets folder): new IDs never reuse a number seen there
@@ -67,6 +68,8 @@ FIELDS = {
 	# when a question was parked and which agent asked it (ask() sets both, answer() clears them); read-only. A hand-set waiting_on gets asked_at only
 	"asked_at": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	"asked_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
+	# when the ticket last moved to done (UTC ISO); set by create/update/complete, read-only. Old tickets lack it: readers fall back to `updated`
+	"done_at": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
@@ -114,6 +117,8 @@ def load_config(tickets_dir: Path) -> dict:
 		raise TicketError(f"{CONFIG_FILE}: review must be true or false")
 	if cfg["wip_limit"] is not None and not (type(cfg["wip_limit"]) is int and cfg["wip_limit"] > 0):
 		raise TicketError(f"{CONFIG_FILE}: wip_limit must be a positive number or null")
+	if not (type(cfg["done_window_days"]) is int and cfg["done_window_days"] > 0):
+		raise TicketError(f"{CONFIG_FILE}: done_window_days must be a positive number of days")
 	if not cfg["owners"] or not all(isinstance(o, dict) and o.get("name") for o in cfg["owners"]):
 		raise TicketError(f"{CONFIG_FILE}: owners must be a non-empty list of {{\"name\", \"kind\"}}")
 	for pl in cfg["pillars"]:
@@ -184,6 +189,8 @@ class Store:
 				raise TicketError("result is set only by complete(): it can be read, not written")
 			if k in ("asked_at", "asked_by"):
 				raise TicketError(f"{k} is set by ask() and cleared by answer(): it can be read, not written")
+			if k == "done_at":
+				raise TicketError("done_at is set when a ticket moves to done: it can be read, not written")
 			if k == "title" and isinstance(v, str):
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
@@ -409,6 +416,8 @@ class Store:
 		if t["owner"] is None:
 			t["owner"] = self.config["default_owner"]
 		t["created"] = t["updated"] = today
+		if t["status"] == "done":
+			t["done_at"] = _now()
 		if t["waiting_on"]:
 			t["asked_at"] = _now()
 		self._write(t)
@@ -445,6 +454,8 @@ class Store:
 			elif not t.get("asked_at"):
 				t["asked_at"] = _now()
 		t.update(clean)
+		if t["status"] != was:
+			t["done_at"] = _now() if t["status"] == "done" else ""
 		t["updated"] = date.today().isoformat()
 		self._write(t)
 		if t["status"] == "done" and was != "done":  # by hand; an agent's complete() logs its own event
@@ -859,6 +870,7 @@ class Store:
 			claims.pop(tid, None)
 			self._save_claims(claims)
 			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
+			raw["done_at"] = _now() if status == "done" else ""
 			self._write(raw)
 			self._log("complete", tid, agent, summary)
 		self._locked(done)

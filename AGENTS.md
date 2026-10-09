@@ -46,7 +46,7 @@ example/tickets/        Demo board + config; what `docker compose up` shows with
 
 Ticket fields (`FIELDS` in store.py; add a field there and API + MCP accept it): `title`,
 `status` (todo|doing|review|done writable; `pending` is derived only: writing it is refused, a stored `pending` from an old file is read as todo), `priority` (P0-P3|null), `owner`, `pillar`, `pillar_step`,
-`section`, `blocked_by` (ids), `parent` (id of the group/epic this ticket is a part of; NOT a blocker), `waiting_on`, `asked_at` / `asked_by` (read-only: `ask()` sets both to now / the agent, `answer()` clears them; a `waiting_on` set or changed by update gets `asked_at` = now if empty and never `asked_by`, so it is a hand-parked ticket; clearing `waiting_on` clears both; writing either directly is refused like `result`), `body`, `tags` (lowercase; `agent:<name>` routes),
+`section`, `blocked_by` (ids), `parent` (id of the group/epic this ticket is a part of; NOT a blocker), `waiting_on`, `done_at` (read-only, UTC ISO: set by create / update / `complete()` when status becomes done, cleared when it leaves done; old tickets lack it and the UI falls back to `updated`), `asked_at` / `asked_by` (read-only: `ask()` sets both to now / the agent, `answer()` clears them; a `waiting_on` set or changed by update gets `asked_at` = now if empty and never `asked_by`, so it is a hand-parked ticket; clearing `waiting_on` clears both; writing either directly is refused like `result`), `body`, `tags` (lowercase; `agent:<name>` routes),
 `done_when` (list of short acceptance criteria: the bar for done, apart from the background in `body`; shown at the top of `context()` and echoed under "Done when:" in the body entry `complete()` appends; the drawer lists it as a checklist and the edit form takes one per line; not copied by split),
 `touches` (paths/globs the work edits), `docs` (repo paths/folders/globs to read), `result` (null until `complete()`: {summary, files, refs, handoff, by, at}; see Claims), plus `id`,
 `created`, `updated`.
@@ -66,7 +66,7 @@ owners and pillars must be the configured ones; unknown `agent:<x>` tags refused
 
 Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refused. Keys:
 `id`, `title`, `owners` [{name, kind: human|agent}], `default_owner`, `pillar_label`, `pillars`
-[{key, name, color, color_dark}], `stale_days`, `wip_limit` (int or null: the UI's In-progress WIP badge; none when null), `lease_minutes`, `legacy_files`, `agents`
+[{key, name, color, color_dark}], `stale_days`, `wip_limit` (int or null: the UI's In-progress WIP badge; none when null), `done_window_days` (int > 0, default 7: the board's Done column shows only tickets done that recently, UI only; edited in this file, there is no settings form), `lease_minutes`, `legacy_files`, `agents`
 [{name, tags, pillars, model, instructions, docs}], `docs` (knowledge for every ticket),
 `context_budget` (chars inlined per context, default 60000), `review` (bool, default false: the review gate, see Claims).
 
@@ -175,7 +175,7 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
   with heartbeat age (`tickAges`, late after lease/2). Feedback goes through `toast(msg,{err,undo})` (`msg` may be a DOM node: the Delete toast lists `referenced_by` as `.idlink` buttons, 6 s); status moves use
   `moveTo()` (drag-drop, the card's native "Move to" `<details>`, the drawer's segmented status; it refuses
   doing for a ticket with open blockers) and Undo is one PATCH back. Cards are wrapped in `.cw` (a button can't hold
-  the move menu). To do has an inline quick-add (`quickAdd`; Enter creates, Shift+Enter keeps typing; prefix remembered
+  the move menu). **Done column**: only tickets done within `done_window_days` (`done_at`, else `updated`), newest first, `DONE_CAP` = 20 cards, header `Done · last 7 days (n)`, then `+N more → view all` (`state.allDone`: every done ticket, with `Show recent only` to go back). An active search also shows all done tickets that match. To do has an inline quick-add (`quickAdd`; Enter creates, Shift+Enter keeps typing; prefix remembered
   per board in localStorage; `renderBoard` restores a half-typed draft). Card ages (`data-up`) and heartbeats
   (`data-hb`) are filled by `tickAges`, never in the JSON. `emptyState()` covers a new board and "filters hide
   everything" (`clearFilters`). At <=600px `#tabs` shows one column at a time (`TAB`, sessionStorage); `body[data-tab]`

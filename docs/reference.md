@@ -151,6 +151,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `pillar_label` | What your project calls them ("Area", "Track"…). |
 | `stale_days` | A `doing` ticket untouched this long is flagged. |
 | `wip_limit` | More than this many `doing` tickets shows a WIP badge on the column (default `null` = none). |
+| `done_window_days` | The board's Done column shows only tickets done within this many days (default 7, whole number > 0), newest first, at most 20 cards, with `+N more → view all`. UI only: the API, MCP and CLI still list every done ticket. Edited in `unblockd.json` like every other board setting. |
 | `lease_minutes` | A claim with no heartbeat this long expires (default 15). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
 | `id` | Board id (default: the project folder's name). |

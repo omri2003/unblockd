@@ -122,6 +122,28 @@ class StoreTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "wip_limit"):
 			Store(Path(self.tmp.name) / "tickets")
 
+	def test_done_window_days_default_and_validated(self):
+		self.assertEqual(self.s.config["done_window_days"], 7)
+		cfg = Path(self.tmp.name) / "tickets" / "unblockd.json"
+		cfg.write_text('{"done_window_days": 30}')
+		self.assertEqual(Store(cfg.parent).config["done_window_days"], 30)
+		for bad in ("0", "-1", "1.5", '"7"', "true"):
+			cfg.write_text('{"done_window_days": %s}' % bad)
+			with self.assertRaisesRegex(TicketError, "done_window_days"):
+				Store(cfg.parent)
+
+	def test_done_at_is_set_on_the_transition_to_done_and_read_only(self):
+		self.s.create({"title": "a"}, tid="D-1")
+		self.assertEqual(self.s.get("D-1")["done_at"], "")
+		self.assertTrue(self.s.update("D-1", {"status": "done"})["done_at"].endswith("+00:00"))
+		self.assertEqual(self.s.update("D-1", {"status": "todo"})["done_at"], "")
+		self.assertTrue(self.s.create({"title": "b", "status": "done"}, tid="D-2")["done_at"])
+		with self.assertRaisesRegex(TicketError, "done_at"):
+			self.s.update("D-1", {"done_at": "2020-01-01T00:00:00+00:00"})
+		self.s.create({"title": "c"}, tid="D-3")
+		self.s.claim("worker", "D-3")
+		self.assertTrue(self.s.complete("D-3", "worker", "did it")["done_at"])
+
 	def test_open_blocker_makes_todo_pending_and_done_clears_it(self):
 		self.s.create({"title": "Cultivation"}, tid="PORT-1")
 		self.s.create({"title": "Essence", "blocked_by": ["PORT-1"]}, tid="EMP-12")

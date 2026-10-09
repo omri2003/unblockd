@@ -133,6 +133,13 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual([x["id"] for x in self.call("GET", "/api/boards")[1]], ["a", "b"])
 		self.assertEqual(self.call("GET", "/api/b/zzz/tickets")[0], 404)
 
+	def test_old_done_tickets_are_still_listed(self):  # the Done column's window is UI only
+		old = {"id": "OLD-1", "title": "ancient", "status": "done", "owner": "Me", "created": "2020-01-01", "updated": "2020-01-01"}
+		(Path(self.tmp.name) / "a" / "tickets" / "OLD-1.json").write_text(json.dumps(old))
+		ids = [t["id"] for t in self.call("GET", "/api/tickets")[1]]
+		self.assertIn("OLD-1", ids)
+		self.assertEqual(self.call("GET", "/api/meta")[1]["config"]["done_window_days"], 7)
+
 	def test_etag_304_when_the_board_is_unchanged(self):
 		self.call("POST", "/api/tickets", {"prefix": "BUG", "title": "x"})
 
