@@ -22,6 +22,10 @@ MAX_FILE = 300_000      # bytes: bigger files are listed, never inlined or uploa
 MAX_FOLDER = 40         # files taken from one folder/glob entry
 BUDGET = 60_000         # characters inlined per context bundle; the rest is listed for read_doc
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+PROTOCOL_FILE = Path(__file__).parent / "WORK_LOOP.md"  # the worker protocol, shipped in the package
+PROTOCOL = "unblockd://work-loop"  # its name in graph() / read_doc / context()
+
+
 LINK_RE = re.compile(r"\]\(([^)\s#]+)(?:#[^)]*)?\)|^@(\S+)", re.M)
 
 
@@ -135,6 +139,8 @@ def read_file(store, tid: str, name: str) -> str:
 
 
 def read_doc(store, path: str) -> dict:
+	if path == PROTOCOL:
+		return {"path": PROTOCOL, "content": PROTOCOL_FILE.read_text(encoding="utf-8"), "links": [], "builtin": True}
 	base = root(store)
 	p = _inside(base, path)
 	if not p.is_file():
@@ -205,7 +211,7 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			continue
 		if (r := u.get("result")):
 			up.append({"id": b, "title": u["title"], **{k: r.get(k, [] if k in ("files", "refs") else "") for k in ("summary", "files", "refs", "handoff")}})
-	return {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "inlined_chars": budget - left,
+	return {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "protocol": PROTOCOL, "inlined_chars": budget - left,
 	        "note": "Read these before working the ticket. Items without content: read_doc(path)."
 	                + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
 
@@ -261,10 +267,14 @@ def graph(store) -> dict:
 		for f in list_files(store, t["id"]):
 			rel = f"tickets/files/{t['id']}/{f['name']}"
 			add(t, rel, files_dir(store, t["id"]) / f["name"], None, "file")
+	if tickets:  # the protocol is every ticket's doc; kind stays "board" so it is never a hub or a gap in no_docs
+		docs[PROTOCOL] = {"path": PROTOCOL, "kind": "board", "builtin": True, "size": PROTOCOL_FILE.stat().st_size}
+		readers[PROTOCOL] = {t["id"] for t in tickets}
+		reads += [{"ticket": t["id"], "doc": PROTOCOL, "via": "board"} for t in tickets]
 	for rel in list(docs):
 		d = docs[rel]
 		d["readers"] = len(readers[rel])
-		if "error" in d:
+		if "error" in d or d.get("builtin"):
 			continue
 		for to in finfo[rel][1] or []:
 			if to not in docs:

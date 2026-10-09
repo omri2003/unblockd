@@ -1753,7 +1753,7 @@ async function loadDocs(){
   DV.busy=false;if(state.view==='docs')renderDocs();
 }
 const dBase=p=>p.split('/').pop(),dDir=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')+1):'';
-const dKind={board:'board',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
+const dKind={board:'board',builtin:'built-in',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
 function dSets(f){ // the nodes a problem filter points at: {t:Set of tickets, d:Set of docs}
   const g=DV.data,t=new Set(),d=new Set();if(!f)return null;
   if(f==='nodocs')g.no_docs.forEach(x=>t.add(x));
@@ -1772,7 +1772,7 @@ function renderDocs(){
   const docs=[...g.docs].sort((a,b)=>b.readers-a.readers||a.path.localeCompare(b.path));
   T_.innerHTML=g.tickets.length?g.tickets.map(t=>`<li><button type="button" class="dn tk" data-open="${esc(t.id)}" data-n="t:${esc(t.id)}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}<i class="mk ${t.status}"></i></button></li>`).join('')
     :'<li class="dempty">No open tickets.</li>';
-  D_.innerHTML=docs.length?docs.map(d=>`<li><button type="button" class="dn dk${bad.has(d.path)?' bad':''}${hubs.has(d.path)?' hub':''}${d.linked_only?' orph':''}${d.kind==='board'&&!bad.has(d.path)?' brd':''}" data-dnode="${esc(d.path)}" data-n="d:${esc(d.path)}"><i class="mk" title="${bad.has(d.path)?'Broken reference':d.kind==='board'?'Board-wide: every ticket reads it':hubs.has(d.path)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':'Doc'}"></i><span class="pth" title="${esc(d.path)}"><i>${esc(dDir(d.path))}</i>${esc(dBase(d.path))}</span>${d.error?`<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`:`<span class="tag">${dKind[d.kind]}</span>`}<span class="tag">${d.readers?'×'+d.readers:''}</span></button></li>`).join('')
+  D_.innerHTML=docs.length?docs.map(d=>`<li><button type="button" class="dn dk${bad.has(d.path)?' bad':''}${hubs.has(d.path)?' hub':''}${d.linked_only?' orph':''}${d.kind==='board'&&!bad.has(d.path)?' brd':''}" data-dnode="${esc(d.path)}" data-n="d:${esc(d.path)}"><i class="mk" title="${bad.has(d.path)?'Broken reference':d.kind==='board'?'Board-wide: every ticket reads it':hubs.has(d.path)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':'Doc'}"></i><span class="pth" title="${esc(d.path)}"><i>${esc(dDir(d.path))}</i>${esc(dBase(d.path))}</span>${d.error?`<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`:`<span class="tag">${dKind[d.builtin?'builtin':d.kind]}</span>`}<span class="tag">${d.readers?'×'+d.readers:''}</span></button></li>`).join('')
     :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board or an agent profile in unblockd.json, or to a ticket.</li>`;
   markDocs();
 }
@@ -1805,7 +1805,7 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
   const rd=g.reads.filter(r=>r.doc===path),to=g.links.filter(l=>l.from===path).map(l=>l.to),from=g.links.filter(l=>l.to===path).map(l=>l.from);
   const dl=a=>a.length?`<ul class="dlist">${a.map(p=>`<li><button type="button" class="kdoc" data-dnode="${esc(p)}">${esc(p)}</button></li>`).join('')}</ul>`:'<p class="hint">None.</p>';
   openId=null;openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0;font-size:1.05rem;overflow-wrap:anywhere;font-family:var(--mono)">${esc(path)}</h2><span class="sp"><button type="button" class="btn ghost" data-close>Close</button></span></div>
-    <p class="hint">${dKind[d.kind]}${d.size!=null?`, ${Math.max(1,Math.round(d.size/1000))}k`:''}${d.linked_only?'. No ticket reads it; only another doc links here.':''}</p>
+    <p class="hint">${dKind[d.builtin?'builtin':d.kind]}${d.builtin?' (the worker protocol, shipped with unblockd; every ticket reads it through the MCP prompt)':''}${d.size!=null?`, ${Math.max(1,Math.round(d.size/1000))}k`:''}${d.linked_only?'. No ticket reads it; only another doc links here.':''}</p>
     ${d.error?`<p class="msg err">Broken: ${esc(d.error)}. Fix the path in the docs list of the ticket, profile or board that names it.</p>`:`<p><button type="button" class="btn sm" data-doc="${esc(path)}">View file</button></p>`}
     <h3 class="dh3">Read by ${rd.length} ticket${rd.length===1?'':'s'}</h3>
     ${rd.length?`<ul class="dlist">${rd.map(r=>{const t=g.tickets.find(x=>x.id===r.ticket);return `<li><button type="button" data-open="${esc(r.ticket)}"><span class="tid">${esc(r.ticket)}</span> ${inline(t?t.title:'')}</button><span class="ksrc">${esc(dKind[r.via]||r.via)}</span></li>`;}).join('')}</ul>`:'<p class="hint">No open ticket.</p>'}

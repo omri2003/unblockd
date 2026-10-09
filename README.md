@@ -69,6 +69,10 @@ If the board defines agent profiles (the demo has `frontend` and `backend`), wor
 | **review** | Optional gate (`"review": true`): agents' `complete` lands in `review` and a human moves it to done. |
 | **waiting_on / ask_human** | A decision only a human can make: the worker asks, the claim ends, the ticket waits until a human answers. |
 
+## Configuring agents
+
+Put your project rules (tests, commits, PRs, when to ask a human, summary language) in a doc such as `AGENT_POLICY.md` and list it in `docs` in `unblockd.json`; every worker reads it with its ticket. The protocol itself (`WORK_LOOP.md`: claim, heartbeat, complete / release / ask) is built in and shows in the Docs view; your docs cannot change it. See `example/AGENT_POLICY.md`.
+
 ## Config and auth, briefly
 
 | Env var | Meaning |

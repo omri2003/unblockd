@@ -33,6 +33,8 @@ class KnowledgeTest(unittest.TestCase):
 
 	def test_context_order_sources_dedupe_links_errors(self):
 		ctx = kn.context(self.s, "CMB-1")
+		self.assertEqual(ctx["protocol"], "unblockd://work-loop")
+		self.assertNotIn("Never go silent", json.dumps(ctx))  # a pointer, not inlined
 		got = [(d["path"], d["source"], d.get("error")) for d in ctx["docs"]]
 		self.assertEqual(got, [
 			("AGENTS.md", "board", None),
@@ -126,6 +128,10 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual([docs[p]["kind"] for p in ("AGENTS.md", "docs/MECHANICS.md", "docs/notes/a.md", "tickets/files/CMB-4/spec.md")],
 		                 ["board", "profile", "ticket", "file"])
 		reads = {(r["ticket"], r["doc"]): r["via"] for r in g["reads"]}
+		self.assertTrue(docs["unblockd://work-loop"]["builtin"])
+		self.assertEqual(docs["unblockd://work-loop"]["readers"], 4)
+		self.assertIn("Never go silent", kn.read_doc(self.s, "unblockd://work-loop")["content"])
+		self.assertNotIn("unblockd://work-loop", [h["path"] for h in g["hubs"]])
 		self.assertEqual(reads[("CMB-1", "docs/HANDOFF.md")], "profile")  # also on the ticket: first source wins, like context()
 		self.assertEqual(reads[("CMB-3", "AGENTS.md")], "board")
 		self.assertNotIn(("CMB-3", "docs/MECHANICS.md"), reads)

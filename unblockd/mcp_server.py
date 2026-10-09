@@ -9,6 +9,7 @@ Errors come back as tool errors with a plain message (bad id, bad field, unknown
 from __future__ import annotations
 
 import functools
+import string
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -47,18 +48,11 @@ mcp = MCPServer(
 )
 
 
-WORK_LOOP = """You are a worker on the unblockd board {board}{profile_line}. Loop until step 2 says to stop:
-1. Your worker name is unique: {agent_hint}. Use it as `agent` in every call below.
-2. claim_next(agent=<your name>{claim_args}) -> a ticket plus its `context`, or {{ticket: null, reason, counts}}: reason "conflict" = ready tickets exist but overlap other workers' live claims (touches): wait about a minute and call again, up to 5 times, then stop and report; reason "waiting" (everything open is in flight, in review, waiting on a human or blocked) or "dry" (nothing open): stop and report what you did and the reason and counts.
-3. If the ticket's body has notes (lines starting with "—"), read the latest ones first: a human's "Answer to: ..." to your earlier question or a "Rejected: ..." after review overrides the original brief. Then read every doc in `context` in order before touching anything (read_doc(path) for items without content; report entries with an `error`). `done_when`, if present, is the bar for done.
-4. Work it. Call heartbeat(id, agent, note) with what you are doing at least every 5 minutes: 15 minutes of silence expires the claim and the ticket goes back to todo.
-5. Needs a decision only a human can make: ask_human(id, agent, question), then go on to the next ticket. Cannot finish for another reason: release(id, agent, reason).
-6. Done: complete(id, agent, summary) with "cause -> fix -> tests; NOT verified: ..." and an answer for each `done_when` item. On boards with review=true it lands in review for a human instead of done.
-Rules: never work a ticket you did not claim; never edit outside what the ticket needs; a new problem becomes its own ticket (create_ticket with blocked_by and touches), not a wider change here. agents_now shows who is on what."""
+WORK_LOOP = kn.PROTOCOL_FILE  # the protocol is a doc: knowledge.graph() shows it, read_doc opens it
 
 
 def work_loop_text(board: str | None = None, profile: str | None = None) -> str:
-	return WORK_LOOP.format(
+	return string.Template(WORK_LOOP.read_text(encoding="utf-8")).safe_substitute(
 		board=board or "(the default board; list_boards shows the others)", profile_line=f" with the agent profile {profile}" if profile else "",
 		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. godot-dev-1 (board_info lists the profiles)",
 		claim_args=(f", profile={profile}" if profile else "") + (f", board={board}" if board else ""))

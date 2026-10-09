@@ -230,7 +230,7 @@ claude mcp add unblockd --scope user -- docker run -i --rm -v /path/to/projects:
 Build the image once first (`docker compose build`), or use
 `ghcr.io/omri2003/unblockd` in place of `unblockd`.
 
-Workers: the `work_loop` prompt (`board`, `profile`) and the `unblockd://work-loop` resource carry the claim, heartbeat, complete / release / `ask_human` protocol, so any MCP client can run it without the orchestrator skill.
+Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the package, same for every board, not configurable). The `work_loop` prompt (`board`, `profile`) and the `unblockd://work-loop` resource carry the claim, heartbeat, complete / release / `ask_human` protocol, so any MCP client can run it without the orchestrator skill. The file ends with two rules: *Never go silent* (stop a claimed ticket only through `ask_human` or `release`, never by just stopping) and *Your board's policy* (board / profile docs such as `AGENT_POLICY.md` say how to do the work; if they conflict with the protocol, the protocol wins and the worker says so in its summary). The Docs view lists the protocol as a **built-in** doc (`unblockd://work-loop`, `builtin: true` in `GET /knowledge`, openable with View file / `read_doc`) that every open ticket reads; it is not inlined into `context()`, which carries `protocol: "unblockd://work-loop"` instead.
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents

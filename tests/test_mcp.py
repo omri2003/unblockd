@@ -26,6 +26,9 @@ class WorkLoopTest(unittest.TestCase):
 		for word in ("claim_next(agent=<your name>, profile=godot-dev, board=game)", "godot-dev-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry", "Answer to", "Rejected"):
 			self.assertIn(word, text)
 		self.assertIn("board_info", m.work_loop_text())
+		self.assertIn("Never go silent", text)
+		self.assertIn("Your board's policy", text)
+		self.assertIn("Never go silent", m.WORK_LOOP.read_text(encoding="utf-8"))  # the text comes from the file
 		self.assertEqual(m.work_loop_resource(), m.work_loop_text())
 		prompt = asyncio.run(m.mcp.get_prompt("work_loop", {"board": "game", "profile": "godot-dev"}))
 		self.assertIn("claim_next", str(prompt))

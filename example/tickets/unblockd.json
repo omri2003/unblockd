@@ -24,6 +24,9 @@
   ],
   "stale_days": 7,
   "wip_limit": 5,
+  "docs": [
+    "AGENT_POLICY.md"
+  ],
   "agents": [
     {
       "name": "frontend",
