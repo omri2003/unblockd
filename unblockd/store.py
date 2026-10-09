@@ -64,6 +64,9 @@ FIELDS = {
 	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
 	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
 	"waiting_on": ("", lambda v: isinstance(v, str) and len(v) <= QUESTION_MAX),
+	# when a question was parked and which agent asked it (ask() sets both, answer() clears them); read-only. A hand-set waiting_on gets asked_at only
+	"asked_at": ("", lambda v: isinstance(v, str) and len(v) <= 40),
+	"asked_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
@@ -179,6 +182,8 @@ class Store:
 				continue
 			if k == "result":
 				raise TicketError("result is set only by complete(): it can be read, not written")
+			if k in ("asked_at", "asked_by"):
+				raise TicketError(f"{k} is set by ask() and cleared by answer(): it can be read, not written")
 			if k == "title" and isinstance(v, str):
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
@@ -404,6 +409,8 @@ class Store:
 		if t["owner"] is None:
 			t["owner"] = self.config["default_owner"]
 		t["created"] = t["updated"] = today
+		if t["waiting_on"]:
+			t["asked_at"] = _now()
 		self._write(t)
 		self._log("created", tid, None, t["title"])
 		return self.get(tid)
@@ -432,6 +439,11 @@ class Store:
 		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
 			self._drop_claim(tid, f"status set to {clean['status']}")
 		was = t.get("status")
+		if "waiting_on" in clean:  # by hand: age starts now, no asked_by (only ask() names an agent); cleared with the question
+			if not clean["waiting_on"]:
+				t["asked_at"] = t["asked_by"] = ""
+			elif not t.get("asked_at"):
+				t["asked_at"] = _now()
 		t.update(clean)
 		t["updated"] = date.today().isoformat()
 		self._write(t)
@@ -751,7 +763,7 @@ class Store:
 		def run():
 			self._holder(tid, agent)
 			raw = self._read(self._path(tid))
-			raw.update(status="todo", waiting_on=q, updated=date.today().isoformat())
+			raw.update(status="todo", waiting_on=q, asked_at=_now(), asked_by=agent, updated=date.today().isoformat())
 			_append_note(raw, agent, f"question: {q}")  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
@@ -794,7 +806,7 @@ class Store:
 			if not raw.get("waiting_on"):
 				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
 			_append_note(raw, by.strip(), f"Answer to: {raw['waiting_on']} — {text.strip()}")
-			raw["waiting_on"], raw["updated"] = "", date.today().isoformat()
+			raw["waiting_on"], raw["asked_at"], raw["asked_by"], raw["updated"] = "", "", "", date.today().isoformat()
 			self._write(raw)
 			self._log("answered", tid, by, text.strip())
 		self._locked(run)

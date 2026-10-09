@@ -117,9 +117,14 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
 .dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
-.needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:8px 12px;margin-bottom:14px}
-.needs h2{font-size:.95rem;margin:0 0 4px} .needs h2 .n{color:var(--plum)}
-.needs ul{list-style:none;margin:0;padding:0;display:grid;gap:10px;max-height:19rem;overflow-y:auto}
+.needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:0 12px;margin-bottom:14px}
+.nd-t{display:flex;align-items:center;gap:8px;width:100%;padding:8px 0;background:none;border:0;border-radius:6px;font:inherit;font-size:.95rem;font-weight:700;color:inherit;text-align:left;cursor:pointer}
+.nd-t .n{color:var(--plum)} .nd-sum{flex:1 1 auto;min-width:0}
+.bang{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--plum);color:var(--surface);font-size:.75rem;font-weight:800}
+.nd-t .chev{margin:0 4px 0 auto;transition:transform .2s ease-out} .needs.c .nd-t .chev{transform:translateY(0) rotate(-45deg)}
+.nd-body{display:grid;grid-template-rows:1fr;transition:grid-template-rows .2s ease-out,visibility .2s} .nd-body>div{min-height:0;overflow:hidden;margin:0 -3px} .needs.c .nd-body{grid-template-rows:0fr;visibility:hidden}
+.needs ul{list-style:none;margin:0;padding:3px 3px 8px;display:grid;gap:10px;max-height:19rem;overflow-y:auto}
+.nd-bl{font-size:.78rem;color:var(--muted)} .why.park{color:var(--muted)}
 .nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
 .nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
@@ -138,8 +143,12 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .next h2{font-size:.95rem;margin:0}
 .nexttog{display:flex;align-items:center;gap:8px;background:none;border:0;padding:2px 4px;cursor:pointer;font-family:var(--display);font-weight:700;font-size:.95rem}
 .nexttog .n{font-family:var(--body);font-size:.85rem;color:var(--muted);font-weight:700}
-.nexttog .chev{font-family:var(--body);font-size:.8rem;color:var(--muted);transition:transform .15s}
-.nexttog[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.nexttog .chev{transition:transform .2s ease-out}
+.nexttog .m{font-family:var(--body);font-size:.8rem;color:var(--muted);font-weight:600}
+.next.m-c .nexttog .chev{transform:translateY(0) rotate(-45deg)} .next.m-all .nexttog .chev{transform:translateY(.1em) rotate(-135deg)}
+.nx-body,.nx-more{display:grid;grid-template-rows:1fr;transition:grid-template-rows .2s ease-out,visibility .2s} .nx-body>div,.nx-more>div{min-height:0;overflow:hidden}
+.next.m-c .nx-body,.next:not(.m-all) .nx-more{grid-template-rows:0fr;visibility:hidden}
+.nxl2{margin-top:0 !important}
 .nxl{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:0 14px}
 .nx{display:grid;grid-template-columns:1.4rem auto auto 1fr;align-items:baseline;gap:8px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:5px 4px;cursor:pointer;min-width:0}
 .nx:hover{background:var(--surface)} .nx .rk{font:800 1.15rem var(--display);color:var(--jade);font-variant-numeric:tabular-nums}
@@ -208,7 +217,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .tabs{display:none}
 @media (max-width:1100px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.board{grid-template-columns:1fr}
-  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
+  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
   .btn{padding:8px 14px} .card{padding:10px}
   .sub,.segbar,.khint{display:none}
   header{position:relative} #bpanel{position:static} #bpanel .sbody{left:0;right:0;width:auto} .bi{padding:13px 12px;font-size:1rem}
@@ -302,6 +311,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .trow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .vico-g{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r)}
 .vico{display:inline-flex;align-items:center;gap:0;height:28px;padding:0 7px;border:0;background:none;color:var(--muted);border-radius:calc(var(--r) - 2px);cursor:pointer;font:inherit;font-size:.82rem;font-weight:600}
+.vico.lbl{gap:6px;font-size:.88rem} .vico .n{opacity:.7;font-variant-numeric:tabular-nums}
 .vico:hover{color:var(--ink)} .vico[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper)} .vi{display:block;flex:none}
 @media (max-width:600px){.vico{height:34px;padding:0 10px}}
 .hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -418,7 +428,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button{transition:none}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nd-body,.nd-t .chev,.nx-body,.nx-more,.nexttog .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -431,7 +441,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
-  <section class="needs" id="needs" hidden aria-label="Needs you"></section>
+  <section class="needs" id="needs" hidden aria-label="Needs you"><button type="button" class="nd-t" id="ndT" aria-expanded="true" aria-controls="ndBody"></button><div class="nd-body" id="ndBody"><div><ul></ul></div></div></section>
   <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" id="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Search (/). Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
@@ -446,7 +456,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
         <div class="seg" id="showSeg" data-l="Show" role="group" aria-label="Show" title="Only: just the matches. Paths: matches plus everything upstream and downstream of them. Dim: everything, matches highlighted."></div>
       </div></details>
     <div class="seg" id="pills"></div>
-    <div class="seg" id="depSeg" role="group" aria-label="Blocked or free"></div>
+    <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
     <div class="seg" id="attnSeg"></div>
   </div>
 
@@ -699,7 +709,7 @@ function slidePill(el,instant){
 	if(track){const step=()=>{const r=meas();put(r);PL.set(key,{k,r});el._raf=el.getAnimations({subtree:true}).length?requestAnimationFrame(step):0;};step();return;}
 	const r=meas();put(r);PL.set(key,{k,r});
 }
-const slideAll=(root,instant)=>root.querySelectorAll('.seg,.segc,#viewSeg').forEach(e=>slidePill(e,instant));
+const slideAll=(root,instant)=>root.querySelectorAll('.seg,.segc,#viewSeg,#depSeg').forEach(e=>slidePill(e,instant));
 document.fonts?.ready.then(()=>slideAll(document,true));
 function renderBar(){
   $('pillarSeg').hidden=!PILLARS.length;
@@ -712,7 +722,10 @@ function renderBar(){
   chips($('groupSeg'),GROUPS.map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
-  chips($('depSeg'),[['ALL','Any'],['FREE',`Free <span class="n">${nf}</span>`],['BLOCKED',`Blocked <span class="n">${nb}</span>`]],state.dep,'dep');
+  const di=d=>`<svg class="vi" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${d}</svg>`,
+    LK='<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>';
+  $('depSeg').innerHTML=[['ALL','Any','',di('<circle cx="8" cy="8" r="2.5"/>')],['FREE','Free',nf,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>')],['BLOCKED','Blocked',nb,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>')]]
+    .map(([v,l,n,ic])=>`<button type="button" class="vico lbl" data-dep="${v}" aria-pressed="${state.dep===v}">${ic}${l}${n===''?'':` <span class="n">${n}</span>`}</button>`).join('');slidePill($('depSeg'));
   chips($('prioSeg'),PRIOS.map(p=>[p,p]),state.prio,'prio');
   renderAttn();renderShow();
 }
@@ -783,7 +796,7 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
-  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:'';
+  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
   const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
@@ -845,10 +858,19 @@ function renderDigest(){
   el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}">${dgOpen?'Collapse':'Expand'}</button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
    +(dgOpen?gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''):'');
 }
-// Needs you: questions (waiting_on) + reviews, oldest first. Drafts live in DRAFTS (keyed by data-draft), so the 4 s refresh and the drawer re-render keep half-typed text.
+// Needs you: reviews + questions an agent asked (asked_by; a hand-set waiting_on is "Parked", not here), by score then oldest. Drafts live in DRAFTS (keyed by data-draft), so the 4 s refresh and the drawer re-render keep half-typed text.
 const DRAFTS={}; let needsSig='';
-const sinceOf=t=>t.result?.at||t.updated+'T00:00:00'; // review: when the worker finished; question: only the date is on the ticket
-const needsItems=()=>T.filter(t=>t.status==='review'||(t.waiting_on&&t.status!=='done')).sort((a,b)=>Date.parse(sinceOf(a))-Date.parse(sinceOf(b)));
+const sinceOf=t=>(t.status==='review'?t.result?.at:t.asked_at)||t.updated+'T00:00:00'; // date-only when the ticket has no timestamp
+const asked=t=>t.waiting_on&&t.asked_by&&t.status!=='done';
+const needsItems=()=>T.filter(t=>t.status==='review'||asked(t)).sort((a,b)=>(b.score||0)-(a.score||0)||Date.parse(sinceOf(a))-Date.parse(sinceOf(b)));
+function blockedByNeeds(L){ // open tickets downstream of the listed ones, counted once
+  const seen=new Set(),st=[...L]; while(st.length) for(const id of st.pop().blocks||[]){const x=BY.get(id); if(x&&x.status!=='done'&&!seen.has(id)){seen.add(id);st.push(x);}}
+  L.forEach(t=>seen.delete(t.id)); return seen.size;
+}
+// collapsed state per board; `seen` = ids listed when it was collapsed: a NEW id re-opens it (items leaving don't)
+const NK='unblockd.needs.'+(BOARD||'default'); let NC=store.get(NK,{c:false,seen:[]});
+function setNC(c,ids){ NC={c,seen:c?ids:[]}; store.set(NK,NC); paintNC(); }
+function paintNC(){ $('needs').classList.toggle('c',NC.c); $('ndT').setAttribute('aria-expanded',!NC.c); $('ndBody').inert=NC.c; }
 const draftField=(key,name,ph,tag='input')=>`<${tag} name="t" data-draft="${esc(key)}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${tag==='input'?` value="${esc(DRAFTS[key]||'')}">`:`>${esc(DRAFTS[key]||'')}</textarea>`}`;
 function keepFocus(fn){ // re-render without losing the caret in a draft field
   const a=document.activeElement,k=a?.dataset?.draft,pos=k?a.selectionStart:0; fn();
@@ -871,12 +893,14 @@ function renderNeeds(){
     el.style.overflow='hidden'; el._out=el.animate([{opacity:1,maxHeight:el.offsetHeight+'px'},{opacity:0,maxHeight:'0px',paddingBlock:'0px',marginBottom:'0px'}],{duration:200,easing:'ease-out'});
     el._out.onfinish=()=>{el._out=null;el.style.overflow='';if(!needsItems().length)el.hidden=true;}; return; }
   el.hidden=false;
-  const sig=L.map(t=>[t.id,t.status,t.title,t.waiting_on].join('\0')).join('\n'); if(sig===needsSig){tickAges();return;} needsSig=sig;
-  const old=was?[...el.querySelectorAll('ul>li')]:[];
-  keepFocus(()=>{el.innerHTML=`<h2>Needs you <span class="n">${L.length}</span></h2><ul>${L.map(t=>{const q=!!t.waiting_on;
-    return `<li data-id="${esc(t.id)}"><div class="nd-h"><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button><span class="nb${q?'':' r'}">${q?'Question':'Review'}</span><time class="nd-age" data-since="${esc(sinceOf(t))}"></time></div>`
+  if(NC.c&&L.some(t=>!NC.seen.includes(t.id))) setNC(false); else paintNC();
+  const M=blockedByNeeds(L), sig=L.map(t=>[t.id,t.status,t.title,t.waiting_on,t.unblocks].join('\0')).join('\n')+'\n'+M; if(sig===needsSig){tickAges();return;} needsSig=sig;
+  const old=was?[...el.querySelectorAll('ul>li')]:[], first=L.reduce((a,t)=>Date.parse(sinceOf(t))<Date.parse(sinceOf(a))?t:a);
+  $('ndT').innerHTML=`<b class="bang" aria-hidden="true">!</b><span class="nd-sum"><span class="n">${L.length}</span> ${L.length===1?'needs':'need'} you · oldest <time data-since="${esc(sinceOf(first))}"></time>${M?` · blocking ${M} ticket${M>1?'s':''}`:''}</span><i class="chev" aria-hidden="true"></i>`;
+  keepFocus(()=>{el.querySelector('ul').innerHTML=L.map(t=>{const q=t.status!=='review';
+    return `<li data-id="${esc(t.id)}"><div class="nd-h"><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button><span class="nb${q?'':' r'}">${q?'Question':'Review'}</span>${t.unblocks>0?`<span class="nd-bl">blocks ${t.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(sinceOf(t))}"></time></div>`
      +(q?`<p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('a:'+t.id,'','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
-        :`<form class="nd-f" data-nform="reject" data-id="${esc(t.id)}"><button type="button" class="btn sm" data-approve="${esc(t.id)}">Approve</button>${draftField('r:'+t.id,'','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`)+'</li>';}).join('')}</ul>`;});
+        :`<form class="nd-f" data-nform="reject" data-id="${esc(t.id)}"><button type="button" class="btn sm" data-approve="${esc(t.id)}">Approve</button>${draftField('r:'+t.id,'','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`)+'</li>';}).join('');});
   if(move) needsMotion(el,old,was);
   tickAges();
 }
@@ -931,12 +955,23 @@ function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const 
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
     e.textContent=done?(d<1?'closed today':`closed ${d}d ago`):(d<1?'today':d+'d');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
 setInterval(()=>{if(!$('working').hidden)renderWorking();tickAges();},15000);
-function renderNext(){ // compact ranked strip of the best ready tickets; >3 collapses behind "show all"
-  const el=$('nextUp'),open=store.get('nextOpen',true),all=store.get('nextAll',false);
+const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
+let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
+function nextMode(){const m=store.get(NKEY(),'top');return NMODES.includes(m)?m:'top';}
+function nextPaint(){ // classes + labels only, so the grid-rows transition runs on the live DOM
+	const el=$('nextUp'),m=nextMode(),b=el.querySelector('.nexttog'); if(!b) return;
+	el.classList.toggle('m-c',m==='c');el.classList.toggle('m-all',m==='all');
+	const nx=m==='top'&&NEXTN>3?`show all ${NEXTN}`:m==='c'?'expand':'collapse';
+	b.setAttribute('aria-expanded',m!=='c');b.title=`Click to ${nx}`;b.querySelector('.m').textContent=m==='c'?'':m==='all'||NEXTN<=3?'':'top 3';}
+function nextCycle(){const m=nextMode();store.set(NKEY(),m==='top'?(NEXTN>3?'all':'c'):m==='all'?'c':'top');nextPaint();}
+function renderNext(){ // compact ranked strip of the best ready tickets
+  const el=$('nextUp');
   const ts=T.filter(t=>t.effective_status==='todo'&&onBoard(t)).sort((a,b)=>(BV.M.has(b.id)-BV.M.has(a.id))||(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,6);
   el.hidden=!ts.length||state.view!=='board'; if(el.hidden) return;
-  const shown=all?ts:ts.slice(0,3);
-  el.innerHTML=`<div class="nxh"><h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="${open}">Next up <span class="n">${ts.length}</span><span class="chev" aria-hidden="true">▾</span></button></h2>${open&&ts.length>3?`<button type="button" class="btn ghost sm" data-nextall>${all?'Show top 3':`Show all ${ts.length}`}</button>`:''}</div>${open?`<ol class="nxl">${shown.map((t,i)=>`<li><button type="button" class="nx${t.priority==='P0'?' p0':''}" data-open="${esc(t.id)}" title="Score ${t.score} (priority x tickets unblocked)"><span class="rk">${i+1}</span><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="nt">${inline(t.title)}</span></button></li>`).join('')}</ol>`:''}`;
+  NEXTN=ts.length;
+  const li=(t,i)=>`<li><button type="button" class="nx${t.priority==='P0'?' p0':''}" data-open="${esc(t.id)}" title="Score ${t.score} (priority x tickets unblocked)"><span class="rk">${i+1}</span><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="nt">${inline(t.title)}</span></button></li>`;
+  el.innerHTML=`<div class="nxh"><h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="true">Next up <span class="n">${ts.length}</span><span class="m"></span><i class="chev" aria-hidden="true"></i></button></h2></div><div class="nx-body"><div><ol class="nxl">${ts.slice(0,3).map(li).join('')}</ol>${ts.length>3?`<div class="nx-more"><div><ol class="nxl nxl2">${ts.slice(3).map((t,i)=>li(t,i+3)).join('')}</ol></div></div>`:''}</div></div>`;
+  nextPaint();
 }
 const qaKey=()=>'qaPrefix.'+(BOARD||'default');
 function qaPrefix(){ // remembered per board, else the prefix most tickets here use
@@ -1059,12 +1094,12 @@ function showTicket(id,refresh){
   const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status;
-  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
+  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Waiting on ${t.waiting_on}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
-    t.waiting_on&&!why?`<span>Waiting on ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
+    t.waiting_on&&!why?`<span>${t.asked_by?'Waiting on':'Parked:'} ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
     <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
@@ -1072,7 +1107,8 @@ function showTicket(id,refresh){
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
-    ${t.waiting_on?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
+    ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
+    ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='review'?`<h3>Result, for review</h3>${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
@@ -1162,16 +1198,17 @@ document.addEventListener('click',async e=>{
   if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
   if(g('[data-clear]')){clearFilters();return;}
   if(g('[data-new]')){openId=null;editForm(null);return;}
-  if(g('[data-nextall]')){store.set('nextAll',!store.get('nextAll',false));renderNext();return;}
   if(b=g('[data-seg]')){if(state.view!=='board')setView('board');if(matchMedia('(max-width:600px)').matches)setTab(b.dataset.seg);goTo(document.querySelector(`[data-col="${b.dataset.seg}"]`));return;}
   if(g('[data-dgtoggle]')){dgOpen=!dgOpen;renderDigest();return;}
   if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());DG=null;renderDigest();return;}
   if(g('[data-toworking]')){$('apanel').open=true;$('apanel').scrollIntoView({block:'nearest'});return;}
-  if(g('[data-nexttoggle]')){store.set('nextOpen',!store.get('nextOpen',true));renderNext();return;}
+  if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
   if(b=g('[data-approve]')){moveTo(b.dataset.approve,'done');return;}
+  if(g('#ndT')){setNC(!NC.c,needsItems().map(t=>t.id));return;}
+  if(b=g('[data-resume]')){api('PATCH','/'+b.dataset.resume,{waiting_on:''}).then(()=>load(true)).then(()=>toast('Resumed: '+b.dataset.resume)).catch(er=>toast(er.message,{err:1}));return;}
   if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
   if(g('#kbBtn,#kbHint')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}

@@ -157,13 +157,35 @@ try {
 		cli('claim', '--agent', 'backend-1', '--id', rid); // result is only written by complete(); the example board has no review gate, so move it to review by hand
 		cli('complete', rid, '--agent', 'backend-1', '--summary', 'Did the **thing**', '--file', 'a.py', '--ref', 'https://example.com/pull/1', '--handoff', 'nothing');
 		cli('update', rid, '--json', '{"status":"review"}');
-		cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","waiting_on":"Which one?"}');
+		const qid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","priority":"P1"}')).id;
+		cli('create', '--prefix', 'NY', '--title', 'after the question', '--json', `{"owner":"Claude","blocked_by":["${qid}"]}`);
+		cli('claim', '--agent', 'backend-1', '--id', qid);
+		cli('ask', qid, '--agent', 'backend-1', '--question', 'Which one?'); // an agent question: in the strip
+		cli('create', '--prefix', 'NY', '--title', 'parked by hand', '--json', '{"owner":"Claude","waiting_on":"Omri: later"}'); // hand-parked: not in the strip
 		// the CLI wrote the files; the page only sees them on its next 4 s poll, so wait for the condition (default 30 s), not a fixed delay
 		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
 		await visible('#needs li', 'Needs you strip');
 		ok((await page.locator('#needs li').count()) === 2, `[${tag}] Needs you should list the review and the question`);
 		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
 		await noOverflow('needs strip');
+		ok((await page.locator('#needs li').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
+		ok(!(await page.locator('#needs').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the strip`);
+		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
+		// collapse -> one summary line; survives reload; a NEW question re-opens it
+		const sum = () => page.locator('#ndT').innerText();
+		await page.click('#ndT');
+		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'false', `[${tag}] collapsed`);
+		ok(/^!\s*2 need you · oldest .+ · blocking 1 ticket$/s.test((await sum())), `[${tag}] summary text: ${await sum()}`);
+		await page.waitForFunction(() => getComputedStyle(document.getElementById('ndBody')).visibility === 'hidden');
+		await page.reload(); await visible('#ndT', 'summary after reload');
+		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'false', `[${tag}] collapsed state should survive reload`);
+		const xid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'late question', '--json', '{"owner":"Claude"}')).id;
+		cli('claim', '--agent', 'backend-1', '--id', xid); cli('ask', xid, '--agent', 'backend-1', '--question', 'Again?');
+		await page.waitForFunction(() => document.getElementById('ndT').getAttribute('aria-expanded') === 'true');
+		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 3);
+		cli('delete', xid); // back to 2; it stays open
+		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
+		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'true', `[${tag}] strip should stay open when an item leaves`);
 		await page.click('[data-view="graph"]'); // the strip is a board thing: hidden in Graph, back on return
 		await page.waitForFunction(() => document.getElementById('needs').hidden).catch(() => {}); // the view switch cross-fades (View Transition), so it lands a frame later
 		ok(await page.locator('#needs').isHidden(), `[${tag}] Needs you strip should be hidden in graph view`);
