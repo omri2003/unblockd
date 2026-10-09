@@ -157,14 +157,37 @@ try {
 		cli('claim', '--agent', 'backend-1', '--id', rid); // result is only written by complete(); the example board has no review gate, so move it to review by hand
 		cli('complete', rid, '--agent', 'backend-1', '--summary', 'Did the **thing**', '--file', 'a.py', '--ref', 'https://example.com/pull/1', '--handoff', 'nothing');
 		cli('update', rid, '--json', '{"status":"review"}');
-		cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","waiting_on":"Which one?"}');
+		const qid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","priority":"P1"}')).id;
+		cli('create', '--prefix', 'NY', '--title', 'after the question', '--json', `{"owner":"Claude","blocked_by":["${qid}"]}`);
+		cli('claim', '--agent', 'backend-1', '--id', qid);
+		cli('ask', qid, '--agent', 'backend-1', '--question', 'Which one?'); // an agent question: in the strip
+		cli('create', '--prefix', 'NY', '--title', 'parked by hand', '--json', '{"owner":"Claude","waiting_on":"Omri: later"}'); // hand-parked: not in the strip
 		// the CLI wrote the files; the page only sees them on its next 4 s poll, so wait for the condition (default 30 s), not a fixed delay
 		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
 		await visible('#needs li', 'Needs you strip');
 		ok((await page.locator('#needs li').count()) === 2, `[${tag}] Needs you should list the review and the question`);
 		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
 		await noOverflow('needs strip');
+		ok((await page.locator('#needs li').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
+		ok(!(await page.locator('#needs').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the strip`);
+		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
+		// collapse -> one summary line; survives reload; a NEW question re-opens it
+		const sum = () => page.locator('#ndT').innerText();
+		await page.click('#ndT');
+		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'false', `[${tag}] collapsed`);
+		ok(/^!\s*2 need you · oldest .+ · blocking 1 ticket$/s.test((await sum())), `[${tag}] summary text: ${await sum()}`);
+		await page.waitForFunction(() => getComputedStyle(document.getElementById('ndBody')).visibility === 'hidden');
+		await page.reload(); await visible('#ndT', 'summary after reload');
+		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'false', `[${tag}] collapsed state should survive reload`);
+		const xid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'late question', '--json', '{"owner":"Claude"}')).id;
+		cli('claim', '--agent', 'backend-1', '--id', xid); cli('ask', xid, '--agent', 'backend-1', '--question', 'Again?');
+		await page.waitForFunction(() => document.getElementById('ndT').getAttribute('aria-expanded') === 'true');
+		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 3);
+		cli('delete', xid); // back to 2; it stays open
+		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
+		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'true', `[${tag}] strip should stay open when an item leaves`);
 		await page.click('[data-view="graph"]'); // the strip is a board thing: hidden in Graph, back on return
+		await page.waitForFunction(() => document.getElementById('needs').hidden).catch(() => {}); // the view switch cross-fades (View Transition), so it lands a frame later
 		ok(await page.locator('#needs').isHidden(), `[${tag}] Needs you strip should be hidden in graph view`);
 		await page.click('[data-view="board"]');
 		await visible('#needs li', 'Needs you strip back on board');
@@ -188,6 +211,29 @@ try {
 		await noOverflow('board after needs');
 
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
+		await ctx.close();
+	}
+	// 5. motion: a ticket moved behind the page's back slides (WAAPI) and ends in its new column with no leftover transform; under reduced motion nothing animates and everything still works
+	for (const reducedMotion of ['no-preference', 'reduce']) {
+		const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion });
+		const page = await ctx.newPage(); page.setDefaultTimeout(8000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+		await page.addInitScript(() => { window.__anim = 0; const o = Element.prototype.animate; Element.prototype.animate = function (...a) { window.__anim++; return o.apply(this, a); }; });
+		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		const created = JSON.parse(cli('create', '--prefix', 'MV', '--title', 'mover', '--json', '{"owner":"Claude","pillar":"API"}').toString());
+		const id = created.id; await page.waitForSelector(`.col.todo .card[data-open="${id}"]`);
+		await page.evaluate(() => { window.__anim = 0; });
+		cli('update', id, '--json', '{"status":"doing"}');
+		await page.waitForSelector(`.col.doing .card[data-open="${id}"]`);
+		await page.waitForTimeout(500);
+		const end = await page.evaluate((i) => { const w = document.querySelector(`.card[data-open="${i}"]`).closest('.cw'); return { tf: getComputedStyle(w).transform, running: w.getAnimations().length, anim: window.__anim }; }, id);
+		ok(end.tf === 'none' && end.running === 0, `[motion/${reducedMotion}] moved card should rest in its column without a transform: ${JSON.stringify(end)}`);
+		ok(reducedMotion === 'reduce' ? end.anim === 0 : end.anim > 0, `[motion/${reducedMotion}] expected ${reducedMotion === 'reduce' ? 'no' : 'some'} animation, saw ${end.anim}`);
+		await page.click('[data-view="graph"]'); await page.waitForSelector('#graph', { state: 'visible' });
+		const ind = await page.evaluate(() => { const b = document.querySelector('#viewSeg [aria-pressed=true]'), i = document.querySelector('#viewSeg .ind'), r = b.getBoundingClientRect(), q = i.getBoundingClientRect(); return b.dataset.view === 'graph' && Math.abs(r.left - q.left) < 2 && Math.abs(r.width - q.width) < 2; });
+		ok(ind, `[motion/${reducedMotion}] view indicator should sit behind the pressed view`);
+		await page.keyboard.press('g'); await page.waitForSelector('.card', { state: 'visible' });
+		ok(!errs.length, `[motion/${reducedMotion}] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
 	await cleanup();

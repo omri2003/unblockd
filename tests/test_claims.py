@@ -104,6 +104,28 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
 		self.assertEqual(self.s.claim("godot-dev-1", tid="CMB-2")["id"], "CMB-2")
 
+	def test_ask_records_asked_at_and_by_answer_clears_them(self):
+		self.s.claim("godot-dev-1", tid="CMB-2")
+		t = self.s.ask("CMB-2", "godot-dev-1", "keep i-frames?")
+		self.assertEqual(t["asked_by"], "godot-dev-1")
+		self.assertRegex(t["asked_at"], r"^\d{4}-\d\d-\d\dT")
+		for k in ("asked_at", "asked_by"):
+			with self.assertRaises(TicketError):
+				self.s.update("CMB-2", {k: "x"})
+		t = self.s.answer("CMB-2", "omri", "yes")
+		self.assertEqual((t["waiting_on"], t["asked_at"], t["asked_by"]), ("", "", ""))
+
+	def test_hand_set_waiting_on_has_age_but_no_asker(self):
+		t = self.s.update("CMB-1", {"waiting_on": "Omri: pick"})
+		self.assertEqual(t["asked_by"], "")
+		self.assertTrue(t["asked_at"])
+		first = t["asked_at"]
+		self.assertEqual(self.s.update("CMB-1", {"waiting_on": "Omri: pick again"})["asked_at"], first)  # editing keeps the age
+		t = self.s.update("CMB-1", {"waiting_on": ""})
+		self.assertEqual((t["asked_at"], t["asked_by"]), ("", ""))
+		with self.assertRaises(TicketError):
+			self.s.create({"title": "x", "asked_by": "a"}, prefix="CMB")
+
 	def test_add_note_appends_signed_lines_and_survives_a_concurrent_complete(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")
 		t = self.s.add_note("CMB-1", "godot-dev-1", "found the cause")

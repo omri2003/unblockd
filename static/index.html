@@ -48,9 +48,10 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 /* status strip: proportions of the whole board; a segment scrolls to its column */
 .strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px}
 .segbar{display:flex;gap:2px;flex:1 1 360px;min-width:0;border-radius:8px;overflow:hidden}
-.segbar button{flex:var(--n) 1 76px;min-width:0;border:0;padding:6px 8px;background:var(--c);color:var(--paper);cursor:pointer;text-align:left;line-height:1.1;font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.segbar button{flex:var(--n) 1 76px;transition:flex-grow .18s ease-out;min-width:0;border:0;padding:6px 8px;background:var(--c);color:var(--paper);cursor:pointer;text-align:left;line-height:1.1;font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .segbar button b{display:block;font:800 1.25rem var(--display);font-variant-numeric:tabular-nums}
 .segbar button:hover{filter:brightness(1.12)}
+.segbar button:is(:hover,:focus-visible){flex-grow:calc(var(--n) + var(--sum,0)*.12)} /* spill: a modest bump, neighbours give way; the widths stay a chart */
 .segbar .s-todo{--c:var(--muted)} .segbar .s-doing{--c:var(--amber)} .segbar .s-pending{--c:var(--slate)} .segbar .s-review{--c:var(--plum)} .segbar .s-done{--c:var(--jade);opacity:.8}
 .ready{font-weight:700;white-space:nowrap} .ready b{font:800 1.25rem var(--display);color:var(--jade);margin-right:4px}
 .agbadge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--amber);background:var(--amber-soft);color:var(--amber);border-radius:99px;padding:3px 12px;font-weight:700;cursor:pointer}
@@ -97,7 +98,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .tag{font-size:.74rem;color:var(--muted)} .chip .n{font-variant-numeric:tabular-nums;opacity:.7;margin-left:2px} .ag{font-weight:700;color:var(--slate)}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 11px;cursor:pointer;font-size:.85rem;line-height:1.4}
 .chip:hover{border-color:var(--muted)}
-.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.chip[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper);border-color:var(--ind)}
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
 .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
 .chip.attn{border-color:var(--amber);color:var(--amber)} .chip.attn[aria-pressed="true"]{background:var(--amber);color:var(--surface)}
@@ -116,9 +117,14 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
 .dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
-.needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:8px 12px;margin-bottom:14px}
-.needs h2{font-size:.95rem;margin:0 0 4px} .needs h2 .n{color:var(--plum)}
-.needs ul{list-style:none;margin:0;padding:0;display:grid;gap:10px;max-height:19rem;overflow-y:auto}
+.needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:0 12px;margin-bottom:14px}
+.nd-t{display:flex;align-items:center;gap:8px;width:100%;padding:8px 0;background:none;border:0;border-radius:6px;font:inherit;font-size:.95rem;font-weight:700;color:inherit;text-align:left;cursor:pointer}
+.nd-t .n{color:var(--plum)} .nd-sum{flex:1 1 auto;min-width:0}
+.bang{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--plum);color:var(--surface);font-size:.75rem;font-weight:800}
+.nd-t .chev{margin:0 4px 0 auto;transition:transform .2s ease-out} .needs.c .nd-t .chev{transform:translateY(0) rotate(-45deg)}
+.nd-body{display:grid;grid-template-rows:1fr;transition:grid-template-rows .2s ease-out,visibility .2s} .nd-body>div{min-height:0;overflow:hidden;margin:0 -3px} .needs.c .nd-body{grid-template-rows:0fr;visibility:hidden}
+.needs ul{list-style:none;margin:0;padding:3px 3px 8px;display:grid;gap:10px;max-height:19rem;overflow-y:auto}
+.nd-bl{font-size:.78rem;color:var(--muted)} .why.park{color:var(--muted)}
 .nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
 .nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
@@ -137,8 +143,12 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .next h2{font-size:.95rem;margin:0}
 .nexttog{display:flex;align-items:center;gap:8px;background:none;border:0;padding:2px 4px;cursor:pointer;font-family:var(--display);font-weight:700;font-size:.95rem}
 .nexttog .n{font-family:var(--body);font-size:.85rem;color:var(--muted);font-weight:700}
-.nexttog .chev{font-family:var(--body);font-size:.8rem;color:var(--muted);transition:transform .15s}
-.nexttog[aria-expanded="false"] .chev{transform:rotate(-90deg)}
+.nexttog .chev{transition:transform .2s ease-out}
+.nexttog .m{font-family:var(--body);font-size:.8rem;color:var(--muted);font-weight:600}
+.next.m-c .nexttog .chev{transform:translateY(0) rotate(-45deg)} .next.m-all .nexttog .chev{transform:translateY(.1em) rotate(-135deg)}
+.nx-body,.nx-more{display:grid;grid-template-rows:1fr;transition:grid-template-rows .2s ease-out,visibility .2s} .nx-body>div,.nx-more>div{min-height:0;overflow:hidden}
+.next.m-c .nx-body,.next:not(.m-all) .nx-more{grid-template-rows:0fr;visibility:hidden}
+.nxl2{margin-top:0 !important}
 .nxl{list-style:none;margin:6px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:0 14px}
 .nx{display:grid;grid-template-columns:1.4rem auto auto 1fr;align-items:baseline;gap:8px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:5px 4px;cursor:pointer;min-width:0}
 .nx:hover{background:var(--surface)} .nx .rk{font:800 1.15rem var(--display);color:var(--jade);font-variant-numeric:tabular-nums}
@@ -207,7 +217,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .tabs{display:none}
 @media (max-width:1100px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.board{grid-template-columns:1fr}
-  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
+  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
   .btn{padding:8px 14px} .card{padding:10px}
   .sub,.segbar,.khint{display:none}
   header{position:relative} #bpanel{position:static} #bpanel .sbody{left:0;right:0;width:auto} .bi{padding:13px 12px;font-size:1rem}
@@ -261,8 +271,8 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 /* drawer: status as a segmented control, overflow menu for the quiet actions, knowledge collapsed */
 .srow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:8px} .srow .own{margin:0}
 .segc{display:flex;flex-wrap:wrap;gap:4px}
-.segc [data-setstatus="todo"][aria-pressed="true"]{background:var(--muted);border-color:var(--muted);color:var(--surface)} .segc [data-setstatus="doing"][aria-pressed="true"]{background:var(--amber);border-color:var(--amber);color:var(--surface)}
-.segc [data-setstatus="pending"][aria-pressed="true"]{background:var(--slate);border-color:var(--slate);color:var(--surface)} .segc [data-setstatus="review"][aria-pressed="true"]{background:var(--plum);border-color:var(--plum);color:var(--surface)} .segc [data-setstatus="done"][aria-pressed="true"]{background:var(--jade);border-color:var(--jade);color:var(--surface)}
+.segc [data-setstatus="todo"][aria-pressed="true"]{--ind:var(--muted);background:var(--ind);border-color:var(--ind);color:var(--surface)} .segc [data-setstatus="doing"][aria-pressed="true"]{--ind:var(--amber);background:var(--ind);border-color:var(--ind);color:var(--surface)}
+.segc [data-setstatus="pending"][aria-pressed="true"]{--ind:var(--slate);background:var(--ind);border-color:var(--ind);color:var(--surface)} .segc [data-setstatus="review"][aria-pressed="true"]{--ind:var(--plum);background:var(--ind);border-color:var(--ind);color:var(--surface)} .segc [data-setstatus="done"][aria-pressed="true"]{--ind:var(--jade);background:var(--ind);border-color:var(--ind);color:var(--surface)}
 .dmeta{margin:0 0 6px}
 .ovf{position:relative}
 .ovm{position:absolute;right:0;top:calc(100% + 4px);z-index:3;display:grid;min-width:160px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden} .ovm .dz{color:var(--cinnabar)}
@@ -300,8 +310,9 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
    the blocker to what it blocks, and blockers drift left of what they block. */
 .trow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .vico-g{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r)}
-.vico{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 7px;border:0;background:none;color:var(--muted);border-radius:calc(var(--r) - 2px);cursor:pointer;font:inherit;font-size:.82rem;font-weight:600}
-.vico:hover{color:var(--ink)} .vico[aria-pressed="true"]{background:var(--ink);color:var(--paper)} .vi{display:block;flex:none}
+.vico{display:inline-flex;align-items:center;gap:0;height:28px;padding:0 7px;border:0;background:none;color:var(--muted);border-radius:calc(var(--r) - 2px);cursor:pointer;font:inherit;font-size:.82rem;font-weight:600}
+.vico.lbl{gap:6px;font-size:.88rem} .vico .n{opacity:.7;font-variant-numeric:tabular-nums}
+.vico:hover{color:var(--ink)} .vico[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper)} .vi{display:block;flex:none}
 @media (max-width:600px){.vico{height:34px;padding:0 10px}}
 .hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .graphwrap{position:relative;background:var(--sunk);border-radius:8px;overflow:hidden}
@@ -408,7 +419,16 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
 }
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none}}
+/* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
+.sl{position:relative}
+.sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
+.sl>[aria-pressed="true"]{background:transparent;border-color:transparent}
+.ind{position:absolute;left:0;top:0;z-index:0;pointer-events:none;width:0;height:0}
+.ind.go{transition:transform .2s ease-out,width .2s ease-out,height .2s ease-out,background .2s ease-out}
+.vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
+.vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
+@media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nd-body,.nd-t .chev,.nx-body,.nx-more,.nexttog .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -421,7 +441,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
-  <section class="needs" id="needs" hidden aria-label="Needs you"></section>
+  <section class="needs" id="needs" hidden aria-label="Needs you"><button type="button" class="nd-t" id="ndT" aria-expanded="true" aria-controls="ndBody"></button><div class="nd-body" id="ndBody"><div><ul></ul></div></div></section>
   <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" id="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Search (/). Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
@@ -436,7 +456,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
         <div class="seg" id="showSeg" data-l="Show" role="group" aria-label="Show" title="Only: just the matches. Paths: matches plus everything upstream and downstream of them. Dim: everything, matches highlighted."></div>
       </div></details>
     <div class="seg" id="pills"></div>
-    <div class="seg" id="depSeg" role="group" aria-label="Blocked or free"></div>
+    <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
     <div class="seg" id="attnSeg"></div>
   </div>
 
@@ -643,13 +663,14 @@ async function load(force){
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
   paint=()=>{ paint=null;
-    renderBar(); render(); if(state.view==='docs')loadDocs(); if(!$('chat').hidden&&!CH.busy) renderChat();
+    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(!$('chat').hidden&&!CH.busy) renderChat();
     if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
   };
   if(!force&&menuBusy()) return; // a re-render would destroy the open menu: keep the data, paint when it closes
   paint();
 }
 let paint=null; // the deferred render, if any
+let DATA=false, live=false, DROP=null; // DATA: true only while paint() renders fresh ticket data (not the first paint: `live`). Only those renders animate (cards slide, Needs rows fade); a filter, search, group, view or board change just redraws. DROP: where the last drag ended, so that card slides from the pointer
 const MENUS='.mv[open],.ovf[open],#fpanel[open],#spanel[open],#apanel[open],#bpanel[open]'; // the popovers: at most one is open at a time
 const menuBusy=()=>!!document.querySelector(MENUS);
 const closeMenus=keep=>document.querySelectorAll(MENUS).forEach(d=>d.contains(keep)||(d.open=false)); // all of them, except the one holding `keep`
@@ -667,7 +688,29 @@ function noteFinished(prev){
 
 // ---------- board ----------
 const chipsHtml=(items,cur,attr)=>items.map(([v,l,dot])=>`<button type="button" class="chip" data-${attr}="${v}" aria-pressed="${Array.isArray(cur)?cur.includes(v):cur===v}">${dot?`<i class="dot" style="--dc:var(--${dot})"></i>`:''}${l}</button>`).join('');
-const chips=(el,items,cur,attr)=>{el.innerHTML=chipsHtml(items,cur,attr);};
+const chips=(el,items,cur,attr)=>{el.innerHTML=chipsHtml(items,cur,attr);slidePill(el);};
+// Motion helper for EVERY segmented control: one .ind slides behind the single pressed button. A control rebuilt with innerHTML starts from where its last indicator was (PL),
+// so the 4 s poll re-placing the same value does not animate. Hidden controls are placed when they get a size (ResizeObserver). [data-track] = buttons change size too (#viewSeg): follow them per frame.
+const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+const PL=new Map(); // control key -> {k: pressed value, r: rect}
+const plRO=new ResizeObserver(es=>es.forEach(({target:el})=>{if(!el.isConnected)return plRO.unobserve(el);const z=el.offsetWidth+'x'+el.offsetHeight;if(z!==el._sz){el._sz=z;slidePill(el,true);}}));
+function slidePill(el,instant){
+	if(!el._sz){el._sz=el.offsetWidth+'x'+el.offsetHeight;plRO.observe(el);}
+	const on=el.querySelectorAll(':scope>[aria-pressed="true"]'); let ind=el.querySelector(':scope>.ind');
+	if(on.length!==1||!el.offsetWidth){el.classList.remove('sl');if(ind)ind.hidden=true;return;}
+	const b=on[0],key=(el.id||el.getAttribute('aria-label'))+(el.dataset.pk||''),k=b.dataset[Object.keys(b.dataset)[0]]??'',prev=PL.get(key),track=el.dataset.track!=null,
+		meas=()=>({x:b.offsetLeft,y:b.offsetTop,w:b.offsetWidth,h:b.offsetHeight}),put=r=>{ind.style.transform=`translate(${r.x}px,${r.y}px)`;ind.style.width=r.w+'px';ind.style.height=r.h+'px';},
+		go=!instant&&!track&&!reduce.matches&&prev&&prev.k!==k, cs=getComputedStyle(b);
+	if(!ind){ind=el.appendChild(document.createElement('i'));ind.className='ind';ind.setAttribute('aria-hidden','true');put(go?prev.r:meas());void ind.offsetWidth;}
+	el.classList.add('sl');ind.hidden=false;ind.classList.toggle('go',go);
+	ind.style.background=cs.getPropertyValue('--ind'); // the token text, light-dark() included: it resolves on the indicator
+	ind.style.borderRadius=cs.borderRadius;
+	cancelAnimationFrame(el._raf);
+	if(track){const step=()=>{const r=meas();put(r);PL.set(key,{k,r});el._raf=el.getAnimations({subtree:true}).length?requestAnimationFrame(step):0;};step();return;}
+	const r=meas();put(r);PL.set(key,{k,r});
+}
+const slideAll=(root,instant)=>root.querySelectorAll('.seg,.segc,#viewSeg,#depSeg').forEach(e=>slidePill(e,instant));
+document.fonts?.ready.then(()=>slideAll(document,true));
 function renderBar(){
   $('pillarSeg').hidden=!PILLARS.length;
   if(PILLARS.length) chips($('pillarSeg'),[['ALL','All'],...PILLARS.map(p=>[esc(p),esc(pname(p)),pk(p)]),['OTHER','Other','muted']],state.pillar,'pillar');
@@ -679,7 +722,10 @@ function renderBar(){
   chips($('groupSeg'),GROUPS.map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
-  chips($('depSeg'),[['ALL','Any'],['FREE',`Free <span class="n">${nf}</span>`],['BLOCKED',`Blocked <span class="n">${nb}</span>`]],state.dep,'dep');
+  const di=d=>`<svg class="vi" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${d}</svg>`,
+    LK='<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>';
+  $('depSeg').innerHTML=[['ALL','Any','',di('<circle cx="8" cy="8" r="2.5"/>')],['FREE','Free',nf,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>')],['BLOCKED','Blocked',nb,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>')]]
+    .map(([v,l,n,ic])=>`<button type="button" class="vico lbl" data-dep="${v}" aria-pressed="${state.dep===v}">${ic}${l}${n===''?'':` <span class="n">${n}</span>`}</button>`).join('');slidePill($('depSeg'));
   chips($('prioSeg'),PRIOS.map(p=>[p,p]),state.prio,'prio');
   renderAttn();renderShow();
 }
@@ -750,7 +796,7 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
-  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:'';
+  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
   const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
@@ -812,22 +858,50 @@ function renderDigest(){
   el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}">${dgOpen?'Collapse':'Expand'}</button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
    +(dgOpen?gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''):'');
 }
-// Needs you: questions (waiting_on) + reviews, oldest first. Drafts live in DRAFTS (keyed by data-draft), so the 4 s refresh and the drawer re-render keep half-typed text.
+// Needs you: reviews + questions an agent asked (asked_by; a hand-set waiting_on is "Parked", not here), by score then oldest. Drafts live in DRAFTS (keyed by data-draft), so the 4 s refresh and the drawer re-render keep half-typed text.
 const DRAFTS={}; let needsSig='';
-const sinceOf=t=>t.result?.at||t.updated+'T00:00:00'; // review: when the worker finished; question: only the date is on the ticket
-const needsItems=()=>T.filter(t=>t.status==='review'||(t.waiting_on&&t.status!=='done')).sort((a,b)=>Date.parse(sinceOf(a))-Date.parse(sinceOf(b)));
+const sinceOf=t=>(t.status==='review'?t.result?.at:t.asked_at)||t.updated+'T00:00:00'; // date-only when the ticket has no timestamp
+const asked=t=>t.waiting_on&&t.asked_by&&t.status!=='done';
+const needsItems=()=>T.filter(t=>t.status==='review'||asked(t)).sort((a,b)=>(b.score||0)-(a.score||0)||Date.parse(sinceOf(a))-Date.parse(sinceOf(b)));
+function blockedByNeeds(L){ // open tickets downstream of the listed ones, counted once
+  const seen=new Set(),st=[...L]; while(st.length) for(const id of st.pop().blocks||[]){const x=BY.get(id); if(x&&x.status!=='done'&&!seen.has(id)){seen.add(id);st.push(x);}}
+  L.forEach(t=>seen.delete(t.id)); return seen.size;
+}
+// collapsed state per board; `seen` = ids listed when it was collapsed: a NEW id re-opens it (items leaving don't)
+const NK='unblockd.needs.'+(BOARD||'default'); let NC=store.get(NK,{c:false,seen:[]});
+function setNC(c,ids){ NC={c,seen:c?ids:[]}; store.set(NK,NC); paintNC(); }
+function paintNC(){ $('needs').classList.toggle('c',NC.c); $('ndT').setAttribute('aria-expanded',!NC.c); $('ndBody').inert=NC.c; }
 const draftField=(key,name,ph,tag='input')=>`<${tag} name="t" data-draft="${esc(key)}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${tag==='input'?` value="${esc(DRAFTS[key]||'')}">`:`>${esc(DRAFTS[key]||'')}</textarea>`}`;
 function keepFocus(fn){ // re-render without losing the caret in a draft field
   const a=document.activeElement,k=a?.dataset?.draft,pos=k?a.selectionStart:0; fn();
   if(k){const n=[...document.querySelectorAll('[data-draft]')].find(x=>x.dataset.draft===k); if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch{}}}
 }
+function needsMotion(el,old,was){ // rows that arrived fade in; rows that left (answered, approved, rejected) stay a moment where they were and slide away
+	const fin=[{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'none'}],o={duration:200,easing:'ease-out'};
+	if(!was) return void el.animate(fin,o);
+	const ul=el.querySelector('ul'),have=new Set(old.map(li=>li.dataset.id)),now=new Set([...ul.children].map(li=>li.dataset.id));
+	for(const li of ul.children) if(!have.has(li.dataset.id)) li.animate(fin,o);
+	old.forEach((li,i)=>{ if(now.has(li.dataset.id)) return;
+		const nx=old.slice(i+1).find(x=>now.has(x.dataset.id)); ul.insertBefore(li,nx&&[...ul.children].find(c=>c.dataset.id===nx.dataset.id)||null);
+		li.inert=true; li.style.overflow='hidden'; li.querySelectorAll('[data-draft]').forEach(n=>n.removeAttribute('data-draft'));
+		li.animate([{opacity:1,transform:'none',height:li.offsetHeight+'px',marginBottom:'0px'},{opacity:0,transform:'translateX(18px)',height:'0px',marginBottom:'-10px'}],{...o,fill:'forwards'}).onfinish=()=>li.remove();
+	});
+}
 function renderNeeds(){
-  const el=$('needs'),L=state.view==='board'?needsItems():[]; el.hidden=!L.length; if(el.hidden){needsSig='';return;}
-  const sig=L.map(t=>[t.id,t.status,t.title,t.waiting_on].join('\0')).join('\n'); if(sig===needsSig){tickAges();return;} needsSig=sig;
-  keepFocus(()=>{el.innerHTML=`<h2>Needs you <span class="n">${L.length}</span></h2><ul>${L.map(t=>{const q=!!t.waiting_on;
-    return `<li><div class="nd-h"><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button><span class="nb${q?'':' r'}">${q?'Question':'Review'}</span><time class="nd-age" data-since="${esc(sinceOf(t))}"></time></div>`
+  const el=$('needs'),L=state.view==='board'?needsItems():[], was=!el.hidden, move=DATA&&!reduce.matches; el._out?.cancel(); el._out=null; el.style.overflow='';
+  if(!L.length){ needsSig=''; if(!(was&&move&&state.view==='board')){el.hidden=true;return;} // last row answered: fade the whole strip out, then hide it
+    el.style.overflow='hidden'; el._out=el.animate([{opacity:1,maxHeight:el.offsetHeight+'px'},{opacity:0,maxHeight:'0px',paddingBlock:'0px',marginBottom:'0px'}],{duration:200,easing:'ease-out'});
+    el._out.onfinish=()=>{el._out=null;el.style.overflow='';if(!needsItems().length)el.hidden=true;}; return; }
+  el.hidden=false;
+  if(NC.c&&L.some(t=>!NC.seen.includes(t.id))) setNC(false); else paintNC();
+  const M=blockedByNeeds(L), sig=L.map(t=>[t.id,t.status,t.title,t.waiting_on,t.unblocks].join('\0')).join('\n')+'\n'+M; if(sig===needsSig){tickAges();return;} needsSig=sig;
+  const old=was?[...el.querySelectorAll('ul>li')]:[], first=L.reduce((a,t)=>Date.parse(sinceOf(t))<Date.parse(sinceOf(a))?t:a);
+  $('ndT').innerHTML=`<b class="bang" aria-hidden="true">!</b><span class="nd-sum"><span class="n">${L.length}</span> ${L.length===1?'needs':'need'} you · oldest <time data-since="${esc(sinceOf(first))}"></time>${M?` · blocking ${M} ticket${M>1?'s':''}`:''}</span><i class="chev" aria-hidden="true"></i>`;
+  keepFocus(()=>{el.querySelector('ul').innerHTML=L.map(t=>{const q=t.status!=='review';
+    return `<li data-id="${esc(t.id)}"><div class="nd-h"><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button><span class="nb${q?'':' r'}">${q?'Question':'Review'}</span>${t.unblocks>0?`<span class="nd-bl">blocks ${t.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(sinceOf(t))}"></time></div>`
      +(q?`<p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('a:'+t.id,'','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
-        :`<form class="nd-f" data-nform="reject" data-id="${esc(t.id)}"><button type="button" class="btn sm" data-approve="${esc(t.id)}">Approve</button>${draftField('r:'+t.id,'','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`)+'</li>';}).join('')}</ul>`;});
+        :`<form class="nd-f" data-nform="reject" data-id="${esc(t.id)}"><button type="button" class="btn sm" data-approve="${esc(t.id)}">Approve</button>${draftField('r:'+t.id,'','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`)+'</li>';}).join('');});
+  if(move) needsMotion(el,old,was);
   tickAges();
 }
 const NFORM={answer:['text','Answered'],reject:['reason','Rejected'],notes:['text','Note added']};
@@ -872,7 +946,7 @@ function renderAgents(){
     :`<table class="astat"><thead><tr><th>Profile</th><th>Finished</th><th title="Claim to complete, same ticket and agent">Median to finish</th><th title="(expired + released) / claims. 30% or more: tickets too big or instructions weak">Stuck rate</th><th>Splits</th><th>Working now</th></tr></thead><tbody>${rows.map(([p,r])=>{
       const rate=r.claims?r.stuck/r.claims:null, bad=rate!=null&&rate>=.3;
       return `<tr><td><b>${esc(p)}</b><span class="nm">${esc([...r.names].sort().join(', '))}</span></td><td>${r.fin}</td><td>${dur(median(r.d))}</td><td${bad?' class="warn" title="30% or more of claims ended stuck: split the tickets or tighten the instructions"':''}>${rate==null?'–':(bad?'⚠ ':'')+Math.round(rate*100)+'%'}<span class="sub2">${r.stuck} of ${r.claims}</span></td><td>${r.split}</td><td>${r.now}</td></tr>`;}).join('')}</tbody></table>`;
-  $('abody').innerHTML=seg+body;
+  $('abody').innerHTML=seg+body;slideAll($('abody'));
 }
 // heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
 function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const d=e.dataset.since,n=Math.floor((Date.now()-Date.parse(d))/864e5);e.textContent=d.includes('T00:00:00')?(n<1?'today':n+'d'):ago(d);e.title=e.dataset.since;});
@@ -881,12 +955,23 @@ function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const 
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
     e.textContent=done?(d<1?'closed today':`closed ${d}d ago`):(d<1?'today':d+'d');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
 setInterval(()=>{if(!$('working').hidden)renderWorking();tickAges();},15000);
-function renderNext(){ // compact ranked strip of the best ready tickets; >3 collapses behind "show all"
-  const el=$('nextUp'),open=store.get('nextOpen',true),all=store.get('nextAll',false);
+const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
+let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
+function nextMode(){const m=store.get(NKEY(),'top');return NMODES.includes(m)?m:'top';}
+function nextPaint(){ // classes + labels only, so the grid-rows transition runs on the live DOM
+	const el=$('nextUp'),m=nextMode(),b=el.querySelector('.nexttog'); if(!b) return;
+	el.classList.toggle('m-c',m==='c');el.classList.toggle('m-all',m==='all');
+	const nx=m==='top'&&NEXTN>3?`show all ${NEXTN}`:m==='c'?'expand':'collapse';
+	b.setAttribute('aria-expanded',m!=='c');b.title=`Click to ${nx}`;b.querySelector('.m').textContent=m==='c'?'':m==='all'||NEXTN<=3?'':'top 3';}
+function nextCycle(){const m=nextMode();store.set(NKEY(),m==='top'?(NEXTN>3?'all':'c'):m==='all'?'c':'top');nextPaint();}
+function renderNext(){ // compact ranked strip of the best ready tickets
+  const el=$('nextUp');
   const ts=T.filter(t=>t.effective_status==='todo'&&onBoard(t)).sort((a,b)=>(BV.M.has(b.id)-BV.M.has(a.id))||(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,6);
   el.hidden=!ts.length||state.view!=='board'; if(el.hidden) return;
-  const shown=all?ts:ts.slice(0,3);
-  el.innerHTML=`<div class="nxh"><h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="${open}">Next up <span class="n">${ts.length}</span><span class="chev" aria-hidden="true">▾</span></button></h2>${open&&ts.length>3?`<button type="button" class="btn ghost sm" data-nextall>${all?'Show top 3':`Show all ${ts.length}`}</button>`:''}</div>${open?`<ol class="nxl">${shown.map((t,i)=>`<li><button type="button" class="nx${t.priority==='P0'?' p0':''}" data-open="${esc(t.id)}" title="Score ${t.score} (priority x tickets unblocked)"><span class="rk">${i+1}</span><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="nt">${inline(t.title)}</span></button></li>`).join('')}</ol>`:''}`;
+  NEXTN=ts.length;
+  const li=(t,i)=>`<li><button type="button" class="nx${t.priority==='P0'?' p0':''}" data-open="${esc(t.id)}" title="Score ${t.score} (priority x tickets unblocked)"><span class="rk">${i+1}</span><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="nt">${inline(t.title)}</span></button></li>`;
+  el.innerHTML=`<div class="nxh"><h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="true">Next up <span class="n">${ts.length}</span><span class="m"></span><i class="chev" aria-hidden="true"></i></button></h2></div><div class="nx-body"><div><ol class="nxl">${ts.slice(0,3).map(li).join('')}</ol>${ts.length>3?`<div class="nx-more"><div><ol class="nxl nxl2">${ts.slice(3).map((t,i)=>li(t,i+3)).join('')}</ol></div></div>`:''}</div></div>`;
+  nextPaint();
 }
 const qaKey=()=>'qaPrefix.'+(BOARD||'default');
 function qaPrefix(){ // remembered per board, else the prefix most tickets here use
@@ -919,8 +1004,22 @@ function lanes(ts){ // Group by: a small heading per pillar / parent / agent ins
   const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
   return [...m].sort((a,b)=>!a[0]-!b[0]).map(([k,a])=>`<h3 class="lane" title="${esc(name(k))}"><span>${esc(name(k))}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`).join('');
 }
+const cardRects=()=>new Map([...document.querySelectorAll('#board .card[data-open]')].map(c=>[c.dataset.open,c.getBoundingClientRect()]));
+function playFlip(prev){ // FLIP: cards that moved glide from their old spot, new ones fade in. More than 60 moved = just jump.
+	const mv=[],nw=[];
+	for(const c of document.querySelectorAll('#board .card[data-open]')){
+		const id=c.dataset.open,n=c.getBoundingClientRect(),w=c.closest('.cw'); let o=prev.get(id);
+		if(!n.width) continue; // another mobile tab: not on screen
+		if(DROP?.id===id&&o) o={left:DROP.x-n.width/2,top:DROP.y-12,width:n.width};
+		if(!o){nw.push(w);continue;} if(!o.width) continue;
+		const dx=o.left-n.left,dy=o.top-n.top; if(Math.abs(dx)+Math.abs(dy)>1) mv.push([w,dx,dy]);
+	}
+	DROP=null; if(mv.length>60||nw.length>60) return;
+	for(const [w,dx,dy] of mv) w.animate([{transform:`translate(${dx}px,${dy}px)`,zIndex:2},{transform:'none',zIndex:2}],{duration:Math.min(280,150+Math.hypot(dx,dy)/5),easing:'cubic-bezier(.2,.7,.2,1)'});
+	for(const w of nw) w.animate([{opacity:0,transform:'scale(.96)'},{opacity:1,transform:'none'}],{duration:160,easing:'ease-out'});
+}
 function renderBoard(){
-  const vis=T.filter(onBoard),qa=document.querySelector('.qa-t'),keep=qa&&{v:qa.value,p:document.querySelector('.qa-p').value,f:document.activeElement===qa,s:qa.selectionStart}; // a re-render must not eat a half-typed ticket
+  const flip=DATA&&state.view==='board'&&!reduce.matches?cardRects():null, vis=T.filter(onBoard),qa=document.querySelector('.qa-t'),keep=qa&&{v:qa.value,p:document.querySelector('.qa-p').value,f:document.activeElement===qa,s:qa.selectionStart}; // a re-render must not eat a half-typed ticket
   document.body.dataset.tab=TAB;
   $('tabs').innerHTML=vis.length?COLS.map(([k,name])=>`<button type="button" role="tab" class="tab ${k}${k===TAB?' on':''}" data-tab="${k}" aria-selected="${k===TAB}">${name}<span class="n">${vis.filter(t=>t.effective_status===k).length}</span></button>`).join(''):'';
   if(!vis.length){ $('board').innerHTML=emptyState(); return; }
@@ -933,11 +1032,12 @@ function renderBoard(){
     return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead"><h2>${name}</h2>${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}<span class="n">${total}</span></div>${k==='todo'?qaForm():''}<div class="cards">${lanes(ts)||'<p class="emptycol">None</p>'}</div>${more}</section>`;
   }).join('');
   if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
+  if(flip?.size) playFlip(flip);
 }
 
 // ---------- drawer ----------
 let lastFocus=null;
-function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
+function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
 function closeDrawer(){SPLIT=null;$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
@@ -994,20 +1094,21 @@ function showTicket(id,refresh){
   const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status;
-  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?`Waiting on ${t.waiting_on}`:''):'';
+  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Waiting on ${t.waiting_on}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
-    t.waiting_on&&!why?`<span>Waiting on ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
+    t.waiting_on&&!why?`<span>${t.asked_by?'Waiting on':'Parked:'} ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
-    <div class="srow"><div class="segc" role="group" aria-label="Status">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
+    <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
     <div class="meta dmeta">${dm.join('')}</div>
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
-    ${t.waiting_on?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
+    ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
+    ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='review'?`<h3>Result, for review</h3>${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
@@ -1097,16 +1198,17 @@ document.addEventListener('click',async e=>{
   if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
   if(g('[data-clear]')){clearFilters();return;}
   if(g('[data-new]')){openId=null;editForm(null);return;}
-  if(g('[data-nextall]')){store.set('nextAll',!store.get('nextAll',false));renderNext();return;}
   if(b=g('[data-seg]')){if(state.view!=='board')setView('board');if(matchMedia('(max-width:600px)').matches)setTab(b.dataset.seg);goTo(document.querySelector(`[data-col="${b.dataset.seg}"]`));return;}
   if(g('[data-dgtoggle]')){dgOpen=!dgOpen;renderDigest();return;}
   if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());DG=null;renderDigest();return;}
   if(g('[data-toworking]')){$('apanel').open=true;$('apanel').scrollIntoView({block:'nearest'});return;}
-  if(g('[data-nexttoggle]')){store.set('nextOpen',!store.get('nextOpen',true));renderNext();return;}
+  if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
   if(b=g('[data-approve]')){moveTo(b.dataset.approve,'done');return;}
+  if(g('#ndT')){setNC(!NC.c,needsItems().map(t=>t.id));return;}
+  if(b=g('[data-resume]')){api('PATCH','/'+b.dataset.resume,{waiting_on:''}).then(()=>load(true)).then(()=>toast('Resumed: '+b.dataset.resume)).catch(er=>toast(er.message,{err:1}));return;}
   if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
   if(g('#kbBtn,#kbHint')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
@@ -1117,7 +1219,7 @@ document.addEventListener('click',async e=>{
   if((e.shiftKey||e.ctrlKey||e.metaKey)&&(b=g('.card[data-open]'))){e.preventDefault();const id=b.dataset.open;SEL.has(id)?SEL.delete(id):SEL.add(id);renderBulk();renderBoard();return;}
   if(g('[data-bulkclear]')){SEL.clear();renderBulk();renderBoard();return;}
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
-  if(b=g('[data-view]')){setView(b.dataset.view);return;}
+  if(b=g('[data-view]')){viewTo(b.dataset.view);return;}
   if(g('[data-unfocus]')){setFocus(null);return;}
   if(g('[data-isoback]')){leaveIsolate();return;}
   if(g('[data-ingraph]')){const id=openId;closeDrawer();setView('graph');focusNode(id);return;}
@@ -1177,8 +1279,8 @@ document.addEventListener('keydown',e=>{
   if(e.key==='t'){ const o=['system','light','dark']; setPref('theme',o[(o.indexOf(SET.theme)+1)%3]); toast('Theme: '+{system:'System',light:'Light',dark:'Dark'}[SET.theme]); return; }
   if(!$('drawer').hidden||!$('kb').hidden) return;
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
-  else if(e.key==='g') setView(state.view==='board'?'graph':'board');
-  else if(e.key==='d') setView(state.view==='docs'?'board':'docs');
+  else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
+  else if(e.key==='d') viewTo(state.view==='docs'?'board':'docs');
   else if(e.key==='B'){ e.preventDefault(); if(!$('bsum').inert){ $('bpanel').open=true; } }
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
   else if(e.key==='c'){ e.preventDefault(); $('chat').hidden?openChat():$('cin').focus(); }
@@ -1197,7 +1299,7 @@ document.addEventListener('dragover',e=>{ const col=e.target.closest?.('[data-co
 document.addEventListener('drop',e=>{
   const col=e.target.closest?.('[data-col]'); const id=e.dataTransfer.getData('text/plain')||dragId; if(!col||!id) return; e.preventDefault();
   col.classList.remove('drop'); const t=BY.get(id); const to=col.dataset.col; if(!t||t.status===to) return;
-  moveTo(id,to);
+  DROP={id,x:e.clientX,y:e.clientY}; setTimeout(()=>DROP=null,3000); moveTo(id,to);
 });
 // ---------- graph ----------
 // Nodes = tickets, arrow A→B = "A blocks B" (B.blocked_by has A). Size = how many
@@ -1212,7 +1314,6 @@ const G={nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',
   layout:pickOf(store.get('gLayout','flow'),['flow','free'],'flow'),lanes:[],preds:new Map(),critG:null,critF:null,selEdge:null,link:null,pts:new Map(),pinch:null,anims:[],grain:null,last:0,fitSettle:false};
 const GEMPTY=$('gEmpty').textContent;
 const cv=$('graph'), ctx=cv.getContext('2d');
-const reduce=matchMedia('(prefers-reduced-motion: reduce)');
 function makeGrain(){ // one small noise tile, drawn once; pattern-filled at ~3% so the page doesn't look like a flat screen
   const t=document.createElement('canvas');t.width=t.height=96;const x=t.getContext('2d'),im=x.createImageData(96,96),[r,g,b]=(G.col.ink||'').match(/[\d.]+/g)||[0,0,0];
   for(let i=0;i<96*96;i++){im.data[i*4]=r;im.data[i*4+1]=g;im.data[i*4+2]=b;im.data[i*4+3]=Math.random()*255;}
@@ -1630,7 +1731,15 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
 
 // ---------- view switch ----------
 const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d']];
-function paintViews(v){$('viewSeg').innerHTML=VIEWS.map(([n,l,k])=>`<button type="button" class="vico" data-view="${n}" aria-pressed="${v===n}" aria-label="${l}" title="${l}${k?` (${k})`:''}">${VICON[n]}${v===n?l:''}</button>`).join('');}
+function paintViews(v){const s=$('viewSeg'); // built once: the buttons stay, only aria-pressed moves, so labels and the indicator can animate
+	if(!s.firstChild){s.dataset.track='';s.innerHTML=VIEWS.map(([n,l,k])=>`<button type="button" class="vico" data-view="${n}" aria-pressed="${v===n}" aria-label="${l}" title="${l}${k?` (${k})`:''}">${VICON[n]}<span class="vl"><span>${l}</span></span></button>`).join('');}
+	else s.querySelectorAll('.vico').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v));
+	slidePill(s);}
+function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the browser can. Callers that need the view NOW (focus, scroll) call setView.
+	if(v===state.view) return;
+	if(!document.startViewTransition||reduce.matches) return setView(v);
+	document.startViewTransition(()=>setView(v));
+}
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
   paintViews(v);renderShow();renderNeeds();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
 function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();renderNeeds();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
@@ -1638,7 +1747,8 @@ function renderStrip(){ // proportions of every ticket by what it shows as; a se
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
   $('strip').hidden=!T.length;
-  $('strip').innerHTML=`<div class="segbar" role="group" aria-label="Tickets by status">${COLS.map(([k,l])=>`<button type="button" class="s-${k}" style="--n:${n[k]}" data-seg="${k}" title="${l}: ${n[k]}. Jump to the column"><b>${n[k]}</b>${l}</button>`).join('')}</div><span class="ready"><b>${ready}</b>ready</span>${ag?`<button type="button" class="agbadge" data-toworking title="Agent stats"><i class="pulse" aria-hidden="true"></i>${ag} agent${ag>1?'s':''} working</button>`:''}`;
+  const html=`<div class="segbar" role="group" aria-label="Tickets by status" style="--sum:${T.length}">${COLS.map(([k,l])=>`<button type="button" class="s-${k}" style="--n:${n[k]}" data-seg="${k}" title="${l}: ${n[k]}. Jump to the column"><b>${n[k]}</b>${l}</button>`).join('')}</div><span class="ready"><b>${ready}</b>ready</span>${ag?`<button type="button" class="agbadge" data-toworking title="Agent stats"><i class="pulse" aria-hidden="true"></i>${ag} agent${ag>1?'s':''} working</button>`:''}`;
+  if($('strip')._h!==html){$('strip')._h=html;$('strip').innerHTML=html;} // same markup = leave it alone, so a hovered segment keeps its width through the poll
 }
 const goTo=el=>{if(!el||el.hidden)return;el.scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'start'});el.classList.remove('ping');void el.offsetWidth;el.classList.add('ping');};
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});

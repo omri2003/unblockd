@@ -168,7 +168,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 ```
 
 `status` is `todo` · `doing` · `review` · `done`; `pending` is derived: a `todo`
-with an open blocker or a `waiting_on` question *shows* as pending on its own. Create with a prefix (`BUG`) and the
+with an open blocker or a `waiting_on` question *shows* as pending on its own. `ask_human` also records `asked_at` / `asked_by` (read-only; `answer` clears them): the web board's *Needs you* strip lists only questions an agent asked, a `waiting_on` set by hand shows as *Parked* on its card (clear it from the drawer). Create with a prefix (`BUG`) and the
 next free number is picked. A `blocked_by` that would make a loop (A waits on
 B waits on A) is refused with the loop spelled out.
 
