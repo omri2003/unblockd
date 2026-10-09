@@ -46,6 +46,7 @@ import hashlib
 import hmac
 import json
 import os
+from collections import Counter
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -83,7 +84,7 @@ def _needs() -> list[dict]:
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items, by_id = [], {t["id"]: t for t in ts}
+		items, by_id, failing = [], {t["id"]: t for t in ts}, s.failing()
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -91,18 +92,21 @@ def _needs() -> list[dict]:
 				kind, at = "review", (t.get("result") or {}).get("at")
 			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
 				kind, at = "question", t.get("asked_at")
-			elif t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days):
+			elif t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days) or (not t.get("claim") and t["id"] in failing):
 				kind, at = "stuck", None
+				tries = [] if t.get("claim") else failing.get(t["id"], [])
 			else:
 				continue
 			stuck = kind == "stuck"
+			outcomes = Counter(a["outcome"] for a in tries) if stuck else {}
 			items.append({"id": t["id"], "kind": kind, "title": t["title"], "priority": t.get("priority"), "score": t["score"],
 			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
 			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
 			              "body": (t.get("body") or "")[-NEEDS_BODY:],
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
-			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None)} if stuck else {})})
+			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
+			                  "attempts": tries, "failed": f"Failed {len(tries)} times ({', '.join(f'{k} ×{v}' for k, v in outcomes.items())})" if tries else ""} if stuck else {})})
 		if items:
 			items.sort(key=lambda i: (-i["score"], i["since"]))
 			out.append({"id": bid, "title": s.config["title"], "items": items})

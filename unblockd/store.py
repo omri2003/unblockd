@@ -86,6 +86,9 @@ FIELDS = {
 RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at"}
 
 
+OUTCOMES = {"expired": "expired", "release": "released", "rejected": "rejected"}  # activity events that end an attempt badly
+
+
 def _short_list(v) -> bool:
 	return isinstance(v, list) and len(v) <= 50 and all(isinstance(x, str) and 0 < len(x.strip()) <= 300 for x in v)
 
@@ -435,6 +438,7 @@ class Store:
 		t = self._read(path)
 		clean = self._clean(changes, partial=True)
 		self._holder_only(tid, agent)
+		self._keepalive(tid, agent)
 		if "blocked_by" in clean:
 			self._check_blockers(clean["blocked_by"], t.get("blocked_by", []))
 			self._check_loop(tid, clean["blocked_by"])
@@ -696,7 +700,12 @@ class Store:
 			return pick["id"]
 
 		got = self._locked(take)
-		return self.get(got) if got else None
+		if not got:
+			return None
+		t, c = self.get(got), self._claims()[got]
+		lease = self.config["lease_minutes"]
+		return {**t, "lease_minutes": lease, "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
+		        "previous_attempts": self.attempts(got, 5)}
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "") -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
@@ -725,6 +734,36 @@ class Store:
 				counts["blocked"] += 1
 		reason = "conflict" if counts["ready_conflicting"] else "waiting" if any(counts.values()) else "dry"
 		return {"ticket": None, "reason": reason, "counts": counts}
+
+	def attempts(self, tid: str, limit: int | None = None) -> list[dict]:
+		"""Failed claims on a ticket, newest first, from the activity log: [{agent, outcome: expired|released|rejected, at, note}]."""
+		out = [{"agent": e["agent"], "outcome": OUTCOMES[e["event"]], "at": e["ts"], "note": e["note"]}
+		       for e in self.activity(tid, limit=1_000_000) if e["event"] in OUTCOMES]
+		return out[:limit]
+
+	def failing(self, n: int = 3) -> dict[str, list[dict]]:
+		"""Tickets with >= n failed attempts (expired / released / rejected) since the last human touch: {id: attempts, newest first}.
+		Human touch = an `answered` event, or a `note` by someone who is not an agent. Agent = a name that resolves to a configured
+		profile (profile_of) or that has claimed that ticket; so a board with no profiles still tells a person from a worker."""
+		events = self.activity(limit=1_000_000)  # newest first
+		claimers = {(e["ticket"], e["agent"]) for e in events if e["event"] == "claim"}
+		out, closed = {}, set()
+		for e in events:
+			tid = e["ticket"]
+			if tid in closed:
+				continue
+			if e["event"] == "answered" or (e["event"] == "note" and not self.profile_of(e["agent"] or "") and (tid, e["agent"]) not in claimers):
+				closed.add(tid)
+			elif e["event"] in OUTCOMES:
+				out.setdefault(tid, []).append({"agent": e["agent"], "outcome": OUTCOMES[e["event"]], "at": e["ts"], "note": e["note"]})
+		return {t: a for t, a in out.items() if len(a) >= n}
+
+	def _keepalive(self, tid: str, agent: str | None) -> None:
+		"""Any write that names the live holder of tid counts as a heartbeat (agents can't ping during a long test run). Caller holds the lock."""
+		if agent and (c := self._live_claims().get(tid)) and c["agent"] == agent:
+			claims = self._claims()
+			claims[tid]["heartbeat_at"] = _now()
+			self._save_claims(claims)
 
 	def _holder(self, tid: str, agent: str) -> None:
 		c = self._live_claims().get(tid)
@@ -799,6 +838,7 @@ class Store:
 			_append_note(raw, by.strip(), text.strip())
 			raw["updated"] = date.today().isoformat()
 			self._write(raw)
+			self._keepalive(tid, by.strip())
 			self._log("note", tid, by.strip(), text.strip())
 		self._locked(run)
 		return self.get(tid)

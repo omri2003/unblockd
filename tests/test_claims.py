@@ -7,9 +7,10 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from datetime import datetime, timezone
 from unittest import mock
 
-from unblockd.store import Store, TicketError
+from unblockd.store import Store, TicketError, _ts
 
 CFG = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
        "pillars": [{"key": "ART"}, {"key": "COMBAT"}],
@@ -312,6 +313,55 @@ class ClaimTest(unittest.TestCase):
 		t = self.s.get("CMB-1")
 		self.assertEqual((t["status"], t["claim"]), ("todo", None))
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "expired")
+
+	def test_claim_result_has_lease_and_previous_attempts(self):
+		t = self.s.claim("godot-dev-1", tid="CMB-1")
+		self.assertEqual((t["lease_minutes"], t["previous_attempts"]), (self.s.config["lease_minutes"], []))
+		self.assertEqual(t["expires_at"], datetime.fromtimestamp(_ts(t["claim"]["heartbeat_at"]) + t["lease_minutes"] * 60, timezone.utc).isoformat(timespec="seconds"))
+		self.s.release("CMB-1", "godot-dev-1", "tests need the rig")
+		self.s.claim("godot-dev-2", tid="CMB-1")
+		p = self.dir / ".unblockd" / "claims.json"
+		c = json.loads(p.read_text())
+		c["CMB-1"]["heartbeat_at"] = "2020-01-01T00:00:00+00:00"
+		p.write_text(json.dumps(c))
+		got = self.s.claim("godot-dev-3", tid="CMB-1")
+		self.assertEqual([(a["agent"], a["outcome"]) for a in got["previous_attempts"]], [("godot-dev-2", "expired"), ("godot-dev-1", "released")])
+		self.assertEqual(got["previous_attempts"][1]["note"], "tests need the rig")
+		for i in range(6):
+			self.s.release("CMB-1", "godot-dev-3"); self.s.claim("godot-dev-3", tid="CMB-1")
+		self.assertEqual(len(self.s.attempts("CMB-1", 5)), 5)
+		self.assertEqual(self.s.claim_next("godot-dev-4")["previous_attempts"], [])  # CMB-3, another ticket
+
+	def test_calls_naming_the_holder_refresh_the_lease(self):
+		self.s.claim("godot-dev-1", tid="CMB-1")
+		p = self.dir / ".unblockd" / "claims.json"
+		def age():
+			c = json.loads(p.read_text())
+			c["CMB-1"]["heartbeat_at"] = "2026-01-01T00:00:00+00:00"
+			p.write_text(json.dumps(c))
+		for call in (lambda: self.s.add_note("CMB-1", "godot-dev-1", "running tests"),
+		             lambda: self.s.update("CMB-1", {"body": "x"}, agent="godot-dev-1")):
+			age()
+			with mock.patch("unblockd.store.time.time", return_value=_ts("2026-01-01T00:10:00+00:00")):
+				call()  # 10 min quiet: still live, and the call renews it
+			self.assertGreater(json.loads(p.read_text())["CMB-1"]["heartbeat_at"], "2026-02")
+		age()
+		self.s.add_note("CMB-1", "omri", "a human's note")  # not the holder: no refresh
+		self.assertEqual(self.s.get("CMB-1")["status"], "todo")  # lease long gone, swept
+
+	def test_failing_after_three_attempts_until_a_human_touch(self):
+		for who, how in (("godot-dev-1", "release"), ("godot-dev-2", "release"), ("godot-dev-1", "release")):
+			self.s.claim(who, tid="CMB-1"); self.s.release("CMB-1", who, "no luck")
+		self.assertEqual(len(self.s.failing()["CMB-1"]), 3)
+		self.s.add_note("CMB-1", "godot-dev-9", "agent note does not count")
+		self.assertIn("CMB-1", self.s.failing())
+		self.s.add_note("CMB-1", "omri", "try the other rig")
+		self.assertEqual(self.s.failing(), {})
+		for _ in range(2):
+			self.s.claim("godot-dev-1", tid="CMB-1"); self.s.release("CMB-1", "godot-dev-1")
+		self.assertEqual(self.s.failing(), {})  # 2 since the human note
+		self.s.claim("godot-dev-1", tid="CMB-1"); self.s.release("CMB-1", "godot-dev-1")
+		self.assertEqual(len(self.s.failing()["CMB-1"]), 3)
 
 	def test_activity_since_and_digest_events(self):
 		self.s.claim("godot-dev-1", tid="CMB-1")

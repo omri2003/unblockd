@@ -880,7 +880,7 @@ function renderDigest(){
    +(dgOpen?gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''):'');
 }
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
-// Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
+// Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
 const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
 const KIND={question:'Question',review:'Review',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
 const parseNotes=b=>(b||'').split(/\n\n(?=— )/).map(c=>/^— ([^,\n]+), (\S+): ([\s\S]*)$/.exec(c)).filter(Boolean).map(m=>({by:m[1],at:m[2],text:m[3]})); // the `— by, ISO: text` lines _append_note writes
@@ -927,10 +927,11 @@ function needsRow(g,i){
   const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
   const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
     !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
+    i.failed&&`${i.failed}. Add a note for the next attempt: the next worker reads it first.`,
     mb.length&&`Points at ${mb.join(', ')}, which ${mb.length>1?'were':'was'} deleted. Open it to remove or replace the blocker.`].filter(Boolean).join(' ');
-  const ln=i.kind==='stuck'&&(i.claim_note||parseNotes(i.body).filter(n=>n.text!=='question: '+i.waiting_on).pop()),
+  const ln=i.kind==='stuck'&&(i.claim_note||(i.attempts||[])[0]?.note&&{by:i.attempts[0].agent,at:i.attempts[0].at,text:i.attempts[0].note}||parseNotes(i.body).filter(n=>n.text!=='question: '+i.waiting_on).pop()),
     lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(ln.text.length>140?ln.text.slice(0,140)+'…':ln.text)}</p>`:'';
-  const form=i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+  const form=i.kind==='stuck'&&i.failed?`<form class="nd-f" data-nform="notes" ${B}>${f('n:','Add a note for the next attempt…')}<button class="btn sm" type="submit">Add note</button>${openBtn('btn ghost sm')}</form>`:i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
     :`<form class="nd-f" data-nform="reject" ${B}><button type="button" class="btn sm" data-approve ${B}>Approve</button>${f('r:','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`;
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
     +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`

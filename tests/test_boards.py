@@ -337,6 +337,25 @@ class ApiTest(unittest.TestCase):
 		self.assertNotIn("WEB-4", {i["id"] for i in self.call("GET", "/api/needs")[1][1]["items"]})
 		self.assertEqual(self.call("POST", "/api/needs", {})[0], 405)
 
+	def test_needs_stuck_after_three_failed_attempts(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "flaky", "pillar": "COMBAT"})
+		def fail(agent):
+			self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": agent})
+			self.call("POST", "/api/b/a/tickets/CMB-1/release", {"agent": agent, "reason": "rig broke"})
+		def items():
+			return {i["id"]: i for g in self.call("GET", "/api/needs")[1] for i in g["items"]}
+		fail("godot-dev-1"); fail("godot-dev-2")
+		self.assertEqual(items(), {})
+		fail("godot-dev-1")
+		i = items()["CMB-1"]
+		self.assertEqual((i["kind"], i["failed"]), ("stuck", "Failed 3 times (released ×3)"))
+		self.assertEqual((len(i["attempts"]), i["attempts"][0]["note"]), (3, "rig broke"))
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})  # being worked again: not listed
+		self.assertEqual(items(), {})
+		self.call("POST", "/api/b/a/tickets/CMB-1/release", {"agent": "godot-dev-1"})
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"text": "use the other rig"})[0], 200)  # by=human
+		self.assertEqual(items(), {})
+
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})

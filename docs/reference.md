@@ -64,7 +64,10 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   `claim_next` skips a ticket whose `touches` overlap a live claim.
 - **Never a human's ticket**: tickets owned by a `kind: human` owner are skipped.
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
-  `lease_minutes` (default 15) expires and the ticket goes back to todo.
+  `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
+  (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
+- **Workers are told what failed before**: a claim result (`claim_next`, `claim_ticket`, CLI `claim`, `POST claim`) also has
+  `lease_minutes`, `expires_at` and `previous_attempts`: up to 5 `{agent, outcome: expired|released|rejected, at, note}`, newest first, read from the activity log.
 - Moving a claimed ticket off *doing* by hand ends the claim.
 - **Too big? Split it** instead of half-doing it: `split_ticket(id, titles, sequential?)`
   (REST `POST tickets/<id>/split`, CLI `split`, drawer menu *Split…*) makes one child per
@@ -182,7 +185,7 @@ Every ticket comes back with derived fields: `effective_status`,
 
 ![Needs you panel with a review row expanded](screenshots/needs-dark.webp)
 
-**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted: the row says why; *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed. Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
+**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted, or an unclaimed ticket that failed 3 or more times (expired / released / rejected) since a human last touched it: the row says why and has an *Add a note for the next attempt* box, and posting it clears the row; *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed. Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
@@ -266,7 +269,7 @@ GET    /api/boards                    every board with ticket counts
 GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
                                       [{"id", "title", "items": [{"id", "kind": "question"|"review"|"stuck", "title", "priority", "score", "unblocks",
                                       "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result",
-                                      "body" (last 6000 chars); stuck items also "open_blockers": [{"id", "effective_status", "title"}] and "claim_note": {"by", "at", "text"}|null}]}], boards with items only.
+                                      "body" (last 6000 chars); stuck items also "open_blockers": [{"id", "effective_status", "title"}] and "claim_note": {"by", "at", "text"}|null, "attempts": [...] and "failed": "Failed 3 times (expired ×2, rejected ×1)" (empty unless failing)}]}], boards with items only.
                                       Stuck = a missing blocker, a doing ticket with an open blocker (immediately), or a doing ticket stale for stale_days
 GET    /api/chat                      {"enabled", "model"}
 POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
