@@ -1,6 +1,7 @@
 """MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
 
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
+Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import functools
 import string
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -62,6 +64,13 @@ def work_loop_text(board: str | None = None, profile: str | None = None) -> str:
 def work_loop(board: str | None = None, profile: str | None = None) -> str:
 	"""The worker protocol: claim -> read context -> heartbeat -> complete / release / ask_human, in a loop."""
 	return work_loop_text(board, profile)
+
+
+@mcp.prompt()
+def plan_from_spec(board: str, path: str) -> str:
+	"""Turn a spec / PRD doc in the project repo into a few linked tickets: read, check overlap, propose (max 10), wait for approval, then create."""
+	return string.Template((Path(__file__).parent / "PLAN_FROM_SPEC.md").read_text(encoding="utf-8")).safe_substitute(
+		board=board, path=path, board_arg=f", board=\"{board}\"", board_arg_bare=f"board=\"{board}\"")
 
 
 @mcp.resource("unblockd://work-loop", mime_type="text/plain")

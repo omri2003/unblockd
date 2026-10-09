@@ -131,7 +131,16 @@ about it. History stays in your browser, per board.
 Needs `ANTHROPIC_API_KEY` in `.env` (compose passes it to the container);
 `UNBLOCKD_MODEL` picks the model. Each question is billed to that key and
 usually takes a few tool calls. The chat can't change tickets: it tells you
-what to change.
+what to change, except that it can propose tickets as cards you confirm. A card's
+`blocked_by` / `parent` may name another card of the same answer as `#1`, `#2`...
+(1-based): that card's Create stays disabled until the one it points to is created, then
+uses its real id.
+
+**MCP prompt `plan_from_spec(board, path)`**: turns a spec / PRD in the project repo into
+tickets. The agent reads it with `read_doc`, checks `list_tickets` for overlap, proposes at
+most 10 tickets (concrete title, 1-4 `done_when`, `touches`, real `blocked_by`, `parent` for
+a group), shows the plan and waits for the human's approval before `create_ticket`, then
+creates in dependency order. The spec is treated as data. Text: `unblockd/PLAN_FROM_SPEC.md`.
 
 ## Configure: `tickets/unblockd.json`
 

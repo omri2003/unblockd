@@ -330,6 +330,25 @@ try {
 		ok(!errs.length, `[motion/${reducedMotion}] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
+	// 6. chat proposals that reference each other: "#1" waits until card 1 is created, then resolves to its id
+	{
+		const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+		const page = await ctx.newPage(); page.setDefaultTimeout(8000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+		await page.route('**/api/chat', (r) => r.request().method() === 'POST'
+			? r.fulfill({ json: { reply: 'plan', tools: [], refs: [], proposals: [{ title: 'Alpha' }, { title: 'Beta', blocked_by: ['#1'] }] } })
+			: r.fulfill({ json: { enabled: true, model: 'x' } }));
+		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		await page.click('#chatBtn'); await page.fill('#cin', 'plan it'); await page.keyboard.press('Enter');
+		await page.waitForSelector('[data-prop="1:1"][data-act="create"]');
+		ok(await page.locator('[data-prop="1:1"][data-act="create"]').isDisabled(), '[chat] card 2 should wait for card 1');
+		await page.click('[data-prop="1:0"][data-act="create"]'); await page.waitForSelector('[data-prop="1:1"][data-act="create"]:not([disabled])');
+		await page.click('[data-prop="1:1"][data-act="create"]'); await page.waitForFunction(() => document.querySelectorAll('.prop .pm').length && [...document.querySelectorAll('.prop')].every((e) => /Created/.test(e.textContent)));
+		const ids = await page.evaluate(() => [...document.querySelectorAll('.prop')].map((e) => e.textContent.match(/Created (\S+)/)[1])), b = await (await fetch(base + 'api/tickets/' + ids[1])).json();
+		ok(JSON.stringify(b.blocked_by) === JSON.stringify([ids[0]]), `[chat] Beta should be blocked_by ${ids[0]}: ${JSON.stringify(b.blocked_by)}`);
+		ok(!errs.length, `[chat] page errors: ${errs.join('; ')}`);
+		await ctx.close();
+	}
 	await cleanup();
 	console.log(`UI smoke OK: board/graph/docs/drawer/filters/settings/agents/toast x 1400+390px x light+dark, no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 } catch (e) { await die(process.env.DEBUG ? e.stack : e.message); }

@@ -20,7 +20,7 @@ unblockd/store.py       THE core. Ticket CRUD over one folder, validation (FIELD
 unblockd/boards.py      Several boards: discovers <root>/<project>/tickets/unblockd.json, ids,
                         create(). Every front door goes through Boards -> Store.
 unblockd/web.py         Stdlib HTTP server + REST API (Handler._route; `_needs()` = GET /api/needs for the UI's Needs you panel). Serves static/index.html.
-unblockd/mcp_server.py  MCP tools + the `work_loop` prompt / `unblockd://work-loop` resource (serve `WORK_LOOP.md`, filled with `string.Template`: $board, $profile_line, $agent_hint, $claim_args)
+unblockd/mcp_server.py  MCP tools + the `plan_from_spec(board, path)` prompt (serves `PLAN_FROM_SPEC.md`: read spec, check overlap, propose <= 10 tickets, wait for human approval, create in dependency order; no parser) + the `work_loop` prompt / `unblockd://work-loop` resource (serve `WORK_LOOP.md`, filled with `string.Template`: $board, $profile_line, $agent_hint, $claim_args)
 unblockd/WORK_LOOP.md   THE worker protocol, as a doc (incl. "Never go silent" and "Your board's policy"); read via Path(__file__), Dockerfile copies the package dir. Not per-board.
                         (needs the `mcp` package; the only dependency).
 unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools); `Remote` = the same over REST (UNBLOCKD_URL).
@@ -131,7 +131,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `POST /api/chat`. The server resolves `#ID`, `#board/ID`, `@board` into the user message, then
   loops tool calls (max 8) against `ANTHROPIC_BASE_URL/v1/messages` with read-only tools.
   Needs `ANTHROPIC_API_KEY`; `UNBLOCKD_MODEL` defaults to `claude-sonnet-5-5` (not verified
-  against a live key). The chat can't write: its one "write" is the `propose_tickets` tool, which creates nothing (`ask()` returns the whitelisted fields as `proposals`; blank titles dropped). The UI renders each as a card (`propHtml`) with Create (the normal `POST /tickets` with `qaPrefix()`, so the store validates; `propAct`) or Discard; per-proposal state lives in the log message (`pst`). A split is proposed as children with `parent` = the split ticket; the parent's `blocked_by` is not touched (use the drawer's Split for that). Proposals can't reference each other (`blocked_by` = existing ids). It is person <-> Claude only: no shared threads.
+  against a live key). The chat can't write: its one "write" is the `propose_tickets` tool, which creates nothing (`ask()` returns the whitelisted fields as `proposals`; blank titles dropped). The UI renders each as a card (`propHtml`) with Create (the normal `POST /tickets` with `qaPrefix()`, so the store validates; `propAct`) or Discard; per-proposal state lives in the log message (`pst`). A split is proposed as children with `parent` = the split ticket; the parent's `blocked_by` is not touched (use the drawer's Split for that). A proposal's `blocked_by`/`parent` may hold existing ids or a temp key `"#N"` = the Nth proposal of that message (1-based; `propRefs`/`tmpKey` in index.html): its Create is disabled ("waits for card #N") until card N is created, then sends N's real id; a discarded card's key is dropped. Server passes them through untouched; `done_when` is accepted but not required (no over-validation in chat). It is person <-> Claude only: no shared threads.
 
 ## Why files, not a database
 

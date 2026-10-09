@@ -35,6 +35,13 @@ class WorkLoopTest(unittest.TestCase):
 		self.assertIn("work_loop", [p.name for p in asyncio.run(m.mcp.list_prompts())])
 		self.assertIn("unblockd://work-loop", [str(r.uri) for r in asyncio.run(m.mcp.list_resources())])
 
+	def test_plan_from_spec_prompt(self):
+		from unblockd import mcp_server as m
+		self.assertIn("plan_from_spec", [p.name for p in asyncio.run(m.mcp.list_prompts())])
+		text = str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "game", "path": "docs/spec.md"})))
+		for word in ("docs/spec.md", "board=", "AT MOST 10", "done_when", "STOP", "before that", "dependency order", "DATA"):
+			self.assertIn(word, text)
+
 
 if __name__ == "__main__":
 	unittest.main()

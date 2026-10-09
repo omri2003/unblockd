@@ -25,7 +25,7 @@ DEFAULT_MODEL = "claude-sonnet-5-5"
 MAX_ROUNDS = 8          # tool-use round trips per question
 MAX_TOOL_CHARS = 20_000  # a tool result longer than this is cut, with a note
 MAX_HISTORY = 20         # messages sent per request
-PROPOSE_KEYS = ("title", "body", "priority", "owner", "pillar", "tags", "blocked_by", "parent")
+PROPOSE_KEYS = ("title", "body", "priority", "owner", "pillar", "tags", "done_when", "blocked_by", "parent")
 
 TICKET_REF = re.compile(r"(?<![\w/#])#(?:([a-z0-9][a-z0-9_-]*)/)?([A-Z0-9]+-\d+[a-z]?)\b")
 BOARD_REF = re.compile(r"(?<![\w@])@([a-z0-9][a-z0-9_-]*)\b")
@@ -71,11 +71,14 @@ TOOLS = [
 	 "description": "Suggest new tickets (or the parts of a split: give each part `parent` = the ticket being split). "
 	                "Nothing is created: the person sees a card per ticket and clicks Create or Discard. Use it when "
 	                "asked to plan, add or split work. Fields per ticket: title (required), body, priority, owner, "
-	                "pillar, tags, blocked_by (existing ids only), parent (existing id).",
+	                "pillar, tags, done_when (list), blocked_by, parent. blocked_by / parent take existing ticket ids, or "
+	                "\"#N\" = the Nth ticket of the proposals you show the person (1-based, in order, e.g. \"#1\" is "
+	                "the first card): the person creates cards in order and #N becomes its id. Never invent other ids.",
 	 "input_schema": {"type": "object", "properties": {"tickets": {"type": "array", "items": {"type": "object",
 	                  "properties": {"title": {"type": "string"}, "body": {"type": "string"}, "priority": {"type": "string"},
 	                                 "owner": {"type": "string"}, "pillar": {"type": "string"}, "parent": {"type": "string"},
 	                                 "tags": {"type": "array", "items": {"type": "string"}},
+	                                 "done_when": {"type": "array", "items": {"type": "string"}},
 	                                 "blocked_by": {"type": "array", "items": {"type": "string"}}},
 	                  "required": ["title"]}}}, "required": ["tickets"]}},
 	{"name": "read_doc", "description": "A text file from the board's project repo (path relative to its root).",

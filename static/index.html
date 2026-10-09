@@ -1957,16 +1957,23 @@ function renderChat(){
     +(CH.busy?'<div class="cm bot"><span class="dots">Thinking</span></div>':'');
   log.scrollTop=log.scrollHeight;
 }
+const tmpKey=x=>/^#\d+$/.test(x)?+x.slice(1)-1:-1; // "#2" -> index 1 of the message's proposals
+function propRefs(m,t){ // temp keys -> created ids; wait = cards not created yet; discarded ones are dropped
+  const wait=[],sub=x=>{const k=tmpKey(x);if(k<0)return x;const v=m.pst[k];if(v==='discarded')return null;if(!v){wait.push(x);return null;}return v;};
+  const bb=(t.blocked_by||[]).map(sub).filter(Boolean),par=t.parent&&sub(t.parent);
+  return {t:{...t,blocked_by:bb,parent:par||undefined},wait};
+}
 function propHtml(mi,pi,t,st){ // one proposed ticket: Create / Discard, or what happened to it
-  const meta=[t.priority,t.owner,t.pillar,t.parent&&'part of '+t.parent,t.blocked_by?.length&&'after '+t.blocked_by.join(', ')].filter(Boolean).join(' · ');
+  const wait=propRefs(CH.log[mi],t).wait;
+  const meta=[t.priority,t.owner,t.pillar,t.parent&&'part of '+t.parent,wait.length&&'waits for card '+wait.join(', '),t.blocked_by?.length&&'after '+t.blocked_by.join(', ')].filter(Boolean).join(' · ');
   const act=st?`<span class="pm">${st==='discarded'?'Discarded':'Created '+esc(st)}</span>`
-    :`<button type="button" class="btn sm" data-prop="${mi}:${pi}" data-act="create">Create</button><button type="button" class="btn ghost sm" data-prop="${mi}:${pi}" data-act="discard">Discard</button>`;
+    :`<button type="button" class="btn sm" data-prop="${mi}:${pi}" data-act="create"${wait.length?` disabled title="Create ${esc(wait.join(', '))} first"`:''}>Create</button><button type="button" class="btn ghost sm" data-prop="${mi}:${pi}" data-act="discard">Discard</button>`;
   return `<div class="prop${st==='discarded'?' off':''}"><span class="pt">${esc(t.title)}</span>${meta?`<span class="pm">${esc(meta)}</span>`:''}${t.body?`<span class="pm">${esc(t.body)}</span>`:''}<span class="row">${act}</span></div>`;
 }
 async function propAct(mi,pi,act){ // the only write the chat can cause, and it is the normal POST
   const m=CH.log[mi],t=m?.proposals?.[pi];if(!t||m.pst[pi])return;
   if(act==='discard') m.pst[pi]='discarded';
-  else try{const c=await api('POST','',{prefix:qaPrefix(),...t});m.pst[pi]=c.id;await load(true);toast(`Created ${c.id}`);}
+  else try{const c=await api('POST','',{prefix:qaPrefix(),...propRefs(m,t).t});m.pst[pi]=c.id;await load(true);toast(`Created ${c.id}`);}
     catch(e){toast(e.message,{err:true});return;}
   chatSave();renderChat();
 }
