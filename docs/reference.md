@@ -179,6 +179,8 @@ Every ticket comes back with derived fields: `effective_status`,
 
 ## The board
 
+**Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
+
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Warnings**: missing blocker, doing with no update for `stale_days`; a *Needs attention* filter.
@@ -201,7 +203,7 @@ status, ring = pillar, size = how much is waiting on it.
 - **Shift-drag A onto B** makes A block B; click a link to remove it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 
-Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `j`/`k` move, `Enter` open,
+Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `p` priority, `j`/`k` move, `Enter` open,
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
 (Comfortable / Compact) and the "While you were away" digest, per browser.
 **Agents** (header button, or the "N agents working" badge) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.

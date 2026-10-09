@@ -211,6 +211,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .mvm{position:absolute;right:0;bottom:calc(100% + 4px);display:grid;min-width:130px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden}
 .mvm button,.ovm button{text-align:left;background:none;border:0;padding:7px 12px;cursor:pointer;font-weight:600} .mvm button:hover,.ovm button:hover{background:var(--jade-soft)}
 .qa{display:flex;gap:6px;margin-bottom:10px}
+#bulk select[data-bulk=priority]{width:7.5em}
 .qa input{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:6px 8px;min-width:0}
 .qa-p{flex:0 0 5.4em;width:5.4em;font:700 .82rem var(--mono);text-transform:uppercase;color:var(--muted);text-align:center} .qa-t{flex:1}
 .age{white-space:nowrap} .age.late{color:var(--amber);font-weight:700}
@@ -534,10 +535,13 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt><kbd>c</kbd></dt><dd>Ask about this board (chat). In the chat, <kbd>#</kbd> links a ticket, <kbd>@</kbd> a board</dd>
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next or previous card</dd>
     <dt><kbd>Enter</kbd></dt><dd>Open the focused card</dd>
+    <dt><kbd>p</kbd> then <kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Set the priority of the focused card or open ticket (<kbd>-</kbd> clears it, <kbd>Esc</kbd> cancels)</dd>
     <dt><kbd>t</kbd></dt><dd>Cycle the theme: System, Light, Dark</dd>
     <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close a panel, clear a selection, cancel a link</dd>
   </dl>
+  <h3>Priority</h3>
+  <dl id="kbPrio"></dl>
   <h3>Graph</h3>
   <dl>
     <dt>Wheel, pinch</dt><dd>Zoom</dd>
@@ -590,6 +594,8 @@ function setCols(){ // Review sits before Done on boards with review=true, or wh
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 let STALE=7; // days; from the config's stale_days
 const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
+const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
+const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','parent','agent'];
 const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
@@ -817,7 +823,7 @@ function card(t){
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
   const sel=(f,l,o)=>`<select data-bulk="${f}" aria-label="${esc(l)}"><option value="">${esc(l)}…</option>${o.map(([v,x])=>`<option value="${esc(v)}">${esc(x)}</option>`).join('')}</select>`;
-  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
+  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',PLAB.map(([v,l])=>[v||'-',l]))}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
   document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
 }
 async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
@@ -1142,11 +1148,11 @@ function editForm(t){
     ${isNew?`<label for="f-prefix">ID prefix <span class="hint">next free number is picked</span><input id="f-prefix" value="BUG" pattern="[A-Z0-9]+" required></label><span></span>`:''}
     <label class="full" for="f-title">Title<input id="f-title" required maxlength="200" value="${esc(t.title)}"></label>
     <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
-    <label for="f-priority">Priority<select id="f-priority">${opt([['','None'],['P0','P0 blocking'],['P1','P1 core'],['P2','P2 important'],['P3','P3 later']],t.priority)}</select></label>
     <label for="f-owner">Owner<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
+    <label class="full" for="f-priority">Priority<select id="f-priority">${opt(PLAB,t.priority)}</select></label>
     <label for="f-pillar">${esc(CFG.pillar_label)}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
-    <label for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
     <label class="full" for="f-done">Done when <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
     <label class="full" for="f-docs">Docs <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
@@ -1182,6 +1188,7 @@ function setPref(k,v){
   renderSettings();
 }
 renderSettings();
+$('kbPrio').innerHTML=PLAB.map(([v,l])=>`<dt>${v||'None'}</dt><dd>${esc(l.split(' – ')[1])}</dd>`).join('');
 
 // ---------- events ----------
 let armedDelete=false;
@@ -1260,12 +1267,28 @@ document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remem
 document.addEventListener('input',e=>{ const k=e.target.dataset?.draft; if(k) DRAFTS[k]=e.target.value; if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
 document.addEventListener('submit',e=>{ if(e.target.dataset.nform){e.preventDefault();submitNeeds(e.target);return;}
   const h={splitForm:submitSplit,editForm:submitForm,boardForm:submitBoard}[e.target.id]; if(h){e.preventDefault();h(e.target);} });
+// p, then 0-3 or - : set the priority of the open ticket (else the focused card). p alone shows a hint for 1.5 s.
+const PK={el:null,id:null,t:0};
+function endP(){ clearTimeout(PK.t); PK.el?.remove(); PK.el=null; }
+function startP(){
+  endP(); PK.id=!$('drawer').hidden?openId:document.activeElement?.closest?.('[data-open]')?.dataset.open;
+  PK.el=document.createElement('div'); PK.el.className='toast'; PK.el.textContent=PK.id?`Priority for ${PK.id}: press 0 1 2 3, or - to clear`:'Priority: focus a card or open a ticket first';
+  $('toasts').append(PK.el); PK.t=setTimeout(endP,1500);
+}
+async function setPrio(id,p){
+  const t=BY.get(id); if(!t) return toast('Priority: focus a card or open a ticket first.',{err:1});
+  const from=t.priority||null; if(from===p) return toast(`${id} is already ${p||'without a priority'}.`);
+  try{ await api('PATCH','/'+id,{priority:p}); await load(true);
+    toast(`${id}: ${p?`${p}, ${PDEF[p]}`:'no priority'}`,{undo:()=>api('PATCH','/'+id,{priority:from}).then(()=>load(true)).catch(er=>toast(er.message,{err:1}))}); }
+  catch(er){ toast('Priority failed: '+er.message,{err:1}); }
+}
 let kbFocus=null;
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
 const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card')].filter(c=>c.offsetParent!==null);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    if(!$('kb').hidden) toggleKb(false);
+    if(PK.el) endP();
+    else if(!$('kb').hidden) toggleKb(false);
     else if(menuBusy()) closeMenus();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(state.view==='docs'&&DV.f){DV.f=null;renderDocs();}
@@ -1278,6 +1301,8 @@ document.addEventListener('keydown',e=>{
   }
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   const tg=e.target; if(editing||tg.closest?.('input,textarea,select')||tg.isContentEditable) return;
+  if(PK.el){ const k=e.key; endP(); if(/^[0-3]$/.test(k)||k==='-'){ e.preventDefault(); setPrio(PK.id,k==='-'?null:'P'+k); return; } }
+  if(e.key==='p'){ e.preventDefault(); startP(); return; }
   if(e.key==='?'){ e.preventDefault(); toggleKb(); return; }
   if(e.key==='t'){ const o=['system','light','dark']; setPref('theme',o[(o.indexOf(SET.theme)+1)%3]); toast('Theme: '+{system:'System',light:'Light',dark:'Dark'}[SET.theme]); return; }
   if(!$('drawer').hidden||!$('kb').hidden) return;
