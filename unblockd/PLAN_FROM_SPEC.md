@@ -10,4 +10,5 @@ Turn the spec at `$path` (board: $board) into a small, linked set of tickets. No
    - `parent` if several tickets form one group (create the parent ticket first).
    More than 10 pieces: propose the first 10 and list the rest as one line each for later.
 4. Show the plan to the human as a short table (temp number, title, blocked_by, done_when) and STOP. Wait for approval or edits. Do not call `create_ticket` before that.
-5. After approval, create in dependency order (parents and blockers first) so every `blocked_by`/`parent` id already exists; use the ids the earlier `create_ticket` calls returned. Report the ids and anything you left out.
+4b. `board_info($board_arg_bare)` first: the board's `schema` (allowed prefixes, required fields, tags) applies to your tickets, so draft inside it. Never edit unblockd.json to add prefixes or tags; if nothing fits, `ask_human`.
+5. After approval, create in dependency order (parents and blockers first) so every `blocked_by`/`parent` id already exists; use the ids the earlier `create_ticket` calls returned (pass `agent`). If the board gates agent tickets (`agent_tickets: "propose"` in board_info), the tickets you create are proposals: they appear in the human's Needs you panel and are not claimable until accepted; tell the human so. Report the ids and anything you left out.

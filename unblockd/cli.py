@@ -15,7 +15,8 @@
     python -m unblockd.cli doc PATH                # one file from the project repo
     python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
-    python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}']
+    python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}'] [--agent A]   # --agent: strict schema, may park as a proposal
+    python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
     python -m unblockd.cli update ID --json '{"status": "done"}' [--agent A]'
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
@@ -69,7 +70,8 @@ class Remote:
 	def work_plan(self, per_agent=3): return self._call("GET", "/plan", per_agent=per_agent)
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
-	def create(self, data, tid=None, prefix=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {})})
+	def create(self, data, tid=None, prefix=None, agent=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {})})
+	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
 	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
@@ -110,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
 	cr.add_argument("--id")
 	cr.add_argument("--title", required=True)
 	cr.add_argument("--json", default="{}")
+	cr.add_argument("--agent", help="the worker creating it: the board's schema is strict for agents, and its ticket may park as a proposal until a human accepts it")
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", required=True)
@@ -147,10 +150,11 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("id")
 	no.add_argument("text")
 	no.add_argument("--by", default="human")
-	for name in ("answer", "reject"):
+	for name in ("answer", "reject", "accept"):
 		x = sub.add_parser(name)
 		x.add_argument("id")
-		x.add_argument("text")
+		if name != "accept":
+			x.add_argument("text")
 		x.add_argument("--by", default="human")
 	a = ap.parse_args(argv)
 
@@ -197,12 +201,14 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.answer(a.id, a.by, a.text)
 		elif a.cmd == "reject":
 			out = s.reject(a.id, a.by, a.text)
+		elif a.cmd == "accept":
+			out = s.accept(a.id, a.by)
 		elif a.cmd == "delete":
 			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":
-			out = s.create({**json.loads(a.json), "title": a.title}, tid=a.id, prefix=a.prefix)
+			out = s.create({**json.loads(a.json), "title": a.title}, tid=a.id, prefix=a.prefix, agent=a.agent)
 		elif a.cmd == "update":
 			out = s.update(a.id, json.loads(a.json), agent=a.agent)
 		else:

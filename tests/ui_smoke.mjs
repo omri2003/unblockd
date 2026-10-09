@@ -24,7 +24,7 @@ try {
 	const cliB = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zsecond/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
 	await cp(join(repo, 'example'), join(root, 'zsecond'), { recursive: true }); // second board: the title becomes a switcher
 	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
-	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board' }));
+	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board', agent_tickets: 'propose', schema: { prefixes: { ZQ: 'questions', ZP: 'proposed work' }, required: ['done_when', 'priority'], tags: ['bug', 'chore'], body_template: '## Why\n' } }));
 	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
 	cli('claim', '--agent', 'backend-1', '--note', 'smoke');
 	cli('split', 'DOC-1', '--title', 'part one', '--title', 'part two');
@@ -280,6 +280,27 @@ try {
 		await page.evaluate(() => scrollTo(0, 0));
 		await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/ui6-${w}-${theme}.png` : tmpdir() + '/ui6.png' });
 		await noOverflow('board after needs');
+
+		// proposal gate + schema (second board): an agent's ticket parks in Needs you, Accept clears it; the New ticket form lists prefixes with meanings
+		const pid = JSON.parse(cliB('create', '--prefix', 'ZP', '--title', 'agent idea', '--agent', 'backend-1', '--json', '{"priority":"P2","done_when":["it works"],"body":"## Why\\nbecause"}')).id;
+		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
+		await page.keyboard.press('i');
+		const prow = `#npList .nr[data-key="zsecond/${pid}"]`;
+		await visible(prow, 'proposal row');
+		const ptxt = await page.locator(prow).innerText();
+		ok(ptxt.includes('Proposed by backend-1') && ptxt.includes('it works'), `[${tag}] proposal row should name the agent and show done_when: ${ptxt}`);
+		await page.click(`${prow} [data-accept]`);
+		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
+		ok((await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), pid)).proposed_by === '', `[${tag}] Accept should clear proposed_by`);
+		await page.keyboard.press('Escape');
+		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' });
+		await page.keyboard.press('n');
+		await visible('select#f-prefix', 'prefix select on a schema board');
+		ok((await page.locator('#f-prefix option').allInnerTexts()).includes('ZP — proposed work'), `[${tag}] prefix options should show their meaning`);
+		ok((await page.locator('#editForm .rq-l.empty').count()) >= 1, `[${tag}] empty required fields should be highlighted`);
+		await noOverflow('new ticket form on a schema board');
+		await page.click('[data-close]');
 
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
 		await ctx.close();

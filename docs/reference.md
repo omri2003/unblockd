@@ -175,6 +175,28 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `agents` | Agent profiles, see below (each may have its own `docs`). |
 | `docs` | Knowledge every ticket on the board comes with, see Knowledge. |
 | `context_budget` | Characters of docs inlined per ticket context (default 60000); the rest is listed. |
+| `schema` | Optional rules for new tickets, see below. Default `null`: anything goes. |
+| `agent_tickets` | `"open"` (default): agents create ready tickets. `"propose"`: a ticket an agent creates is a proposal until a human accepts it; turn it on for boards where several people or agents create work you want to vet. |
+
+### Ticket schema and the proposal gate
+
+```json
+"schema": {
+  "prefixes": {"FOG": "fog + explored map", "UI": "web board"},
+  "required": ["done_when", "priority"],
+  "tags": ["bug", "spike", "chore"],
+  "body_template": "## Why\n\n## Approach\n"
+}
+```
+
+Every key is optional. `prefixes` maps a prefix to a one-line meaning (80 chars); `required` is any of `done_when priority touches docs pillar owner parent body`; `tags` is an allow-list (`agent:<name>` tags stay governed by agent profiles); `body_template` prefills the New ticket form and, for agents, means the body may not be empty. A wrong config is refused with the reason.
+
+- **Strict for agents** (`create_ticket` needs your `agent` name; CLI `create --agent`; REST body `agent`): a ticket that breaks the schema is refused with every problem in one short message, and the prefix list (keys only; the meanings are in `board_info`). If no prefix fits, the agent asks a human (`ask_human`); it never edits `unblockd.json`. The explicit-`id` form is checked too.
+- **Guided for humans**: the ticket is created and the response has `warnings` (the CLI prints them in its JSON). In the UI the New ticket form offers the prefixes with their meaning, marks required fields with `*` and highlights empty ones (you can still submit), prefills the body template and suggests allowed tags; the quick-add row uses an allowed prefix and a title-only ticket on a schema board shows a toast saying what to add, with an Open button.
+- **Not checked**: split children (they reuse the parent's prefix) and tickets that already exist.
+- No prefix and no id: a schema with exactly one prefix uses it; with several, the error lists them.
+
+**Proposal gate** (opt-in, `agent_tickets: "propose"`): a ticket created with an agent name gets `proposed_by`, is pending and cannot be claimed. It appears in **Needs you** as a *Proposal* (who proposed it, Done when, body on expand) with **Accept** (`accept_ticket`, `accept ID`, `POST tickets/<id>/accept`) and **Reject** (deletes it; an optional reason is logged). Tickets created by humans (UI, chat Create button, CLI without `--agent`) and split children are never proposals. The webhook reports `proposed` and `accepted`.
 
 ## Tickets
 
@@ -199,7 +221,7 @@ Every ticket comes back with derived fields: `effective_status`,
 
 ![Needs you panel with a review row expanded](screenshots/needs-dark.webp)
 
-**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted, or an unclaimed ticket that failed 3 or more times (expired / released / rejected) since a human last touched it: the row says why and has an *Add a note for the next attempt* box, and posting it clears the row; *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed. Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
+**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review, agent-proposed tickets waiting for Accept / Reject and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted, or an unclaimed ticket that failed 3 or more times (expired / released / rejected) since a human last touched it: the row says why and has an *Add a note for the next attempt* box, and posting it clears the row; *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed. Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
@@ -255,7 +277,7 @@ Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the packag
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
-start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket`,
+start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `accept_ticket`,
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
 `read_doc`, `attach_file`, `detach_file`. Every tool takes `board=`
@@ -272,6 +294,8 @@ python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent godot-dev-1 
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}'
+python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent godot-dev-1   # as a worker: strict schema, may park as a proposal
+python -m unblockd.cli --dir <repo>/tickets accept BUG-11 --by omri
 python -m unblockd.cli --dir <repo>/tickets split BUG-10 --title "part one" --title "part two" --sequential
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --json '{"status":"done"}'
 python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended to the body"
@@ -282,7 +306,7 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended 
 ```
 GET    /api/boards                    every board with ticket counts
 GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
-                                      [{"id", "title", "items": [{"id", "kind": "question"|"review"|"stuck", "title", "priority", "score", "unblocks",
+                                      [{"id", "title", "items": [{"id", "kind": "question"|"review"|"proposal"|"stuck", "title", "priority", "score", "unblocks",
                                       "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result",
                                       "body" (last 6000 chars); stuck items also "open_blockers": [{"id", "effective_status", "title"}] and "claim_note": {"by", "at", "text"}|null, "attempts": [...] and "failed": "Failed 3 times (expired ×2, rejected ×1)" (empty unless failing)}]}], boards with items only.
                                       Stuck = a missing blocker, a doing ticket with an open blocker (immediately), or a doing ticket stale for stale_days
@@ -302,9 +326,10 @@ GET    tickets/<id>/context?inline=0  docs + attached files to read before worki
 GET    doc?path=                      a text file from the project repo, with its links
 POST   tickets/<id>/files             {"name", "content"}     GET / DELETE tickets/<id>/files/<name>
 GET    tickets/<id>
-POST   tickets                        {"prefix": "BUG", "title": "...", ...}
+POST   tickets                        {"prefix": "BUG", "title": "...", "agent"?: worker name, ...}  (a human's ticket may return "warnings")
+POST   tickets/<id>/accept            {"by"?}  accept an agent's proposal
 PATCH  tickets/<id>                   {"status": "done"}
-DELETE tickets/<id>
+DELETE tickets/<id>                   ?agent=, ?reason= (rejecting a proposal; logged)
 ```
 
 **Auth**: none unless `UNBLOCKD_TOKEN` is set (then `Authorization: Bearer <token>` or the cookie from opening `/?token=<token>`). It listens on 127.0.0.1 by default (`HOST`, `PORT`); don't expose it wider without a token.

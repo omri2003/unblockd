@@ -43,7 +43,13 @@ DEFAULT_CONFIG = {
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
 	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
+	# What a new ticket must look like. None = anything goes. Agents are refused (every problem listed), humans get `warnings`.
+	"schema": None,  # {"prefixes": {"FOG": "fog + explored map"}, "required": ["done_when"], "tags": ["bug"], "body_template": "## Why\n"}
+	# "open" (default): agents create ready tickets; "propose": a ticket created by an agent is a proposal (not claimable) until a human accepts it
+	"agent_tickets": "open",
 }
+SCHEMA_KEYS = ("prefixes", "required", "tags", "body_template")
+SCHEMA_REQUIRED = ("done_when", "priority", "touches", "docs", "pillar", "owner", "parent", "body")
 BODY_MAX = 50_000
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
@@ -70,6 +76,8 @@ FIELDS = {
 	"asked_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	# when the ticket last moved to done (UTC ISO); set by create/update/complete, read-only. Old tickets lack it: readers fall back to `updated`
 	"done_at": ("", lambda v: isinstance(v, str) and len(v) <= 40),
+	# the agent that created this ticket while the board's agent_tickets is "propose"; set by create(agent=), cleared by accept(); read-only. While set the ticket is pending
+	"proposed_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
@@ -134,10 +142,30 @@ def load_config(tickets_dir: Path) -> dict:
 			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars and docs are lists of strings")
 	if not (isinstance(cfg["docs"], list) and all(isinstance(x, str) for x in cfg["docs"])):
 		raise TicketError(f"{CONFIG_FILE}: docs is a list of repo paths")
+	if cfg["agent_tickets"] not in ("propose", "open"):
+		raise TicketError(f"{CONFIG_FILE}: agent_tickets must be \"propose\" or \"open\"")
+	_check_schema(cfg["schema"])
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
 		cfg["default_owner"] = (agents or [cfg["owners"][0]["name"]])[0]
 	return cfg
+
+
+def _check_schema(sc) -> None:
+	if sc is None:
+		return
+	bad = lambda m: TicketError(f"{CONFIG_FILE}: schema {m}")
+	if not isinstance(sc, dict) or set(sc) - set(SCHEMA_KEYS):
+		raise bad(f"must be an object with only these keys: {', '.join(SCHEMA_KEYS)}")
+	pf = sc.get("prefixes", {})
+	if not (isinstance(pf, dict) and all(PREFIX_RE.match(str(k)) and isinstance(v, str) and len(v) <= 80 for k, v in pf.items())):
+		raise bad("prefixes must map a prefix like FOG (A-Z, 0-9) to a meaning of up to 80 characters")
+	if not (isinstance(sc.get("required", []), list) and set(sc.get("required", [])) <= set(SCHEMA_REQUIRED)):
+		raise bad(f"required must be a list of: {', '.join(SCHEMA_REQUIRED)}")
+	if not (isinstance(sc.get("tags", []), list) and all(isinstance(x, str) and TAG_RE.match(x) for x in sc.get("tags", []))):
+		raise bad("tags must be a list of lowercase tags like bug")
+	if not isinstance(sc.get("body_template", ""), str):
+		raise bad("body_template must be text")
 
 
 class Store:
@@ -190,6 +218,8 @@ class Store:
 				continue
 			if k == "result":
 				raise TicketError("result is set only by complete(): it can be read, not written")
+			if k == "proposed_by":
+				raise TicketError("proposed_by is set when an agent creates a ticket and cleared by accept(): it can be read, not written")
 			if k in ("asked_at", "asked_by"):
 				raise TicketError(f"{k} is set by ask() and cleared by answer(): it can be read, not written")
 			if k == "done_at":
@@ -262,7 +292,7 @@ class Store:
 
 	# ---------- derived view ----------
 	def _decorate(self, tickets: list[dict]) -> list[dict]:
-		"""Add derived fields. A todo with an open blocker or a waiting_on (a question for a human) shows as pending (effective_status).
+		"""Add derived fields. A todo with an open blocker, a waiting_on (a question for a human) or a proposed_by (not accepted yet) shows as pending (effective_status).
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
 		live = self._live_claims()
@@ -293,7 +323,7 @@ class Store:
 		out = []
 		for t in tickets:
 			open_b = [b for b in t.get("blocked_by", []) if b in by_id and by_id[b].get("status") != "done"]
-			eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on")) else t.get("status")
+			eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on") or t.get("proposed_by")) else t.get("status")
 			n = unblocks(t["id"])
 			stale = None
 			if t.get("status") == "doing":
@@ -397,11 +427,45 @@ class Store:
 				nums += [int(m) for m in pat.findall(f.read_text(encoding="utf-8", errors="ignore"))]
 		return f"{prefix}-{max(nums, default=0) + 1}"
 
-	def create(self, data: dict, tid: str | None = None, prefix: str | None = None) -> dict:
-		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number."""
-		return self._locked(lambda: self._create(data, tid, prefix))
+	def create(self, data: dict, tid: str | None = None, prefix: str | None = None, agent: str | None = None) -> dict:
+		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number (a board whose schema lists exactly
+		one prefix needs neither). `agent` = the worker creating it (None = a human). The board's schema is enforced here, not in
+		_create, so split children and existing tickets are exempt: an agent breaking it is refused with every problem listed,
+		a human gets the ticket plus `warnings`. On a board with agent_tickets "propose" an agent's ticket is a proposal until accept()."""
+		agent = agent or None
+		def run():
+			pf = (self.config["schema"] or {}).get("prefixes") or {}
+			pre = prefix
+			if tid is None and not pre and pf:
+				if len(pf) != 1:
+					raise TicketError(f"give a prefix or an id: this board's prefixes are {', '.join(pf)} (board_info says what each means)")
+				pre = next(iter(pf))
+			problems = self._schema_problems(data, tid.split("-")[0] if tid else pre, agent is not None)
+			if problems and agent is not None:
+				msg = "ticket refused by the board schema: " + "; ".join(problems)
+				raise TicketError(msg[:400] + ("…" if len(msg) > 400 else "")
+				                  + (" (meanings: board_info; if none fits, ask_human, do not guess a near prefix)" if any(x.startswith("prefix") for x in problems) else ""))
+			t = self._create(data, tid, pre, proposed_by=agent if agent and self.config["agent_tickets"] == "propose" else "")
+			return {**t, "warnings": problems} if problems else t
+		return self._locked(run)
 
-	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = ()) -> dict:
+	def _schema_problems(self, data: dict, prefix: str | None, strict: bool) -> list[str]:
+		sc = self.config["schema"]
+		if not sc:
+			return []
+		out, pf = [], sc.get("prefixes") or {}
+		if pf and prefix not in pf:
+			out.append(f"prefix {prefix} is not one of {', '.join(pf)}")
+		out += [f"{f} is required" for f in sc.get("required", []) if not data.get(f)]
+		if sc.get("tags") is not None:
+			bad = [x for x in data.get("tags") or [] if isinstance(x, str) and not x.startswith("agent:") and x.strip().lower() not in sc["tags"]]
+			if bad:
+				out.append(f"tag {', '.join(bad)} is not one of {', '.join(sc['tags']) or 'none'}")
+		if strict and sc.get("body_template") and not (data.get("body") or "").strip():
+			out.append("body is required (template: " + " / ".join(x for x in sc["body_template"].splitlines() if x.strip()) + ")")
+		return out
+
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), proposed_by: str = "") -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -423,8 +487,11 @@ class Store:
 			t["done_at"] = _now()
 		if t["waiting_on"]:
 			t["asked_at"] = _now()
+		t["proposed_by"] = proposed_by
 		self._write(t)
 		self._log("created", tid, None, t["title"])
+		if proposed_by:
+			self._log("proposed", tid, proposed_by, t["title"])
 		return self.get(tid)
 
 	def update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
@@ -445,6 +512,8 @@ class Store:
 		if "parent" in clean:
 			self._check_parent(tid, clean["parent"])
 		if clean.get("status") == "doing" and t.get("status") != "doing":
+			if t.get("proposed_by"):
+				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
 			open_b = [b for b in clean.get("blocked_by", t.get("blocked_by", []))
 			          if self._path(b).exists() and self._read(self._path(b)).get("status") != "done"]
 			if open_b:
@@ -505,11 +574,30 @@ class Store:
 			return {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
 		return self._locked(run)
 
-	def delete(self, tid: str, agent: str | None = None) -> dict:
-		"""Remove a ticket, its claim and attachments. Returns it plus `referenced_by`: tickets still pointing at it."""
-		return self._locked(lambda: self._delete(tid, agent))
+	def delete(self, tid: str, agent: str | None = None, reason: str = "") -> dict:
+		"""Remove a ticket, its claim and attachments. Returns it plus `referenced_by`: tickets still pointing at it. `reason` (a
+		human rejecting a proposal) goes into the log. Rejecting a proposal is deleting it."""
+		return self._locked(lambda: self._delete(tid, agent, reason))
 
-	def _delete(self, tid: str, agent: str | None = None) -> dict:
+	def accept(self, tid: str, by: str) -> dict:
+		"""A human accepts an agent's proposal: proposed_by is cleared (the ticket is ready as usual), note "Accepted by X", logs `accepted`."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("accept needs `by`: who is accepting")
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			if not raw.get("proposed_by"):
+				raise TicketError(f"{tid} isn't a proposal (nothing to accept)")
+			who, raw["proposed_by"], raw["updated"] = raw["proposed_by"], "", date.today().isoformat()
+			_append_note(raw, by.strip(), f"Accepted by {by.strip()}")
+			self._write(raw)
+			self._log("accepted", tid, by.strip(), f"proposed by {who}")
+		self._locked(run)
+		return self.get(tid)
+
+	def _delete(self, tid: str, agent: str | None = None, reason: str = "") -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
@@ -519,7 +607,7 @@ class Store:
 		path.unlink()
 		self._drop_claim(tid, "ticket deleted")
 		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)  # attachments
-		self._log("deleted", tid, None, t["title"])
+		self._log("deleted", tid, None, t["title"] + (f" (rejected: {reason.strip()})" if reason.strip() else ""))
 		return {**t, "referenced_by": refs}  # still list it in blocked_by / parent: not edited, now dangling
 
 	# ---------- claims: which agent is working what, right now ----------
@@ -726,7 +814,7 @@ class Store:
 				counts["in_flight"] += 1
 			elif t["status"] == "review":
 				counts["in_review"] += 1
-			elif t.get("waiting_on") or t.get("owner") in humans:
+			elif t.get("waiting_on") or t.get("proposed_by") or t.get("owner") in humans:
 				counts["waiting_on_human"] += 1
 			elif t["effective_status"] == "todo":
 				counts["ready_conflicting"] += 1

@@ -48,7 +48,7 @@ def _short(t: dict) -> dict:
 TOOLS = [
 	{"name": "list_boards", "description": "Every board: id, title, ticket / open / ready counts.",
 	 "input_schema": {"type": "object", "properties": {}}},
-	{"name": "board_info", "description": "A board's settings: owners, pillars, agent profiles, stale_days.",
+	{"name": "board_info", "description": "A board's settings: owners, pillars, agent profiles, stale_days, schema (allowed prefixes, required fields, tags) and agent_tickets.",
 	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}}}},
 	{"name": "list_tickets",
 	 "description": "Ticket summaries on a board. Filters: status (todo|doing|review|done, or pending = a todo with an open blocker; the effective status), "

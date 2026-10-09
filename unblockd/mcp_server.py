@@ -3,7 +3,7 @@
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+create_ticket, accept_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
@@ -110,7 +110,7 @@ def create_board(id: str, title: str = "") -> dict:
 @tool
 def board_info(board: str | None = None) -> dict:
 	"""A board's settings: title, owners, pillars, agent profiles (name, tags, pillars, model,
-	instructions), stale_days."""
+	instructions), stale_days, and the ticket rules: `schema` (prefixes with meanings, required fields, tags, body template) and `agent_tickets`."""
 	return BOARDS.get(board).config
 
 
@@ -153,20 +153,29 @@ def get_ticket(id: str, board: str | None = None) -> dict:
 
 
 @tool
-def create_ticket(title: str, board: str | None = None, prefix: str | None = None, id: str | None = None,
+def create_ticket(title: str, agent: str, board: str | None = None, prefix: str | None = None, id: str | None = None,
                   status: str = "todo", priority: str | None = None, owner: str | None = None,
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
                   done_when: list[str] | None = None) -> dict:
-	"""Create a ticket (owner defaults to the board's agent owner). Pass prefix (e.g. "BUG") to get
+	"""Create a ticket (owner defaults to the board's agent owner). agent = your worker name. Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
-	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each)."""
+	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each).
+	Read board_info first: its `schema` (allowed prefixes with meanings, required fields, allowed tags, body template) is enforced for you and a
+	break is refused with every problem listed; if no prefix fits, ask_human, do not guess a near one. With `agent_tickets: "propose"` the
+	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
 	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or []}
-	return store.create(data, tid=id, prefix=prefix)
+	return store.create(data, tid=id, prefix=prefix, agent=agent)
+
+
+@tool
+def accept_ticket(id: str, by: str, board: str | None = None) -> dict:
+	"""The human side of the proposal gate: accept a ticket an agent created (proposed_by is cleared, it becomes ready). Reject = delete_ticket."""
+	return BOARDS.get(board).accept(id, by)
 
 
 @tool

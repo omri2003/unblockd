@@ -3,7 +3,7 @@
 GET    /api/boards                       every board: id, title, ticket counts
 POST   /api/boards                       {"id": "my-game", "title": "My game"}  (needs UNBLOCKD_ROOT)
 GET    /api/needs                        every board's tickets that wait on a person (read-only, for the UI's Needs you panel):
-                                         [{"id", "title", "items": [{"id", "kind": question|review|stuck, "title", "priority", "score", "unblocks",
+                                         [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck, "title", "priority", "score", "unblocks",
                                          "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars)}]}], boards with items only,
                                          items: score desc, then oldest first
 GET    /api/chat                         {"enabled": bool, "model": ...}
@@ -13,9 +13,10 @@ GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&parent=&q=
 GET    next?owner=&pillar=&agent=&tag=&limit=   ready tickets ranked by priority x tickets unblocked
 GET    plan?per_agent=                   ready tickets grouped by agent profile (work_plan)
 GET    tickets/<id>
-POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id": "BUG-13", ...}
+POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id": "BUG-13", ...}; "agent"? = the creating worker (strict schema, proposal gate); a human's ticket may come back with "warnings"
+POST   tickets/<id>/accept               {"by"?}  accept an agent's proposal (400 unless proposed_by is set)
 PATCH  tickets/<id>                      {...fields to change}
-DELETE tickets/<id>
+DELETE tickets/<id>                      ?agent= (holder rule), ?reason= (a human rejecting a proposal; logged)
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
 GET    agents                            who is working what right now + recent activity
 GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expired / complete / created / done log, newest first;
@@ -91,6 +92,8 @@ def _needs() -> list[dict]:
 				continue
 			if t["status"] == "review":
 				kind, at = "review", (t.get("result") or {}).get("at")
+			elif t.get("proposed_by"):
+				kind, at = "proposal", None
 			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
 				kind, at = "question", t.get("asked_at")
 			elif t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days) or (not t.get("claim") and t["id"] in failing):
@@ -105,6 +108,7 @@ def _needs() -> list[dict]:
 			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
 			              "body": (t.get("body") or "")[-NEEDS_BODY:],
+			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
 			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
 			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
@@ -232,9 +236,11 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))
-			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject"):
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject", "accept"):
 				b = self._body()
 				by = str(b.get("by") or "human")
+				if rest[2] == "accept":
+					return self._send(200, store.accept(rest[1], by))
 				return self._send(200, store.answer(rest[1], by, b.get("text")) if rest[2] == "answer" else store.reject(rest[1], by, b.get("reason")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
@@ -248,12 +254,12 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.get(tid))
 			if method == "POST" and tid is None:
 				b = self._body()
-				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None)))
+				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None)))  # agent: the creating worker (cli.Remote); none = a human
 			if method == "PATCH" and tid:
 				b = self._body()
 				return self._send(200, store.update(tid, b, agent=b.pop("agent", None)))  # agent: a remote worker's name (cli.Remote)
 			if method == "DELETE" and tid:
-				return self._send(200, store.delete(tid, agent=q.get("agent")))
+				return self._send(200, store.delete(tid, agent=q.get("agent"), reason=q.get("reason", "")))
 			return self._send(405, {"error": "method not allowed"})
 		except st.NotFound as e:
 			return self._send(404, {"error": str(e)})
