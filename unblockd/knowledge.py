@@ -12,6 +12,7 @@ Only text files are read; paths can't leave the project folder.
 from __future__ import annotations
 
 import re
+import string
 from pathlib import Path
 
 from .store import TicketError
@@ -140,7 +141,8 @@ def read_file(store, tid: str, name: str) -> str:
 
 def read_doc(store, path: str) -> dict:
 	if path == PROTOCOL:
-		return {"path": PROTOCOL, "content": PROTOCOL_FILE.read_text(encoding="utf-8"), "links": [], "builtin": True}
+		return {"path": PROTOCOL, "content": string.Template(PROTOCOL_FILE.read_text(encoding="utf-8")).safe_substitute(  # generic values; workers get theirs filled in
+			board=store.config.get("id", "this board"), profile_line="", agent_hint="<profile>-<number>, e.g. backend-1", claim_args=""), "links": [], "builtin": True}
 	base = root(store)
 	p = _inside(base, path)
 	if not p.is_file():

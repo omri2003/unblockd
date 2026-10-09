@@ -131,6 +131,7 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertTrue(docs["unblockd://work-loop"]["builtin"])
 		self.assertEqual(docs["unblockd://work-loop"]["readers"], 4)
 		self.assertIn("Never go silent", kn.read_doc(self.s, "unblockd://work-loop")["content"])
+		self.assertNotIn("$", kn.read_doc(self.s, "unblockd://work-loop")["content"])  # placeholders filled in
 		self.assertNotIn("unblockd://work-loop", [h["path"] for h in g["hubs"]])
 		self.assertEqual(reads[("CMB-1", "docs/HANDOFF.md")], "profile")  # also on the ticket: first source wins, like context()
 		self.assertEqual(reads[("CMB-3", "AGENTS.md")], "board")
