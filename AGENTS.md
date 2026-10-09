@@ -31,7 +31,7 @@ static/index.html       The whole UI, one file, vanilla JS, no build step, no CD
 tests/                  stdlib unittest: test_store, test_boards (routing, boards, HTTP API),
                         test_claims (incl. 6 parallel workers), test_chat (fake Messages API),
                         test_notify (fake webhook receiver), test_mcp (work_loop prompt + resource; skipped without `mcp`), test_knowledge (context order, dedupe, links, path safety, attachments).
-tests/ui_smoke.mjs      Playwright smoke: example board + CLI claim/split, 1400/390px x light/dark; board, graph, docs,
+tests/ui_smoke.mjs      Playwright smoke: example + second board, CLI claim/split, Needs you panel (badge, expand, Ctrl+Enter, cross-board answer, Stuck release), `p` priority, 1400/390px x light/dark; board, graph, docs,
                         drawer, panels, toast; fails on page/console errors or horizontal overflow (CI job `ui`).
 README.md               60-second pitch + 5-minute walkthrough + glossary (keep under ~1000 words); every command in it must have been run.
 docs/reference.md       Everything long: env vars, boards, profiles, claims, knowledge, chat, config, ticket format, UI, MCP, CLI, REST API.
