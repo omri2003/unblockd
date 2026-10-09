@@ -444,8 +444,13 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
 }
 /* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
-.mapstage{position:relative;overflow-x:auto;background:var(--sunk);border-radius:8px}
-.mapin{position:relative;transition:margin-left .18s ease-out}
+.mapstage{position:relative;overflow:hidden;height:calc(100dvh - 360px);min-height:340px;background:var(--sunk);border-radius:8px;touch-action:none;user-select:none;cursor:grab}
+.mapstage.pan{cursor:grabbing}
+.mapin{position:absolute;left:0;top:0;transform-origin:0 0}
+.mapin.anim{transition:transform .18s ease-out} .mapin.rs .mc{transition:left .18s ease-out,top .18s ease-out}
+.mc.drag{cursor:grabbing;box-shadow:0 6px 18px rgba(0,0,0,.25);z-index:2}
+.mzoom{position:absolute;right:10px;bottom:10px;z-index:6;display:flex;gap:4px;align-items:center;cursor:default}
+.mzoom .btn{min-width:32px}
 #mapSvg{position:absolute;left:0;top:0;overflow:visible}
 .eg{transition:opacity .18s ease-out}
 .eg{--m:url(#mAh)} .eg.x{--m:url(#mAhX)} .eg:hover,.eg.s{--m:url(#mAhS)} .eg.x:hover,.eg.x.s{--m:url(#mAhX)}
@@ -504,7 +509,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .eg,.mc,.mapin{transition:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -558,10 +563,10 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <span><i class="sw" style="border:2px solid var(--amber);border-radius:3px"></i>Being worked on</span>
       <span><i class="sw" style="background:var(--cinnabar);border-radius:50%"></i>Has a problem</span>
       <span><i class="sw" style="border-top:2px dashed var(--cinnabar);height:0;width:14px"></i>Edge with no contract</span>
-      <span class="hint">An arrow goes from the note that lists a link to the note it links to. Darker cards have more open tickets. Click a component to see its neighbours; hover an edge to read what crosses it.</span></div>
+      <span class="hint">An arrow goes from the note that lists a link to the note it links to. Darker cards have more open tickets. Click a component to see its neighbours; hover an edge to read what crosses it. Drag a component to move it, drag the background to pan, scroll to zoom.</span></div>
     <p class="mnote" id="mNote" hidden></p>
     <div class="mapmsg" id="mapMsg" hidden></div>
-    <div class="mapstage" id="mapStage"><div class="mapin" id="mapIn"><svg id="mapSvg" aria-hidden="true"></svg><div id="mapCards"></div><div class="maptip" id="mapTip" hidden role="tooltip"></div></div></div>
+    <div class="mapstage" id="mapStage"><div class="mapin" id="mapIn"><svg id="mapSvg" aria-hidden="true"></svg><div id="mapCards"></div></div><div class="maptip" id="mapTip" hidden role="tooltip"></div><div class="mzoom" id="mZoom" role="group" aria-label="Map view"><button type="button" class="btn ghost sm" data-mz="out" title="Zoom out (-)" aria-label="Zoom out">−</button><button type="button" class="btn ghost sm" data-mz="in" title="Zoom in (+)" aria-label="Zoom in">+</button><button type="button" class="btn ghost sm" data-mz="fit" title="Fit all components (0)">Fit</button><button type="button" class="btn ghost sm" data-mz="reset" id="mReset" title="Forget the positions you dragged on this board">Reset layout</button></div></div>
     <ol class="mlist" id="mapList"></ol>
   </section>
   <section class="graphwrap" id="graphWrap" hidden aria-label="Blocking graph">
@@ -644,6 +649,9 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt>Click a component</dt><dd>Show it and its neighbours, and open its panel</dd>
     <dt>Hover an edge</dt><dd>Read the contract: what crosses it</dd>
     <dt><kbd>a</kbd></dt><dd>Add a component</dd>
+    <dt>Wheel, pinch</dt><dd>Zoom around the pointer</dd>
+    <dt>Drag</dt><dd>Pan the background, or move a component (saved in this browser)</dd>
+    <dt><kbd>+</kbd> <kbd>-</kbd> <kbd>0</kbd></dt><dd>Zoom in, zoom out, fit everything</dd>
     <dt><kbd>Esc</kbd></dt><dd>Leave the focus</dd>
   </dl>
   <p style="margin:14px 0 0"><button type="button" class="btn ghost" data-kbclose>Close</button></p>
@@ -696,7 +704,7 @@ const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','parent'
 const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
 const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
-const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
+const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
 const COMPS=()=>MV.data?.components||[], ctitle=k=>COMPS().find(c=>c.key===k)?.title||k;
 const tcomps=t=>[...new Set([...(t.components||[]),...(MV.data?.ticket_map?.[t.id]||[])])]; // a ticket's components: explicit first, then those derived from its touches (GET /architecture ticket_map); explicit alone until that arrives
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
@@ -1448,6 +1456,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-aadd]')){MV.ui.add=true;MV.ui.err='';openMapPanel(true);$('c-to')?.querySelector('.pq').focus();return;}
   if(b=g('[data-cedit]')){const id=b.dataset.cedit,e=MV.data.edges.find(x=>x.from+'>'+x.to===id);MV.ui.ce=id;MV.ui.noc=null;MV.ui.err='';DRAFTS['ce:'+id]=e?.text||'';openMapPanel(true);const i=$('drawer').querySelector('.cedit input');i?.focus();i?.select();return;}
   if(b=g('[data-crm]')){archRemoveEdge(b.dataset.crm);return;}
+  if(b=g('[data-mz]')){const z=b.dataset.mz;z==='fit'?mapFit(1):z==='reset'?mapReset():mapZoom(z==='in'?1.25:1/1.25,1);return;}
   if(b=g('[data-mc]')){mapFocus(b.dataset.mc);return;}
   if(b=g('[data-mfocus]')){mapFocus(b.dataset.mfocus);return;}
   if(b=g('[data-mprob]')){MV.f=MV.f===b.dataset.mprob?null:b.dataset.mprob;MV.foc=MV.multi=null;if(MV.pan)closeDrawer();markMap();return;}
@@ -1549,6 +1558,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='?'){ e.preventDefault(); toggleKb(); return; }
   if(e.key==='t'){ const o=['system','light','dark']; setPref('theme',o[(o.indexOf(SET.theme)+1)%3]); toast('Theme: '+{system:'System',light:'Light',dark:'Dark'}[SET.theme]); return; }
   if(e.key==='a'&&state.view==='map'&&MV.data?.folder&&$('kb').hidden&&$('npanel').hidden){ e.preventDefault(); mapNew(); return; } // add a component (the panel may be open)
+  if(state.view==='map'&&'+=-0'.includes(e.key)&&$('mapStage').offsetParent&&$('kb').hidden&&$('npanel').hidden){ e.preventDefault(); e.key==='0'?mapFit(1):mapZoom(e.key==='-'?1/1.25:1.25,1); return; } // zoom the Map (the panel may be open)
   if(!$('drawer').hidden||!$('kb').hidden) return;
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
@@ -2112,6 +2122,7 @@ const mapConn=(x,k)=>{const from=x.dir==='Out'?k:x.key,to=x.dir==='Out'?x.key:k,
     +(ed?`<form class="cedit" data-aform="cedit" data-from="${esc(from)}" data-to="${esc(to)}"><input data-draft="ce:${esc(id)}" maxlength="500" aria-label="Contract: ${esc(nm)}" placeholder="what crosses this edge" value="${dval('ce:'+id,x.text)}"><span class="hint">Enter saves, Esc cancels</span>${MV.ui.noc===id?'<p class="cwarn" role="alert">Save without a contract? Agents get no rule for this edge.</p>':''}${uerr('ce:'+id)}</form>`
       :`<div class="ctr${x.text?'':' none'}">${x.text?inline(x.text):'no contract written'}</div>`)+'</li>';};
 function renderMap(){
+  if(MV.drag)return; // never under a drag; mapDragEnd repaints
   const d=MV.data,msg=$('mapMsg'),steps=['Create <code>docs/arch/&lt;component&gt;.md</code>, one note per component. Its first heading is the name on the map.',
     'Add a <code>## Connections</code> section with one line per edge: <code>- [other](other.md) — what crosses this edge</code>.',
     'Set <code>"architecture": "docs/arch"</code> in <code>tickets/unblockd.json</code>.'],
@@ -2129,27 +2140,93 @@ function renderMap(){
   const seen=new Map();MV.links=[];
   d.edges.forEach(e=>{const k=[e.from,e.to].sort().join('|'),l=seen.get(k);
     if(!l){const n={from:e.from,to:e.to,text:e.text};seen.set(k,n);MV.links.push(n);}else if(l.from!==e.from&&!l.both){l.both=true;l.rev=e.text;}}); // A->B + B->A = one link, l.rev = the B->A contract
-  const L=mapLayout(d.components,MV.links,$('mapStage').clientWidth),why=mapWhy(d),max=Math.max(1,...d.components.map(c=>c.tickets.length)),T=mapBy();
+  const L=MV.L=mapLayout(d.components,MV.links,$('mapStage').clientWidth);L.base=L.paths;L.paths=L.paths.map((p,i)=>mapOv(MV.links[i].from)||mapOv(MV.links[i].to)?mapDirect(MV.links[i]):p);const why=mapWhy(d),max=Math.max(1,...d.components.map(c=>c.tickets.length)),T=mapBy();
   const ah=(id)=>`<marker id="mAh${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,1 10,5 0,9z"/></marker>`;
   const svg=`<defs>${ah('')}${ah('S')}${ah('X')}</defs>`+MV.links.map((e,i)=>`<g class="eg${e.both?' both':''}${e.text&&(!e.both||e.rev)?'':' x'}" data-e="${i}"><path class="ev" d="${L.paths[i]}"/><path class="eh" d="${L.paths[i]}"/></g>`).join('');
-  const cards=d.components.map(c=>mapCard(c,why,max,L.pos[c.key])).join('');
+  const cards=d.components.map(c=>mapCard(c,why,max,mapXY(c.key))).join('');
   const list=L.order.map(k=>{const c=T.get(k),cs=mapConns(d,k);
     return `<li>${mapCard(c,why,max)}${cs.length?`<ul class="mcon">${cs.map(x=>`<li><span class="dir">${x.dir}</span><button type="button" class="idlink" data-mfocus="${esc(x.key)}">${esc(x.title)}</button><span class="ctr${x.text?'':' none'}">${x.text?inline(x.text):'no contract written'}</span></li>`).join('')}</ul>`:''}</li>`;}).join('');
   const m=$('mapIn'),sv=$('mapSvg');
-  if(m._h!==svg+cards){m._h=svg+cards;m.style.width=L.W+'px';m.style.height=L.H+'px';MV.W=L.W;sv.setAttribute('width',L.W);sv.setAttribute('height',L.H);sv.innerHTML=svg;$('mapCards').innerHTML=cards;} // same markup = untouched, so the poll never re-animates
+  if(m._h!==svg+cards){m._h=svg+cards;m.style.width=L.W+'px';m.style.height=L.H+'px';sv.setAttribute('width',L.W);sv.setAttribute('height',L.H);sv.innerHTML=svg;$('mapCards').innerHTML=cards;} // same markup = untouched, so the poll never re-animates
   if($('mapList')._h!==list){$('mapList')._h=list;$('mapList').innerHTML=list;}
-  markMap();mapCenter(true);
+  markMap();$('mReset').disabled=!Object.keys(mpos()).length;
+  if(!MV.fitted&&$('mapStage').clientWidth){MV.fitted=true;mapFit();}
 }
-function mapCenter(instant){ // centre the rows in the stage, minus the side panel when it is open; a map wider than that scrolls so the focused cluster is in view
-  const m=$('mapIn'),st=$('mapStage'),r=st.getBoundingClientRect(),right=MV.pan?Math.min(r.right,$('drawer').getBoundingClientRect().left):r.right;
-  m.style.width=(MV.W||0)+(MV.pan&&(MV.W||0)>right-r.left?r.right-right:0)+'px'; // a wide map gets room to scroll its last column out from under the panel
-  if(instant)m.style.transition='none';
-  m.style.marginLeft=Math.max(0,Math.round((right-r.left-(MV.W||0))/2))+'px';
-  if(instant){m.offsetWidth;m.style.transition='';}
-  if(MV.pan&&!instant&&(MV.W||0)>right-r.left){ // scroll the focused card and its neighbours into the visible part
-    const s=mapSel(),bs=[...document.querySelectorAll('#mapIn .mc')].filter(b=>s&&s.show.has(b.dataset.mc)).map(b=>b.getBoundingClientRect());
-    if(bs.length)st.scrollTo({left:Math.max(0,st.scrollLeft+(Math.min(...bs.map(b=>b.left))+Math.max(...bs.map(b=>b.right)))/2-(r.left+right)/2),behavior:reduce.matches?'auto':'smooth'});}
+function mapCenter(){ // the side panel covers the right of the stage: pan just enough to keep the focused cluster out from under it
+  if(!MV.pan||state.view!=='map')return;
+  const st=$('mapStage').getBoundingClientRect(),lim=st.right-$('drawer').offsetWidth-16,s=mapSel(),
+    bs=[...document.querySelectorAll('#mapIn .mc')].filter(b=>s&&s.show.has(b.dataset.mc)).map(b=>b.getBoundingClientRect());
+  if(!bs.length)return;
+  const over=Math.max(...bs.map(b=>b.right))-lim,room=Math.min(...bs.map(b=>b.left))-(st.left+16);
+  if(over>0&&room>0){MV.v.x-=Math.min(over,room);mapView(1);}
 }
+// ---- zoom, pan, drag nodes. MV.v = {x,y,k}: translate + scale of #mapIn (origin 0 0). Dragged positions live in MV.pos {key:[x,y]} (store `mapPos.<board>`); a component without one keeps its mapLayout spot.
+const MZ=[.2,3],mposKey=()=>'mapPos.'+(BOARD||'default'),mpos=()=>MV.pos||(MV.pos=store.get(mposKey(),{}));
+const mapOv=k=>{const o=mpos()[k];return Array.isArray(o)&&o.length===2&&o.every(Number.isFinite)?{x:o[0],y:o[1]}:null;};
+const mapXY=k=>MV.dp?.k===k?MV.dp:mapOv(k)||MV.L.pos[k];
+function mapView(anim){const m=$('mapIn'),v=MV.v;m.classList.toggle('anim',!!anim&&!reduce.matches);m.style.transform=`translate(${v.x}px,${v.y}px) scale(${v.k})`;}
+function mapZoomAt(f,cx,cy,anim){const v=MV.v,k=Math.min(MZ[1],Math.max(MZ[0],v.k*f));v.x=cx-(cx-v.x)*k/v.k;v.y=cy-(cy-v.y)*k/v.k;v.k=k;mapView(anim);}
+const mapZoom=(f,anim)=>{const st=$('mapStage');mapZoomAt(f,st.clientWidth/2,st.clientHeight/2,anim);};
+function mapFit(anim){
+  const st=$('mapStage'),w=st.clientWidth,h=st.clientHeight,d=MV.data;if(!MV.L||!w||!d?.components.length)return;
+  const ps=d.components.map(c=>mapXY(c.key)),x0=Math.min(...ps.map(p=>p.x)),x1=Math.max(...ps.map(p=>p.x))+MW,y0=Math.min(...ps.map(p=>p.y)),y1=Math.max(...ps.map(p=>p.y))+MH,pad=32,
+    k=Math.min(1,Math.max(MZ[0],Math.min((w-2*pad)/(x1-x0),(h-2*pad)/(y1-y0))));
+  MV.v={k,x:(w-(x1-x0)*k)/2-x0*k,y:(h-(y1-y0)*k)/2-y0*k};mapView(anim);
+}
+function mapDirect(e){ // a curve between the two cards' current spots (used once an end was dragged)
+  const a=mapXY(e.from),b=mapXY(e.to);let p,q,v=1;
+  if(b.y>=a.y+MH+8){p=[a.x+MW/2,a.y+MH];q=[b.x+MW/2,b.y];}
+  else if(b.y+MH+8<=a.y){p=[a.x+MW/2,a.y];q=[b.x+MW/2,b.y+MH];}
+  else{v=0;const r=b.x>a.x;p=[a.x+(r?MW:0),a.y+MH/2];q=[b.x+(r?0:MW),b.y+MH/2];}
+  const m=(p[v]+q[v])/2;return v?`M${p}C${p[0]},${m} ${q[0]},${m} ${q}`:`M${p}C${m},${p[1]} ${m},${q[1]} ${q}`;
+}
+function mapSetPath(i,d){document.querySelectorAll(`#mapSvg .eg[data-e="${i}"] path`).forEach(p=>p.setAttribute('d',d));}
+function mapDragEnd(){
+  const k=MV.drag,p=MV.dp;MV.drag=MV.dp=null;if(!k||!p)return;
+  const o=mpos();o[k]=[Math.round(p.x),Math.round(p.y)];store.set(mposKey(),o);renderMap();
+}
+function mapReset(){ // forget this board's dragged positions: cards slide back (<= 200 ms, none under reduced motion) and the view fits
+  MV.pos={};store.set(mposKey(),{});const m=$('mapIn'),L=MV.L;if(!L)return;
+  m.classList.toggle('rs',!reduce.matches);
+  MV.links.forEach((e,i)=>mapSetPath(i,L.paths[i]=L.base[i]));
+  m.querySelectorAll('.mc').forEach(b=>{const p=L.pos[b.dataset.mc];if(p){b.style.left=p.x+'px';b.style.top=p.y+'px';}});
+  $('mReset').disabled=true;mapFit(1);
+  setTimeout(()=>{m.classList.remove('rs');renderMap();},reduce.matches?0:220);
+}
+{const st=$('mapStage'),tip=$('mapTip'),P=new Map();let g=null;
+ const pt=e=>{const r=st.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];};
+ st.addEventListener('wheel',e=>{e.preventDefault();const [x,y]=pt(e);mapZoomAt(Math.exp(-e.deltaY*(e.deltaMode?16:1)*(e.ctrlKey?.01:.002)),x,y);},{passive:false});
+ st.addEventListener('pointerdown',e=>{
+   if(e.button||e.target.closest('.mzoom'))return;
+   P.set(e.pointerId,pt(e));
+   if(P.size>1){if(g?.moved&&g.key)mapDragEnd();g={pinch:1};return;}
+   const b=e.target.closest('.mc');g={key:b?.dataset.mc,sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false};
+ });
+ st.addEventListener('pointermove',e=>{
+   if(!P.has(e.pointerId))return;
+   const o=[...P.values()];P.set(e.pointerId,pt(e));const n=[...P.values()];
+   if(g?.pinch){if(n.length<2)return;const d0=Math.hypot(o[0][0]-o[1][0],o[0][1]-o[1][1])||1,d1=Math.hypot(n[0][0]-n[1][0],n[0][1]-n[1][1]),mx=(n[0][0]+n[1][0])/2,my=(n[0][1]+n[1][1])/2;
+     MV.v.x+=mx-(o[0][0]+o[1][0])/2;MV.v.y+=my-(o[0][1]+o[1][1])/2;mapZoomAt(d1/d0,mx,my);return;}
+   if(!g)return;
+   if(!g.moved){if(Math.hypot(e.clientX-g.sx,e.clientY-g.sy)<5)return; // under 5px it is still a click
+     g.moved=true;st.setPointerCapture(e.pointerId);
+     if(g.key&&MV.data){MV.drag=g.key;g.p0={...mapXY(g.key)};st.querySelector(`.mc[data-mc="${CSS.escape(g.key)}"]`)?.classList.add('drag');tip.hidden=true;}else st.classList.add('pan');}
+   if(g.key&&MV.drag){const k=MV.v.k,p=MV.dp={k:g.key,x:g.p0.x+(e.clientX-g.sx)/k,y:g.p0.y+(e.clientY-g.sy)/k},b=st.querySelector(`.mc[data-mc="${CSS.escape(g.key)}"]`);
+     if(b){b.style.left=p.x+'px';b.style.top=p.y+'px';}
+     MV.links.forEach((l,i)=>{if(l.from===g.key||l.to===g.key)mapSetPath(i,mapDirect(l));});}
+   else{MV.v.x+=e.clientX-g.lx;MV.v.y+=e.clientY-g.ly;mapView();}
+   g.lx=e.clientX;g.ly=e.clientY;
+ });
+ const up=e=>{if(!P.delete(e.pointerId))return;
+   if(g&&!g.pinch&&g.moved){if(MV.drag)mapDragEnd();MV.noClick=true;setTimeout(()=>{MV.noClick=false;},0);}
+   if(!P.size||g?.pinch)g=null;st.classList.remove('pan');};
+ st.addEventListener('pointerup',up);st.addEventListener('pointercancel',up);
+ st.addEventListener('click',e=>{if(MV.noClick){e.stopPropagation();e.preventDefault();}},true); // the click that ends a drag or a pan is not a click on a card or on empty canvas
+ st.addEventListener('pointermove',e=>{const gr=e.target.closest?.('.eg');if(g?.moved||!gr||!MV.data){tip.hidden=true;return;}
+   const ed=MV.links[gr.dataset.e],T=mapBy(),one=(a,b,t)=>`<div><b>${esc(T.get(a).title)} → ${esc(T.get(b).title)}:</b> ${t?inline(t):'<em>no contract written</em>'}</div>`;
+   tip.innerHTML=one(ed.from,ed.to,ed.text)+(ed.both?one(ed.to,ed.from,ed.rev):'');tip.hidden=false;
+   const r=st.getBoundingClientRect();tip.style.left=Math.max(4,Math.min(e.clientX-r.left+14,r.width-tip.offsetWidth-4))+'px';tip.style.top=(e.clientY-r.top+16)+'px';});
+ st.addEventListener('pointerleave',()=>{tip.hidden=true;});}
 function mapSel(){ // what the current focus / problem filter lights: {core, show, edge(e)} or null
   const d=MV.data;if(!d)return null;
   const nb=k=>d.edges.flatMap(e=>e.from===k?[e.to]:e.to===k?[e.from]:[]);
@@ -2286,13 +2363,6 @@ async function showOnMap(id){ // ticket drawer -> Map, focused on its component(
   MV.foc=ks.length===1?ks[0]:null;MV.multi=ks.length>1?{id,keys:ks}:null;MV.f=null;
   setView('map');if(MV.foc)openMapPanel();
 }
-{const m=$('mapIn'),tip=$('mapTip');
- m.addEventListener('pointermove',e=>{const g=e.target.closest?.('.eg');if(!g||!MV.data){tip.hidden=true;return;}
-   const ed=MV.links[g.dataset.e],T=mapBy(),one=(a,b,t)=>`<div><b>${esc(T.get(a).title)} → ${esc(T.get(b).title)}:</b> ${t?inline(t):'<em>no contract written</em>'}</div>`;
-   tip.innerHTML=one(ed.from,ed.to,ed.text)+(ed.both?one(ed.to,ed.from,ed.rev):'');tip.hidden=false;
-   const r=m.getBoundingClientRect();tip.style.left=Math.max(4,Math.min(e.clientX-r.left+14,r.width-tip.offsetWidth-4))+'px';tip.style.top=(e.clientY-r.top+16)+'px';});
- m.addEventListener('pointerleave',()=>{tip.hidden=true;});}
-
 // ---------- view switch ----------
 const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>", "map": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"5.5\" y=\"1.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"1.75\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"9.25\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><path d=\"M8 5.25v2.5M4.25 10.75v-3h7.5v3\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d'],['map','Map','m']];
 function paintViews(v){const s=$('viewSeg'); // built once: the buttons stay, only aria-pressed moves, so labels and the indicator can animate

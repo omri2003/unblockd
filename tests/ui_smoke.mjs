@@ -149,6 +149,30 @@ try {
 				await page.click('[data-mprob="cross"]');
 				ok((await page.locator('#mapIn .mc.on').count()) === 2, `[${tag}] "tickets span 2+ components" should light api + web-ui`);
 				await page.keyboard.press('Escape');
+				{ // zoom / pan / drag nodes
+					const k = () => page.evaluate(() => +document.getElementById('mapIn').style.transform.match(/scale\(([\d.]+)/)[1]), box = (key) => page.locator(`#mapIn [data-mc="${key}"]`).boundingBox();
+					await page.keyboard.press('0'); await page.waitForTimeout(300);
+					const k0 = await k(), sb = await page.locator('#mapStage').boundingBox();
+					await page.mouse.move(sb.x + sb.width / 2, sb.y + 40); await page.mouse.wheel(0, -200);
+					await page.waitForFunction((x) => +document.getElementById('mapIn').style.transform.match(/scale\(([\d.]+)/)[1] > x, k0); ok((await k()) > k0, `[${tag}] map: wheel zooms in`);
+					await page.click('[data-mz="fit"]'); await page.waitForTimeout(300);
+					ok(Math.abs((await k()) - k0) < 0.01, `[${tag}] map: Fit restores the fitted zoom`);
+					let b0 = await box('store'), x0 = b0.x + b0.width / 2, y0 = b0.y + b0.height / 2; // eslint-disable-line
+					await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x0 + 3, y0); await page.mouse.up();
+					await visible('#drawer #dTitle', 'map panel after a 3px wiggle'); // under the threshold it is a click
+					await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+					b0 = await box('store'); x0 = b0.x + b0.width / 2; y0 = b0.y + b0.height / 2;
+					await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x0 + 60, y0 + 30, { steps: 5 }); await page.mouse.up();
+					const rel = async () => { const a = await box('store'), c = await box('api'), z = await k(); return (a.x - c.x) / z; };
+					const r1 = await rel(), b1 = await box('store'); ok(Math.abs(b1.x - b0.x - 60) < 3 && await page.locator('#drawer').isHidden(), `[${tag}] map: dragging a card moves it without opening it`);
+					await page.reload(); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]').getAttribute('aria-pressed') === 'true');
+					await page.waitForTimeout(400);
+					ok(Math.abs((await rel()) - r1) < 2, `[${tag}] map: dragged position survives a reload`);
+					ok(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem(Object.keys(localStorage).find((x) => x.startsWith('mapPos.'))) || '{}')).includes('store')), `[${tag}] map: dragged position is saved`);
+					await page.click('#mReset'); await page.waitForTimeout(500);
+					ok(await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((x) => x.startsWith('mapPos.'))) === '{}') && await page.locator('#mReset').isDisabled(), `[${tag}] map: Reset layout clears positions`);
+				}
+				await page.keyboard.press('Escape');
 			} else {
 				ok((await page.locator('#mapList .mcon li').count()) >= 4, `[${tag}] mobile map: connections listed under each component`);
 				ok(await page.locator('#mapStage').isHidden(), `[${tag}] mobile map has no canvas`);
