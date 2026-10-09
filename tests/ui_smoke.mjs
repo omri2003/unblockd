@@ -165,6 +165,7 @@ try {
 		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
 		await noOverflow('needs strip');
 		await page.click('[data-view="graph"]'); // the strip is a board thing: hidden in Graph, back on return
+		await page.waitForFunction(() => document.getElementById('needs').hidden).catch(() => {}); // the view switch cross-fades (View Transition), so it lands a frame later
 		ok(await page.locator('#needs').isHidden(), `[${tag}] Needs you strip should be hidden in graph view`);
 		await page.click('[data-view="board"]');
 		await visible('#needs li', 'Needs you strip back on board');
@@ -188,6 +189,29 @@ try {
 		await noOverflow('board after needs');
 
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
+		await ctx.close();
+	}
+	// 5. motion: a ticket moved behind the page's back slides (WAAPI) and ends in its new column with no leftover transform; under reduced motion nothing animates and everything still works
+	for (const reducedMotion of ['no-preference', 'reduce']) {
+		const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion });
+		const page = await ctx.newPage(); page.setDefaultTimeout(8000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+		await page.addInitScript(() => { window.__anim = 0; const o = Element.prototype.animate; Element.prototype.animate = function (...a) { window.__anim++; return o.apply(this, a); }; });
+		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		const created = JSON.parse(cli('create', '--prefix', 'MV', '--title', 'mover', '--json', '{"owner":"Claude","pillar":"API"}').toString());
+		const id = created.id; await page.waitForSelector(`.col.todo .card[data-open="${id}"]`);
+		await page.evaluate(() => { window.__anim = 0; });
+		cli('update', id, '--json', '{"status":"doing"}');
+		await page.waitForSelector(`.col.doing .card[data-open="${id}"]`);
+		await page.waitForTimeout(500);
+		const end = await page.evaluate((i) => { const w = document.querySelector(`.card[data-open="${i}"]`).closest('.cw'); return { tf: getComputedStyle(w).transform, running: w.getAnimations().length, anim: window.__anim }; }, id);
+		ok(end.tf === 'none' && end.running === 0, `[motion/${reducedMotion}] moved card should rest in its column without a transform: ${JSON.stringify(end)}`);
+		ok(reducedMotion === 'reduce' ? end.anim === 0 : end.anim > 0, `[motion/${reducedMotion}] expected ${reducedMotion === 'reduce' ? 'no' : 'some'} animation, saw ${end.anim}`);
+		await page.click('[data-view="graph"]'); await page.waitForSelector('#graph', { state: 'visible' });
+		const ind = await page.evaluate(() => { const b = document.querySelector('#viewSeg [aria-pressed=true]'), i = document.querySelector('#viewSeg .ind'), r = b.getBoundingClientRect(), q = i.getBoundingClientRect(); return b.dataset.view === 'graph' && Math.abs(r.left - q.left) < 2 && Math.abs(r.width - q.width) < 2; });
+		ok(ind, `[motion/${reducedMotion}] view indicator should sit behind the pressed view`);
+		await page.keyboard.press('g'); await page.waitForSelector('.card', { state: 'visible' });
+		ok(!errs.length, `[motion/${reducedMotion}] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
 	await cleanup();
