@@ -190,6 +190,7 @@ try {
 		ok((await page.locator('#npList .nr').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
 		ok(!(await page.locator('#npanel').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the panel`);
 		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
+		ok((await page.locator(`.card:has-text("question me") .why`).first().innerText()) === 'Question from backend-1', `[${tag}] agent question card should say Question from <agent>, not the first word`);
 		await noOverflow('needs panel');
 		// expand the question: full text, a multi-line answer box; Enter = newline, Ctrl+Enter sends
 		const boardId = 'example', qrow = `#npList .nr[data-key="${boardId}/${qid}"]`;
@@ -246,17 +247,24 @@ try {
 		cli('claim', '--agent', 'backend-1', '--id', sid); await age(sid, { updated: '2020-01-01' });
 		const mid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'lost its blocker', '--json', '{"owner":"Claude"}')).id;
 		await age(mid, { blocked_by: ['GONE-1'] });
-		await page.waitForFunction(() => document.querySelectorAll('#npList .nb.s').length === 2);
-		ok((await page.locator('#npSum').innerText()) === '2 stuck', `[${tag}] header counts: ${await page.locator('#npSum').innerText()}`);
+		const bk = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'the blocker', '--json', '{"owner":"Claude"}')).id;
+		const did = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'doing while blocked', '--json', '{"owner":"Claude"}')).id;
+		cli('claim', '--agent', 'backend-1', '--id', did); await age(did, { blocked_by: [bk] }); // claimed first (claim refuses a blocked ticket), blocker added in the JSON
+		await page.waitForFunction(() => document.querySelectorAll('#npList .nb.s').length === 3);
+		ok((await page.locator('#npSum').innerText()) === '3 stuck', `[${tag}] header counts: ${await page.locator('#npSum').innerText()}`);
 		const srow = `#npList .nr[data-key="${boardId}/${sid}"]`, mrow = `#npList .nr[data-key="${boardId}/${mid}"]`;
-		ok((await page.locator(`${mrow} .nd-q`).innerText()) === 'points at deleted GONE-1', `[${tag}] missing-blocker hint`);
+		const drow = `#npList .nr[data-key="${boardId}/${did}"]`;
+		ok((await page.locator(`${drow} .nd-q`).innerText()).startsWith(`In progress but blocked by ${bk} (To do)`) && (await page.locator(`${drow} [data-release]`).count()) === 1, `[${tag}] doing+blocked row names the blocker: ${await page.locator(`${drow} .nd-q`).innerText()}`);
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/stuck-${w}-${theme}.png` });
+		ok((await page.locator(`${mrow} .nd-q`).innerText()) === 'Points at GONE-1, which was deleted. Open it to remove or replace the blocker.', `[${tag}] missing-blocker hint`);
 		ok((await page.locator(`${mrow} [data-release]`).count()) === 0 && (await page.locator(`${mrow} [data-open]`).count()) === 2, `[${tag}] a missing blocker only gets Open (id + button)`);
-		ok((await page.locator(`${srow} .nd-q`).innerText()).startsWith('No update for '), `[${tag}] stale hint`);
+		ok((await page.locator(`${srow} .nd-q`).innerText()).startsWith('In progress for '), `[${tag}] stale hint`);
 		await noOverflow('stuck rows');
 		await page.click(`${srow} [data-release]`);
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${sid}`);
 		const rel = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), sid);
 		ok(rel.status === 'todo' && !rel.claim, `[${tag}] Release to To do should drop the claim: ${rel.status}`);
+		cli('delete', did); cli('delete', bk);
 		cli('delete', mid); // the other one goes when its ticket does
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		await page.keyboard.press('Escape');

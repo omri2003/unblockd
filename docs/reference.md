@@ -263,7 +263,8 @@ GET    /api/boards                    every board with ticket counts
 GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
                                       [{"id", "title", "items": [{"id", "kind": "question"|"review"|"stuck", "title", "priority", "score", "unblocks",
                                       "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result",
-                                      "body" (last 6000 chars)}]}], boards with items only
+                                      "body" (last 6000 chars); stuck items also "open_blockers": [{"id", "effective_status", "title"}] and "claim_note": {"by", "at", "text"}|null}]}], boards with items only.
+                                      Stuck = a missing blocker, a doing ticket with an open blocker (immediately), or a doing ticket stale for stale_days
 GET    /api/chat                      {"enabled", "model"}
 POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 POST   /api/boards                    {"id": "my-game", "title": "My game"}

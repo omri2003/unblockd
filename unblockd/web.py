@@ -74,7 +74,7 @@ NEEDS_BODY = 6000  # chars of body sent per item: enough for the panel's last 3 
 
 def _needs() -> list[dict]:
 	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
-	nobody touched for stale_days, or a blocker that no longer exists).
+	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
 	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does."""
 	out = []
 	for bid, path in BOARDS.all().items():
@@ -83,7 +83,7 @@ def _needs() -> list[dict]:
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items = []
+		items, by_id = [], {t["id"]: t for t in ts}
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -91,15 +91,18 @@ def _needs() -> list[dict]:
 				kind, at = "review", (t.get("result") or {}).get("at")
 			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
 				kind, at = "question", t.get("asked_at")
-			elif t["missing_blockers"] or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days):
+			elif t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days):
 				kind, at = "stuck", None
 			else:
 				continue
+			stuck = kind == "stuck"
 			items.append({"id": t["id"], "kind": kind, "title": t["title"], "priority": t.get("priority"), "score": t["score"],
 			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
 			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
-			              "body": (t.get("body") or "")[-NEEDS_BODY:]})
+			              "body": (t.get("body") or "")[-NEEDS_BODY:],
+			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
+			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None)} if stuck else {})})
 		if items:
 			items.sort(key=lambda i: (-i["score"], i["since"]))
 			out.append({"id": bid, "title": s.config["title"], "items": items})

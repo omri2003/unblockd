@@ -297,7 +297,7 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual([(i["id"], i["kind"]) for i in n[0]["items"]], [("CMB-2", "review"), ("CMB-1", "question")])
 		q = n[0]["items"][1]
 		self.assertEqual((q["waiting_on"], q["since"][:4].isdigit(), "question: which?" in q["body"]), ("which?", True, True))
-		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "missing_blockers", "stale_days", "done_when", "result", "body"}, set(q))
+		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "missing_blockers", "stale_days", "done_when", "result", "body"}, set(q))  # open_blockers/claim_note: stuck only
 		self.assertEqual([i["id"] for i in n[1]["items"]], ["WEB-1"])
 		self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual([i["id"] for i in self.call("GET", "/api/needs")[1][0]["items"]], ["CMB-2"])
@@ -315,6 +315,19 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual({k: v["kind"] for k, v in items.items()}, {"WEB-1": "question", "WEB-2": "stuck", "WEB-3": "stuck"})
 		self.assertEqual((items["WEB-2"]["stale_days"], items["WEB-2"]["missing_blockers"]), (30, []))
 		self.assertEqual((items["WEB-3"]["stale_days"], items["WEB-3"]["missing_blockers"]), (None, ["WEB-99"]))
+		# doing + open blocker is stuck on day 1; payload names the blocker; claim note rides along
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "blocked doer"})
+		self.call("POST", "/api/b/b/tickets/WEB-4/claim", {"agent": "w-3"})
+		self.call("POST", "/api/b/b/tickets/WEB-4/heartbeat", {"agent": "w-3", "note": "waiting on assets"})
+		raw4 = Path(self.tmp.name) / "b" / "tickets" / "WEB-4.json"
+		raw4.write_text(json.dumps({**json.loads(raw4.read_text()), "blocked_by": ["WEB-1"]}))
+		w4 = {i["id"]: i for i in self.call("GET", "/api/needs")[1][1]["items"]}["WEB-4"]
+		self.assertEqual((w4["kind"], w4["stale_days"]), ("stuck", None))
+		self.assertEqual(w4["open_blockers"], [{"id": "WEB-1", "effective_status": "pending", "title": "page"}])
+		self.assertEqual((w4["claim_note"]["by"], w4["claim_note"]["text"]), ("w-3", "waiting on assets"))
+		self.assertEqual(items["WEB-2"].get("open_blockers"), [])
+		self.call("PATCH", "/api/b/b/tickets/WEB-4", {"status": "todo"})  # release: back to todo, shows as Pending, leaves the panel
+		self.assertNotIn("WEB-4", {i["id"] for i in self.call("GET", "/api/needs")[1][1]["items"]})
 		self.assertEqual(self.call("POST", "/api/needs", {})[0], 405)
 
 	def test_claim_routes(self):

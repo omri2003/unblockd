@@ -137,6 +137,8 @@ a.btn{display:inline-block;text-decoration:none}
 .nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)} .nb.s{color:var(--amber)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
 .nr:not(.open) .nd-q{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.nr:not(.open) .nd-q.w{white-space:normal;overflow:visible;text-overflow:clip}
+.nd-ln{font-size:.82rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
 .nr.open .nd-q{white-space:pre-wrap;color:var(--ink);font-size:.95rem;margin:6px 0 4px}
 .nr-x h4{margin:12px 0 4px;font-size:.8rem;color:var(--muted)} .nr-x p{margin:6px 0 0}
 .nn{list-style:none;margin:0;padding:0;display:grid;gap:7px} .nn li{border-left:2px solid var(--line);padding-left:9px}
@@ -814,7 +816,7 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
-  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
+  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Question from ${esc(t.asked_by)}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
   const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
@@ -921,12 +923,17 @@ function needsRow(g,i){
   const notes=parseNotes(i.body).filter(n=>!(i.kind==='question'&&n.text==='question: '+i.waiting_on)).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
-  const why=[i.stale_days!=null&&`No update for ${i.stale_days} days`,(i.missing_blockers||[]).length&&`points at deleted ${i.missing_blockers.join(', ')}`].filter(Boolean).join('; ');
-  const form=i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+  const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
+  const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
+    !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
+    mb.length&&`Points at ${mb.join(', ')}, which ${mb.length>1?'were':'was'} deleted. Open it to remove or replace the blocker.`].filter(Boolean).join(' ');
+  const ln=i.kind==='stuck'&&(i.claim_note||parseNotes(i.body).filter(n=>n.text!=='question: '+i.waiting_on).pop()),
+    lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(ln.text.length>140?ln.text.slice(0,140)+'…':ln.text)}</p>`:'';
+  const form=i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
     :`<form class="nd-f" data-nform="reject" ${B}><button type="button" class="btn sm" data-approve ${B}>Approve</button>${f('r:','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`;
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
     +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
-    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='stuck'?`<p class="nd-q">${esc(why)}</p>`:'')+x+form+'</li>';
+    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
 }
 function renderNeedsPanel(){
   const cur=curBoard(),gs=[...NEEDS].sort((a,b)=>(b.id===cur)-(a.id===cur)),all=gs.flatMap(g=>g.items),multi=BOARDS.length>1;
@@ -1152,12 +1159,12 @@ function showTicket(id,refresh){
   const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status;
-  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Waiting on ${t.waiting_on}`:`Parked: ${t.waiting_on}`):''):'';
+  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
-    t.waiting_on&&!why?`<span>${t.asked_by?'Waiting on':'Parked:'} ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
+    t.waiting_on&&!why?`<span>${t.asked_by?'Question from '+esc(t.asked_by):'Parked: '+esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
     <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
@@ -1407,7 +1414,7 @@ function readColors(){const s=getComputedStyle(document.documentElement);
   for(const v of['body','display'])G.col[v]=s.getPropertyValue('--'+v).trim();makeGrain();}
 const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;}; // same start layout on every load
 const prioIdx=p=>{const i=PRIOS.indexOf(p);return i<0?9:i;};
-const needsAttn=t=>t.status!=='done'&&((t.missing_blockers||[]).length>0||(t.stale_days!=null&&t.stale_days>=STALE));
+const needsAttn=t=>t.status!=='done'&&((t.missing_blockers||[]).length>0||(t.stale_days!=null&&t.stale_days>=STALE)||(t.status==='doing'&&(t.open_blockers||[]).length>0));
 const pillarCol=t=>t.pillar&&PILLARS.includes(t.pillar)?G.col[pk(t.pillar)]:null;
 
 // ----- layered layout -----
