@@ -278,6 +278,30 @@ class ApiTest(unittest.TestCase):
 		self.assertIn("— ana, ", t["body"])
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/answer", {"text": "x"})[0], 404)
 
+	def test_needs_lists_questions_and_reviews_on_every_board(self):
+		self.assertEqual(self.call("GET", "/api/needs"), (200, []))
+		for pre, title, extra in (("CMB", "parry", {"pillar": "COMBAT"}), ("CMB", "dodge", {"pillar": "COMBAT", "priority": "P1"}),
+		                          ("CMB", "parked", {"waiting_on": "Omri: later"}), ("CMB", "plain", {})):
+			self.call("POST", "/api/b/a/tickets", {"prefix": pre, "title": title, **extra})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "godot-dev-1", "question": "which?"})
+		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
+		self.call("POST", "/api/b/b/tickets/WEB-1/claim", {"agent": "w-1"})
+		self.call("POST", "/api/b/b/tickets/WEB-1/ask", {"agent": "w-1", "question": "colour?"})
+		code, n = self.call("GET", "/api/needs")
+		self.assertEqual(code, 200)
+		self.assertEqual([(g["id"], g["title"]) for g in n], [("a", "A"), ("b", "B")])
+		# score order: the P1 review before the unprioritised question; the hand-parked and plain tickets are not listed
+		self.assertEqual([(i["id"], i["kind"]) for i in n[0]["items"]], [("CMB-2", "review"), ("CMB-1", "question")])
+		q = n[0]["items"][1]
+		self.assertEqual((q["waiting_on"], q["since"][:4].isdigit(), "question: which?" in q["body"]), ("which?", True, True))
+		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "done_when", "result", "body"}, set(q))
+		self.assertEqual([i["id"] for i in n[1]["items"]], ["WEB-1"])
+		self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
+		self.assertEqual([i["id"] for i in self.call("GET", "/api/needs")[1][0]["items"]], ["CMB-2"])
+		self.assertEqual(self.call("POST", "/api/needs", {})[0], 405)
+
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})

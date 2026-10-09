@@ -168,7 +168,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 ```
 
 `status` is `todo` · `doing` · `review` · `done`; `pending` is derived: a `todo`
-with an open blocker or a `waiting_on` question *shows* as pending on its own. `ask_human` also records `asked_at` / `asked_by` (read-only; `answer` clears them): the web board's *Needs you* strip lists only questions an agent asked, a `waiting_on` set by hand shows as *Parked* on its card (clear it from the drawer). Create with a prefix (`BUG`) and the
+with an open blocker or a `waiting_on` question *shows* as pending on its own. `ask_human` also records `asked_at` / `asked_by` (read-only; `answer` clears them): the web board's *Needs you* panel lists only questions an agent asked, a `waiting_on` set by hand shows as *Parked* on its card (clear it from the drawer). Create with a prefix (`BUG`) and the
 next free number is picked. A `blocked_by` that would make a loop (A waits on
 B waits on A) is refused with the loop spelled out.
 
@@ -178,6 +178,8 @@ Every ticket comes back with derived fields: `effective_status`,
 (P0 8, P1 4, P2 2, P3 1) x (1 + `unblocks`).
 
 ## The board
+
+**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`) and work in review, on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed.
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
@@ -258,6 +260,9 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended 
 
 ```
 GET    /api/boards                    every board with ticket counts
+GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
+                                      [{"id", "title", "items": [{"id", "kind": "question"|"review", "title", "priority", "score", "unblocks",
+                                      "since", "waiting_on", "done_when", "result", "body" (last 6000 chars)}]}], boards with items only
 GET    /api/chat                      {"enabled", "model"}
 POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 POST   /api/boards                    {"id": "my-game", "title": "My game"}

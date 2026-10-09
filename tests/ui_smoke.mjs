@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 const { chromium } = createRequire(import.meta.url)('playwright'); // require, not import: ESM ignores NODE_PATH
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 const t0 = Date.now();
-let server, browser;
-const die = async (msg) => { console.error('UI SMOKE FAIL: ' + msg); await cleanup(); process.exit(1); };
+let server, browser, lastPage;
+const die = async (msg) => { console.error('UI SMOKE FAIL: ' + msg); if (process.env.DEBUG && lastPage) console.error(await lastPage.evaluate(() => 'TOASTS: ' + document.getElementById('toasts').innerText + '\nPANEL: ' + document.getElementById('npanel').innerText.slice(0, 600)).catch(() => '')); await cleanup(); process.exit(1); };
 const cleanup = async () => { server?.kill(); await browser?.close().catch(() => {}); };
 const ok = (c, msg) => { if (!c) throw new Error(msg); };
 
@@ -21,6 +21,7 @@ try {
 	const root = await mkdtemp(join(tmpdir(), 'unblockd-ui-'));
 	await cp(join(repo, 'example'), join(root, 'example'), { recursive: true });
 	const cli = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'example/tickets'), ...a], { cwd: repo, stdio: 'pipe' });
+	const cliB = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zsecond/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
 	await cp(join(repo, 'example'), join(root, 'zsecond'), { recursive: true }); // second board: the title becomes a switcher
 	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
 	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board' }));
@@ -45,7 +46,7 @@ try {
 		const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
 		await ctx.addInitScript((t) => { try { localStorage.setItem('theme', JSON.stringify(t)); } catch {} }, theme);
 		const page = await ctx.newPage();
-		page.setDefaultTimeout(5000);
+		page.setDefaultTimeout(5000); lastPage = page;
 		const errs = [];
 		const ok = (c, msg) => { if (!c) throw new Error(msg + (errs.length ? '\n  browser errors so far:\n  ' + errs.join('\n  ') : '')); };
 		page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
@@ -63,6 +64,8 @@ try {
 			await page.click(`${sel} > summary`);
 		};
 
+		const oid = JSON.parse(cliB('create', '--prefix', 'ZQ', '--title', 'other board question', '--json', '{"owner":"Claude"}')).id; // before the page loads: the other board is only re-read on the 15 s needs poll
+		cliB('claim', '--agent', 'backend-1', '--id', oid); cliB('ask', oid, '--agent', 'backend-1', '--question', 'Which colour?');
 		await page.goto(base);
 		await page.waitForSelector('.card', { state: 'attached' });
 		ok((await page.locator('section.col').count()) >= 4, `[${tag}] expected 4 board columns`);
@@ -133,6 +136,12 @@ try {
 		await page.click('.card >> visible=true');
 		await visible('#drawer', 'ticket drawer');
 		await noOverflow('drawer');
+		const pcur = await page.locator('#drawer .dhead .seal').innerText().catch(() => ''), pkey = pcur === 'P0' ? '1' : '0'; // p, then a digit: priority of the open ticket, with Undo
+		await page.keyboard.press('p'); await visible('#toasts .toast:has-text("press 0 1 2 3")', 'priority hint');
+		await page.keyboard.press(pkey);
+		await page.waitForFunction((v) => document.querySelector('#drawer .dhead .seal')?.textContent === v, 'P' + pkey);
+		await page.click('#toasts .toast:has(button) button');
+		await page.waitForFunction((v) => (document.querySelector('#drawer .dhead .seal')?.textContent || '') === v, pcur);
 		await page.click('[data-edit]'); // Blocked by picker: search, pick, chip appears, remove it
 		const nChips = await page.locator('#f-blocked .pc').count();
 		await page.fill('#f-blocked .pq', 'smoke');
@@ -152,7 +161,7 @@ try {
 		await visible('#toasts .toast:has-text("back in")', 'undo confirmation toast');
 		await page.keyboard.press('Escape');
 
-		// Needs you: a review ticket + a question ticket -> strip lists both; answer one, approve the other, strip empties
+		// Needs you (header badge + side panel, every board): a review + an agent question here, a question on the other board
 		const rid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'review me', '--json', '{"owner":"Claude","done_when":["it works"]}')).id;
 		cli('claim', '--agent', 'backend-1', '--id', rid); // result is only written by complete(); the example board has no review gate, so move it to review by hand
 		cli('complete', rid, '--agent', 'backend-1', '--summary', 'Did the **thing**', '--file', 'a.py', '--ref', 'https://example.com/pull/1', '--handoff', 'nothing');
@@ -160,54 +169,79 @@ try {
 		const qid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'question me', '--json', '{"owner":"Claude","priority":"P1"}')).id;
 		cli('create', '--prefix', 'NY', '--title', 'after the question', '--json', `{"owner":"Claude","blocked_by":["${qid}"]}`);
 		cli('claim', '--agent', 'backend-1', '--id', qid);
-		cli('ask', qid, '--agent', 'backend-1', '--question', 'Which one?'); // an agent question: in the strip
-		cli('create', '--prefix', 'NY', '--title', 'parked by hand', '--json', '{"owner":"Claude","waiting_on":"Omri: later"}'); // hand-parked: not in the strip
-		// the CLI wrote the files; the page only sees them on its next 4 s poll, so wait for the condition (default 30 s), not a fixed delay
-		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
-		await visible('#needs li', 'Needs you strip');
-		ok((await page.locator('#needs li').count()) === 2, `[${tag}] Needs you should list the review and the question`);
-		ok((await page.locator('#needs .n').innerText()) === '2', `[${tag}] Needs you count`);
-		await noOverflow('needs strip');
-		ok((await page.locator('#needs li').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
-		ok(!(await page.locator('#needs').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the strip`);
+		cli('ask', qid, '--agent', 'backend-1', '--question', 'Which one?'); // an agent question: in the panel
+		cli('create', '--prefix', 'NY', '--title', 'parked by hand', '--json', '{"owner":"Claude","waiting_on":"Omri: later"}'); // hand-parked: not in the panel
+		const badge = () => page.locator('#needsBadge .n').innerText();
+		// the CLI wrote the files; the page sees this board on its next 4 s poll, so wait for the state
+		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '3');
+		ok((await page.getAttribute('#needsBadge', 'title')).includes('This board: 2') && (await page.getAttribute('#needsBadge', 'title')).includes('Second board: 1'), `[${tag}] badge tooltip should split the count per board`);
+		for (const v of ['graph', 'docs', 'board']) { // visible in every view; Free/Blocked only in the Graph
+			await page.click(`[data-view="${v}"]`);
+			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`).getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
+		}
+		await page.click('#needsBadge'); // open via the badge, close with Esc, open again with the key
+		await visible('#npanel .nr', 'Needs you panel');
+		await page.keyboard.press('Escape');
+		ok(await page.locator('#npanel').isHidden(), `[${tag}] Escape should close the panel`);
+		await page.keyboard.press('i');
+		await visible('#npanel .nr', 'Needs you panel via the i key');
+		ok((await page.locator('#npList .nr').count()) === 3, `[${tag}] panel should list 2 here + 1 on the other board`);
+		ok((await page.locator('#npList .ng').allInnerTexts()).join('|').replace(/\s+/g, ' ') === 'This board (2)|Second board (1)', `[${tag}] board groups: this board first`);
+		ok((await page.locator('#npList .nr').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
+		ok(!(await page.locator('#npanel').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the panel`);
 		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
-		// collapse -> one summary line; survives reload; a NEW question re-opens it
-		const sum = () => page.locator('#ndT').innerText();
-		await page.click('#ndT');
-		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'false', `[${tag}] collapsed`);
-		ok(/^!\s*2 need you · oldest .+ · blocking 1 ticket$/s.test((await sum())), `[${tag}] summary text: ${await sum()}`);
-		await page.waitForFunction(() => getComputedStyle(document.getElementById('ndBody')).visibility === 'hidden');
-		await page.reload(); await visible('#ndT', 'summary after reload');
-		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'false', `[${tag}] collapsed state should survive reload`);
-		const xid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'late question', '--json', '{"owner":"Claude"}')).id;
-		cli('claim', '--agent', 'backend-1', '--id', xid); cli('ask', xid, '--agent', 'backend-1', '--question', 'Again?');
-		await page.waitForFunction(() => document.getElementById('ndT').getAttribute('aria-expanded') === 'true');
-		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 3);
-		cli('delete', xid); // back to 2; it stays open
-		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 2);
-		ok((await page.getAttribute('#ndT', 'aria-expanded')) === 'true', `[${tag}] strip should stay open when an item leaves`);
-		await page.click('[data-view="graph"]'); // the strip is a board thing: hidden in Graph, back on return
-		await page.waitForFunction(() => document.getElementById('needs').hidden).catch(() => {}); // the view switch cross-fades (View Transition), so it lands a frame later
-		ok(await page.locator('#needs').isHidden(), `[${tag}] Needs you strip should be hidden in graph view`);
-		await page.click('[data-view="board"]');
-		await visible('#needs li', 'Needs you strip back on board');
-		await page.click('#needs li:has(.nb.r) [data-open]'); // review drawer: result + done_when on top, activity open
+		await noOverflow('needs panel');
+		// expand the question: full text, a multi-line answer box; Enter = newline, Ctrl+Enter sends
+		const boardId = 'example', qrow = `#npList .nr[data-key="${boardId}/${qid}"]`;
+		await page.click(`${qrow} .nttl`);
+		await visible(`${qrow}.open textarea`, 'expanded answer box');
+		await noOverflow('needs panel expanded');
+		const h1 = await page.locator(`${qrow} textarea`).evaluate((e) => e.offsetHeight);
+		await page.fill(`${qrow} textarea`, 'line one'); await page.keyboard.press('Enter'); await page.keyboard.type('line two'); await page.keyboard.press('Enter'); await page.keyboard.type('line three'); await page.keyboard.press('Enter'); await page.keyboard.type('line four');
+		ok((await page.inputValue(`${qrow} textarea`)) === 'line one\nline two\nline three\nline four', `[${tag}] Enter should add a newline`);
+		ok((await page.locator(`${qrow} textarea`).evaluate((e) => e.offsetHeight)) > h1, `[${tag}] the answer box should grow with its text`);
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/needs-${w}-${theme}.png` });
+		// collapse and expand again: the draft (with its newlines) is kept
+		await page.click(`${qrow} .nttl`); await page.click(`${qrow} .nttl`);
+		ok((await page.inputValue(`${qrow} textarea`)) === 'line one\nline two\nline three\nline four', `[${tag}] draft should survive collapse and expand`);
+		await page.keyboard.press('Control+Enter'); // not the Enter key alone: that was a newline
+		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${qid}`);
+		ok((await badge()) === '2', `[${tag}] badge should drop to 2 after answering`);
+		const answered = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), qid);
+		ok(answered.body.includes('Answer to: Which one? — line one\nline two\nline three\nline four') && !answered.waiting_on, `[${tag}] the multi-line answer should be on the ticket: ${answered.body}`);
+		// the review: open the ticket from the panel (the panel gives way to the drawer)
+		await page.click(`#npList .nr:has(.nb.r) .nid`);
 		await visible('#drawer .rbox a[href^="https://example.com"]', 'review result with link');
+		ok(await page.locator('#npanel').isHidden(), `[${tag}] opening a ticket should close the panel`);
 		ok(await page.locator('#drawer details.kn[open]').count(), `[${tag}] review drawer should open Knowledge and activity`);
 		await noOverflow('review drawer');
 		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/ui6-drawer-${w}-${theme}.png` });
 		await page.keyboard.press('Escape');
-		await page.fill('#needs [data-nform="answer"] input', 'half typed'); // survives the 4 s poll
-		await page.waitForTimeout(4500);
-		ok((await page.inputValue('#needs [data-nform="answer"] input')) === 'half typed', `[${tag}] draft lost on poll`);
+		await page.keyboard.press('i');
+		// expanded review: result + done_when + notes; a half-typed reject reason survives a data change (a note arrives from outside)
+		const rrow = `#npList .nr[data-key="${boardId}/${rid}"]`;
+		await page.click(`${rrow} .nttl`);
+		await visible(`${rrow} .rbox a[href^="https://example.com"]`, 'review result inside the expanded row');
+		ok((await page.locator(`${rrow} .dw li`).first().innerText()) === 'it works', `[${tag}] done_when in the expanded row`);
+		await page.fill(`${rrow} textarea`, 'half typed');
+		cli('note', rid, 'checked the diff', '--by', 'omri');
+		await page.waitForFunction((r) => document.querySelector(`${r} .nn`)?.textContent.includes('checked the diff'), rrow); // the 4 s poll brought it
+		ok((await page.inputValue(`${rrow} textarea`)) === 'half typed', `[${tag}] draft lost when the data changed`);
+		await page.fill(`${rrow} textarea`, '');
+		await page.click(`${rrow} [data-approve]`);
+		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${rid}`);
+		ok(await page.locator('.col.done .card:has-text("review me")').count(), `[${tag}] approved ticket should be in Done`);
+		// answer the other board's question from here: no board switch
+		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
+		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
+		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
+		ok(page.url().includes('board=zsecond') === false, `[${tag}] answering must not switch boards`);
+		const oans = await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), oid);
+		ok(oans.body.includes('Answer to: Which colour? — Teal'), `[${tag}] the other board's ticket should carry the answer`);
+		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
+		await page.keyboard.press('Escape');
 		await page.evaluate(() => scrollTo(0, 0));
 		await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/ui6-${w}-${theme}.png` : tmpdir() + '/ui6.png' });
-		await page.fill('#needs [data-nform="answer"] input', 'The first one');
-		await page.click('#needs [data-nform="answer"] button[type=submit]');
-		await page.waitForFunction(() => document.querySelectorAll('#needs li').length === 1);
-		await page.click('#needs [data-approve]');
-		await page.waitForFunction(() => document.getElementById('needs').hidden);
-		ok(await page.locator('.col.done .card:has-text("review me")').count(), `[${tag}] approved ticket should be in Done`);
 		await noOverflow('board after needs');
 
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
@@ -238,4 +272,4 @@ try {
 	}
 	await cleanup();
 	console.log(`UI smoke OK: board/graph/docs/drawer/filters/settings/agents/toast x 1400+390px x light+dark, no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-} catch (e) { await die(e.message); }
+} catch (e) { await die(process.env.DEBUG ? e.stack : e.message); }
