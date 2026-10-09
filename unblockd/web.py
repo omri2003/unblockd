@@ -2,6 +2,10 @@
 
 GET    /api/boards                       every board: id, title, ticket counts
 POST   /api/boards                       {"id": "my-game", "title": "My game"}  (needs UNBLOCKD_ROOT)
+GET    /api/needs                        every board's tickets that wait on a person (read-only, for the UI's Needs you panel):
+                                         [{"id", "title", "items": [{"id", "kind": question|review|stuck, "title", "priority", "score", "unblocks",
+                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars)}]}], boards with items only,
+                                         items: score desc, then oldest first
 GET    /api/chat                         {"enabled": bool, "model": ...}
 POST   /api/chat                         {"board": id, "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 Per board, under /api/b/<board>/ ; the same paths without the prefix use the default (first) board:
@@ -65,6 +69,46 @@ def _num(q: dict, key: str, default: int) -> int:
 	return int(v)
 
 
+NEEDS_BODY = 6000  # chars of body sent per item: enough for the panel's last 3 notes
+
+
+def _needs() -> list[dict]:
+	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
+	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
+	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does."""
+	out = []
+	for bid, path in BOARDS.all().items():
+		try:
+			s = st.Store(path, BOARDS.legacy)
+			ts = s.list()
+		except st.TicketError:
+			continue  # a broken config hides only its own board
+		items, by_id = [], {t["id"]: t for t in ts}
+		for t in ts:
+			if t["status"] == "done":
+				continue
+			if t["status"] == "review":
+				kind, at = "review", (t.get("result") or {}).get("at")
+			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
+				kind, at = "question", t.get("asked_at")
+			elif t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days):
+				kind, at = "stuck", None
+			else:
+				continue
+			stuck = kind == "stuck"
+			items.append({"id": t["id"], "kind": kind, "title": t["title"], "priority": t.get("priority"), "score": t["score"],
+			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
+			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
+			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
+			              "body": (t.get("body") or "")[-NEEDS_BODY:],
+			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
+			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None)} if stuck else {})})
+		if items:
+			items.sort(key=lambda i: (-i["score"], i["since"]))
+			out.append({"id": bid, "title": s.config["title"], "items": items})
+	return out
+
+
 class Handler(BaseHTTPRequestHandler):
 	server_version = "unblockd"
 
@@ -122,6 +166,8 @@ class Handler(BaseHTTPRequestHandler):
 					b = self._body()
 					return self._send(201, BOARDS.create(str(b.get("id", "")), str(b.get("title", ""))))
 				return self._send(405, {"error": "method not allowed"})
+			if parts == ["api", "needs"]:
+				return self._send(200, _needs()) if method == "GET" else self._send(405, {"error": "method not allowed"})
 			if parts == ["api", "chat"]:
 				if method == "GET":
 					return self._send(200, chat.enabled())

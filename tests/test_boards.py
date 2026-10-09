@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 import unittest
+from datetime import date, timedelta
 from unittest import mock
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -277,6 +278,57 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual((code, t["status"]), (200, "todo"))
 		self.assertIn("— ana, ", t["body"])
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/answer", {"text": "x"})[0], 404)
+
+	def test_needs_lists_questions_and_reviews_on_every_board(self):
+		self.assertEqual(self.call("GET", "/api/needs"), (200, []))
+		for pre, title, extra in (("CMB", "parry", {"pillar": "COMBAT"}), ("CMB", "dodge", {"pillar": "COMBAT", "priority": "P1"}),
+		                          ("CMB", "parked", {"waiting_on": "Omri: later"}), ("CMB", "plain", {})):
+			self.call("POST", "/api/b/a/tickets", {"prefix": pre, "title": title, **extra})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "godot-dev-1", "question": "which?"})
+		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
+		self.call("POST", "/api/b/b/tickets/WEB-1/claim", {"agent": "w-1"})
+		self.call("POST", "/api/b/b/tickets/WEB-1/ask", {"agent": "w-1", "question": "colour?"})
+		code, n = self.call("GET", "/api/needs")
+		self.assertEqual(code, 200)
+		self.assertEqual([(g["id"], g["title"]) for g in n], [("a", "A"), ("b", "B")])
+		# score order: the P1 review before the unprioritised question; the hand-parked and plain tickets are not listed
+		self.assertEqual([(i["id"], i["kind"]) for i in n[0]["items"]], [("CMB-2", "review"), ("CMB-1", "question")])
+		q = n[0]["items"][1]
+		self.assertEqual((q["waiting_on"], q["since"][:4].isdigit(), "question: which?" in q["body"]), ("which?", True, True))
+		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "missing_blockers", "stale_days", "done_when", "result", "body"}, set(q))  # open_blockers/claim_note: stuck only
+		self.assertEqual([i["id"] for i in n[1]["items"]], ["WEB-1"])
+		self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
+		self.assertEqual([i["id"] for i in self.call("GET", "/api/needs")[1][0]["items"]], ["CMB-2"])
+		# stuck: a doing ticket untouched for stale_days, or one whose blocker file is gone; fresh work and parked tickets stay out
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "old"})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "orphan"})
+		self.call("POST", "/api/b/b/tickets/WEB-2/claim", {"agent": "w-2"})
+		old = Path(self.tmp.name) / "b" / "tickets" / "WEB-2.json"
+		raw = json.loads(old.read_text())
+		old.write_text(json.dumps({**raw, "updated": (date.today() - timedelta(days=30)).isoformat()}))
+		self.call("PATCH", "/api/b/b/tickets/WEB-3", {"blocked_by": ["WEB-1"]})
+		orphan = Path(self.tmp.name) / "b" / "tickets" / "WEB-3.json"
+		orphan.write_text(json.dumps({**json.loads(orphan.read_text()), "blocked_by": ["WEB-99"]}))
+		items = {i["id"]: i for i in self.call("GET", "/api/needs")[1][1]["items"]}
+		self.assertEqual({k: v["kind"] for k, v in items.items()}, {"WEB-1": "question", "WEB-2": "stuck", "WEB-3": "stuck"})
+		self.assertEqual((items["WEB-2"]["stale_days"], items["WEB-2"]["missing_blockers"]), (30, []))
+		self.assertEqual((items["WEB-3"]["stale_days"], items["WEB-3"]["missing_blockers"]), (None, ["WEB-99"]))
+		# doing + open blocker is stuck on day 1; payload names the blocker; claim note rides along
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "blocked doer"})
+		self.call("POST", "/api/b/b/tickets/WEB-4/claim", {"agent": "w-3"})
+		self.call("POST", "/api/b/b/tickets/WEB-4/heartbeat", {"agent": "w-3", "note": "waiting on assets"})
+		raw4 = Path(self.tmp.name) / "b" / "tickets" / "WEB-4.json"
+		raw4.write_text(json.dumps({**json.loads(raw4.read_text()), "blocked_by": ["WEB-1"]}))
+		w4 = {i["id"]: i for i in self.call("GET", "/api/needs")[1][1]["items"]}["WEB-4"]
+		self.assertEqual((w4["kind"], w4["stale_days"]), ("stuck", None))
+		self.assertEqual(w4["open_blockers"], [{"id": "WEB-1", "effective_status": "pending", "title": "page"}])
+		self.assertEqual((w4["claim_note"]["by"], w4["claim_note"]["text"]), ("w-3", "waiting on assets"))
+		self.assertEqual(items["WEB-2"].get("open_blockers"), [])
+		self.call("PATCH", "/api/b/b/tickets/WEB-4", {"status": "todo"})  # release: back to todo, shows as Pending, leaves the panel
+		self.assertNotIn("WEB-4", {i["id"] for i in self.call("GET", "/api/needs")[1][1]["items"]})
+		self.assertEqual(self.call("POST", "/api/needs", {})[0], 405)
 
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})

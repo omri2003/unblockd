@@ -101,7 +101,6 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .chip[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper);border-color:var(--ind)}
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
 .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
-.chip.attn{border-color:var(--amber);color:var(--amber)} .chip.attn[aria-pressed="true"]{background:var(--amber);color:var(--surface)}
 /* next up strip */
 .working{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .working h2{font-size:.95rem;margin:0 0 6px}
@@ -117,18 +116,36 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
 .dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
-.needs{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:8px;padding:0 12px;margin-bottom:14px}
-.nd-t{display:flex;align-items:center;gap:8px;width:100%;padding:8px 0;background:none;border:0;border-radius:6px;font:inherit;font-size:.95rem;font-weight:700;color:inherit;text-align:left;cursor:pointer}
-.nd-t .n{color:var(--plum)} .nd-sum{flex:1 1 auto;min-width:0}
-.bang{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--plum);color:var(--surface);font-size:.75rem;font-weight:800}
-.nd-t .chev{margin:0 4px 0 auto;transition:transform .2s ease-out} .needs.c .nd-t .chev{transform:translateY(0) rotate(-45deg)}
-.nd-body{display:grid;grid-template-rows:1fr;transition:grid-template-rows .2s ease-out,visibility .2s} .nd-body>div{min-height:0;overflow:hidden;margin:0 -3px} .needs.c .nd-body{grid-template-rows:0fr;visibility:hidden}
-.needs ul{list-style:none;margin:0;padding:3px 3px 8px;display:grid;gap:10px;max-height:19rem;overflow-y:auto}
+.bang{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--plum);color:var(--surface);font-size:.75rem;font-weight:800;font-style:normal}
+/* Needs you: a header badge (any view) opens a side panel like the drawer; rows expand in place */
+.nbadge{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border:1px solid var(--plum);background:var(--plum-soft);color:var(--plum);border-radius:var(--r);cursor:pointer;font-weight:800;font-variant-numeric:tabular-nums}
+.nbadge:hover{background:var(--plum);color:var(--surface)} .nbadge:hover .bang{background:var(--surface);color:var(--plum)}
+.npanel{width:min(520px,100%);padding-top:0}
+.nphead{position:sticky;top:0;z-index:1;margin:0 -20px 2px;padding:18px 20px 10px;background:var(--surface);border-bottom:1px solid var(--line)}
+.nphead .dhead{margin-bottom:2px} .nphead h2{margin:0} .npsum{margin:0;min-height:1.3em;color:var(--muted);font-size:.88rem}
+.nl{list-style:none;margin:0;padding:0}
+.ng{margin:18px 0 2px;font:800 .9rem var(--display);color:var(--muted)} .ng:first-child{margin-top:12px} .ng .n{font-weight:600}
+.nr{padding:11px 0 12px;border-bottom:1px solid var(--line)}
+.nr.open{margin:6px -12px 0;padding:11px 12px 14px;background:var(--paper);border-radius:8px;border-bottom-color:transparent}
+a.btn{display:inline-block;text-decoration:none}
+.nid{background:none;border:0;padding:0;cursor:pointer;color:inherit;text-decoration:none} .nid:hover .tid{text-decoration:underline}
+.nttl{flex:1 1 10ch;min-width:0;background:none;border:0;padding:0;text-align:left;cursor:pointer;font-weight:600;overflow-wrap:anywhere}
+.nttl::after{content:'';display:inline-block;width:.38em;height:.38em;margin:0 0 .15em .55em;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(45deg);opacity:.5}
+.nttl[aria-expanded=true]::after{transform:rotate(-135deg);margin-bottom:-.05em}
 .nd-bl{font-size:.78rem;color:var(--muted)} .why.park{color:var(--muted)}
 .nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
-.nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)}
+.nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)} .nb.s{color:var(--amber)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
-.nd-f{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 0} .nd-f input,.nd-f textarea{flex:1 1 200px;min-width:0}
+.nr:not(.open) .nd-q{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.nr:not(.open) .nd-q.w{white-space:normal;overflow:visible;text-overflow:clip}
+.nd-ln{font-size:.82rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
+.nr.open .nd-q{white-space:pre-wrap;color:var(--ink);font-size:.95rem;margin:6px 0 4px}
+.nr-x h4{margin:12px 0 4px;font-size:.8rem;color:var(--muted)} .nr-x p{margin:6px 0 0}
+.nn{list-style:none;margin:0;padding:0;display:grid;gap:7px} .nn li{border-left:2px solid var(--line);padding-left:9px}
+.nn p{margin:1px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.88rem} .nn time{color:var(--muted);font-size:.78rem}
+.nd-f{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0} .nd-f input,.nd-f textarea{flex:1 1 200px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:5px 8px}
+.nd-f textarea{field-sizing:content;min-height:4.4em;max-height:45vh;resize:vertical}
+.nr.open .nd-f textarea{flex-basis:100%;order:-1;background:var(--surface)}
 .rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere}
 .dg-g{margin:10px 0 0;font-size:.82rem;font-weight:800;color:var(--muted)}
 .dg-l{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px;max-height:40vh;overflow:auto}
@@ -211,13 +228,14 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .mvm{position:absolute;right:0;bottom:calc(100% + 4px);display:grid;min-width:130px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden}
 .mvm button,.ovm button{text-align:left;background:none;border:0;padding:7px 12px;cursor:pointer;font-weight:600} .mvm button:hover,.ovm button:hover{background:var(--jade-soft)}
 .qa{display:flex;gap:6px;margin-bottom:10px}
+#bulk select[data-bulk=priority]{width:7.5em}
 .qa input{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:6px 8px;min-width:0}
 .qa-p{flex:0 0 5.4em;width:5.4em;font:700 .82rem var(--mono);text-transform:uppercase;color:var(--muted);text-align:center} .qa-t{flex:1}
 .age{white-space:nowrap} .age.late{color:var(--amber);font-weight:700}
 .tabs{display:none}
 @media (max-width:1100px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.board{grid-template-columns:1fr}
-  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
+  .bar{position:relative;z-index:6} .bar>#depSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
   .btn{padding:8px 14px} .card{padding:10px}
   .sub,.segbar,.khint{display:none}
   header{position:relative} #bpanel{position:static} #bpanel .sbody{left:0;right:0;width:auto} .bi{padding:13px 12px;font-size:1rem}
@@ -428,20 +446,19 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nd-body,.nd-t .chev,.nx-body,.nx-more,.nexttog .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev{transition:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><div class="trow"><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div></div><div class="sub" id="sub">Loading…</div><button type="button" class="khint" id="kbHint">Press ? for shortcuts</button></div>
+    <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><div class="trow"><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div><button type="button" class="nbadge" id="needsBadge" hidden title="Needs you (i)" aria-label="Needs you"></button></div><div class="sub" id="sub">Loading…</div><button type="button" class="khint" id="kbHint">Press ? for shortcuts</button></div>
     <div class="hdr"><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" title="Per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
       <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
       <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
-  <section class="needs" id="needs" hidden aria-label="Needs you"><button type="button" class="nd-t" id="ndT" aria-expanded="true" aria-controls="ndBody"></button><div class="nd-body" id="ndBody"><div><ul></ul></div></div></section>
   <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" id="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Search (/). Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
@@ -457,7 +474,6 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       </div></details>
     <div class="seg" id="pills"></div>
     <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
-    <div class="seg" id="attnSeg"></div>
   </div>
 
   <section class="digest" id="digest" hidden aria-label="While you were away"></section>
@@ -531,13 +547,17 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
     <dt><kbd>n</kbd></dt><dd>New ticket</dd>
     <dt><kbd>B</kbd></dt><dd>Switch board (<kbd>Shift</kbd> + <kbd>b</kbd>), then arrows and Enter</dd>
+    <dt><kbd>i</kbd></dt><dd>Needs you: questions and reviews, on every board</dd>
     <dt><kbd>c</kbd></dt><dd>Ask about this board (chat). In the chat, <kbd>#</kbd> links a ticket, <kbd>@</kbd> a board</dd>
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next or previous card</dd>
     <dt><kbd>Enter</kbd></dt><dd>Open the focused card</dd>
+    <dt><kbd>p</kbd> then <kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Set the priority of the focused card or open ticket (<kbd>-</kbd> clears it, <kbd>Esc</kbd> cancels)</dd>
     <dt><kbd>t</kbd></dt><dd>Cycle the theme: System, Light, Dark</dd>
     <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close a panel, clear a selection, cancel a link</dd>
   </dl>
+  <h3>Priority</h3>
+  <dl id="kbPrio"></dl>
   <h3>Graph</h3>
   <dl>
     <dt>Wheel, pinch</dt><dd>Zoom</dd>
@@ -550,6 +570,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   <p style="margin:14px 0 0"><button type="button" class="btn ghost" data-kbclose>Close</button></p>
 </div>
 <aside id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dTitle"></aside>
+<aside id="npanel" class="npanel" hidden role="dialog" aria-modal="true" aria-labelledby="npT"><div class="nphead"><div class="dhead"><h2 id="npT">Needs you</h2><span class="sp"><button type="button" class="btn ghost" data-nclose>Close</button></span></div><p class="npsum" id="npSum"></p></div><ul class="nl" id="npList"></ul><p class="none" id="npEmpty" hidden>Nothing needs you right now. Questions from agents and work waiting for review show up here.</p></aside>
 
 <script>
 (() => {
@@ -590,8 +611,10 @@ function setCols(){ // Review sits before Done on boards with review=true, or wh
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 let STALE=7; // days; from the config's stale_days
 const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
+const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
+const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','parent','agent'];
-const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board'),rx:null,rxErr:'',
+const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','review','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
@@ -658,7 +681,7 @@ async function load(force){
     text=await r.text(); if(r.status===401){ authFail(text); return; } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
   catch{ toast('Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
   if(text===raw && !force) return;
-  raw=text; T=JSON.parse(text); setCols(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
+  raw=text; T=JSON.parse(text); setCols(); loadNeeds(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!reduce.matches) noteFinished(prev);
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
@@ -721,29 +744,26 @@ function renderBar(){
   $('parentSeg').hidden=!ps.length; if(ps.length) chips($('parentSeg'),[['ALL','Any'],...ps.map(id=>[esc(id),esc(id)])],state.parent,'parent');
   chips($('groupSeg'),GROUPS.map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
+  $('depSeg').hidden=state.view!=='graph';
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
   const di=d=>`<svg class="vi" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${d}</svg>`,
     LK='<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>';
   $('depSeg').innerHTML=[['ALL','Any','',di('<circle cx="8" cy="8" r="2.5"/>')],['FREE','Free',nf,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>')],['BLOCKED','Blocked',nb,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>')]]
     .map(([v,l,n,ic])=>`<button type="button" class="vico lbl" data-dep="${v}" aria-pressed="${state.dep===v}">${ic}${l}${n===''?'':` <span class="n">${n}</span>`}</button>`).join('');slidePill($('depSeg'));
   chips($('prioSeg'),PRIOS.map(p=>[p,p]),state.prio,'prio');
-  renderAttn();renderShow();
-}
-function renderAttn(){
-  const n=T.filter(needsAttn).length; if(!n&&state.attn) state.attn=false;
-  $('attnSeg').innerHTML=n?`<button type="button" class="chip attn" data-attn aria-pressed="${state.attn}">Needs attention (${n})</button>`:'';
+  renderShow();
 }
 const isBlocked=t=>t.status!=='done'&&(t.open_blockers||[]).length>0;
 const isFree=t=>t.status!=='done'&&t.status!=='review'&&!(t.open_blockers||[]).length&&!t.waiting_on;
 function matches(t){
-  if(state.dep==='FREE'&&!isFree(t)) return false;
-  if(state.dep==='BLOCKED'&&!isBlocked(t)) return false;
+  const dep=state.view==='graph'?state.dep:'ALL'; // Free/Blocked is a Graph control; the Board ignores it (the choice is kept for the Graph)
+  if(dep==='FREE'&&!isFree(t)) return false;
+  if(dep==='BLOCKED'&&!isBlocked(t)) return false;
   if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
   if(state.parent!=='ALL' && t.parent!==state.parent) return false;
   if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
   if(state.prio.length && !state.prio.includes(t.priority)) return false;
-  if(state.attn && !needsAttn(t)) return false;
   if(state.q&&state.rx!==null){ if(state.rxErr||!(state.rx.test(t.id+' '+t.title)||state.rx.test(t.id))) return false; }
   else if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+t.section+' '+t.owner+' '+(t.tags||[]).join(' ')+' '+(t.agent||'')).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
   return true;
@@ -796,7 +816,7 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
-  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Waiting on ${esc(t.waiting_on.split(' ')[0])}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
+  if(s==='pending') why=t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Question from ${esc(t.asked_by)}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
   const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
@@ -815,7 +835,7 @@ function card(t){
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
   const sel=(f,l,o)=>`<select data-bulk="${f}" aria-label="${esc(l)}"><option value="">${esc(l)}…</option>${o.map(([v,x])=>`<option value="${esc(v)}">${esc(x)}</option>`).join('')}</select>`;
-  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',[...PRIOS.map(p=>[p,p]),['-','None']])}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
+  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',PLAB.map(([v,l])=>[v||'-',l]))}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
   document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
 }
 async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
@@ -858,56 +878,100 @@ function renderDigest(){
   el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}">${dgOpen?'Collapse':'Expand'}</button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
    +(dgOpen?gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''):'');
 }
-// Needs you: reviews + questions an agent asked (asked_by; a hand-set waiting_on is "Parked", not here), by score then oldest. Drafts live in DRAFTS (keyed by data-draft), so the 4 s refresh and the drawer re-render keep half-typed text.
-const DRAFTS={}; let needsSig='';
-const sinceOf=t=>(t.status==='review'?t.result?.at:t.asked_at)||t.updated+'T00:00:00'; // date-only when the ticket has no timestamp
-const asked=t=>t.waiting_on&&t.asked_by&&t.status!=='done';
-const needsItems=()=>T.filter(t=>t.status==='review'||asked(t)).sort((a,b)=>(b.score||0)-(a.score||0)||Date.parse(sinceOf(a))-Date.parse(sinceOf(b)));
-function blockedByNeeds(L){ // open tickets downstream of the listed ones, counted once
-  const seen=new Set(),st=[...L]; while(st.length) for(const id of st.pop().blocks||[]){const x=BY.get(id); if(x&&x.status!=='done'&&!seen.has(id)){seen.add(id);st.push(x);}}
-  L.forEach(t=>seen.delete(t.id)); return seen.size;
+// Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
+// Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
+const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
+const KIND={question:'Question',review:'Review',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
+const parseNotes=b=>(b||'').split(/\n\n(?=— )/).map(c=>/^— ([^,\n]+), (\S+): ([\s\S]*)$/.exec(c)).filter(Boolean).map(m=>({by:m[1],at:m[2],text:m[3]})); // the `— by, ISO: text` lines _append_note writes
+async function loadNeeds(){ // ETag: an idle poll costs headers only
+  if(!BOARDS.length) return; const tok=++nTok;
+  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||!r.ok||tok!==nTok) return; const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
+  catch{ return; }
+  paintNeeds();
 }
-// collapsed state per board; `seen` = ids listed when it was collapsed: a NEW id re-opens it (items leaving don't)
-const NK='unblockd.needs.'+(BOARD||'default'); let NC=store.get(NK,{c:false,seen:[]});
-function setNC(c,ids){ NC={c,seen:c?ids:[]}; store.set(NK,NC); paintNC(); }
-function paintNC(){ $('needs').classList.toggle('c',NC.c); $('ndT').setAttribute('aria-expanded',!NC.c); $('ndBody').inert=NC.c; }
-const draftField=(key,name,ph,tag='input')=>`<${tag} name="t" data-draft="${esc(key)}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${tag==='input'?` value="${esc(DRAFTS[key]||'')}">`:`>${esc(DRAFTS[key]||'')}</textarea>`}`;
+const NSEEN='unblockd.nseen'; // {board: [ids]} the badge has shown; an id not in there pulses it once
+function paintNeeds(){
+  const b=$('needsBadge'),n=NEEDS.reduce((a,g)=>a+g.items.length,0),cur=curBoard(); b.hidden=!n;
+  if(n){ b.innerHTML=`<i class="bang" aria-hidden="true">!</i><span class="n">${n}</span>`;
+    b.title='Needs you (i)'+(NEEDS.length>1||NEEDS[0].id!==cur?'\n'+NEEDS.map(g=>`${g.id===cur?'This board':g.title}: ${g.items.length}`).join('\n'):''); b.setAttribute('aria-label',`Needs you: ${n}`); }
+  const was=store.get(NSEEN,null),seen=was||{},now={}; let fresh=false;
+  for(const bd of BOARDS){ const ids=(NEEDS.find(g=>g.id===bd.id)?.items||[]).map(i=>i.id); now[bd.id]=ids; if(ids.some(id=>!(seen[bd.id]||[]).includes(id))) fresh=true; }
+  store.set(NSEEN,now);
+  if(fresh&&was&&n&&!reduce.matches&&$('npanel').hidden) b.animate([{boxShadow:'0 0 0 0 var(--plum)',transform:'scale(1)'},{boxShadow:'0 0 0 7px transparent',transform:'scale(1.12)',offset:.5},{boxShadow:'0 0 0 0 transparent',transform:'scale(1)'}],{duration:600,easing:'ease-out'});
+  if(!$('npanel').hidden) renderNeedsPanel();
+}
+const draftField=(key,name,ph,tag='input')=>`<${tag} name="t" data-draft="${esc(key)}" placeholder="${esc(ph)}" aria-label="${esc(ph)}"${tag==='input'?` value="${esc(DRAFTS[key]||'')}">`:` rows="2">${esc(DRAFTS[key]||'')}</textarea>`}`;
+const growTa=el=>{ if(!CSS.supports('field-sizing','content')){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; } }; // field-sizing does it natively; this is the fallback
 function keepFocus(fn){ // re-render without losing the caret in a draft field
   const a=document.activeElement,k=a?.dataset?.draft,pos=k?a.selectionStart:0; fn();
   if(k){const n=[...document.querySelectorAll('[data-draft]')].find(x=>x.dataset.draft===k); if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch{}}}
 }
-function needsMotion(el,old,was){ // rows that arrived fade in; rows that left (answered, approved, rejected) stay a moment where they were and slide away
+function needsMotion(ul,old){ // rows that arrived fade in; rows that left (answered, approved, rejected) stay a moment where they were and slide away
 	const fin=[{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'none'}],o={duration:200,easing:'ease-out'};
-	if(!was) return void el.animate(fin,o);
-	const ul=el.querySelector('ul'),have=new Set(old.map(li=>li.dataset.id)),now=new Set([...ul.children].map(li=>li.dataset.id));
-	for(const li of ul.children) if(!have.has(li.dataset.id)) li.animate(fin,o);
-	old.forEach((li,i)=>{ if(now.has(li.dataset.id)) return;
-		const nx=old.slice(i+1).find(x=>now.has(x.dataset.id)); ul.insertBefore(li,nx&&[...ul.children].find(c=>c.dataset.id===nx.dataset.id)||null);
+	const have=new Set(old.map(li=>li.dataset.key)),now=new Set([...ul.children].map(li=>li.dataset.key));
+	for(const li of ul.children) if(!have.has(li.dataset.key)) li.animate(fin,o);
+	old.forEach((li,i)=>{ if(now.has(li.dataset.key)) return;
+		const nx=old.slice(i+1).find(x=>now.has(x.dataset.key)); ul.insertBefore(li,nx&&[...ul.children].find(c=>c.dataset.key===nx.dataset.key)||null);
 		li.inert=true; li.style.overflow='hidden'; li.querySelectorAll('[data-draft]').forEach(n=>n.removeAttribute('data-draft'));
 		li.animate([{opacity:1,transform:'none',height:li.offsetHeight+'px',marginBottom:'0px'},{opacity:0,transform:'translateX(18px)',height:'0px',marginBottom:'-10px'}],{...o,fill:'forwards'}).onfinish=()=>li.remove();
 	});
 }
-function renderNeeds(){
-  const el=$('needs'),L=state.view==='board'?needsItems():[], was=!el.hidden, move=DATA&&!reduce.matches; el._out?.cancel(); el._out=null; el.style.overflow='';
-  if(!L.length){ needsSig=''; if(!(was&&move&&state.view==='board')){el.hidden=true;return;} // last row answered: fade the whole strip out, then hide it
-    el.style.overflow='hidden'; el._out=el.animate([{opacity:1,maxHeight:el.offsetHeight+'px'},{opacity:0,maxHeight:'0px',paddingBlock:'0px',marginBottom:'0px'}],{duration:200,easing:'ease-out'});
-    el._out.onfinish=()=>{el._out=null;el.style.overflow='';if(!needsItems().length)el.hidden=true;}; return; }
-  el.hidden=false;
-  if(NC.c&&L.some(t=>!NC.seen.includes(t.id))) setNC(false); else paintNC();
-  const M=blockedByNeeds(L), sig=L.map(t=>[t.id,t.status,t.title,t.waiting_on,t.unblocks].join('\0')).join('\n')+'\n'+M; if(sig===needsSig){tickAges();return;} needsSig=sig;
-  const old=was?[...el.querySelectorAll('ul>li')]:[], first=L.reduce((a,t)=>Date.parse(sinceOf(t))<Date.parse(sinceOf(a))?t:a);
-  $('ndT').innerHTML=`<b class="bang" aria-hidden="true">!</b><span class="nd-sum"><span class="n">${L.length}</span> ${L.length===1?'needs':'need'} you · oldest <time data-since="${esc(sinceOf(first))}"></time>${M?` · blocking ${M} ticket${M>1?'s':''}`:''}</span><i class="chev" aria-hidden="true"></i>`;
-  keepFocus(()=>{el.querySelector('ul').innerHTML=L.map(t=>{const q=t.status!=='review';
-    return `<li data-id="${esc(t.id)}"><div class="nd-h"><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button><span class="nb${q?'':' r'}">${q?'Question':'Review'}</span>${t.unblocks>0?`<span class="nd-bl">blocks ${t.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(sinceOf(t))}"></time></div>`
-     +(q?`<p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('a:'+t.id,'','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
-        :`<form class="nd-f" data-nform="reject" data-id="${esc(t.id)}"><button type="button" class="btn sm" data-approve="${esc(t.id)}">Approve</button>${draftField('r:'+t.id,'','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`)+'</li>';}).join('');});
-  if(move) needsMotion(el,old,was);
-  tickAges();
+const bLink=(g,i)=>`?board=${encodeURIComponent(g.id)}#${encodeURIComponent(i.id)}`;
+function needsRow(g,i){
+  const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
+  const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
+  const notes=parseNotes(i.body).filter(n=>!(i.kind==='question'&&n.text==='question: '+i.waiting_on)).slice(-3);
+  const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
+  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
+  const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
+  const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
+    !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
+    mb.length&&`Points at ${mb.join(', ')}, which ${mb.length>1?'were':'was'} deleted. Open it to remove or replace the blocker.`].filter(Boolean).join(' ');
+  const ln=i.kind==='stuck'&&(i.claim_note||parseNotes(i.body).filter(n=>n.text!=='question: '+i.waiting_on).pop()),
+    lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(ln.text.length>140?ln.text.slice(0,140)+'…':ln.text)}</p>`:'';
+  const form=i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+    :`<form class="nd-f" data-nform="reject" ${B}><button type="button" class="btn sm" data-approve ${B}>Approve</button>${f('r:','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`;
+  return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
+    +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
+    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
+}
+function renderNeedsPanel(){
+  const cur=curBoard(),gs=[...NEEDS].sort((a,b)=>(b.id===cur)-(a.id===cur)),all=gs.flatMap(g=>g.items),multi=BOARDS.length>1;
+  if(NX&&!gs.some(g=>g.items.some(i=>nkey(g,i)===NX))) NX=null;
+  const c=k=>all.filter(i=>i.kind===k).length;
+  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&l==='question'?'s':''}`).join(', '):'';
+  $('npEmpty').hidden=!!all.length;
+  const sig=JSON.stringify([NX,cur,multi,gs]); if(sig===npSig){tickAges();return;} npSig=sig;
+  const ul=$('npList'),old=npShown?[...ul.children]:[];
+  keepFocus(()=>{ul.innerHTML=gs.map(g=>(multi?`<li class="ng" data-key="h:${esc(g.id)}">${g.id===cur?'This board':esc(g.title)} <span class="n">(${g.items.length})</span></li>`:'')+g.items.map(i=>needsRow(g,i)).join('')).join('');});
+  ul.querySelectorAll('textarea').forEach(growTa);
+  if(npShown&&!reduce.matches) needsMotion(ul,old);
+  npShown=true; tickAges();
+}
+function toggleNX(k){
+  NX=NX===k?null:k; renderNeedsPanel(); const row=[...$('npList').children].find(li=>li.dataset.key===k);
+  (NX&&row?.querySelector('textarea')||row?.querySelector('[data-ntoggle]'))?.focus(); // expanding goes straight to the answer box
+  if(NX&&!reduce.matches) row?.querySelector('.nr-x')?.animate([{opacity:0,transform:'translateY(-4px)'},{opacity:1,transform:'none'}],{duration:150,easing:'ease-out'});
+}
+function openNeeds(){
+  const el=$('npanel'); if(!el.hidden) return; if(!$('drawer').hidden) closeDrawer();
+  lastNFocus=document.activeElement; el.hidden=false; $('scrim').hidden=false; npShown=false; npSig=''; renderNeedsPanel(); loadNeeds();
+  if(!reduce.matches) el.animate([{transform:'translateX(28px)',opacity:0},{transform:'none',opacity:1}],{duration:200,easing:'ease-out'});
+  el.querySelector('[data-nclose]').focus();
+}
+function closeNeeds(quiet){ // quiet: the drawer is taking over, which keeps the scrim and the focus
+  const el=$('npanel'); if(el.hidden) return; el.hidden=true; npShown=false; if($('drawer').hidden) $('scrim').hidden=true;
+  if(!quiet) (lastNFocus?.isConnected?lastNFocus:$('needsBadge')).focus?.();
 }
 const NFORM={answer:['text','Answered'],reject:['reason','Rejected'],notes:['text','Note added']};
-async function submitNeeds(f){ // strip + drawer forms: POST tickets/<id>/<answer|reject|notes>
-  const id=f.dataset.id,kind=f.dataset.nform,i=f.elements.t,text=i.value.trim(); if(!text) return i.focus();
-  try{ await jf(`${API}/tickets/${id}/${kind}`,'POST',{[NFORM[kind][0]]:text}); delete DRAFTS[i.dataset.draft]; await load(true); toast(`${NFORM[kind][1]}: ${id}`); }
+const refreshAfter=bd=>Promise.all([(!bd||bd===curBoard())&&load(true),loadNeeds()]);
+async function submitNeeds(f){ // panel + drawer forms: POST <board>/tickets/<id>/<answer|reject|notes>; the panel's carry data-board (any board, no switching)
+  const id=f.dataset.id,kind=f.dataset.nform,i=f.elements.t,text=(DRAFTS[i.dataset.draft]??i.value).trim(),bd=f.dataset.board; if(!text) return i.focus(); // text from DRAFTS: it keeps the newlines a collapsed one-line input cannot show
+  try{ await jf(`${bd?'/api/b/'+bd:API}/tickets/${id}/${kind}`,'POST',{[NFORM[kind][0]]:text}); delete DRAFTS[i.dataset.draft]; await refreshAfter(bd); toast(`${NFORM[kind][1]}: ${id}`); }
+  catch(er){ toast(er.message,{err:1}); }
+}
+async function nPatch(bd,id,ch,back,msg){ // approve / release from the panel; Undo = one PATCH back
+  try{ await jf(`/api/b/${bd}/tickets/${id}`,'PATCH',ch); await refreshAfter(bd); toast(msg,{undo:()=>nPatch(bd,id,back,ch,`${id} restored`)}); }
   catch(er){ toast(er.message,{err:1}); }
 }
 const resultHtml=r=>!r?'':`<div class="rbox">${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
@@ -990,12 +1054,13 @@ async function quickAdd(f,again){
 }
 function emptyState(){
   if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
-  const fl=[...activeFilters().map(x=>x[1]),state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.attn&&'Needs attention',state.q&&`“${state.q}”`].filter(Boolean);
+  const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.q&&`“${state.q}”`].filter(Boolean);
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
 }
 function clearFilters(){
-  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[],dep:'ALL',attn:false});
-  for(const k of['pillar','owner','dep','parent'])store.set(k,'ALL'); store.set('prio',[]); setQ(''); renderBar(); render();
+  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[]});
+  for(const k of['pillar','owner','parent'])store.set(k,'ALL');
+  if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
 function lanes(ts){ // Group by: a small heading per pillar / parent / agent inside the column; cards keep their order within a lane, no key = last
   const g=state.group; if(g==='none') return ts.map(card).join('');
@@ -1037,7 +1102,7 @@ function renderBoard(){
 
 // ---------- drawer ----------
 let lastFocus=null;
-function openDrawer(html,keepScroll){const d=$('drawer');if(d.hidden)lastFocus=document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
+function openDrawer(html,keepScroll){const d=$('drawer'),np=!$('npanel').hidden;if(np)closeNeeds(true);if(d.hidden)lastFocus=np?$('needsBadge'):document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
 function closeDrawer(){SPLIT=null;$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
@@ -1094,12 +1159,12 @@ function showTicket(id,refresh){
   const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status;
-  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Waiting on ${t.waiting_on}`:`Parked: ${t.waiting_on}`):''):'';
+  const why=s==='pending'?(t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
-    t.waiting_on&&!why?`<span>${t.asked_by?'Waiting on':'Parked:'} ${esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
+    t.waiting_on&&!why?`<span>${t.asked_by?'Question from '+esc(t.asked_by):'Parked: '+esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
     <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
@@ -1108,11 +1173,11 @@ function showTicket(id,refresh){
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
-    ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
+    ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='review'?`<h3>Result, for review</h3>${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
-    <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
+    <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
@@ -1139,11 +1204,11 @@ function editForm(t){
     ${isNew?`<label for="f-prefix">ID prefix <span class="hint">next free number is picked</span><input id="f-prefix" value="BUG" pattern="[A-Z0-9]+" required></label><span></span>`:''}
     <label class="full" for="f-title">Title<input id="f-title" required maxlength="200" value="${esc(t.title)}"></label>
     <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
-    <label for="f-priority">Priority<select id="f-priority">${opt([['','None'],['P0','P0 blocking'],['P1','P1 core'],['P2','P2 important'],['P3','P3 later']],t.priority)}</select></label>
     <label for="f-owner">Owner<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
+    <label class="full" for="f-priority">Priority<select id="f-priority">${opt(PLAB,t.priority)}</select></label>
     <label for="f-pillar">${esc(CFG.pillar_label)}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
-    <label for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
     <label class="full" for="f-done">Done when <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
     <label class="full" for="f-docs">Docs <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
@@ -1179,6 +1244,7 @@ function setPref(k,v){
   renderSettings();
 }
 renderSettings();
+$('kbPrio').innerHTML=PLAB.map(([v,l])=>`<dt>${v||'None'}</dt><dd>${esc(l.split(' – ')[1])}</dd>`).join('');
 
 // ---------- events ----------
 let armedDelete=false;
@@ -1192,7 +1258,6 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
   if(g('[data-alldone]')){state.allDone=true;render();return;}
-  if(g('[data-attn]')){state.attn=!state.attn;renderBar();render();return;}
   if(b=g('[data-moveto]')){b.closest('.mv').open=false;moveTo(b.dataset.id,b.dataset.moveto);return;}
   if(b=g('[data-setstatus]')){moveTo(openId,b.dataset.setstatus);return;}
   if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
@@ -1206,8 +1271,11 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
-  if(b=g('[data-approve]')){moveTo(b.dataset.approve,'done');return;}
-  if(g('#ndT')){setNC(!NC.c,needsItems().map(t=>t.id));return;}
+  if(b=g('[data-approve]')){nPatch(b.dataset.board,b.dataset.id,{status:'done'},{status:'review'},`Approved: ${b.dataset.id}`);return;}
+  if(b=g('[data-release]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'doing'},`${b.dataset.id} released to To do`);return;}
+  if(g('#needsBadge')){$('npanel').hidden?openNeeds():closeNeeds();return;}
+  if(g('[data-nclose]')||(e.target===$('scrim')&&!$('npanel').hidden)){closeNeeds();return;}
+  if(b=g('.nr')){ if(g('[data-ntoggle]')||(e.target.closest('.nd-h,.nd-q')&&!e.target.closest('a,button,time')&&!getSelection().toString())){toggleNX(b.dataset.key);return;} if(!e.target.closest('[data-open]'))return; }
   if(b=g('[data-resume]')){api('PATCH','/'+b.dataset.resume,{waiting_on:''}).then(()=>load(true)).then(()=>toast('Resumed: '+b.dataset.resume)).catch(er=>toast(er.message,{err:1}));return;}
   if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
   if(g('#kbBtn,#kbHint')){toggleKb();return;}
@@ -1254,16 +1322,34 @@ document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remem
   if(d.matches('.fpanel,.spanel')){const b=d.querySelector('.fbody');b.style.translate='';if(d.open){const r=b.getBoundingClientRect();b.style.translate=(r.left<16?16-r.left:Math.min(0,innerWidth-16-r.right))+'px';}}
   flushPaint();
 },true);
-document.addEventListener('input',e=>{ const k=e.target.dataset?.draft; if(k) DRAFTS[k]=e.target.value; if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&e.target.matches?.('textarea[data-draft]')){ e.preventDefault(); e.target.form?.requestSubmit(); } }); // Enter is a newline in the long answer box
+document.addEventListener('input',e=>{ const k=e.target.dataset?.draft; if(k) DRAFTS[k]=e.target.value; if(e.target.matches?.('textarea[data-draft]')) growTa(e.target); if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
 document.addEventListener('submit',e=>{ if(e.target.dataset.nform){e.preventDefault();submitNeeds(e.target);return;}
   const h={splitForm:submitSplit,editForm:submitForm,boardForm:submitBoard}[e.target.id]; if(h){e.preventDefault();h(e.target);} });
+// p, then 0-3 or - : set the priority of the open ticket (else the focused card). p alone shows a hint for 1.5 s.
+const PK={el:null,id:null,t:0};
+function endP(){ clearTimeout(PK.t); PK.el?.remove(); PK.el=null; }
+function startP(){
+  endP(); PK.id=!$('drawer').hidden?openId:document.activeElement?.closest?.('[data-open]')?.dataset.open;
+  PK.el=document.createElement('div'); PK.el.className='toast'; PK.el.textContent=PK.id?`Priority for ${PK.id}: press 0 1 2 3, or - to clear`:'Priority: focus a card or open a ticket first';
+  $('toasts').append(PK.el); PK.t=setTimeout(endP,1500);
+}
+async function setPrio(id,p){
+  const t=BY.get(id); if(!t) return toast('Priority: focus a card or open a ticket first.',{err:1});
+  const card=$('drawer').hidden&&document.activeElement?.closest?.('[data-open]'), from=t.priority||null; if(from===p) return toast(`${id} is already ${p||'without a priority'}.`);
+  try{ await api('PATCH','/'+id,{priority:p}); await load(true); if(card) document.querySelector(`#board [data-open="${id}"]`)?.focus(); // keep the card focused so `p` can be chained
+    toast(`${id}: ${p?`${p}, ${PDEF[p]}`:'no priority'}`,{undo:()=>api('PATCH','/'+id,{priority:from}).then(()=>load(true)).catch(er=>toast(er.message,{err:1}))}); }
+  catch(er){ toast('Priority failed: '+er.message,{err:1}); }
+}
 let kbFocus=null;
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
 const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card')].filter(c=>c.offsetParent!==null);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    if(!$('kb').hidden) toggleKb(false);
+    if(PK.el) endP();
+    else if(!$('kb').hidden) toggleKb(false);
     else if(menuBusy()) closeMenus();
+    else if(!$('npanel').hidden) closeNeeds();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(state.view==='docs'&&DV.f){DV.f=null;renderDocs();}
     else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
@@ -1275,12 +1361,15 @@ document.addEventListener('keydown',e=>{
   }
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   const tg=e.target; if(editing||tg.closest?.('input,textarea,select')||tg.isContentEditable) return;
+  if(PK.el){ const k=e.key; endP(); if(/^[0-3]$/.test(k)||k==='-'){ e.preventDefault(); setPrio(PK.id,k==='-'?null:'P'+k); return; } }
+  if(e.key==='p'){ e.preventDefault(); startP(); return; }
   if(e.key==='?'){ e.preventDefault(); toggleKb(); return; }
   if(e.key==='t'){ const o=['system','light','dark']; setPref('theme',o[(o.indexOf(SET.theme)+1)%3]); toast('Theme: '+{system:'System',light:'Light',dark:'Dark'}[SET.theme]); return; }
   if(!$('drawer').hidden||!$('kb').hidden) return;
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
   else if(e.key==='d') viewTo(state.view==='docs'?'board':'docs');
+  else if(e.key==='i') $('npanel').hidden?openNeeds():closeNeeds();
   else if(e.key==='B'){ e.preventDefault(); if(!$('bsum').inert){ $('bpanel').open=true; } }
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
   else if(e.key==='c'){ e.preventDefault(); $('chat').hidden?openChat():$('cin').focus(); }
@@ -1325,7 +1414,7 @@ function readColors(){const s=getComputedStyle(document.documentElement);
   for(const v of['body','display'])G.col[v]=s.getPropertyValue('--'+v).trim();makeGrain();}
 const hash=s=>{let h=2166136261;for(const c of s)h=Math.imul(h^c.charCodeAt(0),16777619);return h>>>0;}; // same start layout on every load
 const prioIdx=p=>{const i=PRIOS.indexOf(p);return i<0?9:i;};
-const needsAttn=t=>t.status!=='done'&&((t.missing_blockers||[]).length>0||(t.stale_days!=null&&t.stale_days>=STALE));
+const needsAttn=t=>t.status!=='done'&&((t.missing_blockers||[]).length>0||(t.stale_days!=null&&t.stale_days>=STALE)||(t.status==='doing'&&(t.open_blockers||[]).length>0));
 const pillarCol=t=>t.pillar&&PILLARS.includes(t.pillar)?G.col[pk(t.pillar)]:null;
 
 // ----- layered layout -----
@@ -1740,9 +1829,9 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	if(!document.startViewTransition||reduce.matches) return setView(v);
 	document.startViewTransition(()=>setView(v));
 }
-function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
-  paintViews(v);renderShow();renderNeeds();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
-function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();renderNeeds();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
+  paintViews(v);renderShow();if(v!=='graph')render();else{renderWorking();renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
+function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
@@ -1788,7 +1877,7 @@ async function submitBoard(){
     setBoard(j.id); location.href='?board='+encodeURIComponent(j.id);
   }catch(er){ m.className='msg err'; m.textContent=er.message; }
 }
-loadBoards();
+loadBoards().then(loadNeeds);
 fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
   readColors(); renderBar(); setView(state.view);
   load(true).then(loadDigest).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
@@ -1966,7 +2055,8 @@ $('drawer').addEventListener('dragleave',e=>{if(e.target===$('drawer'))$('drawer
 $('drawer').addEventListener('drop',e=>{if(!e.dataTransfer?.files?.length||!openId||editing)return;e.preventDefault();$('drawer').classList.remove('dropping');attachFiles([...e.dataTransfer.files]);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('docv').hidden){e.stopImmediatePropagation();closeDoc();}},true);
 if(store.get('chatOpen',false)) openChat();
-setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000); // picks up edits made through the MCP
+setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000);
+setInterval(()=>{ if(document.visibilityState==='visible') loadNeeds(); },15000); // other boards' questions: no tickets poll covers them // picks up edits made through the MCP
 })();
 </script>
 </body>
