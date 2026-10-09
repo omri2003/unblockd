@@ -2,7 +2,7 @@
 // Local: NODE_PATH=$(npm root -g) node tests/ui_smoke.mjs   (CI: npm i --no-save playwright)
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, cp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, cp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -23,6 +23,12 @@ try {
 	const cli = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'example/tickets'), ...a], { cwd: repo, stdio: 'pipe' });
 	const cliB = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zsecond/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
 	await cp(join(repo, 'example'), join(root, 'zsecond'), { recursive: true }); // second board: the title becomes a switcher
+	// the committed example dates age (a doing ticket goes "stuck" after stale_days): restamp both copies to today so the run never depends on the date
+	const today = new Date().toISOString().slice(0, 10);
+	for (const b of ['example', 'zsecond']) for (const f of (await readdir(join(root, b, 'tickets'))).filter(n => /^[A-Z]+-\d+\.json$/.test(n))) {
+		const p = join(root, b, 'tickets', f);
+		await writeFile(p, JSON.stringify({ ...JSON.parse(await readFile(p, 'utf8')), created: today, updated: today }, null, 2));
+	}
 	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
 	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board', agent_tickets: 'propose', schema: { prefixes: { ZQ: 'questions', ZP: 'proposed work' }, required: ['done_when', 'priority'], tags: ['bug', 'chore'], body_template: '## Why\n' } }));
 	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
