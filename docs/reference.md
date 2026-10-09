@@ -179,7 +179,9 @@ Every ticket comes back with derived fields: `effective_status`,
 
 ## The board
 
-**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review and stuck work (a `doing` ticket with no update for `stale_days`, or one whose blocker was deleted: *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed.
+![Needs you panel with a review row expanded](screenshots/needs-dark.webp)
+
+**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted: the row says why; *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed. Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
@@ -191,7 +193,7 @@ Every ticket comes back with derived fields: `effective_status`,
 - **Regex search**: wrap the search in slashes, `/^CMB-|BUG-10/`, to match ids and titles (case-insensitive). An invalid pattern turns the box red and matches nothing.
 - Drag a card between columns to change its status. Polls every 4 s, so agent edits show up live.
 
-![The board at phone width: one column at a time behind tabs](screenshots/mobile.png)
+![The board at phone width: one column at a time behind tabs](screenshots/mobile.webp)
 
 **Graph** (Board / Graph switch): arrow A -> B means A blocks B. Fill =
 status, ring = pillar, size = how much is waiting on it.
@@ -205,7 +207,7 @@ status, ring = pillar, size = how much is waiting on it.
 - **Shift-drag A onto B** makes A block B; click a link to remove it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 
-Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `p` priority, `j`/`k` move, `Enter` open,
+Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `i` Needs you, `Shift+B` board switcher, `p` priority, `j`/`k` move, `Enter` open,
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
 (Comfortable / Compact) and the "While you were away" digest, per browser.
 **Agents** (header button, or the "N agents working" badge) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.
@@ -230,7 +232,7 @@ claude mcp add unblockd --scope user -- docker run -i --rm -v /path/to/projects:
 Build the image once first (`docker compose build`), or use
 `ghcr.io/omri2003/unblockd` in place of `unblockd`.
 
-Workers: the `work_loop` prompt (`board`, `profile`) and the `unblockd://work-loop` resource carry the claim, heartbeat, complete / release / `ask_human` protocol, so any MCP client can run it without the orchestrator skill.
+Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the package, same for every board, not configurable). The `work_loop` prompt (`board`, `profile`) and the `unblockd://work-loop` resource carry the claim, heartbeat, complete / release / `ask_human` protocol, so any MCP client can run it without the orchestrator skill. The file ends with two rules: *Never go silent* (stop a claimed ticket only through `ask_human` or `release`, never by just stopping) and *Your board's policy* (board / profile docs such as `AGENT_POLICY.md` say how to do the work; if they conflict with the protocol, the protocol wins and the worker says so in its summary). The Docs view lists the protocol as a **built-in** doc (`unblockd://work-loop`, `builtin: true` in `GET /knowledge`, openable with View file / `read_doc`, shown with generic values: workers get their board, profile and name filled in) that every open ticket reads; it is not inlined into `context()`, which carries `protocol: "unblockd://work-loop"` instead.
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents

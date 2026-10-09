@@ -20,7 +20,8 @@ unblockd/store.py       THE core. Ticket CRUD over one folder, validation (FIELD
 unblockd/boards.py      Several boards: discovers <root>/<project>/tickets/unblockd.json, ids,
                         create(). Every front door goes through Boards -> Store.
 unblockd/web.py         Stdlib HTTP server + REST API (Handler._route; `_needs()` = GET /api/needs for the UI's Needs you panel). Serves static/index.html.
-unblockd/mcp_server.py  MCP tools + the `work_loop` prompt / `unblockd://work-loop` resource (the worker protocol; `WORK_LOOP`)
+unblockd/mcp_server.py  MCP tools + the `work_loop` prompt / `unblockd://work-loop` resource (serve `WORK_LOOP.md`, filled with `string.Template`: $board, $profile_line, $agent_hint, $claim_args)
+unblockd/WORK_LOOP.md   THE worker protocol, as a doc (incl. "Never go silent" and "Your board's policy"); read via Path(__file__), Dockerfile copies the package dir. Not per-board.
                         (needs the `mcp` package; the only dependency).
 unblockd/cli.py         Same operations for agents without MCP (cloud sessions, other tools); `Remote` = the same over REST (UNBLOCKD_URL).
 unblockd/notify.py      Webhook notifications: one daemon thread started by web.main (UNBLOCKD_WEBHOOK).
@@ -106,6 +107,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `claim_ticket` (MCP, CLI) return `{...ticket, "context": ...}`, which is the whole point: a
   worker reads its instructions from the board instead of being told. The chat has
   `get_context` / `read_doc` too.
+- **Built-in protocol doc**: `knowledge.PROTOCOL` (`unblockd://work-loop`) is `WORK_LOOP.md`. `graph()` adds it (when there are open tickets) as a `kind: board`, `builtin: true` doc that every open ticket reads (so never a hub, never a `no_docs` gap; the Docs view labels it "built-in"); `read_doc` opens it with generic placeholder values (board id, `<profile>-<number>`; no raw `$vars` in the viewer); `context()` does NOT inline it (agents get it via the MCP prompt) but returns `protocol: "unblockd://work-loop"`. Board `docs` / profile docs (e.g. `AGENT_POLICY.md`, see `example/`) say HOW to work; the protocol says they cannot override it. This repo's own board has no AGENT_POLICY: AGENTS.md already is that doc.
 - **Knowledge graph** (`knowledge.graph(store)`; REST `GET knowledge`, MCP `knowledge_graph`): what `context()` would give every OPEN ticket, without inlining
   (`expand()` results are cached per call). Returns `tickets`, `docs` {path, kind, size, readers, error?, linked_only?}, `reads` [{ticket, doc, via}], `links` [{from, to}]
   (doc -> doc, one hop from docs a ticket reads; targets must exist and be text; those no ticket reads become `linked_only` nodes), and the problem lists.
