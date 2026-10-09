@@ -101,7 +101,6 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .chip[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper);border-color:var(--ind)}
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
 .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
-.chip.attn{border-color:var(--amber);color:var(--amber)} .chip.attn[aria-pressed="true"]{background:var(--amber);color:var(--surface)}
 /* next up strip */
 .working{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .working h2{font-size:.95rem;margin:0 0 6px}
@@ -134,7 +133,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .nttl[aria-expanded=true]::after{transform:rotate(-135deg);margin-bottom:-.05em}
 .nd-bl{font-size:.78rem;color:var(--muted)} .why.park{color:var(--muted)}
 .nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
-.nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)}
+.nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)} .nb.s{color:var(--amber)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
 .nr:not(.open) .nd-q{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .nr.open .nd-q{white-space:pre-wrap;color:var(--ink);font-size:.95rem;margin:6px 0 4px}
@@ -233,7 +232,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .tabs{display:none}
 @media (max-width:1100px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:600px){.board{grid-template-columns:1fr}
-  .bar{position:relative;z-index:6} .bar>#depSeg,.bar>#attnSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
+  .bar{position:relative;z-index:6} .bar>#depSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
   .btn{padding:8px 14px} .card{padding:10px}
   .sub,.segbar,.khint{display:none}
   header{position:relative} #bpanel{position:static} #bpanel .sbody{left:0;right:0;width:auto} .bi{padding:13px 12px;font-size:1rem}
@@ -472,7 +471,6 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       </div></details>
     <div class="seg" id="pills"></div>
     <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
-    <div class="seg" id="attnSeg"></div>
   </div>
 
   <section class="digest" id="digest" hidden aria-label="While you were away"></section>
@@ -613,7 +611,7 @@ const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
 const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','parent','agent'];
-const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,attn:false,view:store.get('view','board'),rx:null,rxErr:'',
+const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','review','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
@@ -750,11 +748,7 @@ function renderBar(){
   $('depSeg').innerHTML=[['ALL','Any','',di('<circle cx="8" cy="8" r="2.5"/>')],['FREE','Free',nf,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>')],['BLOCKED','Blocked',nb,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>')]]
     .map(([v,l,n,ic])=>`<button type="button" class="vico lbl" data-dep="${v}" aria-pressed="${state.dep===v}">${ic}${l}${n===''?'':` <span class="n">${n}</span>`}</button>`).join('');slidePill($('depSeg'));
   chips($('prioSeg'),PRIOS.map(p=>[p,p]),state.prio,'prio');
-  renderAttn();renderShow();
-}
-function renderAttn(){
-  const n=T.filter(needsAttn).length; if(!n&&state.attn) state.attn=false;
-  $('attnSeg').innerHTML=n?`<button type="button" class="chip attn" data-attn aria-pressed="${state.attn}">Needs attention (${n})</button>`:'';
+  renderShow();
 }
 const isBlocked=t=>t.status!=='done'&&(t.open_blockers||[]).length>0;
 const isFree=t=>t.status!=='done'&&t.status!=='review'&&!(t.open_blockers||[]).length&&!t.waiting_on;
@@ -767,7 +761,6 @@ function matches(t){
   if(state.parent!=='ALL' && t.parent!==state.parent) return false;
   if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
   if(state.prio.length && !state.prio.includes(t.priority)) return false;
-  if(state.attn && !needsAttn(t)) return false;
   if(state.q&&state.rx!==null){ if(state.rxErr||!(state.rx.test(t.id+' '+t.title)||state.rx.test(t.id))) return false; }
   else if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+t.section+' '+t.owner+' '+(t.tags||[]).join(' ')+' '+(t.agent||'')).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
   return true;
@@ -885,7 +878,7 @@ function renderDigest(){
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
 const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
-const KIND={question:'Question',review:'Review'}, nkey=(g,i)=>g.id+'/'+i.id;
+const KIND={question:'Question',review:'Review',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
 const parseNotes=b=>(b||'').split(/\n\n(?=— )/).map(c=>/^— ([^,\n]+), (\S+): ([\s\S]*)$/.exec(c)).filter(Boolean).map(m=>({by:m[1],at:m[2],text:m[3]})); // the `— by, ISO: text` lines _append_note writes
 async function loadNeeds(){ // ETag: an idle poll costs headers only
   if(!BOARDS.length) return; const tok=++nTok;
@@ -923,21 +916,22 @@ function needsMotion(ul,old){ // rows that arrived fade in; rows that left (answ
 const bLink=(g,i)=>`?board=${encodeURIComponent(g.id)}#${encodeURIComponent(i.id)}`;
 function needsRow(g,i){
   const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
-  const openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">Open ticket</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">Open ticket</a>`;
+  const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
   const notes=parseNotes(i.body).filter(n=>!(i.kind==='question'&&n.text==='question: '+i.waiting_on)).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
-  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}<p>${openBtn('btn ghost sm')}</p></div>`:'';
-  const form=i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
+  const why=[i.stale_days!=null&&`No update for ${i.stale_days} days`,(i.missing_blockers||[]).length&&`points at deleted ${i.missing_blockers.join(', ')}`].filter(Boolean).join('; ');
+  const form=i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
     :`<form class="nd-f" data-nform="reject" ${B}><button type="button" class="btn sm" data-approve ${B}>Approve</button>${f('r:','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`;
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
-    +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${i.kind==='review'?'r':''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
-    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:'')+x+form+'</li>';
+    +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
+    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='stuck'?`<p class="nd-q">${esc(why)}</p>`:'')+x+form+'</li>';
 }
 function renderNeedsPanel(){
   const cur=curBoard(),gs=[...NEEDS].sort((a,b)=>(b.id===cur)-(a.id===cur)),all=gs.flatMap(g=>g.items),multi=BOARDS.length>1;
   if(NX&&!gs.some(g=>g.items.some(i=>nkey(g,i)===NX))) NX=null;
   const c=k=>all.filter(i=>i.kind===k).length;
-  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&l==='question'?'s':''}`).join(', '):'';
+  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&l==='question'?'s':''}`).join(', '):'';
   $('npEmpty').hidden=!!all.length;
   const sig=JSON.stringify([NX,cur,multi,gs]); if(sig===npSig){tickAges();return;} npSig=sig;
   const ul=$('npList'),old=npShown?[...ul.children]:[];
@@ -1052,11 +1046,11 @@ async function quickAdd(f,again){
 }
 function emptyState(){
   if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
-  const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.attn&&'Needs attention',state.q&&`“${state.q}”`].filter(Boolean);
+  const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.q&&`“${state.q}”`].filter(Boolean);
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
 }
 function clearFilters(){
-  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[],attn:false});
+  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[]});
   for(const k of['pillar','owner','parent'])store.set(k,'ALL');
   if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
@@ -1256,7 +1250,6 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
   if(g('[data-alldone]')){state.allDone=true;render();return;}
-  if(g('[data-attn]')){state.attn=!state.attn;renderBar();render();return;}
   if(b=g('[data-moveto]')){b.closest('.mv').open=false;moveTo(b.dataset.id,b.dataset.moveto);return;}
   if(b=g('[data-setstatus]')){moveTo(openId,b.dataset.setstatus);return;}
   if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
@@ -1271,6 +1264,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
   if(b=g('[data-approve]')){nPatch(b.dataset.board,b.dataset.id,{status:'done'},{status:'review'},`Approved: ${b.dataset.id}`);return;}
+  if(b=g('[data-release]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'doing'},`${b.dataset.id} released to To do`);return;}
   if(g('#needsBadge')){$('npanel').hidden?openNeeds():closeNeeds();return;}
   if(g('[data-nclose]')||(e.target===$('scrim')&&!$('npanel').hidden)){closeNeeds();return;}
   if(b=g('.nr')){ if(g('[data-ntoggle]')||(e.target.closest('.nd-h,.nd-q')&&!e.target.closest('a,button,time')&&!getSelection().toString())){toggleNX(b.dataset.key);return;} if(!e.target.closest('[data-open]'))return; }
@@ -1829,7 +1823,7 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 }
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
   paintViews(v);renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
-function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
+function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
   const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;

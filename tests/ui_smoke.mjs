@@ -239,6 +239,26 @@ try {
 		const oans = await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), oid);
 		ok(oans.body.includes('Answer to: Which colour? — Teal'), `[${tag}] the other board's ticket should carry the answer`);
 		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
+		ok((await page.locator('#attnSeg').count()) === 0, `[${tag}] the Needs attention chip is gone (Stuck lives in the panel)`);
+		// Stuck: a doing ticket nobody touched for stale_days, and a todo whose blocker file is gone (both crafted in the JSON); the open panel picks them up
+		const age = async (id, change) => { const f = join(root, 'example/tickets', `${id}.json`); await writeFile(f, JSON.stringify({ ...JSON.parse(await readFile(f, 'utf8')), ...change })); };
+		const sid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'gone quiet', '--json', '{"owner":"Claude"}')).id;
+		cli('claim', '--agent', 'backend-1', '--id', sid); await age(sid, { updated: '2020-01-01' });
+		const mid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'lost its blocker', '--json', '{"owner":"Claude"}')).id;
+		await age(mid, { blocked_by: ['GONE-1'] });
+		await page.waitForFunction(() => document.querySelectorAll('#npList .nb.s').length === 2);
+		ok((await page.locator('#npSum').innerText()) === '2 stuck', `[${tag}] header counts: ${await page.locator('#npSum').innerText()}`);
+		const srow = `#npList .nr[data-key="${boardId}/${sid}"]`, mrow = `#npList .nr[data-key="${boardId}/${mid}"]`;
+		ok((await page.locator(`${mrow} .nd-q`).innerText()) === 'points at deleted GONE-1', `[${tag}] missing-blocker hint`);
+		ok((await page.locator(`${mrow} [data-release]`).count()) === 0 && (await page.locator(`${mrow} [data-open]`).count()) === 2, `[${tag}] a missing blocker only gets Open (id + button)`);
+		ok((await page.locator(`${srow} .nd-q`).innerText()).startsWith('No update for '), `[${tag}] stale hint`);
+		await noOverflow('stuck rows');
+		await page.click(`${srow} [data-release]`);
+		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${sid}`);
+		const rel = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), sid);
+		ok(rel.status === 'todo' && !rel.claim, `[${tag}] Release to To do should drop the claim: ${rel.status}`);
+		cli('delete', mid); // the other one goes when its ticket does
+		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		await page.keyboard.press('Escape');
 		await page.evaluate(() => scrollTo(0, 0));
 		await page.screenshot({ path: process.env.SHOTS ? `${process.env.SHOTS}/ui6-${w}-${theme}.png` : tmpdir() + '/ui6.png' });

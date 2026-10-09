@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 import unittest
+from datetime import date, timedelta
 from unittest import mock
 import urllib.request
 from http.server import ThreadingHTTPServer
@@ -296,10 +297,24 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual([(i["id"], i["kind"]) for i in n[0]["items"]], [("CMB-2", "review"), ("CMB-1", "question")])
 		q = n[0]["items"][1]
 		self.assertEqual((q["waiting_on"], q["since"][:4].isdigit(), "question: which?" in q["body"]), ("which?", True, True))
-		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "done_when", "result", "body"}, set(q))
+		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "missing_blockers", "stale_days", "done_when", "result", "body"}, set(q))
 		self.assertEqual([i["id"] for i in n[1]["items"]], ["WEB-1"])
 		self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual([i["id"] for i in self.call("GET", "/api/needs")[1][0]["items"]], ["CMB-2"])
+		# stuck: a doing ticket untouched for stale_days, or one whose blocker file is gone; fresh work and parked tickets stay out
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "old"})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "orphan"})
+		self.call("POST", "/api/b/b/tickets/WEB-2/claim", {"agent": "w-2"})
+		old = Path(self.tmp.name) / "b" / "tickets" / "WEB-2.json"
+		raw = json.loads(old.read_text())
+		old.write_text(json.dumps({**raw, "updated": (date.today() - timedelta(days=30)).isoformat()}))
+		self.call("PATCH", "/api/b/b/tickets/WEB-3", {"blocked_by": ["WEB-1"]})
+		orphan = Path(self.tmp.name) / "b" / "tickets" / "WEB-3.json"
+		orphan.write_text(json.dumps({**json.loads(orphan.read_text()), "blocked_by": ["WEB-99"]}))
+		items = {i["id"]: i for i in self.call("GET", "/api/needs")[1][1]["items"]}
+		self.assertEqual({k: v["kind"] for k, v in items.items()}, {"WEB-1": "question", "WEB-2": "stuck", "WEB-3": "stuck"})
+		self.assertEqual((items["WEB-2"]["stale_days"], items["WEB-2"]["missing_blockers"]), (30, []))
+		self.assertEqual((items["WEB-3"]["stale_days"], items["WEB-3"]["missing_blockers"]), (None, ["WEB-99"]))
 		self.assertEqual(self.call("POST", "/api/needs", {})[0], 405)
 
 	def test_claim_routes(self):

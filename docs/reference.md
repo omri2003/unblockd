@@ -179,13 +179,13 @@ Every ticket comes back with derived fields: `effective_status`,
 
 ## The board
 
-**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`) and work in review, on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed.
+**Needs you**: the purple `! N` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review and stuck work (a `doing` ticket with no update for `stale_days`, or one whose blocker was deleted: *Release to To do* or open it), on every board. It opens a side panel: this board first, then each other board; ordered by score, then oldest. Each row has a one-line answer (or Approve / Reject) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). You can answer or approve a ticket on another board without switching to it. A `waiting_on` you set by hand is *Parked*, not listed.
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
-- **Warnings**: missing blocker, doing with no update for `stale_days`; a *Needs attention* filter.
+- **Warnings**: missing blocker, doing with no update for `stale_days` (an amber dot in the graph, and a *Stuck* row in the Needs you panel).
 - **Free / Blocked** filter (Graph view only; the Board ignores it): *Free* = open, nothing open blocks it, not waiting on a person; *Blocked* = an open ticket blocks it. Counts on the chips; the graph dims the rest.
 - **Show: Only / Paths / Dim** (next to the filters, remembered per view): *Only* shows just the tickets the filters match; *Paths* adds every ticket upstream and downstream of a match (the whole chain, not siblings); *Dim* shows everything and fades the rest. Works with every filter, so "owner Omri, Paths" is every chain that touches one of his tickets. Board default is Only, graph default is Dim.
 - **Regex search**: wrap the search in slashes, `/^CMB-|BUG-10/`, to match ids and titles (case-insensitive). An invalid pattern turns the box red and matches nothing.
@@ -261,8 +261,9 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended 
 ```
 GET    /api/boards                    every board with ticket counts
 GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
-                                      [{"id", "title", "items": [{"id", "kind": "question"|"review", "title", "priority", "score", "unblocks",
-                                      "since", "waiting_on", "done_when", "result", "body" (last 6000 chars)}]}], boards with items only
+                                      [{"id", "title", "items": [{"id", "kind": "question"|"review"|"stuck", "title", "priority", "score", "unblocks",
+                                      "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result",
+                                      "body" (last 6000 chars)}]}], boards with items only
 GET    /api/chat                      {"enabled", "model"}
 POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 POST   /api/boards                    {"id": "my-game", "title": "My game"}
