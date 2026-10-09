@@ -182,7 +182,7 @@ Every ticket comes back with derived fields: `effective_status`,
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Warnings**: missing blocker, doing with no update for `stale_days`; a *Needs attention* filter.
-- **Free / Blocked** filter: *Free* = open, nothing open blocks it, not waiting on a person; *Blocked* = an open ticket blocks it. Counts on the chips; the graph dims the rest.
+- **Free / Blocked** filter (Graph view only; the Board ignores it): *Free* = open, nothing open blocks it, not waiting on a person; *Blocked* = an open ticket blocks it. Counts on the chips; the graph dims the rest.
 - **Show: Only / Paths / Dim** (next to the filters, remembered per view): *Only* shows just the tickets the filters match; *Paths* adds every ticket upstream and downstream of a match (the whole chain, not siblings); *Dim* shows everything and fades the rest. Works with every filter, so "owner Omri, Paths" is every chain that touches one of his tickets. Board default is Only, graph default is Dim.
 - **Regex search**: wrap the search in slashes, `/^CMB-|BUG-10/`, to match ids and titles (case-insensitive). An invalid pattern turns the box red and matches nothing.
 - Drag a card between columns to change its status. Polls every 4 s, so agent edits show up live.

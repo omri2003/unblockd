@@ -721,6 +721,7 @@ function renderBar(){
   $('parentSeg').hidden=!ps.length; if(ps.length) chips($('parentSeg'),[['ALL','Any'],...ps.map(id=>[esc(id),esc(id)])],state.parent,'parent');
   chips($('groupSeg'),GROUPS.map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
+  $('depSeg').hidden=state.view!=='graph';
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
   const di=d=>`<svg class="vi" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${d}</svg>`,
     LK='<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>';
@@ -736,8 +737,9 @@ function renderAttn(){
 const isBlocked=t=>t.status!=='done'&&(t.open_blockers||[]).length>0;
 const isFree=t=>t.status!=='done'&&t.status!=='review'&&!(t.open_blockers||[]).length&&!t.waiting_on;
 function matches(t){
-  if(state.dep==='FREE'&&!isFree(t)) return false;
-  if(state.dep==='BLOCKED'&&!isBlocked(t)) return false;
+  const dep=state.view==='graph'?state.dep:'ALL'; // Free/Blocked is a Graph control; the Board ignores it (the choice is kept for the Graph)
+  if(dep==='FREE'&&!isFree(t)) return false;
+  if(dep==='BLOCKED'&&!isBlocked(t)) return false;
   if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
   if(state.parent!=='ALL' && t.parent!==state.parent) return false;
@@ -990,12 +992,13 @@ async function quickAdd(f,again){
 }
 function emptyState(){
   if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
-  const fl=[...activeFilters().map(x=>x[1]),state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.attn&&'Needs attention',state.q&&`“${state.q}”`].filter(Boolean);
+  const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.attn&&'Needs attention',state.q&&`“${state.q}”`].filter(Boolean);
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
 }
 function clearFilters(){
-  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[],dep:'ALL',attn:false});
-  for(const k of['pillar','owner','dep','parent'])store.set(k,'ALL'); store.set('prio',[]); setQ(''); renderBar(); render();
+  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[],attn:false});
+  for(const k of['pillar','owner','parent'])store.set(k,'ALL');
+  if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
 function lanes(ts){ // Group by: a small heading per pillar / parent / agent inside the column; cards keep their order within a lane, no key = last
   const g=state.group; if(g==='none') return ts.map(card).join('');
@@ -1740,7 +1743,7 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	if(!document.startViewTransition||reduce.matches) return setView(v);
 	document.startViewTransition(()=>setView(v));
 }
-function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
   paintViews(v);renderShow();renderNeeds();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
 function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}renderAttn();renderNeeds();BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
