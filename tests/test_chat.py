@@ -24,7 +24,7 @@ class FakeClaude(BaseHTTPRequestHandler):
 				out = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "Proposed."}]}
 			else:
 				out = {"stop_reason": "tool_use", "content": [{"type": "tool_use", "id": "toolu_2", "name": "propose_tickets", "input": {
-					"tickets": [{"title": "Do A", "priority": "P1", "evil": "x"}, {"title": "  "}, {"title": "Do B", "parent": "BUG-1", "blocked_by": ["#1"], "done_when": ["x"]}]}}]}
+					"tickets": [{"title": "Do A", "priority": "P1", "evil": "x"}, {"title": "  "}, {"title": "Do B", "parent": "BUG-1", "blocked_by": ["#1"], "done_when": ["x"], "components": ["store"]}]}}]}
 		elif isinstance(last, list) and last[0].get("type") == "tool_result":
 			t = json.loads(last[0]["content"])
 			out = {"stop_reason": "end_turn", "content": [{"type": "text", "text": f"#{t['id']} is {t['effective_status']}."}]}
@@ -89,7 +89,7 @@ class ChatTest(unittest.TestCase):
 		before = len(self.b.get("game").list())
 		out = chat.ask(self.b, "game", [{"role": "user", "content": "propose two tickets"}])
 		self.assertEqual(out["reply"], "Proposed.")
-		self.assertEqual(out["proposals"], [{"title": "Do A", "priority": "P1"}, {"title": "Do B", "parent": "BUG-1", "blocked_by": ["#1"], "done_when": ["x"]}])  # blank title and unknown key dropped
+		self.assertEqual(out["proposals"], [{"title": "Do A", "priority": "P1"}, {"title": "Do B", "parent": "BUG-1", "blocked_by": ["#1"], "done_when": ["x"], "components": ["store"]}])  # blank title and unknown key dropped
 		self.assertEqual(len(self.b.get("game").list()), before)
 		self.assertIn("Nothing was created", FakeClaude.seen[1]["body"]["messages"][-1]["content"][0]["content"])
 

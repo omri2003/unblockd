@@ -33,6 +33,12 @@ POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths],
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
+GET    architecture                      the architecture folder: components (+ open tickets, counts), edges with their contracts, ticket_map, problems
+POST   architecture/components           {"key", "title", "summary"?, "paths"?: [globs], "by"?}  new note <folder>/<key>.md (the folder is created) -> the architecture payload
+PATCH  architecture/components/<key>     {"title"?, "summary"?, "paths"?, "by"?}  only the managed parts of the note change
+DELETE architecture/components/<key>?by= 400 while an open ticket lists it in `components`; else deletes the note and the lines in other notes that link to it
+PUT    architecture/edges                {"from", "to", "text"?, "by"?}  create or replace the Connections line `- [<to title>](<to>.md) — text`
+DELETE architecture/edges?from=&to=&by=  remove that line     (by defaults to human; each write logs one `arch` activity event)
 GET    doc?path=                         one text file from the project repo (+ its links)
 GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
 POST   tickets/<id>/files                {"name", "content"}  attach a text file
@@ -150,6 +156,25 @@ class Handler(BaseHTTPRequestHandler):
 		except json.JSONDecodeError as e:
 			raise st.TicketError(f"body is not JSON: {e}")
 
+	def _arch(self, store, method: str, rest: list[str], q: dict):
+		"""The architecture writes (docs/reference.md): (status, payload). The store's TicketError becomes a 400 in _route."""
+		by = q.get("by") or "human"
+		if rest[1] == "edges":
+			if method == "PUT":
+				b = self._body()
+				return 200, kn.set_edge(store, b.get("from"), b.get("to"), b.get("text") or "", by=b.get("by") or "human")
+			if method == "DELETE":
+				return 200, kn.remove_edge(store, q.get("from"), q.get("to"), by=by)
+		elif len(rest) == 2 and method == "POST":
+			b = self._body()
+			return 201, kn.add_component(store, b.get("key"), b.get("title"), b.get("summary") or "", b.get("paths") or (), by=b.get("by") or "human")
+		elif len(rest) == 3 and method == "PATCH":
+			b = self._body()
+			return 200, kn.update_component(store, rest[2], by=b.get("by") or "human", title=b.get("title"), summary=b.get("summary"), paths=b.get("paths"))
+		elif len(rest) == 3 and method == "DELETE":
+			return 200, kn.delete_component(store, rest[2], by=by)
+		return 405, {"error": "method not allowed"}
+
 	def _route(self, method: str):
 		url = urlparse(self.path)
 		parts = [p for p in url.path.split("/") if p]
@@ -207,6 +232,10 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
+			if method == "GET" and rest == ["architecture"]:
+				return self._send(200, kn.architecture(store))
+			if rest[:2] == ["architecture", "components"] and len(rest) <= 3 or rest == ["architecture", "edges"]:
+				return self._send(*self._arch(store, method, rest, q))
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":
@@ -269,6 +298,7 @@ class Handler(BaseHTTPRequestHandler):
 	def do_GET(self): self._route("GET")
 	def do_POST(self): self._route("POST")
 	def do_PATCH(self): self._route("PATCH")
+	def do_PUT(self): self._route("PUT")
 	def do_DELETE(self): self._route("DELETE")
 
 	def log_message(self, fmt, *args):  # quieter: one line per write only

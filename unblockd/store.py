@@ -41,6 +41,7 @@ DEFAULT_CONFIG = {
 	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
 	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
+	"architecture": "docs/arch",  # repo-relative folder of component notes (one .md per component, see knowledge.components); on when the folder exists, None = off
 	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 	# What a new ticket must look like. None = anything goes. Agents are refused (every problem listed), humans get `warnings`.
@@ -85,6 +86,8 @@ FIELDS = {
 	# to the ticket live in tickets/files/<ID>/ and show up as the derived `files`
 	"docs": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 and ".." not in x for x in v)),
 	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
+	# keys of the architecture notes (knowledge.components) this ticket changes: the explicit link, checked against the board's notes
+	"components": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x) <= 100 for x in v)),
 	# what complete() produced, for reviewers and downstream tickets (context().upstream): {summary, files, refs, handoff, by, at}
 	"result": (None, lambda v: v is None or (isinstance(v, dict) and set(v) <= RESULT_KEYS and isinstance(v.get("summary"), str)
 	                                          and all(_short_list(v.get(k, [])) for k in ("files", "refs")) and isinstance(v.get("handoff", ""), str) and len(v.get("handoff", "")) <= 2000)),
@@ -126,6 +129,8 @@ def load_config(tickets_dir: Path) -> dict:
 		cfg.update(user)
 	if not isinstance(cfg["review"], bool):
 		raise TicketError(f"{CONFIG_FILE}: review must be true or false")
+	if cfg["architecture"] is not None and not isinstance(cfg["architecture"], str):
+		raise TicketError(f"{CONFIG_FILE}: architecture must be a repo folder like \"docs/arch\" or null")
 	if cfg["wip_limit"] is not None and not (type(cfg["wip_limit"]) is int and cfg["wip_limit"] > 0):
 		raise TicketError(f"{CONFIG_FILE}: wip_limit must be a positive number or null")
 	if not (type(cfg["done_window_days"]) is int and cfg["done_window_days"] > 0):
@@ -228,6 +233,8 @@ class Store:
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
 				v = list(dict.fromkeys(x.strip().lower() for x in v if isinstance(x, str) and x.strip()))
+			if k == "components" and isinstance(v, list):
+				v = list(dict.fromkeys(x.strip() if isinstance(x, str) else x for x in v))
 			if k == "status" and v == "pending":
 				raise TicketError("status can't be set to pending: it is derived. A todo with an open blocker (blocked_by) or a waiting_on shows as pending; "
 				                  "agents use ask_human(id, agent, question), humans set waiting_on or blocked_by")
@@ -273,6 +280,23 @@ class Store:
 		bad = [b for b in new if b not in have and b not in old]
 		if bad:
 			raise TicketError("; ".join(f"no ticket {b} on this board" for b in bad) + ": fix the id or create it first")
+
+	def _check_components(self, new: list[str], old: list[str]) -> None:
+		"""Refuse component keys that are not notes of the board's architecture, unless already on the ticket (a note renamed later keeps it editable)."""
+		bad = [k for k in new if k not in old]
+		if not bad:
+			return
+		from .knowledge import components  # lazy: knowledge imports this module
+		keys = [c["key"] for c in components(self)["components"]]
+		bad = [k for k in bad if k not in keys]
+		if bad and not keys:
+			if not self.config.get("architecture"):
+				raise TicketError(f"components {', '.join(bad)}: this board has no architecture. Set \"architecture\" in {CONFIG_FILE} to a repo folder "
+				                  "with one .md note per component (docs/reference.md, Architecture), or leave components empty")
+			raise TicketError(f"components {', '.join(bad)}: this board has no components yet ({self.config['architecture']} has no notes). "
+			                  "Add one on the Map (+ Component) or with arch_add_component, or leave components empty")
+		if bad:
+			raise TicketError(f"unknown component(s) {', '.join(bad)}: this board's components are {', '.join(keys)} (the file names in its architecture folder)")
 
 	def _check_parent(self, tid: str, parent: str | None) -> None:
 		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor."""
@@ -332,7 +356,7 @@ class Store:
 				except ValueError:
 					stale = None
 			ks = kids.get(t["id"], [])
-			out.append({**t, "parent": t.get("parent"), "children": [k["id"] for k in ks],
+			out.append({**t, "parent": t.get("parent"), "components": t.get("components", []), "children": [k["id"] for k in ks],
 			            "progress": {"done": sum(k.get("status") == "done" for k in ks), "total": len(ks)},
 			            "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
@@ -465,7 +489,7 @@ class Store:
 			out.append("body is required (template: " + " / ".join(x for x in sc["body_template"].splitlines() if x.strip()) + ")")
 		return out
 
-	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), proposed_by: str = "") -> dict:
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), inherited_components: list[str] = (), proposed_by: str = "") -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -476,6 +500,7 @@ class Store:
 		self._check_blockers(clean.get("blocked_by", []), inherited)
 		self._check_loop(tid, clean.get("blocked_by", []))
 		self._check_parent(tid, clean.get("parent"))
+		self._check_components(clean.get("components", []), inherited_components)
 		today = date.today().isoformat()
 		t = {"id": tid}
 		for k, (default, _) in FIELDS.items():
@@ -511,6 +536,8 @@ class Store:
 			self._check_loop(tid, clean["blocked_by"])
 		if "parent" in clean:
 			self._check_parent(tid, clean["parent"])
+		if "components" in clean:
+			self._check_components(clean["components"], t.get("components", []))
 		if clean.get("status") == "doing" and t.get("status") != "doing":
 			if t.get("proposed_by"):
 				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
@@ -544,7 +571,7 @@ class Store:
 
 	def split(self, tid: str, titles: list[str], sequential: bool = False, by: str | None = None) -> dict:
 		"""Break a ticket that is too big into parts. One child per title (same prefix; pillar, owner, priority,
-		tags, touches, docs copied; inherits the parent's blocked_by; sequential = each also waits on the one before),
+		tags, touches, docs, components copied; inherits the parent's blocked_by; sequential = each also waits on the one before),
 		and the parent now waits on all of them (a doing parent goes back to todo, its claim dropped).
 		Returns {"parent": ..., "children": [...]}."""
 		def run():
@@ -560,11 +587,11 @@ class Store:
 			for x in titles_:  # validate everything before creating anything
 				self._clean({"title": x}, partial=True)
 			prefix = tid.split("-")[0]
-			keep = {k: parent.get(k) for k in ("pillar", "owner", "priority", "tags", "touches", "docs")}
+			keep = {k: parent[k] for k in ("pillar", "owner", "priority", "tags", "touches", "docs", "components") if k in parent}
 			kids: list[dict] = []
 			for x in titles_:
 				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
-				kids.append(self._create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix, inherited=parent["blocked_by"]))
+				kids.append(self._create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix, inherited=parent["blocked_by"], inherited_components=parent.get("components", [])))
 			ids = [k["id"] for k in kids]
 			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
 			if parent["status"] == "doing":

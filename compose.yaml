@@ -1,23 +1,35 @@
-# docker compose up -d   ->  http://localhost:8787
+# docker compose up -d   ->  board http://localhost:8787, MCP http://localhost:8788/mcp
 # PROJECTS_DIR = a folder of projects (set it in .env next to this file). Every <project>/tickets/
 # with an unblockd.json in it becomes a board; a tickets/ folder right at the top counts too.
+x-unblockd: &unblockd   # shared by both services
+  build: .
+  image: unblockd
+  volumes:
+    - ${PROJECTS_DIR:-./example}:/projects
+    # code mounted from this folder: UI edits show on browser reload,
+    # Python edits on `docker compose restart`. Rebuild only for requirements.txt.
+    - ./static:/app/static:ro
+    - ./unblockd:/app/unblockd:ro
+  environment: &env
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # enables the chat; put it in .env
+    UNBLOCKD_TOKEN: ${UNBLOCKD_TOKEN:-}   # optional shared token for the API and MCP (see README)
+    UNBLOCKD_MODEL: ${UNBLOCKD_MODEL:-claude-sonnet-5-5}
+    UNBLOCKD_WEBHOOK: ${UNBLOCKD_WEBHOOK:-}   # optional push notifications (see README)
+    UNBLOCKD_WEBHOOK_FORMAT: ${UNBLOCKD_WEBHOOK_FORMAT:-json}
+    UNBLOCKD_PUBLIC_URL: ${UNBLOCKD_PUBLIC_URL:-}
+  restart: unless-stopped
+
 services:
   unblockd:
-    build: .
-    image: unblockd
+    <<: *unblockd
     ports:
       - "127.0.0.1:8787:8787"   # this machine only unless UNBLOCKD_TOKEN is set
-    volumes:
-      - ${PROJECTS_DIR:-./example}:/projects
-      # code mounted from this folder: UI edits show on browser reload,
-      # Python edits on `docker compose restart`. Rebuild only for requirements.txt.
-      - ./static:/app/static:ro
-      - ./unblockd:/app/unblockd:ro
+  unblockd-mcp:   # one MCP server for every project's Claude Code session
+    <<: *unblockd
+    command: python -m unblockd.mcp_server --http
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # enables the chat; put it in .env
-      UNBLOCKD_TOKEN: ${UNBLOCKD_TOKEN:-}   # optional shared token for the API (see README)
-      UNBLOCKD_MODEL: ${UNBLOCKD_MODEL:-claude-sonnet-5-5}
-      UNBLOCKD_WEBHOOK: ${UNBLOCKD_WEBHOOK:-}   # optional push notifications (see README)
-      UNBLOCKD_WEBHOOK_FORMAT: ${UNBLOCKD_WEBHOOK_FORMAT:-json}
-      UNBLOCKD_PUBLIC_URL: ${UNBLOCKD_PUBLIC_URL:-}
-    restart: unless-stopped
+      <<: *env
+      HOST: 0.0.0.0   # inside the container; the port below is published on this machine only
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}   # extra Host values, e.g. mypc:* (default: localhost / 127.0.0.1 any port)
+    ports:
+      - "127.0.0.1:8788:8788"

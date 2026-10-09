@@ -74,7 +74,7 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .fcount{background:var(--jade);color:var(--surface);border-radius:99px;min-width:18px;height:18px;line-height:18px;font-size:.74rem;text-align:center;padding:0 5px}
 .fpanel summary:has(.fcount:not([hidden])){border-width:2px;font-weight:700}
 .fbody{position:absolute;z-index:6;top:calc(100% + 8px);left:0;width:min(560px,calc(100vw - 32px));display:grid;gap:10px;background:var(--surface);border:1px solid var(--ink);border-radius:8px;padding:12px 14px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
-.fbody .seg::before{content:attr(data-l);flex:0 0 64px;font-size:.78rem;font-weight:700;color:var(--muted)}
+.fbody .seg::before{content:attr(data-l);flex:0 0 74px;font-size:.78rem;font-weight:700;color:var(--muted)}
 .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--jade);background:var(--jade-soft);color:var(--jade);border-radius:99px;padding:2px 6px 2px 10px;font-size:.82rem;font-weight:600;cursor:pointer}
 .pill::after{content:'×';font-size:1rem;line-height:1}
 .pill:hover{background:var(--jade);color:var(--surface)}
@@ -313,6 +313,7 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 
 form.edit{display:grid;gap:10px;grid-template-columns:1fr 1fr}
 form.edit .full{grid-column:1/-1}
+.cchip{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:99px;padding:0 8px;font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;line-height:1.5} .cchip:hover{border-color:var(--jade);color:var(--jade)} .cchip.der{border-style:dashed;font-weight:400}
 .pick{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:5px} .pcs{display:contents}
 .pc{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:1px 3px 1px 9px;font-size:.82rem;font-weight:600}
 .pc button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0 4px} .pc button:hover{color:var(--cinnabar)}
@@ -442,6 +443,58 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
 }
+/* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
+.mapstage{position:relative;overflow-x:auto;background:var(--sunk);border-radius:8px}
+.mapin{position:relative;transition:margin-left .18s ease-out}
+#mapSvg{position:absolute;left:0;top:0;overflow:visible}
+.eg{transition:opacity .18s ease-out}
+.eg{--m:url(#mAh)} .eg.x{--m:url(#mAhX)} .eg:hover,.eg.s{--m:url(#mAhS)} .eg.x:hover,.eg.x.s{--m:url(#mAhX)}
+.eg .ev{fill:none;stroke:var(--muted);stroke-width:1.3;marker-end:var(--m);pointer-events:none} .eg.both .ev{marker-start:var(--m)}
+.eg .eh{fill:none;stroke:transparent;stroke-width:14;pointer-events:stroke}
+.eg.x .ev{stroke:var(--cinnabar);stroke-dasharray:5 4}
+.eg:hover .ev,.eg.s .ev{stroke:var(--ink);stroke-width:2}
+.eg.x:hover .ev,.eg.x.s .ev{stroke:var(--cinnabar)}
+.eg.fade{opacity:.1} .eg.fade:hover{opacity:1}
+#mAh path{fill:var(--muted)} #mAhS path{fill:var(--ink)} #mAhX path{fill:var(--cinnabar)}
+.mc{position:absolute;width:184px;height:76px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:6px 12px;text-align:left;cursor:pointer;min-width:0;
+  border:1px solid var(--line);border-radius:var(--r);background:color-mix(in srgb,var(--surface),var(--slate) calc(var(--h,0)*24%));transition:opacity .18s ease-out}
+.mc:hover{border-color:var(--ink)}
+.mc.doing{outline:2px solid var(--amber);outline-offset:-2px}
+.mc.on{border-color:var(--ink);box-shadow:0 0 0 2px var(--ink)}
+.mc.fade{opacity:.4} .mc.fade:hover{opacity:1}
+.mc .t{font:700 .92rem var(--display);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:12px}
+.mc .k{font:.72rem var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc .n{display:flex;flex-wrap:wrap;gap:0 9px;font-size:.74rem;font-weight:700;font-variant-numeric:tabular-nums;margin-top:3px}
+.mc .c-doing{color:var(--amber)} .mc .c-todo{color:var(--muted)} .mc .c-pending{color:var(--slate)} .mc .c-review{color:var(--plum)}
+.mc .pd{position:absolute;top:9px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--cinnabar)}
+.maptip{position:absolute;z-index:5;max-width:320px;background:var(--ink);color:var(--paper);border-radius:6px;padding:6px 10px;font-size:.82rem;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.25)} .maptip code{color:inherit;background:none;padding:0}
+.mapmsg{background:var(--sunk);border-radius:8px;padding:18px 20px;max-width:640px} .mapmsg p{margin:0 0 8px} .mapmsg ol{margin:0;padding-left:20px;display:grid;gap:6px}
+.mnote{margin:0 0 10px;padding:6px 12px;border-radius:8px;background:var(--surface);border:1px solid var(--line);font-size:.88rem}
+.mlist{display:none;list-style:none;margin:0;padding:0;gap:14px}
+.mcl .idlink,.mcon .idlink{text-align:left;justify-self:start}
+.mdir{margin:10px 0 4px;font-size:.78rem;color:var(--muted)}
+.mcl li{display:block} .ctr{font-size:.84rem;color:var(--muted);overflow-wrap:anywhere} .ctr.none{color:var(--cinnabar);font-style:italic}
+.mwhy{margin:0 0 10px;padding-left:18px;color:var(--cinnabar);font-weight:600;font-size:.88rem}
+/* editing the architecture from the Map (AGENTS.md, Map view): forms in the side panel, controls on each connection line */
+.aform{display:grid;gap:10px;margin:8px 0} .aform label,.aform .lbl{display:grid;gap:4px;font-size:.85rem;font-weight:600}
+.aform input,.aform textarea{width:100%;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:7px 9px;font-weight:400}
+.aform textarea{resize:vertical;min-height:4.2em} .aform textarea.mono,.aform input.mono{font-family:var(--mono);font-size:.84rem}
+.aform .pick .pq{flex:1 1 140px;width:auto}
+.keyrow{display:flex;align-items:center;gap:4px;font:.8rem var(--mono);color:var(--muted);min-width:0} .keyrow span{flex:none} .keyrow input{flex:1 1 auto;font-family:var(--mono)}
+.arow{display:flex;flex-wrap:wrap;gap:8px}
+.hrow{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.crow{display:flex;align-items:baseline;justify-content:space-between;gap:6px} .ctl{display:inline-flex;gap:0;flex:none}
+.ib{display:inline-grid;place-items:center;width:26px;height:26px;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer;font-size:1.1rem;line-height:1;padding:0} .ib:hover,.ib:focus-visible{background:var(--sunk);color:var(--ink)} .ib[data-crm]:hover{color:var(--cinnabar)}
+.cedit{display:grid;gap:4px;margin-top:2px} .cedit input{width:100%;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:5px 8px;font-size:.88rem}
+.cwarn{margin:0;font-size:.84rem;font-weight:600;color:var(--amber)}
+.adel{border:1px solid var(--cinnabar);border-radius:8px;padding:10px 12px;margin:10px 0;display:grid;gap:8px} .adel p{margin:0}
+.mapmsg .btn{margin-bottom:4px}
+@media (max-width:700px){
+  .mapstage{display:none} .mlist{display:grid}
+  .mlist .mc{position:relative;width:100%;height:auto;min-height:64px}
+  .mcon{list-style:none;margin:6px 0 0;padding:0 0 0 10px;border-left:2px solid var(--line);display:grid;gap:6px;font-size:.88rem}
+  .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
+}
 /* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
 .sl{position:relative}
 .sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
@@ -451,7 +504,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .eg,.mc,.mapin{transition:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -469,7 +522,8 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Search (/). Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
     <details class="fpanel" id="fpanel"><summary class="btn ghost">Filters <b class="fcount" id="fcount" hidden></b></summary>
       <div class="fbody" id="fbody">
-        <div class="seg" id="pillarSeg" data-l="Pillar"></div>
+        <div class="seg" id="pillarSeg" data-l="Pillar" title="Pillar: the kind of work (one per ticket: prefix, colour, which agent)"></div>
+        <div class="seg" id="compSeg" data-l="Component" title="Component: the parts of the system it changes (can be several)" hidden></div>
         <div class="seg" id="ownerSeg" data-l="Owner"></div>
         <div class="seg" id="prioSeg" data-l="Priority"></div>
         <div class="seg" id="agentSeg" data-l="Agent"></div>
@@ -497,6 +551,18 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <span><i class="sw brd" style="border:2px solid;border-radius:3px"></i>Board-wide (every ticket reads it)</span>
       <span class="hint">Dashed lines: doc links to doc. Board-wide docs are every ticket's; their lines show on hover.</span></div>
     <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs they will read</h2><ol id="dD"></ol></div></div></div>
+  </section>
+  <section class="mapwrap" id="mapWrap" hidden aria-label="Component map">
+    <div class="dprob" id="mProb" role="group" aria-label="Problems"></div>
+    <div class="dtools" id="mTools"><button type="button" class="btn sm" data-anew title="Add a component (a)">+ Component</button><button type="button" class="btn ghost sm" data-mrefresh>Refresh</button>
+      <span><i class="sw" style="border:2px solid var(--amber);border-radius:3px"></i>Being worked on</span>
+      <span><i class="sw" style="background:var(--cinnabar);border-radius:50%"></i>Has a problem</span>
+      <span><i class="sw" style="border-top:2px dashed var(--cinnabar);height:0;width:14px"></i>Edge with no contract</span>
+      <span class="hint">An arrow goes from the note that lists a link to the note it links to. Darker cards have more open tickets. Click a component to see its neighbours; hover an edge to read what crosses it.</span></div>
+    <p class="mnote" id="mNote" hidden></p>
+    <div class="mapmsg" id="mapMsg" hidden></div>
+    <div class="mapstage" id="mapStage"><div class="mapin" id="mapIn"><svg id="mapSvg" aria-hidden="true"></svg><div id="mapCards"></div><div class="maptip" id="mapTip" hidden role="tooltip"></div></div></div>
+    <ol class="mlist" id="mapList"></ol>
   </section>
   <section class="graphwrap" id="graphWrap" hidden aria-label="Blocking graph">
     <div class="gtools">
@@ -550,6 +616,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt><kbd>/</kbd></dt><dd>Search</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
+    <dt><kbd>m</kbd></dt><dd>Switch between Board and Map (how components connect, and where the work is)</dd>
     <dt><kbd>n</kbd></dt><dd>New ticket</dd>
     <dt><kbd>B</kbd></dt><dd>Switch board (<kbd>Shift</kbd> + <kbd>b</kbd>), then arrows and Enter</dd>
     <dt><kbd>i</kbd></dt><dd>Needs you: questions and reviews, on every board</dd>
@@ -571,6 +638,13 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt>Double-click</dt><dd>Open the ticket</dd>
     <dt><kbd>Shift</kbd> + drag</dt><dd>From a blocker onto the ticket it blocks, to link them</dd>
     <dt>Click a link</dt><dd>Select it, then remove it</dd>
+  </dl>
+  <h3>Map</h3>
+  <dl>
+    <dt>Click a component</dt><dd>Show it and its neighbours, and open its panel</dd>
+    <dt>Hover an edge</dt><dd>Read the contract: what crosses it</dd>
+    <dt><kbd>a</kbd></dt><dd>Add a component</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Leave the focus</dd>
   </dl>
   <p style="margin:14px 0 0"><button type="button" class="btn ghost" data-kbclose>Close</button></p>
 </div>
@@ -618,9 +692,13 @@ let STALE=7; // days; from the config's stale_days
 const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
 const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
-const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','parent','agent'];
-const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
+const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','parent','agent'];
+const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
+const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
+const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
+const COMPS=()=>MV.data?.components||[], ctitle=k=>COMPS().find(c=>c.key===k)?.title||k;
+const tcomps=t=>[...new Set([...(t.components||[]),...(MV.data?.ticket_map?.[t.id]||[])])]; // a ticket's components: explicit first, then those derived from its touches (GET /architecture ticket_map); explicit alone until that arrives
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','review','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
 const setTab=k=>{TAB=k;try{sessionStorage.setItem('unblockd.tab',k)}catch{}renderBoard();};
@@ -635,26 +713,35 @@ function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, error
 const flash=new Map(); // ticket id -> when it became ready, for the board's one-time highlight
 // Ticket picker (blocked_by in the edit form, Parent in the bulk bar): only tickets on this board can be chosen, so no free-text id is ever submitted.
 // multi: chips (.pc) are the value, read with pickIds(). single: choosing calls bulk('parent', id|'-') and keeps no chips.
-const pickChip=id=>`<span class="pc" data-id="${esc(id)}">${esc(id)}<button type="button" data-pkrm aria-label="Remove ${esc(id)}">×</button></span>`;
+const pickChip=(id,l=id)=>`<span class="pc" data-id="${esc(id)}">${esc(l)}<button type="button" data-pkrm aria-label="Remove ${esc(l)}">×</button></span>`;
 const pickIds=id=>[...$(id).querySelectorAll('.pc')].map(c=>c.dataset.id);
-const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''}><span class="pcs">${sel.filter(x=>BY.has(x)).map(pickChip).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.ph||'Search id or title…'}" aria-label="${o.ph?'Parent':'Blocked by'}: search tickets"><ul class="pl" hidden></ul></div>`;
+// o.comp: the same picker over the architecture's components (chip = title, value = key) for a ticket's `components`
+const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''} ${o.comp?'data-comp-pick="1"':''} ${o.one?'data-one="1"':''} ${o.pdraft?`data-pdraft="${esc(o.pdraft)}"`:''}><span class="pcs">${o.comp?sel.filter(k=>COMPS().some(c=>c.key===k)).map(k=>pickChip(k,ctitle(k))).join(''):sel.filter(x=>BY.has(x)).map(x=>pickChip(x)).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.comp?'Search components…':o.ph||'Search id or title…'}" aria-label="${o.label||(o.comp?'Components: search':(o.ph?'Parent':'Blocked by')+': search tickets')}"><ul class="pl" hidden></ul></div>`;
 function pickList(box){
-  const q=box.querySelector('.pq').value.trim().toLowerCase(),have=new Set([box.dataset.skip,...[...box.querySelectorAll('.pc')].map(c=>c.dataset.id)]);
+  const q=box.querySelector('.pq').value.trim().toLowerCase(),have=new Set([...box.dataset.skip.split(','),...[...box.querySelectorAll('.pc')].map(c=>c.dataset.id)]);
+  const ul=box.querySelector('.pl');
+  if(box.dataset.compPick){ // components: by title + key, no free text
+    const m=COMPS().filter(c=>!have.has(c.key)&&(c.title+' '+c.key).toLowerCase().includes(q));
+    ul.innerHTML=m.map(c=>`<li data-pk="${esc(c.key)}"><b>${esc(c.title)}</b>${c.key!==c.title?esc(c.key):''}</li>`).join('')||'<li class="none">No matching component</li>';
+    ul.hidden=false; ul.querySelector('[data-pk]')?.classList.add('on'); return;
+  }
   const m=T.filter(t=>!have.has(t.id)&&(t.id+' '+t.title).toLowerCase().includes(q)).sort((a,b)=>(a.status==='done')-(b.status==='done')||a.id.localeCompare(b.id,undefined,{numeric:true})).slice(0,8);
-  const ul=box.querySelector('.pl'),none=box.dataset.none&&!q?'<li data-pk="-"><b>None</b>remove the parent</li>':'';
+  const none=box.dataset.none&&!q?'<li data-pk="-"><b>None</b>remove the parent</li>':'';
   ul.innerHTML=none+m.map(t=>`<li data-pk="${esc(t.id)}"${t.status==='done'?' class="dn"':''}><b>${esc(t.id)}</b>${esc(t.title)}</li>`).join('')||(none?'':'<li class="none">No matching ticket</li>');
   ul.hidden=false; ul.querySelector('[data-pk]')?.classList.add('on');
 }
 function pickAdd(box,id){
   const q=box.querySelector('.pq'); q.value='';
   if(box.dataset.single){box.querySelector('.pl').hidden=true;bulk('parent',id);return;}
-  box.querySelector('.pcs').insertAdjacentHTML('beforeend',pickChip(id)); pickList(box); q.focus();
+  if(box.dataset.one) box.querySelectorAll('.pc').forEach(c=>c.remove()); // a picker for one value: choosing replaces
+  box.querySelector('.pcs').insertAdjacentHTML('beforeend',box.dataset.compPick?pickChip(id,ctitle(id)):pickChip(id)); pickList(box); q.focus();
+  if(box.dataset.pdraft) DRAFTS[box.dataset.pdraft]=id;
 }
 document.addEventListener('input',e=>{const b=e.target.closest?.('.pick');if(b)pickList(b);});
 document.addEventListener('focusin',e=>{const b=e.target.closest?.('.pick');if(b&&e.target.matches('.pq'))pickList(b);});
 document.addEventListener('focusout',e=>{const b=e.target.closest?.('.pick');if(b)b.querySelector('.pl').hidden=true;});
 document.addEventListener('mousedown',e=>{const li=e.target.closest?.('.pl [data-pk]');if(li){e.preventDefault();pickAdd(li.closest('.pick'),li.dataset.pk);}}); // mousedown: before focusout hides the list
-document.addEventListener('click',e=>{const x=e.target.closest?.('[data-pkrm]');if(x)x.closest('.pc').remove();});
+document.addEventListener('click',e=>{const x=e.target.closest?.('[data-pkrm]');if(x){const b=x.closest('.pick');x.closest('.pc').remove();if(b?.dataset.pdraft)DRAFTS[b.dataset.pdraft]='';}});
 document.addEventListener('keydown',e=>{
   const b=e.target.closest?.('.pick');if(!b||!e.target.matches('.pq'))return;
   const ul=b.querySelector('.pl'),on=ul.querySelector('.on'),all=[...ul.querySelectorAll('[data-pk]')];
@@ -692,7 +779,7 @@ async function load(force){
   const open=T.filter(t=>t.status!=='done').length;
   $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
   paint=()=>{ paint=null;
-    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(!$('chat').hidden&&!CH.busy) renderChat();
+    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(state.view==='map'||CFG.architecture)loadMap(); if(!$('chat').hidden&&!CH.busy) renderChat();
     if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
   };
   if(!force&&menuBusy()) return; // a re-render would destroy the open menu: keep the data, paint when it closes
@@ -748,7 +835,9 @@ function renderBar(){
   if(CFG.agents?.length) chips($('agentSeg'),[['ALL','Any agent'],...CFG.agents.map(a=>[esc(a.name),esc(a.name)]),['NONE','Unrouted']],state.agent,'agent');
   const ps=T.filter(t=>t.children?.length).map(t=>t.id); if(state.parent!=='ALL'&&!ps.includes(state.parent)) state.parent='ALL'; // the parent is gone: don't hide everything
   $('parentSeg').hidden=!ps.length; if(ps.length) chips($('parentSeg'),[['ALL','Any'],...ps.map(id=>[esc(id),esc(id)])],state.parent,'parent');
-  chips($('groupSeg'),GROUPS.map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
+  const cs=COMPS(); if(state.comp!=='ALL'&&(MV.data||!CFG.architecture)&&!cs.some(c=>c.key===state.comp)) state.comp='ALL'; // the component is gone: do not hide everything
+  $('compSeg').hidden=!cs.length; if(cs.length) chips($('compSeg'),[['ALL','Any'],...cs.map(c=>[esc(c.key),esc(c.title)])],state.comp,'comp');
+  chips($('groupSeg'),GROUPS.filter(g=>g!=='component'||(CFG.architecture&&(COMPS().length||!MV.data))).map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
   $('depSeg').hidden=state.view!=='graph';
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
@@ -767,6 +856,7 @@ function matches(t){
   if(dep==='BLOCKED'&&!isBlocked(t)) return false;
   if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
+  if(state.comp!=='ALL' && !tcomps(t).includes(state.comp)) return false;
   if(state.parent!=='ALL' && t.parent!==state.parent) return false;
   if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
   if(state.prio.length && !state.prio.includes(t.priority)) return false;
@@ -802,6 +892,7 @@ function activeFilters(){
   const ps=[];
   if(state.pillar!=='ALL') ps.push([`data-pillar="ALL"`,state.pillar==='OTHER'?'Other':pname(state.pillar)]);
   if(state.owner!=='ALL') ps.push([`data-owner="ALL"`,state.owner]);
+  if(state.comp!=='ALL') ps.push([`data-comp="ALL"`,'Component: '+ctitle(state.comp)]);
   if(state.parent!=='ALL') ps.push([`data-parent="ALL"`,'Parent: '+state.parent]);
   if(state.agent!=='ALL') ps.push([`data-agent="ALL"`,state.agent==='NONE'?'Unrouted':state.agent]);
   for(const p of state.prio) ps.push([`data-prio="${p}"`,p]);
@@ -813,17 +904,17 @@ function renderPills(){
   $('pills').innerHTML=ps.map(([a,l])=>`<button type="button" class="pill" ${a} aria-label="Remove filter ${esc(l)}">${esc(l)}</button>`).join('');
   $('fcount').hidden=!ps.length;$('fcount').textContent=ps.length;
 }
-const VIEWK=['board','graph','docs'], DEPS=['ALL','FREE','BLOCKED'];
+const VIEWK=['board','graph','docs','map'], DEPS=['ALL','FREE','BLOCKED'];
 function urlWrite(){ // the view lives in the address bar (non-default values only): a link reproduces it. replaceState, so no history spam; ?board= and #ID stay
   const g=state.view==='graph',u=new URLSearchParams(location.search),sk=g?'showGraph':'showBoard';
-  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,
+  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,comp:state.comp==='ALL'?'':state.comp,
     priority:state.prio.join(','),show:state[sk]===(g?'dim':'only')?'':state[sk],group:state.group==='none'?'':state.group,dep:g&&state.dep!=='ALL'?state.dep:''};
   for(const k in v)v[k]?u.set(k,v[k]):u.delete(k);
   const qs=u+'',now=location.search.slice(1);
   if(qs!==now.replace(/\+/g,'%20'))history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
 }
 function urlRead(){ // after applyConfig. Any of our params present = the link defines the whole view (the rest back to defaults); bad values are ignored
-  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','agent','parent','priority','show','group','dep'];
+  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','agent','parent','comp','priority','show','group','dep'];
   if(!K.some(k=>u.has(k)))return;
   const g=k=>u.get(k)||'';
   state.view=pickOf(g('view'),VIEWK,'board');
@@ -831,6 +922,7 @@ function urlRead(){ // after applyConfig. Any of our params present = the link d
   state.owner=pickOf(g('owner'),CFG.owners.map(o=>o.name),'ALL');
   state.agent=pickOf(g('agent'),['NONE',...CFG.agents.map(a=>a.name)],'ALL');
   state.parent=/^[A-Za-z0-9_-]+$/.test(g('parent'))?g('parent'):'ALL';
+  state.comp=/^[a-z0-9-]+$/.test(g('comp'))?g('comp'):'ALL';
   state.prio=g('priority').split(',').filter(p=>PRIOS.includes(p));
   state.group=pickOf(g('group'),GROUPS,'none');
   state.dep=pickOf(g('dep'),DEPS,'ALL');
@@ -865,13 +957,13 @@ function card(t){
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
   const sel=(f,l,o)=>`<select data-bulk="${f}" aria-label="${esc(l)}"><option value="">${esc(l)}…</option>${o.map(([v,x])=>`<option value="${esc(v)}">${esc(x)}</option>`).join('')}</select>`;
-  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',PLAB.map(([v,l])=>[v||'-',l]))}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
+  el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',PLAB.map(([v,l])=>[v||'-',l]))}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}${COMPS().length?sel('components','Component',COMPS().map(c=>[c.key,c.title])):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
   document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
 }
 async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
   const ids=[...SEL].filter(id=>BY.has(id)),was=new Map(ids.map(id=>[id,BY.get(id)[field]])),ok=[],bad=[];
   for(const id of ids){
-    const v=field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:val==='-'?null:val;
+    const v=field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:field==='components'?[...new Set([...BY.get(id).components||[],val])]:val==='-'?null:val; // tags and components are ADDED
     try{await api('PATCH','/'+id,{[field]:v});ok.push(id);}catch(er){bad.push(`${id}: ${er.message}`);}
   }
   await load(true); renderBulk();
@@ -1103,15 +1195,15 @@ function emptyState(){
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
 }
 function clearFilters(){
-  Object.assign(state,{pillar:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[]});
-  for(const k of['pillar','owner','parent'])store.set(k,'ALL');
+  Object.assign(state,{pillar:'ALL',comp:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[]});
+  for(const k of['pillar','comp','owner','parent'])store.set(k,'ALL');
   if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
-function lanes(ts){ // Group by: a small heading per pillar / parent / agent inside the column; cards keep their order within a lane, no key = last
-  const g=state.group; if(g==='none') return ts.map(card).join('');
-  const key=t=>(g==='pillar'?t.pillar:g==='parent'?t.parent:t.agent)||'',m=new Map();
-  for(const t of ts)(m.get(key(t))||m.set(key(t),[]).get(key(t))).push(t);
-  const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
+function lanes(ts){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
+  const g=state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group; if(g==='none') return ts.map(card).join('');
+  const keys=t=>g==='component'?(tcomps(t).length?tcomps(t):['']):[(g==='pillar'?t.pillar:g==='parent'?t.parent:t.agent)||''],m=new Map();
+  for(const t of ts)for(const k of keys(t))(m.get(k)||m.set(k,[]).get(k)).push(t);
+  const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),component:'No component',parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='component'?ctitle(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
   return [...m].sort((a,b)=>!a[0]-!b[0]).map(([k,a])=>`<h3 class="lane" title="${esc(name(k))}"><span>${esc(name(k))}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`).join('');
 }
 const cardRects=()=>new Map([...document.querySelectorAll('#board .card[data-open]')].map(c=>[c.dataset.open,c.getBoundingClientRect()]));
@@ -1152,7 +1244,7 @@ function renderBoard(){
 // ---------- drawer ----------
 let lastFocus=null;
 function openDrawer(html,keepScroll){const d=$('drawer'),np=!$('npanel').hidden;if(np)closeNeeds(true);if(d.hidden)lastFocus=np?$('needsBadge'):document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
-function closeDrawer(){SPLIT=null;$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
+function closeDrawer(){if(MV.pan&&openId==null)mapClear(true);SPLIT=null;$('drawer').hidden=true;$('scrim').hidden=true;openId=null;editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
   return '<ul class="links">'+ids.map(id=>{const t=BY.get(id);if(!t)return `<li><span class="none">${esc(id)} (no such ticket)</span></li>`;
@@ -1211,10 +1303,12 @@ function showTicket(id,refresh){
   const why=s==='pending'?(t.proposed_by?`Proposal by ${t.proposed_by}`:t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
+    ...(tcomps(t).length?['<span>Components:</span>',...tcomps(t).map(k=>`<button type="button" class="cchip${(t.components||[]).includes(k)?'':' der'}" data-mapcomp="${esc(k)}" title="${(t.components||[]).includes(k)?'Open on the map':'Derived from this ticket\'s touches. Open on the map'}">${esc(ctitle(k))}</button>`)]:[]),
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
     t.waiting_on&&!why?`<span>${t.asked_by?'Question from '+esc(t.asked_by):'Parked: '+esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
-  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button><button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
+  if(!MV.data&&!MV.tried)loadMap().then(()=>{if(openId===t.id&&!editing&&!$('drawer').hidden)showTicket(t.id,true);}); // so "Show on map" knows whether this ticket has a component
+  openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button>${!MV.data||MV.data.ticket_map[t.id]?'<button type="button" data-onmap>Show on map</button>':''}<button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
     <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
     <div class="meta dmeta">${dm.join('')}</div>
@@ -1257,7 +1351,7 @@ function editForm(t){
     <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
     <label class="${R('owner').trim()}" for="f-owner">Owner${S('owner')}<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
     <label class="full${R('priority')}" for="f-priority">Priority${S('priority')}<select id="f-priority">${opt(PLAB,t.priority)}</select></label>
-    <label class="${R('pillar').trim()}" for="f-pillar">${esc(CFG.pillar_label)}${S('pillar')}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
+    <label class="${R('pillar').trim()}" for="f-pillar" title="The kind of work: one per ticket (prefix, colour, which agent)">${esc(CFG.pillar_label)}${S('pillar')}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
     <label class="full" for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
     <label class="full${R('done_when')}" for="f-done">Done when${S('done_when')} <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
@@ -1266,6 +1360,7 @@ function editForm(t){
     <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
     ${CFG.schema?.tags?.length?`<div class="full tsug" aria-label="Tags this board allows">${CFG.schema.tags.map(x=>`<button type="button" data-tagadd="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
     <div class="full lbl"><span class="lt">Blocked by <span class="hint">search by id or title</span></span>${pickHtml('f-blocked',t.blocked_by,{skip:t.id})}</div>
+    ${COMPS().length?`<div class="full lbl"><span class="lt">Components <span class="hint">the parts of the system it changes; can be several</span></span>${pickHtml('f-comp',t.components||[],{comp:1})}</div>`:''}
     <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="1000" value="${esc(t.waiting_on)}"></label>
     <label class="full${R('body')}" for="f-body">Details${S('body')} <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body||(SC?.body_template||''))}</textarea></label>
     <div class="full formrow"><button class="btn" type="submit">${isNew?'Create ticket':'Save changes'}</button>${isNew?'':'<button class="btn danger" type="button" data-delete>Delete</button>'}<span class="msg" id="fMsg" role="status"></span></div>
@@ -1280,7 +1375,7 @@ async function submitForm(f){
   const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
-    blocked_by:pickIds('f-blocked'),waiting_on:$('f-waiting').value,body:$('f-body').value,
+    blocked_by:pickIds('f-blocked'),...($('f-comp')?{components:pickIds('f-comp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
     tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean),
     touches:$('f-touches').value.split(',').map(s=>s.trim()).filter(Boolean),docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
@@ -1310,7 +1405,7 @@ document.addEventListener('click',async e=>{
   closeMenus(e.target);
   if(b=g('[data-aprange]')){AP.days=+b.dataset.aprange;store.set('agentDays',AP.days);loadAgents();return;}
   if(b=g('[data-pref]')){const[k,v]=b.dataset.pref.split(':');setPref(k,v);return;}
-  for(const k of['pillar','dep','owner','agent','parent','group']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
+  for(const k of['pillar','comp','dep','owner','agent','parent','group']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
@@ -1345,6 +1440,23 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
   if(g('[data-drefresh]')){loadDocs();return;}
+  if(g('[data-anew]')){mapNew();return;}
+  if(g('[data-aedit]')){const c=MV.data.components.find(x=>x.key===MV.foc);MV.ui=ui0();MV.ui.mode='edit';DRAFTS[`ae:${c.key}:title`]=c.title;DRAFTS[`ae:${c.key}:summary`]=c.summary;DRAFTS[`ae:${c.key}:paths`]=c.paths.join('\n');openMapPanel(true);$('drawer').querySelector('[data-draft$=":title"]')?.focus();return;}
+  if(b=g('[data-acancel]')){mapUiCancel(b.dataset.acancel);return;}
+  if(g('[data-adel]')){closeMenus();MV.ui=ui0();MV.ui.del=true;openMapPanel(true);$('drawer').querySelector('[data-acancel=del]')?.focus();return;}
+  if(g('[data-adelgo]')){archDeleteComp();return;}
+  if(g('[data-aadd]')){MV.ui.add=true;MV.ui.err='';openMapPanel(true);$('c-to')?.querySelector('.pq').focus();return;}
+  if(b=g('[data-cedit]')){const id=b.dataset.cedit,e=MV.data.edges.find(x=>x.from+'>'+x.to===id);MV.ui.ce=id;MV.ui.noc=null;MV.ui.err='';DRAFTS['ce:'+id]=e?.text||'';openMapPanel(true);const i=$('drawer').querySelector('.cedit input');i?.focus();i?.select();return;}
+  if(b=g('[data-crm]')){archRemoveEdge(b.dataset.crm);return;}
+  if(b=g('[data-mc]')){mapFocus(b.dataset.mc);return;}
+  if(b=g('[data-mfocus]')){mapFocus(b.dataset.mfocus);return;}
+  if(b=g('[data-mprob]')){MV.f=MV.f===b.dataset.mprob?null:b.dataset.mprob;MV.foc=MV.multi=null;if(MV.pan)closeDrawer();markMap();return;}
+  if(g('[data-mrefresh]')){loadMap();return;}
+  if(g('[data-mclear]')){mapClear();return;}
+  if(g('[data-onmap]')){const id=openId;closeDrawer();showOnMap(id);return;}
+  if(b=g('[data-mapcomp]')){const k=b.dataset.mapcomp;closeDrawer();showComp(k);return;}
+  if(b=g('[data-showboard]')){state.comp=b.dataset.showboard;store.set('comp',state.comp);setView('board');renderBar();return;}
+  if(state.view==='map'&&g('#mapWrap')&&!g('a,button,.eg,.mapmsg,#mProb,#mTools,#mNote')&&(MV.foc||MV.multi||MV.f)){mapClear();return;}
   if((e.shiftKey||e.ctrlKey||e.metaKey)&&(b=g('.card[data-open]'))){e.preventDefault();const id=b.dataset.open;SEL.has(id)?SEL.delete(id):SEL.add(id);renderBulk();renderBoard();return;}
   if(g('[data-bulkclear]')){SEL.clear();renderBulk();renderBoard();return;}
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
@@ -1386,8 +1498,17 @@ document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remem
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)&&e.target.matches?.('textarea[data-draft]')){ e.preventDefault(); e.target.form?.requestSubmit(); } }); // Enter is a newline in the long answer box
 document.addEventListener('input',e=>{ const k=e.target.dataset?.draft; if(k) DRAFTS[k]=e.target.value; if(e.target.matches?.('textarea[data-draft]')) growTa(e.target); if(e.target.closest?.('#splitForm')) SPLITD={text:$('sp-t').value,seq:$('sp-seq').checked}; });
 document.addEventListener('submit',e=>{ if(e.target.dataset.nform){e.preventDefault();submitNeeds(e.target);return;}
+  if(e.target.dataset.aform){e.preventDefault();archSubmit(e.target);return;}
   const h={splitForm:submitSplit,editForm:submitForm,boardForm:submitBoard}[e.target.id]; if(h){e.preventDefault();h(e.target);} });
 // p, then 0-3 or - : set the priority of the open ticket (else the focused card). p alone shows a hint for 1.5 s.
+// Map editing: Esc leaves a connection form (not the whole panel); typing in the new-component title derives the key until the key is edited by hand
+document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; const f=e.target.closest?.('[data-aform=cedit],[data-aform=conn]'); if(!f) return;
+  e.stopImmediatePropagation(); e.preventDefault(); mapUiCancel(f.dataset.aform); },true);
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches?.('textarea[data-oneline]')){ e.preventDefault(); e.target.form?.requestSubmit(); } }); // a contract is one line: Enter saves (a textarea so the placeholder example wraps)
+document.addEventListener('input',e=>{ const t=e.target; if(!t.dataset?.draft) return;
+  if(t.dataset.draft==='an:title'&&!DRAFTS['an:keyed']){ const kf=document.querySelector('[data-draft="an:key"]'); if(kf) kf.value=DRAFTS['an:key']=slug(t.value); }
+  else if(t.dataset.draft==='an:key') DRAFTS['an:keyed']=t.value?'1':'';
+  else if(/^(ac:.*:text|ce:)/.test(t.dataset.draft)&&MV.ui.noc){ MV.ui.noc=null; document.querySelectorAll('#drawer .cwarn').forEach(x=>x.remove()); } });
 const PK={el:null,id:null,t:0};
 function endP(){ clearTimeout(PK.t); PK.el?.remove(); PK.el=null; }
 function startP(){
@@ -1413,6 +1534,7 @@ document.addEventListener('keydown',e=>{
     else if(!$('npanel').hidden) closeNeeds();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
     else if(state.view==='docs'&&DV.f){DV.f=null;renderDocs();}
+    else if(state.view==='map'&&(MV.foc||MV.multi||MV.f)) mapClear();
     else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
     else if(cancelGraphGesture()){}
     else if(G.selEdge) {clearEdge();}
@@ -1426,10 +1548,12 @@ document.addEventListener('keydown',e=>{
   if(e.key==='p'){ e.preventDefault(); startP(); return; }
   if(e.key==='?'){ e.preventDefault(); toggleKb(); return; }
   if(e.key==='t'){ const o=['system','light','dark']; setPref('theme',o[(o.indexOf(SET.theme)+1)%3]); toast('Theme: '+{system:'System',light:'Light',dark:'Dark'}[SET.theme]); return; }
+  if(e.key==='a'&&state.view==='map'&&MV.data?.folder&&$('kb').hidden&&$('npanel').hidden){ e.preventDefault(); mapNew(); return; } // add a component (the panel may be open)
   if(!$('drawer').hidden||!$('kb').hidden) return;
   if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
   else if(e.key==='d') viewTo(state.view==='docs'?'board':'docs');
+  else if(e.key==='m') viewTo(state.view==='map'?'board':'map');
   else if(e.key==='i') $('npanel').hidden?openNeeds():closeNeeds();
   else if(e.key==='B'){ e.preventDefault(); if(!$('bsum').inert){ $('bpanel').open=true; } }
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
@@ -1877,10 +2001,300 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
  st.addEventListener('pointerleave',()=>{if(DV.hl){DV.hl=null;markDocs();}});
  st.addEventListener('focusin',e=>{const b=e.target.closest('.dn');if(b){DV.hl=b.dataset.n;markDocs();}});
  st.addEventListener('focusout',()=>{DV.hl=null;markDocs();});
- addEventListener('resize',()=>{if(state.view==='docs')markDocs();});}
+ addEventListener('resize',()=>{if(state.view==='docs')markDocs();if(state.view==='map'&&MV.data)renderMap();});}
+
+// ---------- map view: how the components connect, and where the open work is ----------
+// GET /architecture on entering, on Refresh and when the tickets JSON changed (paint), never on every poll. State (none persisted):
+// MV.foc = focused component key (its panel is the drawer), MV.multi = {id, keys} from a ticket's "Show on map" (blast radius),
+// MV.f = problem filter. Layout: deterministic layered (rank = longest path along the edges, back edges found by a DFS over sorted
+// keys are ignored; long edges get a dummy slot per row so they pass between cards; barycenter ordering; sorted keys break ties).
+// A mutual pair (A->B and B->A) is ONE link with two arrowheads and does not rank: only one-way edges make rows. Rows are centred in the stage
+// (minus the side panel when it is open: `mapCenter`, a margin transition).
+// Not a force layout on purpose: the same notes must always draw the same picture. Cards are real buttons over ONE <svg> of edges.
+function loadMap(){
+  return MV.p||(MV.p=(async()=>{MV.tried=true;MV.err='';const gen=MV.gen;
+    try{const r=await jf(API+'/architecture');if(gen===MV.gen)MV.data=r;}catch(e){MV.err=e.message||'Could not load';} // a write that finished meanwhile is newer than this answer
+    mapApply();
+  })().finally(()=>{MV.p=null;}));
+}
+function mapApply(){ // MV.data changed (fetched, or the answer of a write): repaint everything that reads it
+    const has=k=>MV.data?.components.some(c=>c.key===k);
+    if(MV.foc&&!has(MV.foc))MV.foc=null;
+    if(MV.multi&&!(MV.multi.keys=MV.multi.keys.filter(has)).length)MV.multi=null;
+    if(state.view==='map'){renderMap();if(MV.pan&&!openId&&!$('drawer').hidden)mapPanel(true);}
+    const sig=JSON.stringify([MV.data?.ticket_map,COMPS().map(c=>[c.key,c.title])]);
+    if(sig!==MV.sig){ // the board's Component filter / Group by / picker / drawer chips read it: repaint them, but never under an open menu
+      MV.sig=sig; const again=()=>{renderBar();render();if(openId&&!editing&&!$('drawer').hidden&&BY.has(openId))showTicket(openId,true);};
+      if(state.view==='map'||!T.length) return; // the Map just rendered itself
+      if(menuBusy()){const was=paint;paint=()=>{paint=null;was?.();again();};} else again();
+    }
+}
+const MW=184,MH=76,MGX=36,MGY=56,MPAD=20,DW=14; // card w/h, gaps, width of a dummy slot, padding
+function mapLayout(comps,links,avail){ // links [{from,to,both?}] -> {pos:{key:{x,y}}, W, H, paths:[d per link], order:[keys top-down]}
+  // Only one-way links rank (a mutual pair is not a hierarchy); a pair sits in the row of its partner, or is pulled next to it by the ordering.
+  const keys=comps.map(c=>c.key).sort(),out=Object.fromEntries(keys.map(k=>[k,[]])),fo=Object.fromEntries(keys.map(k=>[k,[]])),deg=Object.fromEntries(keys.map(k=>[k,0])),one=Object.fromEntries(keys.map(k=>[k,0])),mates=Object.fromEntries(keys.map(k=>[k,[]]));
+  links.forEach(e=>{deg[e.from]++;deg[e.to]++;if(e.both){mates[e.from].push(e.to);mates[e.to].push(e.from);}else{out[e.from].push(e.to);one[e.from]++;one[e.to]++;}});keys.forEach(k=>{out[k].sort();mates[k].sort();});
+  const st={},post=[],dfs=u=>{st[u]=1;for(const v of out[u]){if(st[v]===1)continue;fo[u].push(v);if(!st[v])dfs(v);}st[u]=2;post.push(u);}; // back edges (cycles) are left out
+  keys.forEach(k=>st[k]||dfs(k));
+  const rank=Object.fromEntries(keys.map(k=>[k,0])),inc=new Set(keys.flatMap(k=>fo[k]));
+  for(const u of post.reverse())for(const v of fo[u])rank[v]=Math.max(rank[v],rank[u]+1);
+  keys.forEach(k=>{if(!inc.has(k)&&fo[k].length)rank[k]=Math.min(...fo[k].map(v=>rank[v]))-1;}); // a source sits just above its first user
+  const set=new Set(keys.filter(k=>one[k]));
+  for(let n=keys.length;n--;)keys.forEach(k=>{const m=!set.has(k)&&mates[k].find(x=>set.has(x));if(m){rank[k]=rank[m];set.add(k);}}); // pair-only: next to its partner
+  const top=Math.max(-1,...keys.filter(k=>deg[k]).map(k=>rank[k]));keys.forEach(k=>{if(!deg[k])rank[k]=top+1;}); // no links at all: last row
+  const rows=Array.from({length:Math.max(...keys.map(k=>rank[k]))+1},()=>[]),up={},dn={},chains=[],fwd=[],side=[];
+  keys.forEach(k=>{rows[rank[k]].push(k);up[k]=[];dn[k]=[];});
+  links.forEach((e,i)=>{if(e.both&&rank[e.from]===rank[e.to]){side[i]=1;return;}
+    const a=rank[e.from]<rank[e.to],t=a?e.from:e.to,b=a?e.to:e.from,ch=[t];fwd[i]=a;
+    for(let r=rank[t]+1;r<rank[b];r++){const id=`~${i}.${r}`;ch.push(id);rank[id]=r;rows[r].push(id);up[id]=[];dn[id]=[];}
+    ch.push(b);chains[i]=ch;for(let j=0;j+1<ch.length;j++){dn[ch[j]].push(ch[j+1]);up[ch[j+1]].push(ch[j]);}});
+  rows.forEach(r=>r.sort());
+  const pos=()=>{const p={};rows.forEach(r=>r.forEach((id,i)=>p[id]=i));return p;};
+  const sweep=(order,nb)=>{for(const r of order){const p=pos(),b=id=>nb[id].length?nb[id].reduce((s,x)=>s+p[x],0)/nb[id].length:p[id];rows[r].sort((x,y)=>b(x)-b(y)||p[x]-p[y]);}};
+  const downR=[...rows.keys()].slice(1),upR=downR.map(r=>r-1).reverse();
+  for(let i=0;i<3;i++){sweep(downR,up);sweep(upR,dn);}
+  links.forEach((e,i)=>{if(!side[i])return;const r=rows[rank[e.from]],[a,b]=[e.from,e.to].sort((x,y)=>r.indexOf(x)-r.indexOf(y));r.splice(r.indexOf(b),1);r.splice(r.indexOf(a)+1,0,b);}); // a same-row pair touches
+  const pair=new Set(links.flatMap((e,i)=>side[i]?[e.from+'|'+e.to,e.to+'|'+e.from]:[])),wd=id=>id[0]==='~'?DW:MW,cx={};
+  const gap=(a,b)=>pair.has(a+'|'+b)?MGX+44:a[0]==='~'||b[0]==='~'?14:MGX;
+  const place=(r,want)=>{let x=0;r.forEach((id,i)=>{x=i?Math.max(want[id],x+gap(r[i-1],id)+(wd(r[i-1])+wd(id))/2):want[id];cx[id]=x;});
+    const d=r.reduce((s,id)=>s+want[id]-cx[id],0)/r.length;r.forEach(id=>cx[id]+=d);}; // in order, no overlap, as near to `want` as that allows
+  rows.forEach(r=>place(r,Object.fromEntries(r.map(id=>[id,0]))));
+  const sm=Object.fromEntries(keys.map(k=>[k,[]]));links.forEach((e,i)=>{if(side[i]){sm[e.from].push(e.to);sm[e.to].push(e.from);}});
+  const mean=(id,nb)=>{const a=nb[id].length?nb[id]:sm[id].length?sm[id]:[id];return a.reduce((s,x)=>s+cx[x],0)/a.length;}; // no up/down link: lean on the same-row partner
+  const pass=(r,nb)=>{const want=Object.fromEntries(rows[r].map(id=>[id,mean(id,nb)])),i0=Object.fromEntries(rows[r].map((id,i)=>[id,i]));
+    rows[r].sort((a,b)=>want[a]-want[b]||i0[a]-i0[b]);place(rows[r],want);}; // re-order by x now that x is known
+  for(let i=0;i<4;i++){downR.forEach(r=>pass(r,up));upR.forEach(r=>pass(r,dn));}
+  links.forEach((e,i)=>{if(!side[i])return;const r=rows[rank[e.from]],[a,b]=[e.from,e.to].sort((x,y)=>r.indexOf(x)-r.indexOf(y));r.splice(r.indexOf(b),1);r.splice(r.indexOf(a)+1,0,b);});
+  rows.forEach(r=>place(r,Object.fromEntries(r.map(id=>[id,mean(id,id[0]==='~'?dn:up)])))); // final spacing, pairs touching
+  const all=rows.flat(),lo=Math.min(...all.map(id=>cx[id])),span=Math.max(...all.map(id=>cx[id]))-lo,
+    s=span?Math.max(1,Math.min(1.5,(avail-2*MPAD-MW)/span)):1; // spread out when the screen has room, never more than 1.5x
+  all.forEach(id=>cx[id]=(cx[id]-lo)*s+MW/2+MPAD);
+  const yT=id=>MPAD+rank[id]*(MH+MGY),W=Math.max(...all.map(id=>cx[id]+wd(id)/2))+MPAD,H=MPAD*2+rows.length*MH+(rows.length-1)*MGY;
+  const ports=Object.fromEntries(keys.map(k=>[k,{t:[],b:[]}])),px={};
+  chains.forEach((ch,i)=>{ports[ch[0]].b.push([i,ch[1]]);ports[ch[ch.length-1]].t.push([i,ch[ch.length-2]]);});
+  for(const k of keys)for(const s of['t','b']){const a=ports[k][s].sort((p,q)=>cx[p[1]]-cx[q[1]]||p[0]-q[0]);a.forEach(([i],j)=>px[i+':'+k]=cx[k]-MW/2+MW*(j+1)/(a.length+1));}
+  const f=n=>Math.round(n*10)/10,paths=links.map((e,i)=>{
+    if(side[i]){const r=rows[rank[e.from]],[a,b]=[e.from,e.to].sort((x,y)=>cx[x]-cx[y]),y=yT(a)+MH/2;
+      return r.indexOf(b)-r.indexOf(a)===1?`M${f(cx[a]+MW/2)},${y}L${f(cx[b]-MW/2)},${y}`:`M${f(cx[a])},${y+MH/2}C${f(cx[a])},${y+MH/2+MGY*.8} ${f(cx[b])},${y+MH/2+MGY*.8} ${f(cx[b])},${y+MH/2}`;}
+    const ch=chains[i];let p=ch.flatMap((id,j)=>j===0?[[px[i+':'+id],yT(id)+MH]]:j===ch.length-1?[[px[i+':'+id],yT(id)]]:[[cx[id],yT(id)],[cx[id],yT(id)+MH]]); // a dummy is a straight drop beside the cards, so the curves bend in the gaps between rows
+    if(!fwd[i])p=p.reverse(); // a back edge is drawn from its lower end up, so the arrow still ends at `to`
+    return 'M'+p[0].join(',')+p.slice(1).map((q,j)=>{const m=(p[j][1]+q[1])/2;return `C${f(p[j][0])},${m} ${f(q[0])},${m} ${f(q[0])},${f(q[1])}`;}).join('');});
+  return {pos:Object.fromEntries(keys.map(k=>[k,{x:cx[k]-MW/2,y:yT(k)}])),W,H,paths,order:rows.flatMap(r=>r.filter(id=>id[0]!=='~')),rows:rows.length};
+}
+const MPROB=[['nocontract',['edge without a contract','edges without a contract'],'no_contract','bad','An edge whose Connections line says nothing after the link: nobody wrote down what crosses it.'],
+  ['dead',['dead path glob','dead path globs'],'dead_paths','bad','A paths glob in a note that matches no file in the repo.'],
+  ['broken',['broken link','broken links'],'broken_links','bad','A link under Connections that points at no component note.'],
+  ['cross',['ticket spans 2+ components','tickets span 2+ components'],'cross','','Open tickets that touch more than one component: their blast radius.']];
+const MCNT=[['doing','doing'],['todo','ready'],['pending','pending'],['review','review']];
+const mapBy=()=>new Map(MV.data.components.map(c=>[c.key,c]));
+function mapWhy(d){ // component key -> reasons it carries the problem dot
+  const w={},T=mapBy(),add=(k,t)=>(w[k]=w[k]||[]).push(t),ti=k=>T.get(k)?.title||k;
+  d.problems.no_contract.forEach(e=>{add(e.from,`No contract on the edge to ${ti(e.to)}`);add(e.to,`No contract on the edge from ${ti(e.from)}`);});
+  d.problems.dead_paths.forEach(x=>add(x.key,`Path matches no file: ${x.glob}`));
+  d.problems.broken_links.forEach(x=>add(x.from,`Broken link: ${x.target}`));
+  return w;
+}
+function mapCard(c,why,max,xy){
+  const n=MCNT.filter(([k])=>c.counts[k]).map(([k,l])=>`<span class="c-${k}">${c.counts[k]} ${l}</span>`).join(''),w=why[c.key];
+  return `<button type="button" class="mc${c.counts.doing?' doing':''}" data-mc="${esc(c.key)}" aria-pressed="false" style="${xy?`left:${xy.x}px;top:${xy.y}px;`:''}--h:${(c.tickets.length/max).toFixed(2)}"${w?` title="${esc(w.join('. '))}"`:''}><span class="t">${esc(c.title)}</span>${c.key.toLowerCase()!==c.title.toLowerCase()?`<span class="k">${esc(c.key)}</span>`:''}${n?`<span class="n">${n}</span>`:''}${w?'<i class="pd" aria-label="Has a problem"></i>':''}</button>`;
+}
+function mapConns(d,k){ // [{dir:'Out'|'In', key, title, text}] for one component
+  const T=mapBy();
+  return d.edges.flatMap(e=>e.from===k?[{dir:'Out',key:e.to,text:e.text}]:e.to===k?[{dir:'In',key:e.from,text:e.text}]:[]).map(x=>({...x,title:T.get(x.key).title}));
+}
+const PEN='<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 13.5l.7-3L11 2.7a1.4 1.4 0 0 1 2 2L5.2 12.8z"/></svg>';
+const errHtml=m=>esc(m).replace(/\b[A-Z][A-Z0-9]*-\d+[a-z]?\b/g,id=>BY.has(id)?`<button type="button" class="idlink" data-open="${id}">${id}</button>`:id); // ticket ids in a server refusal open the ticket
+const uerr=at=>MV.ui.err&&MV.ui.errAt===at?`<p class="msg err" role="alert">${errHtml(MV.ui.err)}</p>`:'';
+const dval=(k,v='')=>esc(DRAFTS[k]??v);
+const dropDrafts=pre=>Object.keys(DRAFTS).forEach(k=>{if(k.startsWith(pre))delete DRAFTS[k];});
+const mapConn=(x,k)=>{const from=x.dir==='Out'?k:x.key,to=x.dir==='Out'?x.key:k,id=from+'>'+to,ed=MV.ui.ce===id,nm=`${ctitle(from)} to ${ctitle(to)}`;
+  return `<li data-edge="${esc(id)}"><div class="crow"><button type="button" class="idlink" data-mfocus="${esc(x.key)}">${esc(x.title)}</button><span class="ctl"><button type="button" class="ib" data-cedit="${esc(id)}" title="Edit the contract" aria-label="Edit the contract: ${esc(nm)}">${PEN}</button><button type="button" class="ib" data-crm="${esc(id)}" title="Remove this connection" aria-label="Remove the connection: ${esc(nm)}">×</button></span></div>`
+    +(ed?`<form class="cedit" data-aform="cedit" data-from="${esc(from)}" data-to="${esc(to)}"><input data-draft="ce:${esc(id)}" maxlength="500" aria-label="Contract: ${esc(nm)}" placeholder="what crosses this edge" value="${dval('ce:'+id,x.text)}"><span class="hint">Enter saves, Esc cancels</span>${MV.ui.noc===id?'<p class="cwarn" role="alert">Save without a contract? Agents get no rule for this edge.</p>':''}${uerr('ce:'+id)}</form>`
+      :`<div class="ctr${x.text?'':' none'}">${x.text?inline(x.text):'no contract written'}</div>`)+'</li>';};
+function renderMap(){
+  const d=MV.data,msg=$('mapMsg'),steps=['Create <code>docs/arch/&lt;component&gt;.md</code>, one note per component. Its first heading is the name on the map.',
+    'Add a <code>## Connections</code> section with one line per edge: <code>- [other](other.md) — what crosses this edge</code>.',
+    'Set <code>"architecture": "docs/arch"</code> in <code>tickets/unblockd.json</code>.'],
+    how=skip=>`<p><b>The map shows how your app's components connect and where the open tickets are.</b> It is drawn from short markdown notes in your repo.</p><ol>${steps.filter((_,i)=>i!==skip).map(x=>`<li>${x}</li>`).join('')}</ol>`;
+  const say=h=>{msg.innerHTML=h;msg.hidden=!h;$('mapStage').hidden=$('mapList').hidden=!!h;$('mProb').hidden=$('mTools').hidden=!!h;if(h){$('mNote').hidden=true;}};
+  if(!d)return say(MV.err?`<span class="msg err">${esc(MV.err)}</span>`:'Reading the map<span class="dots"></span>');
+  if(d.error)return say(`<p class="msg err">${esc(d.error)}</p><p>Check <code>architecture</code> in <code>tickets/unblockd.json</code>.</p>`);
+  if(!d.folder)return say(how(-1));
+  if(!d.components.length)return say(`<p><button type="button" class="btn" data-anew>Add your first component</button></p><p>${esc(d.folder)} has no component notes yet.</p>`+how(2));
+  say('');
+  $('mProb').innerHTML=MPROB.filter(p=>d.problems[p[2]].length).map(([k,l,key,bad,tip])=>{const n=d.problems[key].length;
+    return `<button type="button" class="${bad?'bad':''}" data-mprob="${k}" aria-pressed="false" title="${esc(tip)}">${bad?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('');
+  $('mProb').hidden=!$('mProb').firstChild;
+  if(MV.f&&!$('mProb').querySelector(`[data-mprob="${MV.f}"]`))MV.f=null; // its problem is gone
+  const seen=new Map();MV.links=[];
+  d.edges.forEach(e=>{const k=[e.from,e.to].sort().join('|'),l=seen.get(k);
+    if(!l){const n={from:e.from,to:e.to,text:e.text};seen.set(k,n);MV.links.push(n);}else if(l.from!==e.from&&!l.both){l.both=true;l.rev=e.text;}}); // A->B + B->A = one link, l.rev = the B->A contract
+  const L=mapLayout(d.components,MV.links,$('mapStage').clientWidth),why=mapWhy(d),max=Math.max(1,...d.components.map(c=>c.tickets.length)),T=mapBy();
+  const ah=(id)=>`<marker id="mAh${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,1 10,5 0,9z"/></marker>`;
+  const svg=`<defs>${ah('')}${ah('S')}${ah('X')}</defs>`+MV.links.map((e,i)=>`<g class="eg${e.both?' both':''}${e.text&&(!e.both||e.rev)?'':' x'}" data-e="${i}"><path class="ev" d="${L.paths[i]}"/><path class="eh" d="${L.paths[i]}"/></g>`).join('');
+  const cards=d.components.map(c=>mapCard(c,why,max,L.pos[c.key])).join('');
+  const list=L.order.map(k=>{const c=T.get(k),cs=mapConns(d,k);
+    return `<li>${mapCard(c,why,max)}${cs.length?`<ul class="mcon">${cs.map(x=>`<li><span class="dir">${x.dir}</span><button type="button" class="idlink" data-mfocus="${esc(x.key)}">${esc(x.title)}</button><span class="ctr${x.text?'':' none'}">${x.text?inline(x.text):'no contract written'}</span></li>`).join('')}</ul>`:''}</li>`;}).join('');
+  const m=$('mapIn'),sv=$('mapSvg');
+  if(m._h!==svg+cards){m._h=svg+cards;m.style.width=L.W+'px';m.style.height=L.H+'px';MV.W=L.W;sv.setAttribute('width',L.W);sv.setAttribute('height',L.H);sv.innerHTML=svg;$('mapCards').innerHTML=cards;} // same markup = untouched, so the poll never re-animates
+  if($('mapList')._h!==list){$('mapList')._h=list;$('mapList').innerHTML=list;}
+  markMap();mapCenter(true);
+}
+function mapCenter(instant){ // centre the rows in the stage, minus the side panel when it is open; a map wider than that scrolls so the focused cluster is in view
+  const m=$('mapIn'),st=$('mapStage'),r=st.getBoundingClientRect(),right=MV.pan?Math.min(r.right,$('drawer').getBoundingClientRect().left):r.right;
+  m.style.width=(MV.W||0)+(MV.pan&&(MV.W||0)>right-r.left?r.right-right:0)+'px'; // a wide map gets room to scroll its last column out from under the panel
+  if(instant)m.style.transition='none';
+  m.style.marginLeft=Math.max(0,Math.round((right-r.left-(MV.W||0))/2))+'px';
+  if(instant){m.offsetWidth;m.style.transition='';}
+  if(MV.pan&&!instant&&(MV.W||0)>right-r.left){ // scroll the focused card and its neighbours into the visible part
+    const s=mapSel(),bs=[...document.querySelectorAll('#mapIn .mc')].filter(b=>s&&s.show.has(b.dataset.mc)).map(b=>b.getBoundingClientRect());
+    if(bs.length)st.scrollTo({left:Math.max(0,st.scrollLeft+(Math.min(...bs.map(b=>b.left))+Math.max(...bs.map(b=>b.right)))/2-(r.left+right)/2),behavior:reduce.matches?'auto':'smooth'});}
+}
+function mapSel(){ // what the current focus / problem filter lights: {core, show, edge(e)} or null
+  const d=MV.data;if(!d)return null;
+  const nb=k=>d.edges.flatMap(e=>e.from===k?[e.to]:e.to===k?[e.from]:[]);
+  if(MV.foc||MV.multi){const core=new Set(MV.foc?[MV.foc]:MV.multi.keys),show=new Set(core);core.forEach(k=>nb(k).forEach(x=>show.add(x)));
+    return {core,show,edge:e=>core.has(e.from)||core.has(e.to)};}
+  if(!MV.f)return null;
+  const p=d.problems;let core=new Set(),edge=()=>false;
+  if(MV.f==='nocontract'){p.no_contract.forEach(e=>core.add(e.from).add(e.to));edge=e=>!e.text||(e.both&&!e.rev);}
+  else if(MV.f==='dead')p.dead_paths.forEach(x=>core.add(x.key));
+  else if(MV.f==='broken')p.broken_links.forEach(x=>core.add(x.from));
+  else{p.cross.forEach(x=>x.components.forEach(k=>core.add(k)));edge=e=>core.has(e.from)&&core.has(e.to);}
+  return {core,show:core,edge};
+}
+function markMap(){ // classes only; cheap
+  const d=MV.data;if(!d||!d.components.length)return;
+  const s=mapSel();
+  document.querySelectorAll('#mapWrap [data-mc]').forEach(b=>{const k=b.dataset.mc;b.classList.toggle('fade',!!s&&!s.show.has(k));b.classList.toggle('on',!!s&&s.core.has(k));b.setAttribute('aria-pressed',!!s&&s.core.has(k));});
+  document.querySelectorAll('#mapSvg .eg').forEach(g=>{const on=!!s&&s.edge(MV.links[g.dataset.e]);g.classList.toggle('s',on);g.classList.toggle('fade',!!s&&!on);});
+  document.querySelectorAll('#mProb [data-mprob]').forEach(b=>b.setAttribute('aria-pressed',MV.f===b.dataset.mprob));
+  const n=$('mNote'),T=mapBy();n.hidden=!MV.multi;
+  if(MV.multi)n.innerHTML=`<b>${esc(MV.multi.id)}</b> touches ${MV.multi.keys.length} components: ${MV.multi.keys.map(k=>esc(T.get(k).title)).join(', ')}. Their neighbours are shown too. <button type="button" class="idlink" data-mclear>Clear</button>`;
+}
+function mapFocus(k){if(MV.ui.mode==='edit'||MV.ui.ce||MV.ui.add)dropDrafts('ae:'),dropDrafts('ac:'),dropDrafts('ce:');MV.ui=ui0();MV.foc=k;MV.multi=MV.f=null;markMap();openMapPanel();}
+function mapClear(fromClose){
+  dropDrafts('ae:');dropDrafts('ac:');dropDrafts('ce:');MV.ui=ui0();
+  MV.foc=MV.multi=MV.f=null;if(MV.pan&&!fromClose&&openId==null)closeDrawer();MV.pan=false;if(state.view==='map'){markMap();mapCenter();}
+}
+function mapPanel(keep){ // re-draw the side panel after data arrived (never under the picker the user is typing in)
+  if(keep&&document.activeElement?.matches?.('#drawer .pq'))return;
+  MV.ui.mode==='new'?mapNewPanel(keep):MV.foc?openMapPanel(keep):closeDrawer();
+}
+function openMapPanel(keep){ // the side panel (drawer shell) for the focused component
+  const d=MV.data,c=d&&d.components.find(x=>x.key===MV.foc);if(!c)return;
+  const u=MV.ui,k=c.key,ed=u.mode==='edit',why=mapWhy(d)[k]||[],cs=mapConns(d,k),dead=new Set(d.problems.dead_paths.filter(x=>x.key===k).map(x=>x.glob)),n=cs.length;
+  const grp=(dir,none)=>{const a=cs.filter(x=>x.dir===dir);return `<h4 class="mdir">${dir}${a.length?` (${a.length})`:''}</h4>`+(a.length?`<ul class="dlist mcl">${a.map(x=>mapConn(x,k)).join('')}</ul>`:`<p class="hint">${none}</p>`);};
+  const outs=cs.filter(x=>x.dir==='Out').map(x=>x.key),to=DRAFTS[`ac:${k}:to`]||'';
+  const top=ed?`<form class="aform" data-aform="edit" novalidate>
+      <label><span class="lt">Title</span><input data-draft="ae:${esc(k)}:title" maxlength="80" value="${dval(`ae:${k}:title`,c.title)}"></label>
+      <label><span class="lt">Summary <span class="hint">what this component is</span></span><textarea data-draft="ae:${esc(k)}:summary" rows="4" maxlength="1000">${dval(`ae:${k}:summary`,c.summary)}</textarea></label>
+      <label><span class="lt">Paths <span class="hint">one glob per line; a ticket that touches them is on this component</span></span><textarea class="mono" data-draft="ae:${esc(k)}:paths" rows="3" placeholder="src/api/**">${dval(`ae:${k}:paths`,c.paths.join('\n'))}</textarea></label>
+      ${uerr('edit')}<div class="arow"><button type="submit" class="btn">Save</button><button type="button" class="btn ghost" data-acancel="edit">Cancel</button></div></form>`
+    :`${c.summary?`<p>${inline(c.summary)}</p>`:''}
+    ${why.length?`<ul class="mwhy">${why.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+    <p><button type="button" class="btn sm" data-doc="${esc(c.path)}">View note</button></p>
+    ${c.paths.length?`<h3 class="dh3">Paths</h3><ul class="dlist">${c.paths.map(g=>`<li><code>${esc(g)}</code>${dead.has(g)?' <span class="kerr">matches no file</span>':''}</li>`).join('')}</ul>`:''}`;
+  const del=u.del?`<div class="adel" role="group" aria-label="Delete ${esc(c.title)}"><p><b>Delete ${esc(c.title)}?</b> This deletes <code>${esc(c.path)}</code> and removes ${n} connection${n===1?'':'s'}${n?' (its own lines, and the lines in other notes that link to it)':''}.</p>${uerr('del')}<div class="arow"><button type="button" class="btn danger" data-adelgo>Delete component</button><button type="button" class="btn ghost" data-acancel="del">Cancel</button></div></div>`:'';
+  const add=u.add?`<form class="aform" data-aform="conn"><div class="lbl"><span class="lt">Links to</span>${pickHtml('c-to',to?[to]:[],{comp:1,one:1,skip:[k,...outs].join(','),pdraft:`ac:${k}:to`,label:'Links to: search components'})}</div>
+      <label><span class="lt">Contract <span class="hint">one line; Enter saves</span></span><textarea data-draft="ac:${esc(k)}:text" data-oneline rows="2" maxlength="500" placeholder="what crosses this edge, e.g. writes a row in photos; deleting must delete the row">${dval(`ac:${k}:text`)}</textarea></label>
+      ${u.noc==='add'?'<p class="cwarn" role="alert">Save without a contract? Agents get no rule for this edge.</p>':''}${uerr('add')}<div class="arow"><button type="submit" class="btn">Save</button><button type="button" class="btn ghost" data-acancel="add">Cancel</button></div></form>`:'';
+  openId=null;MV.pan=true;
+  openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0;font-size:1.05rem">${ed?'Edit component':esc(c.title)}</h2><span class="sp">${ed?'':'<button type="button" class="btn" data-aedit>Edit</button>'}<button type="button" class="btn ghost" data-close>Close</button>${ed?'':'<details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm"><button type="button" class="dz" data-adel>Delete component…</button></div></details>'}</span></div>
+    <p class="hint" style="font-family:var(--mono)">${esc(c.path)}</p>
+    ${del}${top}
+    <h3 class="dh3 hrow">Connections${u.add?'':'<button type="button" class="btn ghost sm" data-aadd>+ Connection</button>'}</h3>${add}${grp('Out','Links to nothing.')}${grp('In','Nothing links here.')}
+    <h3 class="dh3">Open tickets (${c.tickets.length})</h3>
+    ${c.tickets.length?`<p><button type="button" class="btn ghost sm" data-showboard="${esc(c.key)}">Show ${c.tickets.length} ticket${c.tickets.length>1?'s':''} on the board</button></p><ul class="dlist">${c.tickets.map(id=>{const t=BY.get(id);return `<li><button type="button" class="idlink" data-open="${esc(id)}">${esc(id)}</button> ${t?inline(t.title):''}</li>`;}).join('')}</ul>`:'<p class="hint">None. A ticket lands here when it lists this component (Edit, Components) or its <code>touches</code> overlap the paths above.</p>'}`,keep);
+  $('scrim').hidden=true; // the map stays clickable beside the panel
+  mapCenter(keep);
+}
+// ---- editing the architecture (POST/PATCH/PUT/DELETE architecture/...: the server rewrites only the managed parts of the notes and answers with the new payload)
+const slug=t=>t.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/,'');
+function mapNew(){
+  if(!MV.data?.folder||MV.data.error)return;
+  MV.ui=ui0();MV.ui.mode='new';MV.foc=MV.multi=MV.f=null;if(MV.data.components.length)markMap();mapNewPanel();
+  $('drawer').querySelector('[data-draft="an:title"]')?.focus();
+}
+function mapNewPanel(keep){
+  const folder=MV.data?.folder||'docs/arch';openId=null;MV.pan=true;
+  openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0;font-size:1.05rem">New component</h2><span class="sp"><button type="button" class="btn ghost" data-close>Close</button></span></div>
+    <p class="hint">A component is one markdown note in your repo. Its connections are the links under its <code>## Connections</code>.</p>
+    <form class="aform" data-aform="new" novalidate>
+      <label><span class="lt">Title</span><input data-draft="an:title" maxlength="80" autocomplete="off" value="${dval('an:title')}"></label>
+      <div class="lbl"><span class="lt">Key <span class="hint">the note's file name; it cannot change later</span></span><span class="keyrow"><span>${esc(folder)}/</span><input data-draft="an:key" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Key" value="${dval('an:key')}"><span>.md</span></span></div>
+      <label><span class="lt">Summary <span class="hint">what this component is</span></span><textarea data-draft="an:summary" rows="3" maxlength="1000">${dval('an:summary')}</textarea></label>
+      <label><span class="lt">Paths <span class="hint">one glob per line; a ticket that touches them is on this component</span></span><textarea class="mono" data-draft="an:paths" rows="3" placeholder="src/api/**">${dval('an:paths')}</textarea></label>
+      ${uerr('new')}<div class="arow"><button type="submit" class="btn">Save</button><button type="button" class="btn ghost" data-acancel="new">Cancel</button></div></form>`,keep);
+  $('scrim').hidden=true;mapCenter(keep);
+}
+async function archDo(method,path,body,at){ // one write; the payload repaints the Map. On failure: the message inline at `at`, or a toast
+  MV.gen++;
+  try{const r=await jf(API+'/architecture/'+path,method,body);MV.data=r;MV.ui.err='';return r;}
+  catch(er){if(!at)toast(er.message,{err:1});else{MV.ui.err=er.message;MV.ui.errAt=at;if(MV.foc||MV.ui.mode==='new')mapPanel(true);}return null;}
+}
+function mapAfter(focusSel){ // repaint from MV.data, keep the focus where the user was working
+  mapApply();
+  const e=focusSel&&[...document.querySelectorAll(focusSel)].find(x=>x.offsetParent!==null);e?.focus();
+}
+function mapUiCancel(what){
+  const u=MV.ui;
+  if(what==='new'){dropDrafts('an:');MV.ui=ui0();closeDrawer();return;}
+  const sel={edit:'[data-aedit]',add:'[data-aadd]',del:'[data-adel]',cedit:`[data-cedit="${u.ce}"]`,conn:'[data-aadd]'}[what];
+  if(what==='cedit'){dropDrafts('ce:');u.ce=null;}
+  else if(what==='add'||what==='conn'){dropDrafts(`ac:${MV.foc}:`);u.add=false;}
+  else if(what==='del')u.del=false;
+  else if(what==='edit'){dropDrafts(`ae:${MV.foc}:`);u.mode=null;}
+  u.noc=null;u.err='';openMapPanel(true);document.querySelector('#drawer '+sel)?.focus();
+}
+const fval=(f,n)=>f.querySelector(`[data-draft="${n}"]`)?.value??'';
+async function archSubmit(f){
+  const kind=f.dataset.aform,u=MV.ui,k=MV.foc,lines=v=>v.split('\n').map(x=>x.trim()).filter(Boolean);
+  u.err='';
+  if(kind==='new'){
+    const key=fval(f,'an:key').trim(),r=await archDo('POST','components',{key,title:fval(f,'an:title'),summary:fval(f,'an:summary'),paths:lines(fval(f,'an:paths'))},'new');
+    if(r){dropDrafts('an:');MV.ui=ui0();MV.foc=key;mapAfter(`#mapWrap [data-mc="${key}"]`);}
+  }else if(kind==='edit'){
+    const r=await archDo('PATCH','components/'+encodeURIComponent(k),{title:fval(f,`ae:${k}:title`),summary:fval(f,`ae:${k}:summary`),paths:lines(fval(f,`ae:${k}:paths`))},'edit');
+    if(r){dropDrafts(`ae:${k}:`);u.mode=null;mapAfter(`#mapWrap [data-mc="${k}"]`);}
+  }else{ // conn (add) | cedit (the contract of one line)
+    const add=kind==='conn',id=add?'add':f.dataset.from+'>'+f.dataset.to,to=add?pickIds('c-to')[0]:f.dataset.to,from=add?k:f.dataset.from,text=(add?fval(f,`ac:${k}:text`):fval(f,'ce:'+id)).trim();
+    if(!to){u.err='Pick the component it links to.';u.errAt='add';return mapPanel(true);}
+    if(!text&&u.noc!==id){u.noc=id;return mapPanel(true);} // asks once; the second Save goes through
+    const r=await archDo('PUT','edges',{from,to,text},add?'add':'ce:'+id);
+    if(r){if(add){dropDrafts(`ac:${k}:`);u.add=false;}else{dropDrafts('ce:');u.ce=null;}u.noc=null;mapAfter(`#drawer [${add?'data-aadd':`data-cedit="${id}"`}]`);}
+  }
+}
+async function archRemoveEdge(id){
+  const [from,to]=id.split('>'),old=MV.data.edges.find(e=>e.from===from&&e.to===to)?.text||'';
+  const r=await archDo('DELETE',`edges?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,null,null);
+  if(!r)return;
+  mapAfter('#drawer [data-aadd]');
+  toast(`Removed ${ctitle(from)} → ${ctitle(to)}`,{undo:async()=>{if(await archDo('PUT','edges',{from,to,text:old},null))mapAfter(null);}});
+}
+async function archDeleteComp(){
+  const k=MV.foc,r=await archDo('DELETE','components/'+encodeURIComponent(k),null,'del');
+  if(r){MV.ui=ui0();dropDrafts(`ae:${k}:`);dropDrafts(`ac:${k}:`);toast(`Deleted ${k}`);mapAfter(null);}
+}
+async function showComp(k){ // a component chip -> the Map, focused on it
+  await loadMap(); if(!COMPS().some(c=>c.key===k)) return toast(`No component ${k} on this board's map.`,{err:1});
+  MV.ui=ui0();MV.foc=k;MV.multi=MV.f=null;setView('map');openMapPanel();
+}
+async function showOnMap(id){ // ticket drawer -> Map, focused on its component(s)
+  await loadMap();const ks=MV.data?.ticket_map?.[id];
+  if(!ks)return toast(`${id} is not on the map: it has no components and its touches match no component's paths.`,{err:1});
+  MV.foc=ks.length===1?ks[0]:null;MV.multi=ks.length>1?{id,keys:ks}:null;MV.f=null;
+  setView('map');if(MV.foc)openMapPanel();
+}
+{const m=$('mapIn'),tip=$('mapTip');
+ m.addEventListener('pointermove',e=>{const g=e.target.closest?.('.eg');if(!g||!MV.data){tip.hidden=true;return;}
+   const ed=MV.links[g.dataset.e],T=mapBy(),one=(a,b,t)=>`<div><b>${esc(T.get(a).title)} → ${esc(T.get(b).title)}:</b> ${t?inline(t):'<em>no contract written</em>'}</div>`;
+   tip.innerHTML=one(ed.from,ed.to,ed.text)+(ed.both?one(ed.to,ed.from,ed.rev):'');tip.hidden=false;
+   const r=m.getBoundingClientRect();tip.style.left=Math.max(4,Math.min(e.clientX-r.left+14,r.width-tip.offsetWidth-4))+'px';tip.style.top=(e.clientY-r.top+16)+'px';});
+ m.addEventListener('pointerleave',()=>{tip.hidden=true;});}
 
 // ---------- view switch ----------
-const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d']];
+const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>", "map": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"5.5\" y=\"1.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"1.75\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"9.25\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><path d=\"M8 5.25v2.5M4.25 10.75v-3h7.5v3\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d'],['map','Map','m']];
 function paintViews(v){const s=$('viewSeg'); // built once: the buttons stay, only aria-pressed moves, so labels and the indicator can animate
 	if(!s.firstChild){s.dataset.track='';s.innerHTML=VIEWS.map(([n,l,k])=>`<button type="button" class="vico" data-view="${n}" aria-pressed="${v===n}" aria-label="${l}" title="${l}${k?` (${k})`:''}">${VICON[n]}<span class="vl"><span>${l}</span></span></button>`).join('');}
 	else s.querySelectorAll('.vico').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v));
@@ -1890,8 +2304,8 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	if(!document.startViewTransition||reduce.matches) return setView(v);
 	document.startViewTransition(()=>setView(v));
 }
-function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
-  paintViews(v);renderShow();if(v!=='graph')render();else{renderWorking();renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('bar').hidden=v==='docs'||v==='map';$('depSeg').hidden=v!=='graph';
+  paintViews(v);renderShow();if(v!=='graph')render();else{renderWorking();renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
 function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
@@ -1993,7 +2407,7 @@ function propRefs(m,t){ // temp keys -> created ids; wait = cards not created ye
 }
 function propHtml(mi,pi,t,st){ // one proposed ticket: Create / Discard, or what happened to it
   const wait=propRefs(CH.log[mi],t).wait;
-  const meta=[t.priority,t.owner,t.pillar,t.parent&&'part of '+t.parent,wait.length&&'waits for card '+wait.join(', '),t.blocked_by?.length&&'after '+t.blocked_by.join(', ')].filter(Boolean).join(' · ');
+  const meta=[t.priority,t.owner,t.pillar,t.parent&&'part of '+t.parent,wait.length&&'waits for card '+wait.join(', '),t.blocked_by?.length&&'after '+t.blocked_by.join(', '),t.components?.length&&'in '+t.components.map(ctitle).join(', ')].filter(Boolean).join(' · ');
   const act=st?`<span class="pm">${st==='discarded'?'Discarded':'Created '+esc(st)}</span>`
     :`<button type="button" class="btn sm" data-prop="${mi}:${pi}" data-act="create"${wait.length?` disabled title="Create ${esc(wait.join(', '))} first"`:''}>Create</button><button type="button" class="btn ghost sm" data-prop="${mi}:${pi}" data-act="discard">Discard</button>`;
   return `<div class="prop${st==='discarded'?' off':''}"><span class="pt">${esc(t.title)}</span>${meta?`<span class="pm">${esc(meta)}</span>`:''}${t.body?`<span class="pm">${esc(t.body)}</span>`:''}<span class="row">${act}</span></div>`;

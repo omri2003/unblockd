@@ -48,5 +48,6 @@
       "model": "sonnet",
       "instructions": "Stdlib only; add a test for every endpoint."
     }
-  ]
+  ],
+  "architecture": "docs/arch"
 }

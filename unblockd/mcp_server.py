@@ -1,20 +1,27 @@
-"""MCP server (stdio) over the same boards and Store: `python -m unblockd.mcp_server`.
+"""MCP server over the same boards and Store. `python -m unblockd.mcp_server` = stdio (one process per client);
+`python -m unblockd.mcp_server --http` = Streamable HTTP at /mcp (HOST, default 127.0.0.1; MCP_PORT, default 8788;
+UNBLOCKD_TOKEN = Bearer token; MCP_ALLOWED_HOSTS = extra Host values, comma list, e.g. "myhost:*"): ONE shared server for every project.
 
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, accept_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
-release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
+release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
 
 import functools
+import hmac
+import json
+import os
 import string
+import sys
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 
 from . import boards as bd
 from . import knowledge as kn
@@ -110,8 +117,14 @@ def create_board(id: str, title: str = "") -> dict:
 @tool
 def board_info(board: str | None = None) -> dict:
 	"""A board's settings: title, owners, pillars, agent profiles (name, tags, pillars, model,
-	instructions), stale_days, and the ticket rules: `schema` (prefixes with meanings, required fields, tags, body template) and `agent_tickets`."""
-	return BOARDS.get(board).config
+	instructions), stale_days, the ticket rules: `schema` (prefixes with meanings, required fields, tags, body template) and `agent_tickets`,
+	and `components` [{key, title}] when it has an architecture (the keys `components` on tickets take)."""
+	store = BOARDS.get(board)
+	info = dict(store.config)
+	comps = kn.components(store)["components"]
+	if comps:
+		info["components"] = [{"key": c["key"], "title": c["title"]} for c in comps]
+	return info
 
 
 @tool
@@ -158,17 +171,18 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
-                  done_when: list[str] | None = None) -> dict:
+                  done_when: list[str] | None = None, components: list[str] | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). agent = your worker name. Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
-	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each).
+	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each),
+	components = keys of the architecture components (board_info / architecture_map) the work changes: set them, they link the ticket to its notes and the Map (refused when the board has no architecture or the key is unknown).
 	Read board_info first: its `schema` (allowed prefixes with meanings, required fields, allowed tags, body template) is enforced for you and a
 	break is refused with every problem listed; if no prefix fits, ask_human, do not guess a near one. With `agent_tickets: "propose"` the
 	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
-	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or []}
+	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or []}
 	return store.create(data, tid=id, prefix=prefix, agent=agent)
 
 
@@ -183,14 +197,14 @@ def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) 
 	"""Change fields of a ticket. agent = your worker name: you can't change a
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
 	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, waiting_on, body."""
+	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, components (list of architecture component keys the work changes), waiting_on, body."""
 	return BOARDS.get(board).update(id, changes, agent=agent)
 
 
 @tool
 def split_ticket(id: str, titles: list[str], agent: str, sequential: bool = False, board: str | None = None) -> dict:
 	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it, then
-	claim_next. One child per title (pillar, owner, priority, tags, touches, docs copied); the parent
+	claim_next. One child per title (pillar, owner, priority, tags, touches, docs, components copied); the parent
 	then waits on all of them. sequential=true makes each part wait on the one before. If you hold the
 	claim, the parent goes back to todo and your claim ends. agent = your worker name (a ticket another agent holds can't be split). Returns {parent, children}."""
 	return BOARDS.get(board).split(id, titles, sequential=sequential, by=agent)
@@ -294,6 +308,48 @@ def knowledge_graph(board: str | None = None) -> dict:
 
 
 @tool
+def architecture_map(board: str | None = None) -> dict:
+	"""The board's architecture (config `architecture`: a folder of one markdown note per component): `components`
+	(title, summary, `paths` globs, open `tickets`, `counts`), `edges` [{from, to, text}] where text is the contract on that connection,
+	`ticket_map`, and `problems` (no_contract, dead_paths, broken_links, cross). Empty `folder` = feature off; no `components` yet = nothing written (arch_add_component)."""
+	return kn.architecture(BOARDS.get(board))
+
+
+@tool
+def arch_add_component(key: str, title: str, agent: str, summary: str = "", paths: list[str] | None = None, board: str | None = None) -> dict:
+	"""Add a component to the board's architecture: writes the note <architecture folder>/<key>.md (committed with the code). key = file name,
+	lowercase letters, digits and '-', max 40, never renamed; title <= 80 chars; summary <= 1000; paths = globs of the files it owns (no '..').
+	Returns the new architecture_map."""
+	return kn.add_component(BOARDS.get(board), key, title, summary, paths or (), by=agent)
+
+
+@tool
+def arch_update_component(key: str, agent: str, title: str | None = None, summary: str | None = None, paths: list[str] | None = None, board: str | None = None) -> dict:
+	"""Change a component's title, summary and/or paths (omit what stays). Only those parts of the note are rewritten; the rest of the note is kept as written.
+	paths replaces the list ([] clears it). Returns the new architecture_map."""
+	return kn.update_component(BOARDS.get(board), key, by=agent, title=title, summary=summary, paths=paths)
+
+
+@tool
+def arch_delete_component(key: str, agent: str, board: str | None = None) -> dict:
+	"""Delete a component: its note, and the lines in other notes that link to it. Refused while an open ticket lists it in `components` (reassign those first)."""
+	return kn.delete_component(BOARDS.get(board), key, by=agent)
+
+
+@tool
+def arch_set_edge(frm: str, to: str, text: str, agent: str, board: str | None = None) -> dict:
+	"""Create or replace the connection from component `frm` to `to`: one line in frm's note, `- [<to title>](<to>.md) — <text>`. text = the CONTRACT, what
+	crosses the edge and which invariants hold (one line, max 500 chars, no markdown links). Use it to update a contract you changed. Returns the new architecture_map."""
+	return kn.set_edge(BOARDS.get(board), frm, to, text, by=agent)
+
+
+@tool
+def arch_remove_edge(frm: str, to: str, agent: str, board: str | None = None) -> dict:
+	"""Remove the connection from component `frm` to `to` (its line in frm's note). Returns the new architecture_map."""
+	return kn.remove_edge(BOARDS.get(board), frm, to, by=agent)
+
+
+@tool
 def read_doc(path: str, board: str | None = None) -> dict:
 	"""One text file from the board's project repo (path relative to the repo root), with its links."""
 	return kn.read_doc(BOARDS.get(board), path)
@@ -312,8 +368,50 @@ def detach_file(id: str, name: str, board: str | None = None) -> dict:
 	return kn.detach(BOARDS.get(board), id, name)
 
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+class BearerAuth:
+	"""ASGI guard: with a token set, every request needs `Authorization: Bearer <token>` (same token as the web API)."""
+
+	def __init__(self, app, token: str):
+		self.app, self.token = app, token.encode()
+
+	async def __call__(self, scope, receive, send):
+		if scope["type"] == "http":
+			got = dict(scope["headers"]).get(b"authorization", b"")
+			if not hmac.compare_digest(got, b"Bearer " + self.token):
+				body = json.dumps({"error": "unauthorized: send 'Authorization: Bearer <UNBLOCKD_TOKEN>' "
+				                   "(claude mcp add --transport http unblockd <url> --header \"Authorization: Bearer <token>\")"}).encode()
+				await send({"type": "http.response.start", "status": 401, "headers": [
+					(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()), (b"www-authenticate", b"Bearer")]})
+				await send({"type": "http.response.body", "body": body})
+				return
+		await self.app(scope, receive, send)
+
+
+def http_app(host: str = "127.0.0.1", token: str = ""):
+	"""The Streamable HTTP ASGI app at /mcp. DNS-rebinding protection stays ON: Host must be loopback (any port, so the
+	compose-mapped one works) or listed in MCP_ALLOWED_HOSTS (comma list, `name:*` = any port)."""
+	extra = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+	hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"] + extra
+	security = TransportSecuritySettings(enable_dns_rebinding_protection=True, allowed_hosts=hosts,
+	                                     allowed_origins=[f"http://{h}" for h in hosts])
+	app = mcp.streamable_http_app(host=host, transport_security=security)
+	return BearerAuth(app, token) if token else app
+
+
 def main():
-	mcp.run()
+	if "--http" not in sys.argv[1:]:
+		mcp.run()
+		return
+	import uvicorn
+	host, port, token = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("MCP_PORT", "8788")), os.environ.get("UNBLOCKD_TOKEN", "")
+	if not token and host not in LOOPBACK:
+		print(f"WARNING: bound to {host} with no auth: set UNBLOCKD_TOKEN, or anyone who can reach the port can edit tickets", flush=True)
+	print(f"unblockd MCP on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}/mcp  boards: "
+	      + (", ".join(BOARDS.all()) or "none yet"), flush=True)
+	uvicorn.run(http_app(host, token), host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":

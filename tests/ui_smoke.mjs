@@ -2,7 +2,7 @@
 // Local: NODE_PATH=$(npm root -g) node tests/ui_smoke.mjs   (CI: npm i --no-save playwright)
 import { createRequire } from 'node:module';
 import { spawn, execFileSync } from 'node:child_process';
-import { mkdtemp, cp, readFile, writeFile, readdir } from 'node:fs/promises';
+import { mkdtemp, cp, readFile, writeFile, readdir, rm, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -12,7 +12,7 @@ const { chromium } = createRequire(import.meta.url)('playwright'); // require, n
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 const t0 = Date.now();
 let server, browser, lastPage;
-const die = async (msg) => { console.error('UI SMOKE FAIL: ' + msg); if (process.env.DEBUG && lastPage) console.error(await lastPage.evaluate(() => 'TOASTS: ' + document.getElementById('toasts').innerText + '\nPANEL: ' + document.getElementById('npanel').innerText.slice(0, 600)).catch(() => '')); await cleanup(); process.exit(1); };
+const die = async (msg) => { console.error('UI SMOKE FAIL: ' + msg); if (process.env.DEBUG && lastPage) { console.error(JSON.stringify(lastPage.viewportSize())); await lastPage.screenshot({ path: process.env.DEBUG + '/fail.png' }).catch(() => {}); } if (process.env.DEBUG && lastPage) console.error(await lastPage.evaluate(() => 'TOASTS: ' + document.getElementById('toasts').innerText + '\nPANEL: ' + document.getElementById('npanel').innerText.slice(0, 600)).catch(() => '')); await cleanup(); process.exit(1); };
 const cleanup = async () => { server?.kill(); await browser?.close().catch(() => {}); };
 const ok = (c, msg) => { if (!c) throw new Error(msg); };
 
@@ -118,6 +118,56 @@ try {
 		await noOverflow('docs');
 		await page.click('[data-view="board"]');
 
+		{ // Map view: example board has 4 component notes (docs/arch); UI-2 spans api + web-ui, DOC-1 maps to nothing
+			const view = (v) => page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`).getAttribute('aria-pressed') === 'true', v);
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
+			await page.keyboard.press('m'); await view('map'); // the shortcut
+			ok(await page.getAttribute('#viewSeg [data-view="map"]', 'title') === 'Map (m)', `[${tag}] Map tooltip should carry its key`);
+			await page.waitForFunction(() => document.querySelectorAll('#mapList .mc').length === 4);
+			if (w > 700) {
+				await visible('#mapIn .mc', 'map card');
+				await page.waitForTimeout(300); // the view cross-fade swallows pointer events
+				ok((await page.locator('#mapIn .mc').count()) === 4 && (await page.locator('#mapSvg .eg').count()) >= 4, `[${tag}] map: 4 cards and its edges`);
+				ok((await page.locator('#mProb [data-mprob]').count()) === 1, `[${tag}] map: only problems with a count are listed (example has 1)`);
+				ok((await page.locator('#mapSvg .eg.both').count()) === 1, `[${tag}] map: api <-> web-ui is ONE two-headed link`);
+				const mid = await page.evaluate(() => { const p = document.querySelector('#mapSvg .eg.both .eh'), q = p.getPointAtLength(p.getTotalLength() / 2), m = p.getScreenCTM(); return [q.x * m.a + m.e, q.y * m.d + m.f]; }); // the curve's own midpoint: its bounding-box centre may be empty
+				await page.mouse.move(mid[0], mid[1]);
+				await page.waitForFunction(() => { const t = document.getElementById('mapTip').textContent; return t.includes('REST API → Web UI:') && t.includes('Web UI → REST API:'); });
+				await page.mouse.move(5, 5);
+				await page.click('#mapIn [data-mc="store"]');
+				await visible('#drawer #dTitle', 'map panel');
+				ok((await page.locator('#drawer #dTitle').innerText()) === 'Ticket store' && (await page.locator('#drawer .mcl li').count()) >= 2, `[${tag}] map panel: title and connections`);
+				ok((await page.locator('#mapIn .mc.fade').count()) === 1 && (await page.locator('#mapIn .mc.fade').getAttribute('data-mc')) === 'web-ui', `[${tag}] focus should fade only the non-neighbour`);
+				await page.waitForTimeout(5000); // a 4 s poll + refetch must keep the focus
+				ok((await page.locator('#mapIn .mc.on').count()) === 1, `[${tag}] focus lost over a poll`);
+				await page.keyboard.press('Escape');
+				ok((await page.locator('#mapIn .mc.fade').count()) === 0 && await page.locator('#drawer').isHidden(), `[${tag}] Esc should leave the focus and close the panel`);
+				await page.waitForTimeout(300); // the map re-centres when the panel closes
+				const m1 = await page.evaluate(() => { const p = document.querySelector('#mapSvg .eg:not(.both) .eh'), q = p.getPointAtLength(p.getTotalLength() / 2), m = p.getScreenCTM(); return [q.x * m.a + m.e, q.y * m.d + m.f]; });
+				await page.mouse.move(m1[0], m1[1]); // contract tooltip of a one-way edge
+				await page.waitForFunction(() => !document.getElementById('mapTip').hidden && document.getElementById('mapTip').textContent.length > 8);
+				await page.click('[data-mprob="cross"]');
+				ok((await page.locator('#mapIn .mc.on').count()) === 2, `[${tag}] "tickets span 2+ components" should light api + web-ui`);
+				await page.keyboard.press('Escape');
+			} else {
+				ok((await page.locator('#mapList .mcon li').count()) >= 4, `[${tag}] mobile map: connections listed under each component`);
+				ok(await page.locator('#mapStage').isHidden(), `[${tag}] mobile map has no canvas`);
+			}
+			await noOverflow('map');
+			await page.evaluate(() => document.querySelector('[data-open=\"UI-2\"]').click()); await visible('#drawer .ovf', 'ticket drawer');
+			await page.click('#drawer .ovf > summary'); await page.click('#drawer [data-onmap]'); await view('map');
+			await page.waitForFunction(() => !document.getElementById('mNote').hidden);
+			if (w > 700) ok((await page.locator('#mapIn .mc.on').count()) === 2, `[${tag}] Show on map: UI-2 should light both its components`);
+			await page.click('#mNote [data-mclear]');
+			ok(await page.locator('#mNote').isHidden(), `[${tag}] Clear should leave the blast radius`);
+			await page.evaluate(() => document.querySelector('[data-open=\"API-2\"]').click()); await page.click('#drawer .ovf > summary'); await page.click('#drawer [data-onmap]'); await view('map');
+			await visible('#drawer #dTitle', 'map panel from a ticket');
+			ok((await page.locator('#drawer #dTitle').innerText()) === 'REST API', `[${tag}] Show on map: API-2 should open REST API`);
+			await page.evaluate(() => document.querySelector('[data-open=\"DOC-1\"]').click());
+			ok((await page.locator('#drawer [data-onmap]').count()) === 0, `[${tag}] DOC-1 maps to no component: no Show on map`);
+			await page.click('#drawer [data-close]'); await page.click('[data-view="board"]'); await view('board');
+		}
+
 		await toggle('#fpanel', 'Filters panel');
 		ok(await page.locator('.card .prog').count(), `[${tag}] parent progress bar missing (DOC-1 was split)`);
 		await page.click('#fpanel > summary'); // Group by parent -> swimlane headings; Parent filter -> only its parts
@@ -128,6 +178,69 @@ try {
 		ok((await page.locator('.card').count()) === 2, `[${tag}] Parent filter should leave the 2 parts`);
 		await page.click('#pills [data-parent]');
 		await page.click('#fpanel > summary');
+
+		{ // Components: filter (explicit OR derived), Group by (two lanes), picker, bulk add, drawer chip -> Map, Map -> board
+			await page.waitForFunction(() => !document.getElementById('compSeg').hidden); // /architecture has arrived
+			ok((await page.getAttribute('#pillarSeg', 'title')).includes('kind of work') && (await page.getAttribute('#compSeg', 'title')).includes('parts of the system'), `[${tag}] Pillar and Component rows should explain themselves`);
+			const ids = () => page.evaluate(() => [...new Set([...document.querySelectorAll('#board .card')].map((c) => c.dataset.open))].sort());
+			const all = await ids();
+			const fp = async () => { if (!(await page.evaluate(() => document.getElementById('fpanel').open))) await page.click('#fpanel > summary'); }; // a click outside (a pill) closes it
+			await fp(); await page.click('#compSeg [data-comp="api"]');
+			const api = await ids();
+			ok(api.includes('API-2') && api.includes('UI-2') && !api.includes('UI-1') && api.length < all.length, `[${tag}] Component api should match derived tickets (API-2, UI-2) and not UI-1; got ${api}`);
+			await page.click('#compSeg [data-comp="web-ui"]');
+			ok((await ids()).includes('UI-1') && (await ids()).includes('UI-2'), `[${tag}] Component web-ui: UI-1 (explicit) and UI-2 (derived)`);
+			ok((await page.locator('#pills .pill').innerText()).includes('Component: Web UI'), `[${tag}] active Component filter should be a removable pill`);
+			await page.click('#pills [data-comp]');
+			ok((await ids()).length === all.length, `[${tag}] removing the pill should show everything again`);
+			await fp(); await page.click('[data-group="component"]');
+			ok((await page.locator('#board .card[data-open="UI-2"]').count()) === 2, `[${tag}] a ticket on 2 components should be in both lanes`);
+			ok(/no component/i.test(await page.locator('#board .lane').last().textContent()), `[${tag}] the no-component lane should come last`);
+			await noOverflow('group by component');
+			await fp(); await page.click('[data-group="none"]');
+			await page.keyboard.press('Escape');
+
+			await page.evaluate(() => document.querySelector('[data-open="UI-2"]').click()); // picker in the edit form
+			await visible('#drawer [data-mapcomp="api"]', 'derived component chip in the drawer');
+			ok(await page.locator('#drawer [data-mapcomp="api"].der').count(), `[${tag}] chips derived from touches should be marked`);
+			await page.click('[data-edit]');
+			ok((await page.locator('#f-comp .pc').count()) === 0, `[${tag}] UI-2 has no explicit components`);
+			await page.fill('#f-comp .pq', 'zzz-nothing'); await visible('#f-comp .pl .none', 'component picker no-match row');
+			await page.keyboard.press('Enter');
+			ok((await page.locator('#f-comp .pc').count()) === 0, `[${tag}] no free text can become a component`);
+			await page.fill('#f-comp .pq', 'REST'); await page.keyboard.press('Enter');
+			ok((await page.locator('#f-comp .pc[data-id="api"]').innerText()).startsWith('REST API'), `[${tag}] chip shows the title, value is the key`);
+			await noOverflow('component picker');
+			await page.click('#editForm button[type="submit"]');
+			await visible('#toasts .toast:has-text("Saved UI-2")', 'save with components');
+			ok(JSON.parse(cli('get', 'UI-2')).components.join() === 'api', `[${tag}] the picker should set components`);
+			await visible('#drawer [data-mapcomp="api"]:not(.der)', 'explicit chip after save');
+			cli('update', 'UI-2', '--json', '{"components":[]}');
+			await page.keyboard.press('Escape');
+
+			await page.locator('.card >> visible=true').nth(0).click({ modifiers: ['Shift'] }); // bulk: ADD a component to 2 tickets, one Undo
+			await page.locator('.card >> visible=true').nth(1).click({ modifiers: ['Shift'] });
+			const sel = await page.evaluate(() => [...document.querySelectorAll('.card.sel')].map((c) => c.dataset.open));
+			await noOverflow('bulk bar with Component');
+			await page.selectOption('#bulk [data-bulk="components"]', 'store');
+			await visible('#toasts .toast:has-text("2 updated")', 'bulk component toast');
+			ok(sel.every((id) => JSON.parse(cli('get', id)).components.includes('store')), `[${tag}] bulk should add store to ${sel}`);
+			await page.click('#toasts .toast button');
+			await visible('#toasts .toast:has-text("Reverted")', 'bulk component undo');
+			ok(sel.every((id) => !JSON.parse(cli('get', id)).components.includes('store')), `[${tag}] Undo should take it off again`);
+			await page.keyboard.press('Escape');
+
+			await page.evaluate(() => document.querySelector('[data-open="UI-2"]').click()); // chip -> Map focused -> Show N on the board
+			await page.click('#drawer [data-mapcomp="api"]');
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]').getAttribute('aria-pressed') === 'true');
+			await page.waitForFunction(() => document.querySelector('#drawer #dTitle')?.textContent === 'REST API');
+			const n = await page.evaluate(() => +document.querySelector('#drawer [data-showboard]').textContent.match(/\d+/)[0]);
+			await page.click('#drawer [data-showboard="api"]');
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
+			await page.waitForFunction(() => document.querySelector('#compSeg [data-comp="api"]').getAttribute('aria-pressed') === 'true');
+			ok((await ids()).length === n && n >= 2, `[${tag}] Show N tickets on the board: expected ${n} cards, got ${(await ids()).length}`);
+			await page.click('#pills [data-comp]');
+		}
 		await toggle('#spanel', 'Settings panel');
 		await toggle('#apanel', 'Agents panel');
 
@@ -161,7 +274,7 @@ try {
 		await page.fill('#f-blocked .pq', 'smoke');
 		await page.keyboard.press('Enter');
 		ok((await page.locator('#f-blocked .pc').count()) === nChips + 1, `[${tag}] picking a blocker should add a chip`);
-		ok(await page.locator('#f-blocked .pc[data-id="SM-1"]').count(), `[${tag}] picked chip should be SM-1`);
+		ok((await page.locator('#f-blocked .pc[data-id="SM-1"]').innerText()).startsWith('SM-1'), `[${tag}] picked chip should be SM-1, labelled with its id`);
 		await page.fill('#f-blocked .pq', 'zzz-nothing');
 		await visible('#f-blocked .pl .none', 'picker no-match row');
 		await noOverflow('edit form');
@@ -194,12 +307,13 @@ try {
 			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`).getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
 		}
 		{ // Graph's Free/Blocked must not leak into the Board
+			await page.waitForFunction((x) => x.every((id) => document.querySelector(`#board .card[data-open="${id}"]`)), [rid, qid]); // the 4 s poll has brought this board's new tickets (the badge can come from the 15 s timer)
 			const n0 = await page.locator('#board .card').count();
 			await page.click('[data-view="graph"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="graph"]').getAttribute('aria-pressed') === 'true');
 			await page.click('#depSeg [data-dep="BLOCKED"]');
 			await page.click('[data-view="board"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
 			await page.waitForTimeout(300);
-			ok((await page.locator('#board .card').count()) === n0, `[${tag}] Blocked chosen in the Graph should not filter the Board`);
+			{ const n1 = await page.locator("#board .card").count(); ok(n1 === n0, `[${tag}] Blocked chosen in the Graph should not filter the Board (${n0} -> ${n1})`); }
 			await page.click('[data-view="graph"]'); await page.click('#depSeg [data-dep="ALL"]'); await page.click('[data-view="board"]');
 		}
 		await page.click('#needsBadge'); // open via the badge, close with Esc, open again with the key
@@ -384,6 +498,115 @@ try {
 		ok(!errs.length, `[chat] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
+	// 7. editing the architecture from the Map, on a board with no architecture folder (the empty state): add components, connect, edit, remove + Undo, delete
+	await mkdir(join(root, 'zempty/tickets'), { recursive: true });
+	await writeFile(join(root, 'zempty/tickets/unblockd.json'), JSON.stringify({ id: 'zempty', title: 'Empty board' }));
+	const cliE = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zempty/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
+	const docsE = join(root, 'zempty/docs/arch'), note = (k) => readFile(join(docsE, k + '.md'), 'utf8').catch(() => null);
+	cliE('create', '--prefix', 'T', '--title', 'uses web');
+	const tp = join(root, 'zempty/tickets/T-1.json'), tj = JSON.parse(await readFile(tp, 'utf8'));
+	await writeFile(tp, JSON.stringify({ ...tj, components: ['web'] })); // an open ticket that lists the component Web (written by hand: the note does not exist yet)
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		const tag = `arch-edit/${w}px`, wide = w > 700;
+		await rm(join(root, 'zempty/docs'), { recursive: true, force: true });
+		const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: 'dark' });
+		await ctx.addInitScript(() => { try { localStorage.setItem('theme', JSON.stringify('dark')); } catch {} });
+		const page = await ctx.newPage(); page.setDefaultTimeout(5000); lastPage = page;
+		const errs = [];
+		page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
+		page.on('console', (m) => m.type() === 'error' && !/status of 400/.test(m.text()) && errs.push('console.error: ' + m.text())); // the refusals this part provokes (duplicate key, delete while a ticket lists it) are 400s on purpose
+		const ok = (c, msg) => { if (!c) throw new Error(`[${tag}] ${msg}` + (errs.length ? '\n  browser errors so far:\n  ' + errs.join('\n  ') : '')); };
+		const noOver = async (what) => { const sw = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], `${what}: horizontal overflow ${sw[0]} > ${sw[1]}`); };
+		const vis = (sel) => page.locator(sel).first().waitFor({ state: 'visible' });
+		const submit = (form) => page.click(`#drawer [data-aform=${form}] button[type=submit]`);
+		const addComp = async (title, key, summary = '', paths = '') => {
+			await page.fill('#drawer [data-draft="an:title"]', title);
+			if (key) await page.fill('#drawer [data-draft="an:key"]', key);
+			await page.fill('#drawer [data-draft="an:summary"]', summary); await page.fill('#drawer [data-draft="an:paths"]', paths);
+			await submit('new');
+		};
+		await page.goto(base + '?board=zempty');
+		await page.click('#viewSeg [data-view="map"]');
+		await vis('#mapMsg [data-anew]');
+		ok(/no component notes yet/.test(await page.innerText('#mapMsg')) && (await page.locator('#mapIn .mc, #mapList .mc').count()) === 0, 'empty state: the button above the how-to, no cards');
+		await noOver('empty state');
+		// first component: the key follows the title until it is edited by hand
+		await page.click('#mapMsg [data-anew]'); await vis('#drawer [data-aform=new]');
+		await page.fill('#drawer [data-draft="an:title"]', 'Photo Store');
+		ok(await page.inputValue('#drawer [data-draft="an:key"]') === 'photo-store', 'key derived from the title');
+		await page.fill('#drawer [data-draft="an:key"]', 'photos'); await page.fill('#drawer [data-draft="an:title"]', 'Photo Storage');
+		ok(await page.inputValue('#drawer [data-draft="an:key"]') === 'photos', 'a key edited by hand stays');
+		await noOver('new component form');
+		await addComp('Photo Storage', '', 'Stores uploaded photos.', 'src/photos/**\ninfra/s3.tf');
+		await page.waitForFunction(() => document.getElementById('dTitle')?.innerText === 'Photo Storage' && document.querySelector('#mapWrap .mc'));
+		ok(await note('photos') === '---\npaths: src/photos/**, infra/s3.tf\n---\n# Photo Storage\n\nStores uploaded photos.\n', 'the note is written as a plain markdown file');
+		ok(await page.evaluate(() => document.activeElement?.dataset.mc) === 'photos', 'focus stays on the edited component');
+		// a second one: a refused key shows inline; "a" (wide) or the toolbar opens the form
+		await page.click('#drawer [data-close]');
+		await page.click('#mTools [data-anew]'); await vis('#drawer [data-aform=new]');
+		await addComp('Dup', 'photos');
+		await page.waitForSelector('#drawer .msg.err');
+		ok(/already exists/.test(await page.innerText('#drawer .msg.err')) && (await page.inputValue('#drawer [data-draft="an:title"]')) === 'Dup', 'duplicate key: refused inline, the draft stays');
+		await page.click('#drawer [data-close]');
+		if (wide) { await page.keyboard.press('a'); await vis('#drawer [data-aform=new]'); ok(await page.inputValue('#drawer [data-draft="an:title"]') === 'Dup', 'a draft survives closing the form'); }
+		else { await page.click('#mTools [data-anew]'); await vis('#drawer [data-aform=new]'); }
+		await addComp('Web', 'web', 'The page.', 'web/**');
+		await page.waitForFunction(() => document.getElementById('dTitle')?.innerText === 'Web');
+		ok(await page.locator('#mapWrap .mc').count() >= 2, 'two components drawn');
+		// a connection, with the "save without a contract?" question once
+		await page.click('#drawer [data-aadd]');
+		await page.fill('#c-to .pq', 'photo'); await page.click('#c-to .pl li[data-pk]');
+		await noOver('add connection form');
+		await submit('conn'); await vis('#drawer .cwarn');
+		ok((await note('web')).indexOf('Connections') < 0, 'nothing written while the question is open');
+		await page.fill('#drawer [data-draft="ac:web:text"]', 'direct presigned PUT; never proxy bytes');
+		ok(await page.locator('#drawer .cwarn').count() === 0, 'typing a contract clears the question');
+		await submit('conn'); await vis('#drawer [data-cedit]');
+		ok((await note('web')).endsWith('## Connections\n- [Photo Storage](photos.md) — direct presigned PUT; never proxy bytes\n'), 'the edge is one canonical line in the note');
+		if (wide) ok(await page.locator('#mapSvg .eg').count() === 1, 'the edge is drawn');
+		// edit the contract: Esc cancels (and does not close the panel), Enter saves
+		await page.click('#drawer [data-cedit]'); await vis('#drawer .cedit input');
+		await page.fill('#drawer .cedit input', 'thrown away'); await page.keyboard.press('Escape');
+		ok(await page.locator('#drawer .cedit').count() === 0 && await page.locator('#drawer').isVisible() && /direct presigned/.test(await page.innerText('#drawer .mcl')), 'Esc cancels the line edit and keeps the panel');
+		await page.click('#drawer [data-cedit]'); await page.fill('#drawer .cedit input', 'presigned PUT only'); await page.keyboard.press('Enter');
+		await page.waitForFunction(() => /presigned PUT only/.test(document.querySelector('#drawer .mcl')?.innerText || ''));
+		ok((await note('web')).includes('— presigned PUT only\n'), 'Enter saves the contract');
+		// remove + Undo
+		await page.click('#drawer [data-crm]'); await vis('.toast button');
+		ok(!(await note('web')).includes('photos.md') && await page.locator('#drawer .mcl').count() === 0, 'remove: the line is gone');
+		await page.click('.toast button');
+		await page.waitForFunction(() => /presigned PUT only/.test(document.querySelector('#drawer .mcl')?.innerText || ''));
+		ok((await note('web')).includes('- [Photo Storage](photos.md) — presigned PUT only\n'), 'Undo puts the same line back');
+		// title + summary: hand-written prose around the managed parts stays
+		await writeFile(join(docsE, 'web.md'), (await note('web')) + '\n## Notes\nWritten by hand, keep me.\n');
+		await page.click('#drawer [data-aedit]'); await vis('#drawer [data-aform=edit]');
+		await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI'); await page.fill('#drawer [data-draft="ae:web:summary"]', 'The single page.');
+		await noOver('edit form');
+		if (wide) { // the poll re-renders the panel: half-typed text and the caret stay
+			await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI draft'); cliE('create', '--prefix', 'T', '--title', 'poll trigger');
+			await page.waitForTimeout(4600);
+			ok(await page.inputValue('#drawer [data-draft="ae:web:title"]') === 'Web UI draft' && await page.evaluate(() => document.activeElement?.dataset.draft) === 'ae:web:title', 'a draft survives the 4 s poll');
+			await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI');
+		}
+		await submit('edit');
+		await page.waitForFunction(() => document.getElementById('dTitle')?.innerText === 'Web UI');
+		const web = await note('web');
+		ok(web.startsWith('---\npaths: web/**\n---\n# Web UI\n\nThe single page.\n\n## Connections\n- [Photo Storage]') && web.endsWith('\n## Notes\nWritten by hand, keep me.\n'), 'only title and summary changed in the note');
+		// delete: refused while an open ticket lists it, then allowed
+		await page.click('#drawer .ovf > summary'); await page.click('#drawer [data-adel]');
+		ok(/removes 1 connection/.test(await page.innerText('#drawer .adel')), 'delete asks, and says how many connections go');
+		await page.click('#drawer [data-adelgo]'); await page.waitForSelector('#drawer .adel .msg.err .idlink[data-open="T-1"]');
+		ok(await note('web') !== null, 'refused: the note stays');
+		await page.click('#drawer [data-acancel=del]');
+		await page.evaluate(() => fetch('/api/b/zempty/tickets/T-1', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"done"}' }));
+		await page.click('#drawer .ovf > summary'); await page.click('#drawer [data-adel]'); await page.click('#drawer [data-adelgo]');
+		await page.waitForFunction(() => !document.querySelector('#mapWrap [data-mc="web"]'));
+		ok(await note('web') === null && await note('photos') !== null, 'delete removes the note');
+		await noOver('after delete');
+		await page.evaluate(() => fetch('/api/b/zempty/tickets/T-1', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }));
+		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
+		await ctx.close();
+	}
 	await cleanup();
-	console.log(`UI smoke OK: board/graph/docs/drawer/filters/settings/agents/toast x 1400+390px x light+dark, no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+	console.log(`UI smoke OK: board/graph/docs/map/drawer/filters/settings/agents/toast x 1400+390px x light+dark, no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 } catch (e) { await die(process.env.DEBUG ? e.stack : e.message); }

@@ -1,8 +1,17 @@
 """MCP prompt + resource carrying the worker protocol (skipped when the `mcp` package is missing)."""
 import asyncio
+import json
 import os
+import shutil
+import socket
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
+import urllib.error
+import urllib.request
+from pathlib import Path
 
 try:
 	import mcp  # noqa: F401
@@ -41,6 +50,84 @@ class WorkLoopTest(unittest.TestCase):
 		text = str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "game", "path": "docs/spec.md"})))
 		for word in ("docs/spec.md", "board=", "AT MOST 10", "done_when", "STOP", "before that", "dependency order", "DATA"):
 			self.assertIn(word, text)
+
+
+@unittest.skipIf(mcp is None, "mcp not installed")
+class HttpServerTest(unittest.TestCase):
+	"""`python -m unblockd.mcp_server --http` in a subprocess against a temp copy of example/, called with the SDK's HTTP client."""
+
+	def serve(self, token=""):
+		root = Path(self.tmp.name) / "projects"
+		if not root.exists():
+			shutil.copytree(Path(__file__).resolve().parent.parent / "example", root / "example")
+		with socket.socket() as sk:
+			sk.bind(("127.0.0.1", 0))
+			port = sk.getsockname()[1]
+		env = {**os.environ, "UNBLOCKD_ROOT": str(root), "MCP_PORT": str(port), "UNBLOCKD_TOKEN": token, "PYTHONPATH": str(Path(__file__).resolve().parent.parent)}
+		env.pop("TICKETS_DIR", None)
+		proc = subprocess.Popen([sys.executable, "-m", "unblockd.mcp_server", "--http"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+		self.addCleanup(lambda: (proc.kill(), proc.wait()))
+		for _ in range(100):
+			try:
+				with socket.create_connection(("127.0.0.1", port), 0.2):
+					break
+			except OSError:
+				time.sleep(0.1)
+		return f"http://127.0.0.1:{port}/mcp", root / "example"
+
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+
+	def call(self, url, name, args, token=""):
+		import httpx2
+		from mcp import ClientSession
+		from mcp.client.streamable_http import streamable_http_client
+
+		async def go():
+			http = httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"} if token else {})
+			async with streamable_http_client(url, http_client=http) as (r, w), ClientSession(r, w) as c:
+				await c.initialize()
+				if name is None:
+					return await c.list_tools()
+				r = await c.call_tool(name, args)
+				assert not r.is_error, r.content[0].text
+				return json.loads(r.content[0].text)
+		return asyncio.run(go())
+
+	def test_tools_and_architecture_over_http(self):
+		url, demo = self.serve()
+		tools = {t.name: t for t in self.call(url, None, None).tools}
+		for n in ("arch_set_edge", "arch_add_component", "architecture_map", "claim_next", "board_info", "accept_ticket"):
+			self.assertIn(n, tools)
+		self.assertIn("components", tools["create_ticket"].input_schema["properties"])
+		self.assertIn("agent", tools["create_ticket"].input_schema["required"])  # the proposal gate's identity, same tool as over stdio
+		self.assertEqual(self.call(url, "list_boards", {})["id"], "example")  # one board -> one content block
+		info = self.call(url, "board_info", {"board": "example"})
+		self.assertTrue(info["components"] and {"key", "title"} <= set(info["components"][0]))
+		arch = self.call(url, "architecture_map", {"board": "example"})
+		a, b = arch["edges"][0]["from"], arch["edges"][0]["to"]
+		new = self.call(url, "arch_set_edge", {"frm": a, "to": b, "text": "over http", "agent": "t-1", "board": "example"})
+		self.assertIn("over http", [e["text"] for e in new["edges"]])
+		self.assertIn("over http", (demo / "docs" / "arch" / f"{a}.md").read_text(encoding="utf-8"))  # the note on disk changed
+
+	def test_token(self):
+		url, _ = self.serve("s3cret")
+		body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping"}).encode()
+		for hdr in ({}, {"Authorization": "Bearer nope"}):
+			req = urllib.request.Request(url, body, {"Content-Type": "application/json", **hdr})
+			with self.assertRaises(urllib.error.HTTPError) as cm:
+				urllib.request.urlopen(req)
+			self.assertEqual(cm.exception.code, 401)
+			self.assertIn("UNBLOCKD_TOKEN", json.loads(cm.exception.read())["error"])
+		self.assertIn("board_info", [t.name for t in self.call(url, None, None, "s3cret").tools])
+
+	def test_host_header_checked(self):
+		url, _ = self.serve()
+		req = urllib.request.Request(url, b"{}", {"Content-Type": "application/json", "Host": "evil.example:80"})
+		with self.assertRaises(urllib.error.HTTPError) as cm:
+			urllib.request.urlopen(req)
+		self.assertEqual(cm.exception.code, 421)
 
 
 if __name__ == "__main__":

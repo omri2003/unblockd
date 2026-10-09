@@ -15,9 +15,9 @@
     python -m unblockd.cli doc PATH                # one file from the project repo
     python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
-    python -m unblockd.cli create --prefix BUG --title "..." [--json '{"priority": "P1", ...}'] [--agent A]   # --agent: strict schema, may park as a proposal
+    python -m unblockd.cli create --prefix BUG --title "..." [--component KEY]... [--json '{"priority": "P1", ...}'] [--agent A]   # --agent: strict schema, may park as a proposal
     python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
-    python -m unblockd.cli update ID --json '{"status": "done"}' [--agent A]'
+    python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped line to the body (by defaults to "human")
@@ -113,9 +113,11 @@ def main(argv: list[str] | None = None) -> int:
 	cr.add_argument("--title", required=True)
 	cr.add_argument("--json", default="{}")
 	cr.add_argument("--agent", help="the worker creating it: the board's schema is strict for agents, and its ticket may park as a proposal until a human accepts it")
+	cr.add_argument("--component", action="append", help="a component key of the board's architecture (repeatable)")
 	up = sub.add_parser("update")
 	up.add_argument("id")
-	up.add_argument("--json", required=True)
+	up.add_argument("--json", default="{}")
+	up.add_argument("--component", action="append", help="set the ticket's components to these keys (repeatable)")
 	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
@@ -208,9 +210,9 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":
-			out = s.create({**json.loads(a.json), "title": a.title}, tid=a.id, prefix=a.prefix, agent=a.agent)
+			out = s.create({**json.loads(a.json), "title": a.title, **({"components": a.component} if a.component else {})}, tid=a.id, prefix=a.prefix, agent=a.agent)
 		elif a.cmd == "update":
-			out = s.update(a.id, json.loads(a.json), agent=a.agent)
+			out = s.update(a.id, {**json.loads(a.json), **({"components": a.component} if a.component else {})}, agent=a.agent)
 		else:
 			out = s.add_note(a.id, a.by, a.text)
 	except (st.TicketError, json.JSONDecodeError) as e:

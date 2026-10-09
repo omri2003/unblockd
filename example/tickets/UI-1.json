@@ -13,5 +13,12 @@
   "waiting_on": "",
   "body": "",
   "created": "2026-10-03",
-  "updated": "2026-10-03"
+  "updated": "2026-10-09",
+  "touches": [
+    "web/index.html"
+  ],
+  "docs": [],
+  "components": [
+    "web-ui"
+  ]
 }

@@ -34,8 +34,6 @@ UNBLOCKD_ROOT=/tmp/demo python -m unblockd.web
 
 Expected: `unblockd on http://localhost:8787  boards: example (/tmp/demo/shop/tickets)`
 
-*Docker instead (not run here):* `docker compose up -d --build` serves `./example`; set `PROJECTS_DIR` in `.env` for your own.
-
 **2. Open the board** at <http://localhost:8787>: five tickets in columns, `g` switches to the graph, `d` to the docs agents read, `?` lists every shortcut.
 
 **3. Create a ticket the backend agent can take** (pillar `API`, owned by Claude; the demo's other open tickets are human-owned, blocked or already claimed). Press `n` in the board, or from another terminal:
@@ -46,7 +44,13 @@ python -m unblockd.cli --dir /tmp/demo/shop/tickets create --prefix API --title 
 
 Expected: JSON with `"id": "API-3"`, `"status": "todo"`; the card appears within 4 s.
 
-**4. Connect Claude Code, no Docker:**
+**4. Connect Claude Code.** One shared server for all your projects: `docker compose up -d` (`PROJECTS_DIR` in `.env`, default `./example`) serves the board and MCP at `http://localhost:8788/mcp` (not run here; `python -m unblockd.mcp_server --http` does the same without Docker and was). Then once:
+
+```sh
+claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp
+```
+
+With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board (snippet in docs/reference.md). One process per client instead (stdio):
 
 ```sh
 pip install mcp
@@ -54,7 +58,7 @@ claude mcp add unblockd -e UNBLOCKD_ROOT=/tmp/demo -e PYTHONPATH=$PWD -- python 
 claude mcp list
 ```
 
-Expected: `unblockd: python -m unblockd.mcp_server - Connected`. `PYTHONPATH` must be this checkout, because the package is not pip-installed.
+Expected: `unblockd: python -m unblockd.mcp_server - Connected`. `PYTHONPATH` must be this checkout (the package is not pip-installed).
 
 **5. Tell Claude:** *"use unblockd: run work_plan and work all ready tickets."* It plans, claims, heartbeats and completes tickets; watch cards move on the board. An empty claim returns `{ticket: null, reason}`: `dry` = nothing ready, `conflict` = ready tickets touch files a live claim holds (retry soon), `waiting` = work exists but is in flight, blocked, in review or waiting on a human.
 If the board defines agent profiles (the demo has `frontend` and `backend`), worker names must be `<profile>-N`, e.g. `backend-1`; anything else is refused with a message listing the profiles.
@@ -85,7 +89,7 @@ Put your project rules (tests, commits, PRs, when to ask a human, summary langua
 |---|---|
 | `UNBLOCKD_ROOT` | Folder(s) of projects; every `<project>/tickets/unblockd.json` is a board. |
 | `HOST`, `PORT` | Bind address (default `127.0.0.1`, `8787`). |
-| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, so keep it on localhost. MCP and CLI open the folder directly and ignore it. |
+| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, so keep it on localhost. The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI open the folder directly and ignore it. |
 
 ## More
 
