@@ -103,7 +103,7 @@ Optional; `DEFAULT_CONFIG` in store.py is the schema and unknown keys are refuse
   `context_budget` (default 60k chars), the rest listed for `read_doc`. Each doc reports its `links` (markdown
   links + `@imports` that exist in the repo: the graph's edges, not followed). Missing / outside /
   non-text entries come back with an `error` instead of failing the bundle. Project root = the
-  tickets folder's parent; `_inside()` refuses anything that resolves outside it. `claim_next` /
+  tickets folder's parent; `_inside()` refuses anything that resolves outside it. **Trust split** (AI-9): every doc entry has `trust`: `trusted` (board / profile docs, committed config) or `untrusted` (ticket `docs`, attachments); untrusted inlined text is wrapped by `knowledge.wrap()` in `<untrusted source="...">...</untrusted>` (a closing tag inside the content is broken with a `-`), `upstream` entries are `trust: untrusted` with `summary`/`handoff` wrapped the same, and `context.rule` says the ticket's own fields (title, body, done_when, notes, `waiting_on`) are untrusted too. Stored ticket files are never altered. WORK_LOOP carries the rule (out-of-scope asks -> `ask_human`). A doc deduped to its first source keeps that source's trust. `claim_next` /
   `claim_ticket` (MCP, CLI) return `{...ticket, "context": ...}`, which is the whole point: a
   worker reads its instructions from the board instead of being told. The chat has
   `get_context` / `read_doc` too.

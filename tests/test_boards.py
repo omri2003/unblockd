@@ -246,7 +246,7 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/files", {"name": "spec.md", "content": "window 0.2"})[0], 201)
 		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/files/spec.md")[1]["content"], "window 0.2")
 		ctx = self.call("GET", "/api/b/a/tickets/CMB-1/context")[1]
-		self.assertEqual(ctx["docs"][0]["content"], "window 0.2")
+		self.assertIn("window 0.2", ctx["docs"][0]["content"])
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=tickets/unblockd.json")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=../b/tickets/unblockd.json")[0], 400)
 		g = self.call("GET", "/api/b/a/knowledge")[1]
