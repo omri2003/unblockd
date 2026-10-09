@@ -116,6 +116,9 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
 .dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
+.dg-body{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows .2s ease-out,visibility .2s} .dg-body>div{min-height:0;overflow:hidden}
+.digest.open .dg-body{grid-template-rows:1fr;visibility:visible}
+.digest .chev{display:inline-block;margin-left:2px;transition:transform .2s ease-out} .digest.open .chev{transform:translateY(.1em) rotate(-135deg)}
 .bang{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--plum);color:var(--surface);font-size:.75rem;font-weight:800;font-style:normal}
 /* Needs you: a header badge (any view) opens a side panel like the drawer; rows expand in place */
 .nbadge{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border:1px solid var(--plum);background:var(--plum-soft);color:var(--plum);border-radius:var(--r);cursor:pointer;font-weight:800;font-variant-numeric:tabular-nums}
@@ -448,7 +451,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -899,11 +902,13 @@ function digestGroups(){
 }
 function renderDigest(){
   const el=$('digest'); if(!DG||SET.digest==='off'||state.view!=='board'){el.hidden=true;return;}
-  const gs=digestGroups(); el.hidden=!gs.length; if(el.hidden) return;
+  const gs=digestGroups(), was=el.hidden; el.hidden=!gs.length; if(el.hidden) return;
+  if(was&&!reduce.matches) el.animate([{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'none'}],{duration:200,easing:'ease-out'}); // first appearance only: later renders keep the same element state
+  el.classList.toggle('open',dgOpen); // the body is always in the DOM; the class runs the grid-rows transition (nextPaint's trick)
   const d=new Date(DG.since), sameDay=d.toDateString()===new Date().toDateString();
   const since=sameDay?hm(d):d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm(d);
-  el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}">${dgOpen?'Collapse':'Expand'}</button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
-   +(dgOpen?gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''):'');
+  el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}"><span>${dgOpen?'Collapse':'Expand'}</span> <i class="chev" aria-hidden="true"></i></button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
+   +`<div class="dg-body"><div>`+(gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''))+`</div></div>`;
 }
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
@@ -1317,8 +1322,9 @@ document.addEventListener('click',async e=>{
   if(g('[data-clear]')){clearFilters();return;}
   if(g('[data-new]')){openId=null;editForm(null);return;}
   if(b=g('[data-seg]')){if(state.view!=='board')setView('board');if(matchMedia('(max-width:600px)').matches)setTab(b.dataset.seg);goTo(document.querySelector(`[data-col="${b.dataset.seg}"]`));return;}
-  if(g('[data-dgtoggle]')){dgOpen=!dgOpen;renderDigest();return;}
-  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());DG=null;renderDigest();return;}
+  if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
+  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());const el=$('digest'),done=()=>{DG=null;renderDigest();};
+    if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
   if(g('[data-toworking]')){$('apanel').open=true;$('apanel').scrollIntoView({block:'nearest'});return;}
   if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}

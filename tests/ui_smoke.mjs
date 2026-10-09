@@ -78,6 +78,14 @@ try {
 		ok(await page.evaluate((t) => document.documentElement.dataset.theme === t, theme), `[${tag}] theme not applied`);
 		ok(await page.locator('.col.doing .agc').count(), `[${tag}] claimed card chip missing (claim made via CLI)`);
 		await noOverflow('board');
+		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
+		await page.reload(); await page.waitForSelector('.card', { state: 'attached' });
+		await visible('#digest [data-dgtoggle]', 'digest bar');
+		await page.click('#digest [data-dgtoggle]');
+		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]').getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
+		await page.click('#digest [data-dgtoggle]');
+		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
+		await page.click('#digest [data-dgdismiss]'); await page.waitForSelector('#digest', { state: 'hidden' });
 
 		const title0 = await page.locator('#appTitle').innerText(); // board switcher: the title is the menu
 		ok(!(await page.locator('#bsum').evaluate((e) => e.inert)), `[${tag}] two boards: title should be a button`);
