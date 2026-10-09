@@ -1173,11 +1173,11 @@ function showTicket(id,refresh){
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
-    ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
+    ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='review'?`<h3>Result, for review</h3>${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
-    <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
+    <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
@@ -1336,8 +1336,8 @@ function startP(){
 }
 async function setPrio(id,p){
   const t=BY.get(id); if(!t) return toast('Priority: focus a card or open a ticket first.',{err:1});
-  const from=t.priority||null; if(from===p) return toast(`${id} is already ${p||'without a priority'}.`);
-  try{ await api('PATCH','/'+id,{priority:p}); await load(true);
+  const card=$('drawer').hidden&&document.activeElement?.closest?.('[data-open]'), from=t.priority||null; if(from===p) return toast(`${id} is already ${p||'without a priority'}.`);
+  try{ await api('PATCH','/'+id,{priority:p}); await load(true); if(card) document.querySelector(`#board [data-open="${id}"]`)?.focus(); // keep the card focused so `p` can be chained
     toast(`${id}: ${p?`${p}, ${PDEF[p]}`:'no priority'}`,{undo:()=>api('PATCH','/'+id,{priority:from}).then(()=>load(true)).catch(er=>toast(er.message,{err:1}))}); }
   catch(er){ toast('Priority failed: '+er.message,{err:1}); }
 }
@@ -1830,7 +1830,7 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	document.startViewTransition(()=>setView(v));
 }
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('bar').hidden=v==='docs';$('depSeg').hidden=v!=='graph';
-  paintViews(v);renderShow();renderWorking();renderDigest();renderNext();if(v==='graph'){resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
+  paintViews(v);renderShow();if(v!=='graph')render();else{renderWorking();renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}}
 function render(){if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
 function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
   const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;

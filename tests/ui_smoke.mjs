@@ -179,6 +179,15 @@ try {
 			await page.click(`[data-view="${v}"]`);
 			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`).getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
 		}
+		{ // Graph's Free/Blocked must not leak into the Board
+			const n0 = await page.locator('#board .card').count();
+			await page.click('[data-view="graph"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="graph"]').getAttribute('aria-pressed') === 'true');
+			await page.click('#depSeg [data-dep="BLOCKED"]');
+			await page.click('[data-view="board"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
+			await page.waitForTimeout(300);
+			ok((await page.locator('#board .card').count()) === n0, `[${tag}] Blocked chosen in the Graph should not filter the Board`);
+			await page.click('[data-view="graph"]'); await page.click('#depSeg [data-dep="ALL"]'); await page.click('[data-view="board"]');
+		}
 		await page.click('#needsBadge'); // open via the badge, close with Esc, open again with the key
 		await visible('#npanel .nr', 'Needs you panel');
 		await page.keyboard.press('Escape');
