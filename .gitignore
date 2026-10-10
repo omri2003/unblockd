@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .venv/
 .env
+
+# The maintainer's board is a separate private repo, cloned here as ./tickets; never commit it to this repo
+/tickets/
