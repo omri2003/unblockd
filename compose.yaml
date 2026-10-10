@@ -13,6 +13,10 @@ x-unblockd: &unblockd   # shared by both services
   environment: &env
     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}   # enables the chat; put it in .env
     UNBLOCKD_TOKEN: ${UNBLOCKD_TOKEN:-}   # optional shared token for the API and MCP (see README)
+    # The containers bind 0.0.0.0 inside, which the server refuses without a token. That is safe here only because the ports
+    # below are published on 127.0.0.1. Publishing wider (or `docker run -p 8787:8787` without a token) should fail: set
+    # UNBLOCKD_TOKEN then, don't copy this line.
+    UNBLOCKD_ALLOW_OPEN: "1"
     UNBLOCKD_MODEL: ${UNBLOCKD_MODEL:-claude-sonnet-5-5}
     UNBLOCKD_WEBHOOK: ${UNBLOCKD_WEBHOOK:-}   # optional push notifications (see README)
     UNBLOCKD_WEBHOOK_FORMAT: ${UNBLOCKD_WEBHOOK_FORMAT:-json}

@@ -45,7 +45,8 @@ GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
 POST   tickets/<id>/files                {"name", "content"}  attach a text file
 DELETE tickets/<id>/files/<name>
 
-Auth: none by default (binds to 127.0.0.1). With UNBLOCKD_TOKEN set, /api/* needs `Authorization: Bearer <token>`
+Writes (POST/PATCH/PUT) must send Content-Type: application/json (else 415); an Origin header, when present, must be this server (else 403).
+Auth: none by default (binds to 127.0.0.1; a non-loopback HOST without a token refuses to start unless UNBLOCKD_ALLOW_OPEN=1). With UNBLOCKD_TOKEN set, /api/* needs `Authorization: Bearer <token>`
 or the `unblockd_token` cookie, which any page visited with `?token=<token>` sets. A shared secret, not per-user identity.
 """
 from __future__ import annotations
@@ -140,6 +141,8 @@ class Handler(BaseHTTPRequestHandler):
 			self.send_header("ETag", etag)
 		self.send_header("Content-Length", str(len(data)))
 		self.send_header("Cache-Control", "no-store")
+		self.send_header("X-Content-Type-Options", "nosniff")
+		self.send_header("Content-Security-Policy", "frame-ancestors 'none'")  # no clickjacking; nothing else restricted (the UI is inline)
 		self.end_headers()
 		self.wfile.write(data)
 
@@ -149,7 +152,12 @@ class Handler(BaseHTTPRequestHandler):
 		return any(c and hmac.compare_digest(c.encode(), token.encode()) for c in (bearer, cookie and cookie.value))
 
 	def _body(self) -> dict:
-		n = int(self.headers.get("Content-Length") or 0)
+		try:
+			n = int(self.headers.get("Content-Length") or 0)
+		except ValueError:
+			n = -1
+		if n < 0:
+			raise st.TicketError("bad Content-Length")
 		if n > MAX_BODY:
 			raise st.TicketError("request too large")
 		try:
@@ -176,6 +184,22 @@ class Handler(BaseHTTPRequestHandler):
 			return 200, kn.delete_component(store, rest[2], by=by)
 		return 405, {"error": "method not allowed"}
 
+	def _scheme(self) -> str:
+		return "https" if (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip() == "https" else "http"
+
+	def _write_refused(self, method: str):
+		"""(status, message) when a write could be a cross-site request, else None. A page on another site can POST text/plain
+		(or form data) to localhost without a preflight, so writes must be JSON from the same origin. DELETE has no simple form,
+		so it needs a preflight anyway and may carry no body."""
+		if method == "GET":
+			return None
+		origin = self.headers.get("Origin")
+		if origin and origin != f"{self._scheme()}://{self.headers.get('Host')}":
+			return 403, f"cross-origin write refused (Origin {origin} is not this server)"
+		if method != "DELETE" and not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+			return 415, "writes must send Content-Type: application/json"
+		return None
+
 	def _route(self, method: str):
 		url = urlparse(self.path)
 		parts = [p for p in url.path.split("/") if p]
@@ -185,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
 			if token and hmac.compare_digest(q.get("token", "").encode(), token.encode()):
 				rest_q = urlencode({k: v for k, v in q.items() if k != "token"})
 				self.send_response(302)
-				self.send_header("Set-Cookie", f"unblockd_token={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000")
+				self.send_header("Set-Cookie", f"unblockd_token={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000" + ("; Secure" if self._scheme() == "https" else ""))
 				self.send_header("Location", url.path + ("?" + rest_q if rest_q else ""))
 				self.send_header("Content-Length", "0")
 				return self.end_headers()
@@ -193,6 +217,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
 			if parts[:1] != ["api"]:
 				return self._send(404, {"error": "not found"})
+			if bad := self._write_refused(method):
+				return self._send(bad[0], {"error": bad[1]})
 			if token and not self._authed(token):
 				return self._send(401, {"error": "unauthorized: open the board once with ?token=<UNBLOCKD_TOKEN> or send Authorization: Bearer <token>"})
 			if parts == ["api", "boards"]:
@@ -311,8 +337,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
-	if not os.environ.get("UNBLOCKD_TOKEN") and host not in ("127.0.0.1", "localhost", "::1"):
-		print(f"WARNING: bound to {host} with no auth: set UNBLOCKD_TOKEN, or anyone who can reach the port can edit tickets", flush=True)
+	st.refuse_open_bind(host, os.environ.get("UNBLOCKD_TOKEN"))
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
 	      + (", ".join(f"{k} ({v})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	if notify.start(BOARDS):

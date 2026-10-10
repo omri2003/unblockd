@@ -108,6 +108,15 @@ class TicketError(ValueError):
 	"""Bad input from a caller (maps to HTTP 400 / an MCP tool error)."""
 
 
+def refuse_open_bind(host: str, token: str | None) -> None:
+	"""Exit at startup when the server listens beyond loopback with no token: anyone (or any web page, via a rebound name)
+	that reaches the port could edit tickets. UNBLOCKD_ALLOW_OPEN=1 opts out (the compose file does: it publishes loopback only)."""
+	if token or host in ("127.0.0.1", "localhost", "::1") or os.environ.get("UNBLOCKD_ALLOW_OPEN") == "1":
+		return
+	raise SystemExit(f"refusing to start: bound to {host} with no auth. Set UNBLOCKD_TOKEN, or bind HOST=127.0.0.1, "
+	                 "or set UNBLOCKD_ALLOW_OPEN=1 if the port is only reachable by you (e.g. published on 127.0.0.1 by Docker).")
+
+
 class NotFound(TicketError):
 	pass
 

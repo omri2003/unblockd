@@ -13,7 +13,8 @@ default; the board you last opened is remembered.
 
 | Env var | Meaning |
 |---|---|
-| `HOST`, `PORT` | Address the web server binds (default `127.0.0.1`, `8787`). A non-loopback `HOST` without `UNBLOCKD_TOKEN` prints a warning. |
+| `HOST`, `PORT` | Address the web server binds (default `127.0.0.1`, `8787`). A non-loopback `HOST` without `UNBLOCKD_TOKEN` refuses to start (also the HTTP MCP server) unless `UNBLOCKD_ALLOW_OPEN=1`. |
+| `UNBLOCKD_ALLOW_OPEN` | `1` = allow a non-loopback `HOST` with no token. compose sets it because it publishes `127.0.0.1` only; `docker run -p 8787:8787` without a token refuses to start on purpose. |
 | `UNBLOCKD_URL`, `UNBLOCKD_BOARD` | CLI only: send commands to a running server (with `UNBLOCKD_TOKEN`) instead of opening the folder. |
 | `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
 | `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional. |
@@ -299,7 +300,7 @@ claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp 
 |---|---|
 | `MCP_PORT` | Port of `--http` (default `8788`). |
 | `HOST` | Bind address (default `127.0.0.1`; compose sets `0.0.0.0` inside the container and publishes `127.0.0.1:8788` only). |
-| `UNBLOCKD_TOKEN` | Set: every request needs `Authorization: Bearer <token>` (constant-time compare, else 401 JSON saying how to fix it). Unset: open; a warning is printed when bound beyond loopback. Same token as the web API. |
+| `UNBLOCKD_TOKEN` | Set: every request needs `Authorization: Bearer <token>` (constant-time compare, else 401 JSON saying how to fix it). Unset: open; beyond loopback it refuses to start unless `UNBLOCKD_ALLOW_OPEN=1`. Same token as the web API. |
 | `MCP_ALLOWED_HOSTS` | Extra `Host` values, comma list (`mypc:*`, `name:8788`). DNS-rebinding protection stays on: only `localhost`, `127.0.0.1` and `[::1]` (any port, so a remapped compose port works) are accepted otherwise (421). Needed when you reach the server by another name, e.g. from WSL or another machine. |
 
 The server is shared, so the agent must say which board: a repo's board id is its `id` in `unblockd.json` (folder name when created by `create_board`), and every tool takes `board=`. Put this in each repo's `CLAUDE.md`:
@@ -390,7 +391,7 @@ PATCH  tickets/<id>                   {"status": "done"}
 DELETE tickets/<id>                   ?agent=, ?reason= (rejecting a proposal; logged)
 ```
 
-**Auth**: none unless `UNBLOCKD_TOKEN` is set (then `Authorization: Bearer <token>` or the cookie from opening `/?token=<token>`). It listens on 127.0.0.1 by default (`HOST`, `PORT`); don't expose it wider without a token.
+**Auth**: none unless `UNBLOCKD_TOKEN` is set (then `Authorization: Bearer <token>` or the cookie from opening `/?token=<token>`). It listens on 127.0.0.1 by default (`HOST`, `PORT`); don't expose it wider without a token (a non-loopback `HOST` without one refuses to start unless `UNBLOCKD_ALLOW_OPEN=1`). Against cross-site requests (a web page POSTing to localhost): writes (POST/PATCH/PUT) must send `Content-Type: application/json` (else 415), an `Origin` header must match the request's `Host` and scheme (else 403; none = curl/CLI, allowed), DELETE needs no body. Responses carry `X-Content-Type-Options: nosniff` and `Content-Security-Policy: frame-ancestors 'none'`; the token cookie is `Secure` when `X-Forwarded-Proto: https`; a bad `Content-Length` is a 400.
 
 ## Develop
 

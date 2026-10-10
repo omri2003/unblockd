@@ -782,7 +782,7 @@ const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
 async function jf(url, method='GET', body){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
-  const r=await fetch(url,{method,cache:'no-store',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});
+  const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({error:'bad response'}));
   if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
   return j;

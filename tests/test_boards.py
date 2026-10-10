@@ -125,6 +125,46 @@ class ApiTest(unittest.TestCase):
 		except urllib.error.HTTPError as e:
 			return e.code, json.loads(e.read())
 
+	def raw(self, method, path, body=b"", headers=None):
+		c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)
+		c.request(method, path, body=body, headers=headers or {})
+		r = c.getresponse()
+		return r.status, r.read(), r
+
+	def test_writes_need_json_and_the_same_origin(self):  # CSRF: text/plain POSTs need no preflight
+		body = json.dumps({"prefix": "BUG", "title": "x"}).encode()
+		js = {"Content-Type": "application/json"}
+		code, out, _ = self.raw("POST", "/api/tickets", body, {"Content-Type": "text/plain"})
+		self.assertEqual(code, 415)
+		self.assertIn("application/json", json.loads(out)["error"])
+		self.assertEqual(self.raw("POST", "/api/tickets", body)[0], 415)  # no Content-Type at all
+		self.assertEqual(self.call("GET", "/api/tickets")[1], [])  # nothing was created
+		host = f"127.0.0.1:{self.srv.server_port}"
+		self.assertEqual(self.raw("POST", "/api/tickets", body, {**js, "Origin": "http://evil.example"})[0], 403)
+		self.assertEqual(self.raw("POST", "/api/tickets", body, {**js, "Origin": "https://" + host})[0], 403)  # scheme counts
+		self.assertEqual(self.raw("DELETE", "/api/tickets/BUG-1", headers={"Origin": "http://evil.example"})[0], 403)
+		self.assertEqual(self.raw("POST", "/api/tickets", body, {**js, "Origin": "http://" + host})[0], 201)  # same origin
+		self.assertEqual(self.raw("POST", "/api/tickets", body, {**js, "Origin": "https://" + host, "X-Forwarded-Proto": "https"})[0], 201)
+		self.assertEqual(self.raw("POST", "/api/tickets", body, js)[0], 201)  # no Origin: curl, CLI
+		self.assertEqual(self.raw("DELETE", "/api/tickets/BUG-1")[0], 200)  # DELETE needs no body or Content-Type
+
+	def test_bad_content_length_is_400(self):
+		code, out, _ = self.raw("POST", "/api/tickets", b"{}", {"Content-Type": "application/json", "Content-Length": "abc"})
+		self.assertEqual(code, 400)
+		self.assertIn("Content-Length", json.loads(out)["error"])
+
+	def test_security_headers(self):
+		_, _, r = self.raw("GET", "/api/tickets")
+		self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
+		self.assertEqual(r.getheader("Content-Security-Policy"), "frame-ancestors 'none'")
+
+	def test_token_cookie_is_secure_over_https(self):
+		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
+			for proto, secure in (("https", True), ("http", False)):
+				_, _, r = self.raw("GET", "/?token=s3cret", headers={"X-Forwarded-Proto": proto})
+				self.assertEqual("; Secure" in r.getheader("Set-Cookie"), secure)
+
+
 	def test_boards_are_separate_and_default_is_first(self):
 		self.assertEqual(self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "x"})[0], 201)
 		self.assertEqual(len(self.call("GET", "/api/b/b/tickets")[1]), 1)
@@ -402,3 +442,19 @@ class ApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class OpenBindTest(unittest.TestCase):
+	def test_refuses_beyond_loopback_without_a_token(self):
+		from unblockd.store import refuse_open_bind
+		with mock.patch.dict(os.environ, {}, clear=False):
+			os.environ.pop("UNBLOCKD_ALLOW_OPEN", None)
+			refuse_open_bind("127.0.0.1", None)
+			refuse_open_bind("::1", "")
+			refuse_open_bind("0.0.0.0", "tok")  # a token is enough
+			with self.assertRaises(SystemExit) as cm:
+				refuse_open_bind("0.0.0.0", None)
+			for hint in ("UNBLOCKD_TOKEN", "HOST=127.0.0.1", "UNBLOCKD_ALLOW_OPEN=1"):
+				self.assertIn(hint, str(cm.exception))
+			os.environ["UNBLOCKD_ALLOW_OPEN"] = "1"
+			refuse_open_bind("0.0.0.0", None)  # explicit opt-out

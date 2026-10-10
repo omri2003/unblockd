@@ -407,8 +407,7 @@ def main():
 		return
 	import uvicorn
 	host, port, token = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("MCP_PORT", "8788")), os.environ.get("UNBLOCKD_TOKEN", "")
-	if not token and host not in LOOPBACK:
-		print(f"WARNING: bound to {host} with no auth: set UNBLOCKD_TOKEN, or anyone who can reach the port can edit tickets", flush=True)
+	st.refuse_open_bind(host, token)
 	print(f"unblockd MCP on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}/mcp  boards: "
 	      + (", ".join(BOARDS.all()) or "none yet"), flush=True)
 	uvicorn.run(http_app(host, token), host=host, port=port, log_level="warning")

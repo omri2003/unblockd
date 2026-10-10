@@ -89,7 +89,7 @@ Put your project rules (tests, commits, PRs, when to ask a human, summary langua
 |---|---|
 | `UNBLOCKD_ROOT` | Folder(s) of projects; every `<project>/tickets/unblockd.json` is a board. |
 | `HOST`, `PORT` | Bind address (default `127.0.0.1`, `8787`). |
-| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, so keep it on localhost. The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI open the folder directly and ignore it. |
+| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, and a non-loopback `HOST` then refuses to start unless `UNBLOCKD_ALLOW_OPEN=1` (compose sets it: its ports are published on 127.0.0.1 only). Writes must be `application/json` (415) and a foreign `Origin` is refused (403). The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI open the folder directly and ignore it. |
 
 ## More
 
