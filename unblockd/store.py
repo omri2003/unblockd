@@ -76,6 +76,8 @@ FIELDS = {
 	"asked_at": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	"asked_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	# when the ticket last moved to done (UTC ISO); set by create/update/complete, read-only. Old tickets lack it: readers fall back to `updated`
+	# bumped by every write of the ticket file (_write); old files read as 0. Read-only: update(expected_rev=) is how a client says "I saw this one"
+	"rev": (0, lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0),
 	"done_at": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	# the agent that created this ticket while the board's agent_tickets is "propose"; set by create(agent=), cleared by accept(); read-only. While set the ticket is pending
 	"proposed_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
@@ -119,6 +121,10 @@ def refuse_open_bind(host: str, token: str | None) -> None:
 
 class NotFound(TicketError):
 	pass
+
+
+class Conflict(TicketError):
+	"""update(expected_rev=) lost a race: the ticket was written after the caller read it (REST 409)."""
 
 
 def load_config(tickets_dir: Path) -> dict:
@@ -202,10 +208,12 @@ class Store:
 			t = json.load(f)
 		if t.get("status") == "pending":  # derived only (effective_status); old files stored it, read as todo
 			t["status"] = "todo"
+		t.setdefault("rev", 0)
 		return t
 
 	def _write(self, t: dict) -> None:
 		path = self._path(t["id"])
+		t["rev"] = t.get("rev", 0) + 1  # every ticket write goes through here (claims.json / heartbeats never touch the ticket file)
 		fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".tmp")
 		with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
 			json.dump(t, f, indent=2, ensure_ascii=False)
@@ -236,6 +244,8 @@ class Store:
 				raise TicketError("proposed_by is set when an agent creates a ticket and cleared by accept(): it can be read, not written")
 			if k in ("asked_at", "asked_by"):
 				raise TicketError(f"{k} is set by ask() and cleared by answer(): it can be read, not written")
+			if k == "rev":
+				raise TicketError("rev is bumped by every write: it can be read, not written (send If-Match / expected_rev to guard an update)")
 			if k == "done_at":
 				raise TicketError("done_at is set when a ticket moves to done: it can be read, not written")
 			if k == "title" and isinstance(v, str):
@@ -528,15 +538,18 @@ class Store:
 			self._log("proposed", tid, proposed_by, t["title"])
 		return self.get(tid)
 
-	def update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
-		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI)."""
-		return self._locked(lambda: self._update(tid, changes, agent))
+	def update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
+		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI).
+		`expected_rev` = the rev the caller last saw: if the ticket was written since, raise Conflict instead of overwriting."""
+		return self._locked(lambda: self._update(tid, changes, agent, expected_rev))
 
-	def _update(self, tid: str, changes: dict, agent: str | None = None) -> dict:
+	def _update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
 		path = self._path(tid)
 		if not path.exists():
 			raise NotFound(f"no ticket {tid}")
 		t = self._read(path)
+		if expected_rev is not None and expected_rev != t["rev"]:
+			raise Conflict(f"{tid} changed since you loaded it (rev {t['rev']}, you had {expected_rev}): reload it and apply your change again")
 		clean = self._clean(changes, partial=True)
 		self._holder_only(tid, agent)
 		self._keepalive(tid, agent)

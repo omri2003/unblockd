@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from unblockd.store import NotFound, Store, TicketError
+from unblockd.store import Conflict, NotFound, Store, TicketError
 
 
 def _make(args):
@@ -36,6 +36,36 @@ class StoreTest(unittest.TestCase):
 		self.assertEqual(self.s.get("E-2")["children"], [])
 		self.s.update("E-2", {"parent": None})
 		self.assertEqual(self.s.get("E-1")["progress"], {"done": 1, "total": 1})
+
+	def test_rev_counts_writes_and_guards_updates(self):
+		t = self.s.create({"title": "x"}, tid="R-1")
+		self.assertEqual(t["rev"], 1)
+		self.assertEqual(self.s.update("R-1", {"title": "y"})["rev"], 2)
+		self.assertEqual(self.s.update("R-1", {"title": "z"}, expected_rev=2)["rev"], 3)  # fresh rev: ok
+		with self.assertRaises(Conflict) as cm:
+			self.s.update("R-1", {"title": "stale"}, expected_rev=2)
+		self.assertIn("reload", str(cm.exception))
+		self.assertIsInstance(cm.exception, TicketError)
+		self.assertEqual(self.s.get("R-1")["title"], "z")  # the stale write changed nothing
+		with self.assertRaises(TicketError):
+			self.s.update("R-1", {"rev": 99})  # read-only
+		p = Path(self.tmp.name) / "tickets" / "R-1.json"
+		d = json.loads(p.read_text())
+		del d["rev"]
+		p.write_text(json.dumps(d))  # an old file without rev reads as 0
+		self.assertEqual(self.s.get("R-1")["rev"], 0)
+		self.assertEqual(self.s.update("R-1", {"title": "w"}, expected_rev=0)["rev"], 1)
+
+	def test_claim_and_complete_bump_rev_but_heartbeat_does_not(self):
+		self.s.create({"title": "x"}, tid="R-2")
+		self.s.claim("a-1", tid="R-2")
+		r = self.s.get("R-2")["rev"]
+		self.s.heartbeat("R-2", "a-1", "still here")
+		self.assertEqual(self.s.get("R-2")["rev"], r)  # heartbeats live in claims.json
+		self.s.complete("R-2", "a-1", "done it")
+		self.assertGreater(self.s.get("R-2")["rev"], r)
+		with self.assertRaises(Conflict):  # the human's form was opened before complete() landed
+			self.s.update("R-2", {"body": "my edit"}, expected_rev=r)
 
 	def test_split_sets_parent_on_the_parts(self):
 		self.s.create({"title": "big"}, tid="E-1")
