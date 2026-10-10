@@ -781,13 +781,13 @@ document.addEventListener('keydown',e=>{
 const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
-async function jf(url, method='GET', body){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
-  const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+async function jf(url, method='GET', body, hdr){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
+  const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json',...hdr},body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({error:'bad response'}));
   if(!r.ok) throw new Error(j.error||('HTTP '+r.status));
   return j;
 }
-const api=(method,path,body)=>jf(API+'/tickets'+path,method,body);
+const api=(method,path,body,rev)=>jf(API+'/tickets'+path,method,body,rev==null?undefined:{'If-Match':String(rev)}); // rev: the ticket's rev as the user saw it; a write since then = 409
 let authShown=false;
 function authFail(text){ // 401: say how to get in, once (the 4 s poll must not repeat it or reload)
   if(authShown) return; authShown=true;
@@ -1374,7 +1374,7 @@ function editForm(t){
   const SC=isNew?CFG.schema:null, RQ=new Set(SC?.required||[]), R=f=>RQ.has(f)?' rq-l':'', S=f=>RQ.has(f)?'<b class="rq" title="Required by this board\'s schema"> *</b>':'';
   const opt=(vals,cur)=>vals.map(([v,l])=>`<option value="${esc(v)}" ${String(cur??'')===v?'selected':''}>${esc(l)}</option>`).join('');
   openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0">${isNew?'New ticket':'Edit '+esc(t.id)}</h2><span class="sp"><button type="button" class="btn ghost" data-close>Cancel</button></span></div>
-  <form class="edit" id="editForm" data-id="${isNew?'':esc(t.id)}">
+  <form class="edit" id="editForm" data-id="${isNew?'':esc(t.id)}" data-rev="${isNew?'':t.rev}">
     ${isNew?(SC?.prefixes?`<label for="f-prefix">ID prefix <span class="hint">this board's prefixes</span><select id="f-prefix">${Object.entries(SC.prefixes).map(([k,m])=>`<option value="${esc(k)}"${k===qaPrefix()?' selected':''}>${esc(k)} — ${esc(m)}</option>`).join('')}</select></label><span></span>`:`<label for="f-prefix">ID prefix <span class="hint">next free number is picked</span><input id="f-prefix" list="dl-prefix" value="${esc(CFG.schema?qaPrefix():'BUG')}" pattern="[A-Z0-9]+" required>${prefixDl('dl-prefix')}</label><span></span>`):''}
     <label class="full" for="f-title">Title<input id="f-title" required maxlength="200" value="${esc(t.title)}"></label>
     <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
@@ -1406,9 +1406,12 @@ async function submitForm(f){
     blocked_by:pickIds('f-blocked'),...($('f-comp')?{components:pickIds('f-comp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
     tags:pickIds('f-tags'),touches:pickIds('f-touches'),docs:pickIds('f-docs'),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
-    const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
+    const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data,f.dataset.rev) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
     editing=false; await load(true); showTicket(t.id); if(f.dataset.id) toast(`Saved ${t.id}`); else{ store.set(qaKey(),t.id.replace(/-\d+[a-z]?$/,'')); createdToast(t); }
-  }catch(e){ m.className='msg err'; m.textContent=e.message; }
+  }catch(e){ m.className='msg err'; m.textContent=e.message;
+    if(/changed since you loaded/.test(e.message)){ // 409: someone else wrote it. Reload the ticket, keep the typed draft in the form, take the new rev so the next Save is a conscious overwrite
+      await load(true); f.dataset.rev=BY.get(f.dataset.id)?.rev??''; toast('Changed by someone else, reloaded. Your edits are still in the form: check them and Save again.',{err:1}); }
+  }
 }
 
 // ---------- settings (gear): per browser, localStorage ----------

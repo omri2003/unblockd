@@ -234,8 +234,10 @@ Every key is optional. `prefixes` maps a prefix to a one-line meaning (80 chars)
 {"id": "BUG-10", "title": "Search ignores accents", "status": "todo", "priority": "P1",
  "owner": "Claude", "pillar": "COMBAT", "pillar_step": 1, "section": "",
  "blocked_by": ["CMB-4"], "tags": ["gdscript"], "touches": ["scripts/demon_3d.gd"], "components": ["combat"], "waiting_on": "", "body": "cause -> fix -> tests",
- "created": "2026-10-03", "updated": "2026-10-03"}
+ "rev": 1, "created": "2026-10-03", "updated": "2026-10-03"}
 ```
+
+`rev` is a counter every write of the ticket file bumps (create = 1; old files without it read as 0; claims' heartbeats live in `claims.json` and do not bump it). It is read-only. To avoid overwriting a concurrent change, send the rev you last saw: REST `PATCH` with `If-Match: <rev>` answers 409 (`{"error": ...}`, "reload and apply again") when the ticket was written since; the web UI's edit form does this and keeps your typed draft on a 409. Without the header the last write wins (CLI and MCP do not send it).
 
 `status` is `todo` · `doing` · `review` · `done`; `pending` is derived: a `todo`
 with an open blocker or a `waiting_on` question *shows* as pending on its own. `ask_human` also records `asked_at` / `asked_by` (read-only; `answer` clears them): the web board's *Needs you* panel lists only questions an agent asked, a `waiting_on` set by hand shows as *Parked* on its card (clear it from the drawer). Create with a prefix (`BUG`) and the
@@ -387,7 +389,7 @@ POST   tickets/<id>/files             {"name", "content"}     GET / DELETE ticke
 GET    tickets/<id>
 POST   tickets                        {"prefix": "BUG", "title": "...", "agent"?: worker name, ...}  (a human's ticket may return "warnings")
 POST   tickets/<id>/accept            {"by"?}  accept an agent's proposal
-PATCH  tickets/<id>                   {"status": "done"}
+PATCH  tickets/<id>                   {"status": "done"}   (If-Match: <rev> optional: 409 if the ticket changed since you read it)
 DELETE tickets/<id>                   ?agent=, ?reason= (rejecting a proposal; logged)
 ```
 

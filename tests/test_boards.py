@@ -148,6 +148,19 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.raw("POST", "/api/tickets", body, js)[0], 201)  # no Origin: curl, CLI
 		self.assertEqual(self.raw("DELETE", "/api/tickets/BUG-1")[0], 200)  # DELETE needs no body or Content-Type
 
+	def test_if_match_guards_patch_with_409(self):
+		t = self.call("POST", "/api/tickets", {"prefix": "BUG", "title": "x"})[1]
+		self.assertEqual(t["rev"], 1)
+		code, out, _ = self.raw("PATCH", "/api/tickets/BUG-1", json.dumps({"title": "mine"}).encode(), {"Content-Type": "application/json", "If-Match": "1"})
+		self.assertEqual((code, json.loads(out)["rev"]), (200, 2))
+		code, out, _ = self.raw("PATCH", "/api/tickets/BUG-1", json.dumps({"title": "stale"}).encode(), {"Content-Type": "application/json", "If-Match": '"1"'})
+		self.assertEqual(code, 409)
+		self.assertIn("reload", json.loads(out)["error"])
+		self.assertEqual(self.call("GET", "/api/tickets/BUG-1")[1]["title"], "mine")
+		self.assertEqual(self.call("PATCH", "/api/tickets/BUG-1", {"title": "no header"})[0], 200)  # no If-Match: last write wins, as before
+		self.assertEqual(self.raw("PATCH", "/api/tickets/BUG-1", b"{}", {"Content-Type": "application/json", "If-Match": "abc"})[0], 400)
+		self.assertEqual(self.call("PATCH", "/api/tickets/BUG-1", {"rev": 1})[0], 400)
+
 	def test_bad_content_length_is_400(self):
 		code, out, _ = self.raw("POST", "/api/tickets", b"{}", {"Content-Type": "application/json", "Content-Length": "abc"})
 		self.assertEqual(code, 400)

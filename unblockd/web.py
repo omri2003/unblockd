@@ -15,7 +15,7 @@ GET    plan?per_agent=                   ready tickets grouped by agent profile 
 GET    tickets/<id>
 POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id": "BUG-13", ...}; "agent"? = the creating worker (strict schema, proposal gate); a human's ticket may come back with "warnings"
 POST   tickets/<id>/accept               {"by"?}  accept an agent's proposal (400 unless proposed_by is set)
-PATCH  tickets/<id>                      {...fields to change}
+PATCH  tickets/<id>                      {...fields to change}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it
 DELETE tickets/<id>                      ?agent= (holder rule), ?reason= (a human rejecting a proposal; logged)
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
 GET    agents                            who is working what right now + recent activity
@@ -315,12 +315,17 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None)))  # agent: the creating worker (cli.Remote); none = a human
 			if method == "PATCH" and tid:
 				b = self._body()
-				return self._send(200, store.update(tid, b, agent=b.pop("agent", None)))  # agent: a remote worker's name (cli.Remote)
+				m = (self.headers.get("If-Match") or "").strip().strip('"')  # the rev the client last saw; none = last write wins, as before
+				if m and not m.isdigit():
+					raise st.TicketError("If-Match must be the ticket's rev (a number)")
+				return self._send(200, store.update(tid, b, agent=b.pop("agent", None), expected_rev=int(m) if m else None))  # agent: a remote worker's name (cli.Remote)
 			if method == "DELETE" and tid:
 				return self._send(200, store.delete(tid, agent=q.get("agent"), reason=q.get("reason", "")))
 			return self._send(405, {"error": "method not allowed"})
 		except st.NotFound as e:
 			return self._send(404, {"error": str(e)})
+		except st.Conflict as e:
+			return self._send(409, {"error": str(e)})
 		except st.TicketError as e:
 			return self._send(400, {"error": str(e)})
 
