@@ -31,15 +31,15 @@ class WorkLoopTest(unittest.TestCase):
 
 	def test_prompt_and_resource_carry_the_protocol(self):
 		from unblockd import mcp_server as m
-		text = m.work_loop_text("game", "godot-dev")
-		for word in ("claim_next(agent=<your name>, profile=godot-dev, board=game)", "godot-dev-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry", "Answer to", "Rejected"):
+		text = m.work_loop_text("game", "backend")
+		for word in ("claim_next(agent=<your name>, profile=backend, board=game)", "backend-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry", "Answer to", "Rejected"):
 			self.assertIn(word, text)
 		self.assertIn("board_info", m.work_loop_text())
 		self.assertIn("Never go silent", text)
 		self.assertIn("Your board's policy", text)
 		self.assertIn("Never go silent", m.WORK_LOOP.read_text(encoding="utf-8"))  # the text comes from the file
 		self.assertEqual(m.work_loop_resource(), m.work_loop_text())
-		prompt = asyncio.run(m.mcp.get_prompt("work_loop", {"board": "game", "profile": "godot-dev"}))
+		prompt = asyncio.run(m.mcp.get_prompt("work_loop", {"board": "game", "profile": "backend"}))
 		self.assertIn("claim_next", str(prompt))
 		self.assertIn("work_loop", [p.name for p in asyncio.run(m.mcp.list_prompts())])
 		self.assertIn("unblockd://work-loop", [str(r.uri) for r in asyncio.run(m.mcp.list_resources())])

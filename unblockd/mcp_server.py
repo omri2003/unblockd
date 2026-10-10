@@ -42,7 +42,7 @@ mcp = MCPServer(
 		"number is picked. blocked_by lists tickets that must be done first; loops are refused. "
 		"Put the reasoning in body, not just the change; report progress with add_note (append-only, signed), not update_ticket(body=...), which replaces the whole body.\n"
 		"WORKER PROTOCOL (when you are one of several agents): pick a unique agent name like "
-		"godot-dev-1 (profile name + number). Loop: claim_next(agent) -> it sets the ticket to doing "
+		"backend-1 (profile name + number). Loop: claim_next(agent) -> it sets the ticket to doing "
 		"and returns it, or {ticket: null, reason, counts} when nothing can be taken (see the work loop for what each reason means); read previous_attempts (failed earlier claims) first; work it; call heartbeat(id, agent, "
 		"note) at least every few minutes with what you're doing (a claim with no heartbeat, add_note or update_ticket by you for "
 		"lease_minutes expires and goes back to todo); finish with complete(id, agent, summary: "
@@ -63,7 +63,7 @@ WORK_LOOP = kn.PROTOCOL_FILE  # the protocol is a doc: knowledge.graph() shows i
 def work_loop_text(board: str | None = None, profile: str | None = None) -> str:
 	return string.Template(WORK_LOOP.read_text(encoding="utf-8")).safe_substitute(
 		board=board or "(the default board; list_boards shows the others)", profile_line=f" with the agent profile {profile}" if profile else "",
-		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. godot-dev-1 (board_info lists the profiles)",
+		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. backend-1 (board_info lists the profiles)",
 		claim_args=(f", profile={profile}" if profile else "") + (f", board={board}" if board else ""))
 
 
@@ -143,7 +143,7 @@ def work_plan(board: str | None = None, per_agent: int = 3) -> dict:
 def next_ready(board: str | None = None, owner: str | None = None, pillar: str | None = None,
                agent: str | None = None, tag: str | None = None, limit: int = 5) -> list[dict]:
 	"""What to work on next: ready tickets ranked by priority x how many open tickets they unblock.
-	agent = a profile name or your worker name (godot-dev-1 means profile godot-dev, the same rule claim_next uses): only that profile's work."""
+	agent = a profile name or your worker name (backend-1 means profile backend, the same rule claim_next uses): only that profile's work."""
 	return [{**_summary(t), "score": t["score"], "unblocks": t["unblocks"]}
 	        for t in BOARDS.get(board).next_ready(owner=owner, pillar=pillar, agent=agent, tag=tag, limit=limit)]
 
@@ -219,7 +219,7 @@ def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
 @tool
 def claim_next(agent: str, profile: str | None = None, note: str = "", board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
-	name (<profile>-N, e.g. godot-dev-1; on a board with agent profiles a name matching none is refused); profile defaults to the profile your name starts with. Skips tickets
+	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts}: reason "conflict" = ready tickets are blocked by
 	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in

@@ -38,7 +38,7 @@ DEFAULT_CONFIG = {
 	"id": None,  # board id when several boards are served; None = the project folder's name
 	# Agent profiles: who should work a ticket. A ticket goes to the first profile sharing one of its
 	# tags or its pillar; an explicit "agent:<name>" tag wins. Orchestrators read them via work_plan.
-	"agents": [],  # [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
+	"agents": [],  # [{"name": "backend", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
 	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
 	"architecture": "docs/arch",  # repo-relative folder of component notes (one .md per component, see knowledge.components); on when the folder exists, None = off
@@ -157,7 +157,7 @@ def load_config(tickets_dir: Path) -> dict:
 			raise TicketError(f"{CONFIG_FILE}: each pillar needs a key like ART (A-Z, 0-9)")
 	for ag in cfg["agents"]:
 		if not (isinstance(ag, dict) and NAME_RE.match(str(ag.get("name", "")))):
-			raise TicketError(f"{CONFIG_FILE}: each agent needs a name like godot-dev (a-z, 0-9, - _)")
+			raise TicketError(f"{CONFIG_FILE}: each agent needs a name like backend (a-z, 0-9, - _)")
 		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", []) + ag.get("docs", [])):
 			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars and docs are lists of strings")
 	if not (isinstance(cfg["docs"], list) and all(isinstance(x, str) for x in cfg["docs"])):
@@ -398,7 +398,7 @@ class Store:
 		return None
 
 	def profile_of(self, agent: str) -> str | None:
-		"""The agent profile a worker name belongs to: the profile named exactly like it, or the one it starts with (godot-dev-1 -> godot-dev)."""
+		"""The agent profile a worker name belongs to: the profile named exactly like it, or the one it starts with (backend-1 -> backend)."""
 		return next((a["name"] for a in self.config["agents"] if agent == a["name"] or agent.startswith(a["name"] + "-")), None)
 
 	def work_plan(self, per_agent: int = 3) -> dict:
@@ -432,7 +432,7 @@ class Store:
 		if tag:
 			res = [t for t in res if tag.lower() in t["tags"]]
 		if agent:
-			agent = self.profile_of(agent) or agent  # a worker name (godot-dev-1) means its profile, as in claim
+			agent = self.profile_of(agent) or agent  # a worker name (backend-1) means its profile, as in claim
 			res = [t for t in res if t["agent"] == agent]
 		if parent:
 			res = [t for t in res if t["parent"] == parent]
@@ -795,11 +795,11 @@ class Store:
 		return True
 
 	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "") -> dict | None:
-		"""Take a ticket for `agent` (a unique worker name, e.g. godot-dev-1): the given one, or the best
+		"""Take a ticket for `agent` (a unique worker name, e.g. backend-1): the given one, or the best
 		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
 		claim overlaps. Sets it to doing. Returns the ticket, or None when nothing is claimable."""
 		if not (isinstance(agent, str) and NAME_RE.match(agent)):
-			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. godot-dev-1)")
+			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. backend-1)")
 		profiles = [a["name"] for a in self.config["agents"]]
 		if profile is None:
 			profile = self.profile_of(agent)
