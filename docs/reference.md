@@ -334,6 +334,18 @@ start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (ne
 `knowledge_graph`, `architecture_map`, `read_doc`, `attach_file`, `detach_file`; to edit the architecture `arch_add_component`, `arch_update_component`, `arch_delete_component`, `arch_set_edge`, `arch_remove_edge` (each takes `agent`; they rewrite only the managed parts of the notes, see Architecture; there is no CLI command for them). Every tool takes `board=`
 (default: the first board).
 
+### Checking a real client
+
+Verified with Claude Code 2.1 (`claude -p`) against `python -m unblockd.mcp_server --http`: `work_loop` / `plan_from_spec` prompts, `claim_next` (lease, trust labels), `add_note`, `complete`, Bearer auth. Repeat it on any board:
+
+```
+claude mcp add --transport http unblockd http://127.0.0.1:8788/mcp            # add: --header "Authorization: Bearer $UNBLOCKD_TOKEN"
+claude -p "/mcp__unblockd__work_loop <board> <profile>" --allowedTools "mcp__unblockd"
+claude -p "/mcp__unblockd__plan_from_spec <board> <path-in-repo>" --allowedTools "mcp__unblockd"
+```
+
+MCP prompts are slash commands (`/mcp__<server>__<prompt> args`), not tools. `<profile>` is the profile name (`backend`), not the worker name; the worker then claims as `backend-1`. Check the result with `unblockd.cli get <ID>` and `tickets/.unblockd/activity.jsonl` (`claim`, `note`, `complete`). Without the header a token-protected server answers 401 and the client lists no tools.
+
 ## CLI
 
 ```
