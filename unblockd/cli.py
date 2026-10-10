@@ -3,7 +3,7 @@
     python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
-    python -m unblockd.cli claim --agent godot-dev-1 [--id ID] [--profile P]   # take the next (or one) ticket
+    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P]   # take the next (or one) ticket
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human

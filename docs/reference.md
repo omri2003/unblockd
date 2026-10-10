@@ -42,7 +42,7 @@ gets a derived `agent` (shown on its card, filterable in the bar).
 
 ```json
 "agents": [
-  {"name": "godot-dev", "pillars": ["COMBAT"], "tags": ["gdscript"], "model": "sonnet",
+  {"name": "backend", "pillars": ["COMBAT"], "tags": ["gdscript"], "model": "sonnet",
    "instructions": "Typed GDScript; run the tests before done."},
   {"name": "blender", "pillars": ["ART"], "instructions": "Batch-process models in Blender."}
 ]
@@ -51,12 +51,12 @@ gets a derived `agent` (shown on its card, filterable in the bar).
 `work_plan` (MCP, `GET .../plan`, CLI `plan`) returns the ready tickets **not
 owned by a human**, grouped per profile with its `instructions` and `model`:
 everything an orchestrator needs to spawn one agent per group. A single agent
-asks `next_ready(agent="godot-dev")` for its own queue.
+asks `next_ready(agent="backend")` for its own queue.
 
 ## Agents at work: claims and the live view
 
 Several agents can work one board at once without stepping on each other.
-Each worker uses a unique name (`godot-dev-1`: profile + number) and loops:
+Each worker uses a unique name (`backend-1`: profile + number) and loops:
 
 ```
 claim_next(agent)          -> best ready ticket for its profile, set to doing (or {ticket: null, reason, counts}: why nothing)
@@ -337,15 +337,15 @@ start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (ne
 ## CLI
 
 ```
-python -m unblockd.cli --dir <repo>/tickets next --owner Claude --agent godot-dev
+python -m unblockd.cli --dir <repo>/tickets next --owner Claude --agent backend
 python -m unblockd.cli --dir <repo>/tickets plan --per-agent 3
-python -m unblockd.cli --dir <repo>/tickets claim --agent godot-dev-1
-python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent godot-dev-1 --note "running tests"
-python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent godot-dev-1 --summary "cause -> fix -> tests"
+python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1
+python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 --note "running tests"
+python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests"
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store
-python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent godot-dev-1   # as a worker: strict schema, may park as a proposal
+python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent backend-1   # as a worker: strict schema, may park as a proposal
 python -m unblockd.cli --dir <repo>/tickets accept BUG-11 --by omri
 python -m unblockd.cli --dir <repo>/tickets split BUG-10 --title "part one" --title "part two" --sequential
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --json '{"status":"done"}'

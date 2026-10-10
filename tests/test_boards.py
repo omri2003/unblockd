@@ -17,7 +17,7 @@ from unblockd import cli
 from unblockd.boards import Boards
 from unblockd.store import NotFound, Store, TicketError
 
-AGENTS = [{"name": "godot-dev", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "Run the tests."},
+AGENTS = [{"name": "backend", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "Run the tests."},
           {"name": "artist", "pillars": ["ART"]}]
 
 
@@ -43,11 +43,11 @@ class RoutingTest(unittest.TestCase):
 		c = self.s.create({"title": "rig", "pillar": "COMBAT", "tags": ["agent:artist"]}, prefix="CMB")
 		d = self.s.create({"title": "readme"}, prefix="DOC")
 		self.assertEqual(b["tags"], ["gdscript"])  # lowercased, trimmed, deduped
-		self.assertEqual([t["agent"] for t in (a, b, c, d)], ["godot-dev", "godot-dev", "artist", None])
+		self.assertEqual([t["agent"] for t in (a, b, c, d)], ["backend", "backend", "artist", None])
 		self.assertEqual([t["id"] for t in self.s.list(agent="artist")], [c["id"]])
 		self.assertEqual([t["id"] for t in self.s.next_ready(tag="gdscript")], [b["id"]])
 		self.assertEqual([t["id"] for t in self.s.next_ready(agent="artist-1")], [c["id"]])  # a worker name means its profile
-		self.assertEqual([t["id"] for t in self.s.list(agent="godot-dev-2")], sorted([a["id"], b["id"]]))
+		self.assertEqual([t["id"] for t in self.s.list(agent="backend-2")], sorted([a["id"], b["id"]]))
 		self.assertEqual(self.s.list(agent="nobody-1"), [])
 
 	def test_bad_tags_and_unknown_agents_are_refused(self):
@@ -64,7 +64,7 @@ class RoutingTest(unittest.TestCase):
 		self.s.create({"title": "mixamo", "pillar": "ART", "owner": "Me"}, tid="ART-2")  # a human's: never planned
 		plan = self.s.work_plan()
 		got = {g["name"]: [t["id"] for t in g["tickets"]] for g in plan["agents"]}
-		self.assertEqual(got, {"godot-dev": ["CMB-1"], "artist": ["ART-1"]})
+		self.assertEqual(got, {"backend": ["CMB-1"], "artist": ["ART-1"]})
 		self.assertEqual(plan["agents"][0]["model"], "sonnet")
 		self.assertEqual([t["id"] for t in plan["unrouted"]], ["DOC-1"])
 
@@ -237,29 +237,29 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", "parry", "--json", '{"pillar": "COMBAT"}')[1]["id"], "CMB-1")
 		self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", "dodge", "--json", '{"pillar": "COMBAT"}')[1]["id"], "CMB-2")
 		self.assertEqual([t["id"] for t in self.cli("list", "--status", "todo")[1]], ["CMB-1", "CMB-2"])
-		code, got = self.cli("claim", "--agent", "godot-dev-1")
-		self.assertEqual((code, got["status"], got["claim"]["agent"], got["context"]["ticket"]), (0, "doing", "godot-dev-1", got["id"]))
-		self.assertEqual(self.cli("heartbeat", got["id"], "--agent", "godot-dev-1", "--note", "working")[1]["claim"]["note"], "working")
+		code, got = self.cli("claim", "--agent", "backend-1")
+		self.assertEqual((code, got["status"], got["claim"]["agent"], got["context"]["ticket"]), (0, "doing", "backend-1", got["id"]))
+		self.assertEqual(self.cli("heartbeat", got["id"], "--agent", "backend-1", "--note", "working")[1]["claim"]["note"], "working")
 		code, msg = self.cli("heartbeat", got["id"], "--agent", "someone-else")  # server's message, exit 1
 		self.assertEqual(code, 1)
-		self.assertIn("claimed by godot-dev-1", msg)
-		done = self.cli("complete", got["id"], "--agent", "godot-dev-1", "--summary", "did it", "--file", "a.py", "--file", "b.py", "--ref", "PR-1", "--handoff", "h")[1]
+		self.assertIn("claimed by backend-1", msg)
+		done = self.cli("complete", got["id"], "--agent", "backend-1", "--summary", "did it", "--file", "a.py", "--file", "b.py", "--ref", "PR-1", "--handoff", "h")[1]
 		self.assertEqual((done["status"], done["result"]["files"], done["result"]["refs"], done["result"]["handoff"]), ("done", ["a.py", "b.py"], ["PR-1"], "h"))
-		other = self.cli("claim", "--agent", "godot-dev-1")[1]
-		asked = self.cli("ask", other["id"], "--agent", "godot-dev-1", "--question", "Omri: ok?")[1]
+		other = self.cli("claim", "--agent", "backend-1")[1]
+		asked = self.cli("ask", other["id"], "--agent", "backend-1", "--question", "Omri: ok?")[1]
 		self.assertEqual((asked["effective_status"], asked["claim"]), ("pending", None))
-		empty = self.cli("claim", "--agent", "godot-dev-1")[1]  # nothing left, and why
+		empty = self.cli("claim", "--agent", "backend-1")[1]  # nothing left, and why
 		self.assertEqual((empty["ticket"], empty["reason"], empty["counts"]["waiting_on_human"]), (None, "waiting", 1))
 		self.assertEqual(self.cli("update", other["id"], "--json", '{"waiting_on": ""}')[1]["effective_status"], "todo")
-		self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])
-		code, msg = self.cli("update", other["id"], "--json", '{"status": "done"}', "--agent", "godot-dev-2")  # --agent travels to the server
+		self.cli("claim", "--agent", "backend-1", "--id", other["id"])
+		code, msg = self.cli("update", other["id"], "--json", '{"status": "done"}', "--agent", "backend-2")  # --agent travels to the server
 		self.assertEqual(code, 1)
-		self.assertIn("claimed by godot-dev-1", msg)
-		code, msg = self.cli("delete", other["id"], "--agent", "godot-dev-2")  # delete carries the agent over REST too
+		self.assertIn("claimed by backend-1", msg)
+		code, msg = self.cli("delete", other["id"], "--agent", "backend-2")  # delete carries the agent over REST too
 		self.assertEqual((code, "only the holder" in msg), (1, True))
-		self.cli("release", other["id"], "--agent", "godot-dev-1")
-		self.assertEqual(self.cli("claim", "--agent", "godot-dev-1", "--id", other["id"])[1]["id"], other["id"])
-		self.assertEqual(self.cli("release", other["id"], "--agent", "godot-dev-1", "--reason", "x")[1]["status"], "todo")
+		self.cli("release", other["id"], "--agent", "backend-1")
+		self.assertEqual(self.cli("claim", "--agent", "backend-1", "--id", other["id"])[1]["id"], other["id"])
+		self.assertEqual(self.cli("release", other["id"], "--agent", "backend-1", "--reason", "x")[1]["status"], "todo")
 		self.assertEqual(self.cli("get", "CMB-2")[1]["id"], "CMB-2")
 		self.assertIn("— ana, ", self.cli("note", "CMB-2", "hi", "--by", "ana")[1]["body"])
 		self.assertEqual(self.cli("answer", "CMB-2", "x")[0], 1)  # Remote.answer / reject reach the server's refusals
@@ -305,7 +305,7 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		plan = self.call("GET", "/api/b/a/plan")[1]
 		self.assertEqual(plan["agents"][0]["tickets"][0]["id"], "CMB-1")
-		self.assertEqual(len(self.call("GET", "/api/b/a/next?agent=godot-dev")[1]), 1)
+		self.assertEqual(len(self.call("GET", "/api/b/a/next?agent=backend")[1]), 1)
 		self.assertEqual(self.call("GET", "/api/b/a/next?limit=x")[0], 400)
 		self.assertEqual(self.call("POST", "/api/boards", {"id": "c"})[0], 201)
 
@@ -343,8 +343,8 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "x"})[0], 400)  # nothing asked
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/reject", {"reason": "x"})[0], 400)  # not in review
-		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})
-		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "godot-dev-1", "question": "which?"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "backend-1"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "backend-1", "question": "which?"})
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual((code, t["waiting_on"]), (200, ""))
 		self.assertRegex(t["body"], r"— human, .*Answer to: which\? — this one$")
@@ -360,8 +360,8 @@ class ApiTest(unittest.TestCase):
 		                          ("CMB", "parked", {"waiting_on": "Omri: later"}), ("CMB", "plain", {})):
 			self.call("POST", "/api/b/a/tickets", {"prefix": pre, "title": title, **extra})
 		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
-		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})
-		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "godot-dev-1", "question": "which?"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "backend-1"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "backend-1", "question": "which?"})
 		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
 		self.call("POST", "/api/b/b/tickets/WEB-1/claim", {"agent": "w-1"})
 		self.call("POST", "/api/b/b/tickets/WEB-1/ask", {"agent": "w-1", "question": "colour?"})
@@ -412,28 +412,28 @@ class ApiTest(unittest.TestCase):
 			self.call("POST", "/api/b/a/tickets/CMB-1/release", {"agent": agent, "reason": "rig broke"})
 		def items():
 			return {i["id"]: i for g in self.call("GET", "/api/needs")[1] for i in g["items"]}
-		fail("godot-dev-1"); fail("godot-dev-2")
+		fail("backend-1"); fail("backend-2")
 		self.assertEqual(items(), {})
-		fail("godot-dev-1")
+		fail("backend-1")
 		i = items()["CMB-1"]
 		self.assertEqual((i["kind"], i["failed"]), ("stuck", "Failed 3 times (released ×3)"))
 		self.assertEqual((len(i["attempts"]), i["attempts"][0]["note"]), (3, "rig broke"))
-		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "godot-dev-1"})  # being worked again: not listed
+		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "backend-1"})  # being worked again: not listed
 		self.assertEqual(items(), {})
-		self.call("POST", "/api/b/a/tickets/CMB-1/release", {"agent": "godot-dev-1"})
+		self.call("POST", "/api/b/a/tickets/CMB-1/release", {"agent": "backend-1"})
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"text": "use the other rig"})[0], 200)  # by=human
 		self.assertEqual(items(), {})
 
 	def test_claim_routes(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
-		code, t = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-1", "note": "starting"})
-		self.assertEqual((code, t["id"], t["claim"]["agent"]), (200, "CMB-1", "godot-dev-1"))
-		empty = self.call("POST", "/api/b/a/claim", {"agent": "godot-dev-2"})[1]
+		code, t = self.call("POST", "/api/b/a/claim", {"agent": "backend-1", "note": "starting"})
+		self.assertEqual((code, t["id"], t["claim"]["agent"]), (200, "CMB-1", "backend-1"))
+		empty = self.call("POST", "/api/b/a/claim", {"agent": "backend-2"})[1]
 		self.assertEqual((empty["ticket"], empty["reason"], empty["counts"]["in_flight"]), (None, "waiting", 1))
-		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/heartbeat", {"agent": "godot-dev-1", "note": "tests"})[0], 200)
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/heartbeat", {"agent": "backend-1", "note": "tests"})[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/agents")[1]["working"][0]["note"], "tests")
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "nope", "summary": "x"})[0], 400)
-		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "godot-dev-1", "summary": "done"})[1]["status"], "done")
+		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/complete", {"agent": "backend-1", "summary": "done"})[1]["status"], "done")
 		self.assertEqual([e["event"] for e in self.call("GET", "/api/b/a/activity?ticket=CMB-1")[1]], ["complete", "heartbeat", "claim", "created"])
 		self.assertEqual(len(self.call("GET", "/api/b/a/activity?since=2020-01-01T00:00:00Z&limit=99")[1]), 4)
 		self.assertEqual(self.call("GET", "/api/b/a/activity?since=2999-01-01T00:00:00Z")[1], [])
