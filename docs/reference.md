@@ -258,6 +258,7 @@ Every ticket comes back with derived fields: `effective_status`,
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Component** (boards with an architecture): the parts of the system a ticket changes, as against the *pillar*, the kind of work (one per ticket: prefix, colour, which agent). Set it in the edit / New ticket form (a picker, like Blocked by: chips are the value, options are the components), for the selected cards from the bulk bar (**Component…** *adds* it to each), or `components` over REST / MCP / CLI `--component` (repeatable; on `update` it replaces the list). The Filters panel has a **Component** filter and Group by has **component**: a ticket matches / is listed under each of its components, explicit or derived from `touches` (a ticket on two components is in both lanes: that is its blast radius; no component = last lane). The drawer shows them as chips.
+- **Picking from existing values** (edit / New ticket form): Docs, Touches and Tags suggest what the project and board already have (doc files and folders, any file or folder, tags in use plus `agent:<name>`), but take anything you type: Enter or a comma adds it, so globs and paths that do not exist yet still work. Section and the ID prefix (also the To do quick-add prefix, without a schema) offer the values used on the board. A project with more than 3000 files lists only the first ones and the suggestions say so.
 - **Warnings**: missing blocker, doing with no update for `stale_days` (an amber dot in the graph, and a *Stuck* row in the Needs you panel).
 - **Free / Blocked** filter (Graph view only; the Board ignores it): *Free* = open, nothing open blocks it, not waiting on a person; *Blocked* = an open ticket blocks it. Counts on the chips; the graph dims the rest.
 - **Show: Only / Paths / Dim** (next to the filters, remembered per view): *Only* shows just the tickets the filters match; *Paths* adds every ticket upstream and downstream of a match (the whole chain, not siblings); *Dim* shows everything and fades the rest. Works with every filter, so "owner Omri, Paths" is every chain that touches one of his tickets. Board default is Only, graph default is Dim.
@@ -379,6 +380,7 @@ PATCH  architecture/components/<key>  {title?, summary?, paths?, by?}  only the 
 DELETE architecture/components/<key>?by=   400 while an open ticket lists it; else deletes the note and the lines linking to it
 PUT    architecture/edges             {from, to, text?, by?}  create or replace the Connections line in `from`'s note
 DELETE architecture/edges?from=&to=&by=   remove it   (by defaults to human; each write logs one `arch` activity event)
+GET    files                          project file paths for the form's Docs / Touches suggestions (skips dot-folders, node_modules, tickets/; max 3000, `truncated`: the form then says it shows only the first files)
 GET    doc?path=                      a text file from the project repo, with its links
 POST   tickets/<id>/files             {"name", "content"}     GET / DELETE tickets/<id>/files/<name>
 GET    tickets/<id>

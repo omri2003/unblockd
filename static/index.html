@@ -137,7 +137,7 @@ a.btn{display:inline-block;text-decoration:none}
 .nttl[aria-expanded=true]::after{transform:rotate(-135deg);margin-bottom:-.05em}
 .nd-bl{font-size:.78rem;color:var(--muted)} .why.park{color:var(--muted)}
 .nd-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem} .nd-h time,.nd-age{color:var(--muted);font-size:.8rem;margin-left:auto}
-.rq{color:var(--amber)} form.edit .rq-l.empty :is(input,select,textarea){border-color:var(--amber)} .tsug{display:flex;flex-wrap:wrap;gap:4px;margin-top:2px} .tsug button{border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:0 6px;font:inherit;font-size:.78rem;cursor:pointer;color:var(--ink)}
+.rq{color:var(--amber)} form.edit .rq-l.empty :is(input,select,textarea){border-color:var(--amber)}
 .nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)} .nb.s{color:var(--amber)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
 .nr:not(.open) .nd-q{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
@@ -315,12 +315,12 @@ form.edit{display:grid;gap:10px;grid-template-columns:1fr 1fr}
 form.edit .full{grid-column:1/-1}
 .cchip{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:99px;padding:0 8px;font:inherit;font-size:.78rem;font-weight:600;cursor:pointer;line-height:1.5} .cchip:hover{border-color:var(--jade);color:var(--jade)} .cchip.der{border-style:dashed;font-weight:400}
 .pick{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:5px} .pcs{display:contents}
-.pc{display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:1px 3px 1px 9px;font-size:.82rem;font-weight:600}
+.pc{max-width:100%;overflow-wrap:anywhere;display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:1px 3px 1px 9px;font-size:.82rem;font-weight:600}
 .pc button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:1rem;line-height:1;padding:0 4px} .pc button:hover{color:var(--cinnabar)}
 form.edit .pick .pq{flex:1 1 140px}
 .pl{position:absolute;z-index:30;left:0;top:100%;margin:2px 0 0;padding:4px;list-style:none;width:min(420px,100%);min-width:220px;max-height:240px;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.2)}
 .bulk .pl{top:auto;bottom:100%;margin:0 0 6px}
-.pl li{padding:5px 8px;border-radius:5px;cursor:pointer;font-size:.85rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .pl li:hover,.pl li.on{background:var(--sunk)} .pl li.dn{opacity:.55} .pl li b{margin-right:6px} .pl li.none{cursor:default;color:var(--muted)}
+.pl li{padding:5px 8px;border-radius:5px;cursor:pointer;font-size:.85rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .pl li:hover,.pl li.on{background:var(--sunk)} .pl li.dn{opacity:.55} .pl li b{margin-right:6px} .pl li.none{cursor:default;color:var(--muted);white-space:normal}
 .bulk .pick .pq{width:130px;max-width:150px}
 form.edit .lbl{display:grid;gap:4px;font-size:.85rem;font-weight:600}
 form.edit label{display:grid;gap:4px;font-size:.85rem;font-weight:600}
@@ -724,10 +724,23 @@ const flash=new Map(); // ticket id -> when it became ready, for the board's one
 const pickChip=(id,l=id)=>`<span class="pc" data-id="${esc(id)}">${esc(l)}<button type="button" data-pkrm aria-label="Remove ${esc(l)}">×</button></span>`;
 const pickIds=id=>[...$(id).querySelectorAll('.pc')].map(c=>c.dataset.id);
 // o.comp: the same picker over the architecture's components (chip = title, value = key) for a ticket's `components`
-const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''} ${o.comp?'data-comp-pick="1"':''} ${o.one?'data-one="1"':''} ${o.pdraft?`data-pdraft="${esc(o.pdraft)}"`:''}><span class="pcs">${o.comp?sel.filter(k=>COMPS().some(c=>c.key===k)).map(k=>pickChip(k,ctitle(k))).join(''):sel.filter(x=>BY.has(x)).map(x=>pickChip(x)).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.comp?'Search components…':o.ph||'Search id or title…'}" aria-label="${o.label||(o.comp?'Components: search':(o.ph?'Parent':'Blocked by')+': search tickets')}"><ul class="pl" hidden></ul></div>`;
+const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''} ${o.comp?'data-comp-pick="1"':''} ${o.one?'data-one="1"':''} ${o.free?`data-free="${o.free}"`:''} ${o.ws?'data-ws="1"':''} ${o.pdraft?`data-pdraft="${esc(o.pdraft)}"`:''}><span class="pcs">${o.free?sel.map(x=>pickChip(x)).join(''):o.comp?sel.filter(k=>COMPS().some(c=>c.key===k)).map(k=>pickChip(k,ctitle(k))).join(''):sel.filter(x=>BY.has(x)).map(x=>pickChip(x)).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.comp?'Search components…':o.ph||'Search id or title…'}" aria-label="${o.label||(o.comp?'Components: search':(o.ph?'Parent':'Blocked by')+': search tickets')}"><ul class="pl" hidden></ul></div>`;
+// Suggestions for the free pickers (docs, touches, tags). FILES = GET /files, fetched when the form opens.
+let FILES={b:null,files:[],truncated:false};
+const dirsOf=fs=>[...new Set(fs.flatMap(f=>f.split('/').slice(0,-1).map((_,i,a)=>a.slice(0,i+1).join('/')+'/')))].sort();
+const SUG={
+  docs:()=>{const f=FILES.files.filter(x=>/\.(md|txt)$/i.test(x));return [...dirsOf(f),...f];}, // docs and the folders holding them
+  touches:()=>[...dirsOf(FILES.files),...FILES.files],
+  tags:()=>[...new Set([...(CFG.agents||[]).map(a=>'agent:'+a.name),...(CFG.schema?.tags||[]),...T.flatMap(t=>t.tags||[])])].sort()};
+async function loadFiles(){const b=curBoard();if(FILES.b===b)return;try{FILES={b,...await jf(API+'/files')};}catch{}}
 function pickList(box){
   const q=box.querySelector('.pq').value.trim().toLowerCase(),have=new Set([...box.dataset.skip.split(','),...[...box.querySelectorAll('.pc')].map(c=>c.dataset.id)]);
   const ul=box.querySelector('.pl');
+  if(box.dataset.free){ // suggest, don't restrict: existing values are offered, anything typed can be added (Enter or comma)
+    const m=SUG[box.dataset.free]().filter(x=>!have.has(x)&&x.toLowerCase().includes(q)).sort((a,b)=>b.toLowerCase().startsWith(q)-a.toLowerCase().startsWith(q)).slice(0,8);
+    ul.innerHTML=m.map(x=>`<li data-pk="${esc(x)}">${esc(x)}</li>`).join('')+(q&&!m.includes(q)&&!have.has(q)?`<li class="none">Enter adds “${esc(q)}”</li>`:m.length?'':'<li class="none">Nothing to suggest; type a value and press Enter</li>')+(FILES.truncated&&box.dataset.free!=='tags'?`<li class="none">Showing the first ${FILES.files.length} files; type more of the path</li>`:'');
+    ul.hidden=false; return; // no row is pre-selected: Enter adds what was typed, ArrowDown picks a suggestion
+  }
   if(box.dataset.compPick){ // components: by title + key, no free text
     const m=COMPS().filter(c=>!have.has(c.key)&&(c.title+' '+c.key).toLowerCase().includes(q));
     ul.innerHTML=m.map(c=>`<li data-pk="${esc(c.key)}"><b>${esc(c.title)}</b>${c.key!==c.title?esc(c.key):''}</li>`).join('')||'<li class="none">No matching component</li>';
@@ -738,22 +751,28 @@ function pickList(box){
   ul.innerHTML=none+m.map(t=>`<li data-pk="${esc(t.id)}"${t.status==='done'?' class="dn"':''}><b>${esc(t.id)}</b>${esc(t.title)}</li>`).join('')||(none?'':'<li class="none">No matching ticket</li>');
   ul.hidden=false; ul.querySelector('[data-pk]')?.classList.add('on');
 }
-function pickAdd(box,id){
+function pickTyped(box,quiet){ // free pickers: the typed text becomes chip(s); a comma (tags: also a space) splits
+  const ws=box.dataset.ws, v=box.querySelector('.pq').value.split(ws?/[\s,]+/:/,/).map(x=>x.trim()).filter(Boolean);
+  v.forEach(x=>pickAdd(box,ws?x.toLowerCase():x,quiet)); return v.length>0;
+}
+function pickAdd(box,id,quiet){
   const q=box.querySelector('.pq'); q.value='';
+  if(box.dataset.free&&[...box.querySelectorAll('.pc')].some(c=>c.dataset.id===id)){if(!quiet)pickList(box);return;}
   if(box.dataset.single){box.querySelector('.pl').hidden=true;bulk('parent',id);return;}
   if(box.dataset.one) box.querySelectorAll('.pc').forEach(c=>c.remove()); // a picker for one value: choosing replaces
-  box.querySelector('.pcs').insertAdjacentHTML('beforeend',box.dataset.compPick?pickChip(id,ctitle(id)):pickChip(id)); pickList(box); q.focus();
+  box.querySelector('.pcs').insertAdjacentHTML('beforeend',box.dataset.compPick?pickChip(id,ctitle(id)):pickChip(id)); markReq(); if(quiet)return; pickList(box); q.focus();
   if(box.dataset.pdraft) DRAFTS[box.dataset.pdraft]=id;
 }
-document.addEventListener('input',e=>{const b=e.target.closest?.('.pick');if(b)pickList(b);});
+document.addEventListener('input',e=>{const b=e.target.closest?.('.pick');if(!b)return;if(b.dataset.free&&/,/.test(e.target.value)&&e.target.value.trim()!==','){pickTyped(b);return;}pickList(b);});
 document.addEventListener('focusin',e=>{const b=e.target.closest?.('.pick');if(b&&e.target.matches('.pq'))pickList(b);});
-document.addEventListener('focusout',e=>{const b=e.target.closest?.('.pick');if(b)b.querySelector('.pl').hidden=true;});
+document.addEventListener('focusout',e=>{const b=e.target.closest?.('.pick');if(b){if(b.dataset.free)pickTyped(b,true);b.querySelector('.pl').hidden=true;}});
 document.addEventListener('mousedown',e=>{const li=e.target.closest?.('.pl [data-pk]');if(li){e.preventDefault();pickAdd(li.closest('.pick'),li.dataset.pk);}}); // mousedown: before focusout hides the list
-document.addEventListener('click',e=>{const x=e.target.closest?.('[data-pkrm]');if(x){const b=x.closest('.pick');x.closest('.pc').remove();if(b?.dataset.pdraft)DRAFTS[b.dataset.pdraft]='';}});
+document.addEventListener('click',e=>{const x=e.target.closest?.('[data-pkrm]');if(x){const b=x.closest('.pick');x.closest('.pc').remove();if(b?.dataset.pdraft)DRAFTS[b.dataset.pdraft]='';markReq();}});
 document.addEventListener('keydown',e=>{
   const b=e.target.closest?.('.pick');if(!b||!e.target.matches('.pq'))return;
   const ul=b.querySelector('.pl'),on=ul.querySelector('.on'),all=[...ul.querySelectorAll('[data-pk]')];
-  if(e.key==='Enter'){e.preventDefault();if(!ul.hidden&&on)pickAdd(b,on.dataset.pk);}
+  if(e.key==='Enter'){e.preventDefault();if(!ul.hidden&&on)pickAdd(b,on.dataset.pk);else if(b.dataset.free)pickTyped(b);}
+  else if(b.dataset.free&&(e.key===','||(e.key===' '&&b.dataset.ws))){e.preventDefault();pickTyped(b);}
   else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(ul.hidden)return pickList(b);const i=all.indexOf(on)+(e.key==='ArrowDown'?1:-1);if(all.length){on?.classList.remove('on');all[(i+all.length)%all.length].classList.add('on');}}
   else if(e.key==='Backspace'&&!e.target.value){b.querySelector('.pc:last-child')?.remove();}
   else if(e.key==='Escape'&&!ul.hidden){e.stopImmediatePropagation();ul.hidden=true;}
@@ -1188,7 +1207,8 @@ function qaPrefix(){ // remembered per board, else the prefix most tickets here 
   const c={};for(const t of T){const x=t.id.match(/^(.+)-\d+[a-z]?$/);if(x)c[x[1]]=(c[x[1]]||0)+1;}
   return Object.entries(c).sort((a,b)=>b[1]-a[1])[0]?.[0]||'TASK';
 }
-const qaForm=()=>`<form class="qa" autocomplete="off">${CFG.schema?.prefixes?`<select class="qa-p" aria-label="ID prefix" title="ID prefix, remembered">${Object.entries(CFG.schema.prefixes).map(([k,m])=>`<option value="${esc(k)}" title="${esc(m)}"${k===qaPrefix()?' selected':''}>${esc(k)}</option>`).join('')}</select>`:`<input class="qa-p" value="${esc(qaPrefix())}" aria-label="ID prefix" maxlength="12" title="ID prefix, remembered">`}<input class="qa-t" placeholder="Add a ticket" aria-label="New ticket title" maxlength="200" title="Enter creates. Shift+Enter creates and keeps typing."></form>`;
+const prefixDl=id=>`<datalist id="${id}">${[...new Set([...PILLARS,...T.map(x=>x.id.replace(/-\d+[a-z]?$/,''))])].map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`; // prefixes for a plain prefix input: pillar keys + those used on the board
+const qaForm=()=>`<form class="qa" autocomplete="off">${CFG.schema?.prefixes?`<select class="qa-p" aria-label="ID prefix" title="ID prefix, remembered">${Object.entries(CFG.schema.prefixes).map(([k,m])=>`<option value="${esc(k)}" title="${esc(m)}"${k===qaPrefix()?' selected':''}>${esc(k)}</option>`).join('')}</select>`:`<input class="qa-p" list="dl-qa" value="${esc(qaPrefix())}" aria-label="ID prefix" maxlength="12" title="ID prefix, remembered">${prefixDl('dl-qa')}`}<input class="qa-t" placeholder="Add a ticket" aria-label="New ticket title" maxlength="200" title="Enter creates. Shift+Enter creates and keeps typing."></form>`;
 let qaBusy=false;
 async function quickAdd(f,again){
   const ti=f.querySelector('.qa-t'),prefix=f.querySelector('.qa-p').value.trim().toUpperCase(),title=ti.value.trim(); if(!title||qaBusy) return;
@@ -1354,29 +1374,28 @@ function editForm(t){
   const opt=(vals,cur)=>vals.map(([v,l])=>`<option value="${esc(v)}" ${String(cur??'')===v?'selected':''}>${esc(l)}</option>`).join('');
   openDrawer(`<div class="dhead"><h2 id="dTitle" style="margin:0">${isNew?'New ticket':'Edit '+esc(t.id)}</h2><span class="sp"><button type="button" class="btn ghost" data-close>Cancel</button></span></div>
   <form class="edit" id="editForm" data-id="${isNew?'':esc(t.id)}">
-    ${isNew?(SC?.prefixes?`<label for="f-prefix">ID prefix <span class="hint">this board's prefixes</span><select id="f-prefix">${Object.entries(SC.prefixes).map(([k,m])=>`<option value="${esc(k)}"${k===qaPrefix()?' selected':''}>${esc(k)} — ${esc(m)}</option>`).join('')}</select></label><span></span>`:`<label for="f-prefix">ID prefix <span class="hint">next free number is picked</span><input id="f-prefix" value="${esc(CFG.schema?qaPrefix():'BUG')}" pattern="[A-Z0-9]+" required></label><span></span>`):''}
+    ${isNew?(SC?.prefixes?`<label for="f-prefix">ID prefix <span class="hint">this board's prefixes</span><select id="f-prefix">${Object.entries(SC.prefixes).map(([k,m])=>`<option value="${esc(k)}"${k===qaPrefix()?' selected':''}>${esc(k)} — ${esc(m)}</option>`).join('')}</select></label><span></span>`:`<label for="f-prefix">ID prefix <span class="hint">next free number is picked</span><input id="f-prefix" list="dl-prefix" value="${esc(CFG.schema?qaPrefix():'BUG')}" pattern="[A-Z0-9]+" required>${prefixDl('dl-prefix')}</label><span></span>`):''}
     <label class="full" for="f-title">Title<input id="f-title" required maxlength="200" value="${esc(t.title)}"></label>
     <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
     <label class="${R('owner').trim()}" for="f-owner">Owner${S('owner')}<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
     <label class="full${R('priority')}" for="f-priority">Priority${S('priority')}<select id="f-priority">${opt(PLAB,t.priority)}</select></label>
     <label class="${R('pillar').trim()}" for="f-pillar" title="The kind of work: one per ticket (prefix, colour, which agent)">${esc(CFG.pillar_label)}${S('pillar')}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
-    <label class="full" for="f-section">Section<input id="f-section" maxlength="80" value="${esc(t.section)}"></label>
+    <label class="full" for="f-section">Section <span class="hint">pick one used on this board or type a new one</span><input id="f-section" maxlength="80" list="dl-section" value="${esc(t.section)}"><datalist id="dl-section">${[...new Set(T.map(x=>x.section).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
     <label class="full${R('done_when')}" for="f-done">Done when${S('done_when')} <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
-    <label class="full${R('touches')}" for="f-touches">Touches${S('touches')} <span class="hint">paths or globs the work edits, comma separated; claims never overlap</span><input id="f-touches" value="${esc((t.touches||[]).join(', '))}"></label>
-    <label class="full${R('docs')}" for="f-docs">Docs${S('docs')} <span class="hint">repo paths, folders or globs an agent should read, comma separated (e.g. <code>docs/MECHANICS.md, docs/notes/combat/</code>)</span><input id="f-docs" value="${esc((t.docs||[]).join(', '))}"></label>
-    <label class="full" for="f-tags">Tags <span class="hint">comma separated; <code>agent:name</code> sends it to that agent${(CFG.agents||[]).length?' ('+CFG.agents.map(a=>esc(a.name)).join(', ')+')':''}</span><input id="f-tags" value="${esc((t.tags||[]).join(', '))}"></label>
-    ${CFG.schema?.tags?.length?`<div class="full tsug" aria-label="Tags this board allows">${CFG.schema.tags.map(x=>`<button type="button" data-tagadd="${esc(x)}">${esc(x)}</button>`).join('')}</div>`:''}
+    <div class="full lbl${R('touches')}"><span class="lt">Touches${S('touches')} <span class="hint">files, folders or globs the work edits; pick one or type a path (even a new one) and press Enter; claims never overlap</span></span>${pickHtml('f-touches',t.touches||[],{free:'touches',ph:'Search files or type a path…',label:'Touches: search files or type a path'})}</div>
+    <div class="full lbl${R('docs')}"><span class="lt">Docs${S('docs')} <span class="hint">docs, folders or globs an agent should read; pick one or type a path and press Enter (e.g. <code>docs/notes/combat/</code>)</span></span>${pickHtml('f-docs',t.docs||[],{free:'docs',ph:'Search docs or type a path…',label:'Docs: search docs or type a path'})}</div>
+    <div class="full lbl"><span class="lt">Tags <span class="hint">pick or type a new one; <code>agent:name</code> sends it to that agent</span></span>${pickHtml('f-tags',t.tags||[],{free:'tags',ws:1,ph:'Search or add a tag…',label:'Tags: search or add a tag'})}</div>
     <div class="full lbl"><span class="lt">Blocked by <span class="hint">search by id or title</span></span>${pickHtml('f-blocked',t.blocked_by,{skip:t.id})}</div>
     ${COMPS().length?`<div class="full lbl"><span class="lt">Components <span class="hint">the parts of the system it changes; can be several</span></span>${pickHtml('f-comp',t.components||[],{comp:1})}</div>`:''}
     <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="1000" value="${esc(t.waiting_on)}"></label>
     <label class="full${R('body')}" for="f-body">Details${S('body')} <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body||(SC?.body_template||''))}</textarea></label>
     <div class="full formrow"><button class="btn" type="submit">${isNew?'Create ticket':'Save changes'}</button>${isNew?'':'<button class="btn danger" type="button" data-delete>Delete</button>'}<span class="msg" id="fMsg" role="status"></span></div>
   </form>`);
-  $('f-title').focus(); markReq();
+  $('f-title').focus(); markReq(); loadFiles();
 }
 function markReq(){ // schema-required fields that are still empty get an amber border; submitting is still allowed
-  document.querySelectorAll('#editForm .rq-l').forEach(l=>l.classList.toggle('empty',!l.querySelector('input,select,textarea').value.trim()));
+  document.querySelectorAll('#editForm .rq-l').forEach(l=>l.classList.toggle('empty',l.querySelector('.pick')?!l.querySelector('.pc'):!l.querySelector('input,select,textarea').value.trim()));
 }
 for(const ev of['input','change']) document.addEventListener(ev,e=>{ if(e.target.closest?.('#editForm .rq-l')) markReq(); });
 async function submitForm(f){
@@ -1384,8 +1403,7 @@ async function submitForm(f){
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
     blocked_by:pickIds('f-blocked'),...($('f-comp')?{components:pickIds('f-comp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
-    tags:$('f-tags').value.split(/[\s,]+/).map(s=>s.trim().toLowerCase()).filter(Boolean),
-    touches:$('f-touches').value.split(',').map(s=>s.trim()).filter(Boolean),docs:$('f-docs').value.split(',').map(s=>s.trim()).filter(Boolean),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
+    tags:pickIds('f-tags'),touches:pickIds('f-touches'),docs:pickIds('f-docs'),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
     editing=false; await load(true); showTicket(t.id); if(f.dataset.id) toast(`Saved ${t.id}`); else{ store.set(qaKey(),t.id.replace(/-\d+[a-z]?$/,'')); createdToast(t); }
@@ -1433,7 +1451,6 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
-  if(b=g('[data-tagadd]')){const i=$('f-tags'),v=i.value.split(/[\s,]+/).filter(Boolean);if(!v.includes(b.dataset.tagadd))i.value=[...v,b.dataset.tagadd].join(', ');i.focus();return;}
   if(b=g('[data-accept]')){acceptTicket(b.dataset.board,b.dataset.id);return;}
   if(b=g('[data-approve]')){nPatch(b.dataset.board,b.dataset.id,{status:'done'},{status:'review'},`Approved: ${b.dataset.id}`);return;}
   if(b=g('[data-release]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'doing'},`${b.dataset.id} released to To do`);return;}

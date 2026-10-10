@@ -133,6 +133,34 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual([x["id"] for x in self.call("GET", "/api/boards")[1]], ["a", "b"])
 		self.assertEqual(self.call("GET", "/api/b/zzz/tickets")[0], 404)
 
+	def test_files_lists_the_project_only(self):  # form suggestions for docs / touches
+		root = Path(self.tmp.name)
+		outside = root / "outside"
+		outside.mkdir()
+		(outside / "secret.md").write_text("x")
+		proj = root / "a"
+		(proj / "docs").mkdir()
+		(proj / "docs" / "guide.md").write_text("x")
+		(proj / "src").mkdir()
+		(proj / "src" / "app.py").write_text("x")
+		(proj / "node_modules").mkdir()
+		(proj / "node_modules" / "junk.js").write_text("x")
+		(proj / ".git").mkdir()
+		(proj / ".git" / "config").write_text("x")
+		os.symlink(outside, proj / "link")
+		os.symlink(outside / "secret.md", proj / "docs" / "leak.md")
+		code, d = self.call("GET", "/api/files")
+		self.assertEqual(code, 200)
+		self.assertEqual(d["files"], ["docs/guide.md", "src/app.py"])  # no tickets/, .git, node_modules, symlinks
+		self.assertFalse(d["truncated"])
+		self.assertEqual(self.call("GET", "/api/b/b/files")[1]["files"], [])  # per board
+		from unblockd import knowledge
+		old, knowledge.LIST_MAX = knowledge.LIST_MAX, 1
+		try:
+			self.assertEqual(self.call("GET", "/api/files")[1], {"files": ["docs/guide.md"], "truncated": True})
+		finally:
+			knowledge.LIST_MAX = old
+
 	def test_old_done_tickets_are_still_listed(self):  # the Done column's window is UI only
 		old = {"id": "OLD-1", "title": "ancient", "status": "done", "owner": "Me", "created": "2020-01-01", "updated": "2020-01-01"}
 		(Path(self.tmp.name) / "a" / "tickets" / "OLD-1.json").write_text(json.dumps(old))

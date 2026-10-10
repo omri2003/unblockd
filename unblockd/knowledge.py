@@ -44,6 +44,22 @@ def _inside(base: Path, rel: str) -> Path:
 	return p
 
 
+SKIP_DIRS = {"node_modules", "__pycache__"}  # plus every dot-folder (.git, .venv...) and the board's own tickets folder
+LIST_MAX = 3000  # repo_files cap
+
+
+def repo_files(store) -> dict:
+	"""{files: [project-relative paths], truncated}: what the ticket form suggests for `docs` / `touches`.
+	Never leaves the project root (symlinks are not followed or listed); skips dot-folders, node_modules and the tickets folder."""
+	base, tdir, out = root(store), store.dir.resolve(), []
+	for d, dirs, names in os.walk(base):
+		dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS and (Path(d) / x).resolve() != tdir and not (Path(d) / x).is_symlink())
+		out += [(Path(d) / n).relative_to(base).as_posix() for n in sorted(names) if not (Path(d) / n).is_symlink()]
+		if len(out) >= LIST_MAX:
+			return {"files": out[:LIST_MAX], "truncated": True}
+	return {"files": out, "truncated": False}
+
+
 def _is_text(p: Path) -> bool:
 	return p.suffix.lower() in TEXT_EXT and p.is_file()
 

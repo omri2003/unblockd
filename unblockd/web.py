@@ -33,6 +33,7 @@ POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths],
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
+GET    files                             project file paths (no .git / node_modules / tickets/, capped at 3000): what the form suggests for docs and touches
 GET    architecture                      the architecture folder: components (+ open tickets, counts), edges with their contracts, ticket_map, problems
 POST   architecture/components           {"key", "title", "summary"?, "paths"?: [globs], "by"?}  new note <folder>/<key>.md (the folder is created) -> the architecture payload
 PATCH  architecture/components/<key>     {"title"?, "summary"?, "paths"?, "by"?}  only the managed parts of the note change
@@ -232,6 +233,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
+			if method == "GET" and rest == ["files"]:
+				return self._send(200, kn.repo_files(store))
 			if method == "GET" and rest == ["architecture"]:
 				return self._send(200, kn.architecture(store))
 			if rest[:2] == ["architecture", "components"] and len(rest) <= 3 or rest == ["architecture", "edges"]:

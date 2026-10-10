@@ -451,8 +451,30 @@ try {
 		await visible('select#f-prefix', 'prefix select on a schema board');
 		ok((await page.locator('#f-prefix option').allInnerTexts()).includes('ZP — proposed work'), `[${tag}] prefix options should show their meaning`);
 		ok((await page.locator('#editForm .rq-l.empty').count()) >= 1, `[${tag}] empty required fields should be highlighted`);
+		// form pickers: suggest existing docs/tags, but a typed value (a glob, a path that does not exist yet) is kept too
+		await page.fill('#f-title', 'picker ticket');
+		await page.fill('#f-docs .pq', 'guide'); await visible('#f-docs .pl li[data-pk="docs/guide.md"]', 'docs suggestion');
+		await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); // picks the suggestion
+		await page.fill('#f-docs .pq', 'docs/new/**/*.md'); await page.keyboard.press('Enter'); // typed, not in the list
+		await page.fill('#f-touches .pq', 'src/not-yet.py,'); // a comma commits
+		const longP = 'src/' + 'a'.repeat(120) + '.py'; // a long path chip wraps inside the picker, no overflow
+		await page.fill('#f-touches .pq', longP); await page.keyboard.press('Enter');
+		await noOverflow('long path chip');
+		ok(await page.evaluate(() => { const c = document.querySelector('#f-touches .pc:last-child'), p = document.getElementById('f-touches'); return c.getBoundingClientRect().right <= p.getBoundingClientRect().right + 1; }), `[${tag}] long chip should stay inside the picker`);
+		await page.click('#f-touches .pc:last-child [data-pkrm]');
+		await page.fill('#f-tags .pq', 'chore'); await page.keyboard.press('Enter');
+		await page.fill('#f-tags .pq', 'Fresh Tag'); await page.keyboard.press('Enter');
+		await page.fill('#f-docs .pq', 'AGENT_POLICY.md'); // left typed: blur must keep it
+		await page.fill('#f-done', 'works');
+		ok((await page.locator('#f-docs .pc').evaluateAll(c => c.map(x => x.dataset.id))).join() === 'docs/guide.md,docs/new/**/*.md,AGENT_POLICY.md', `[${tag}] docs chips (blur keeps typed text)`);
+		ok((await page.locator('#f-tags .pc').evaluateAll(c => c.map(x => x.dataset.id))).join() === 'chore,fresh,tag', `[${tag}] tags chips`);
 		await noOverflow('new ticket form on a schema board');
-		await page.click('[data-close]');
+		await page.selectOption('#f-priority', 'P2'); await page.selectOption('#f-prefix', 'ZQ');
+		await page.click('#editForm button[type=submit]');
+		await page.waitForFunction(() => document.querySelector('#drawer h2')?.textContent !== 'New ticket', null, { timeout: 5000 });
+		const made = await page.evaluate(() => fetch('/api/b/zsecond/tickets').then((r) => r.json()).then((a) => a.find((t) => t.title === 'picker ticket')));
+		ok(made && made.docs.join() === 'docs/guide.md,docs/new/**/*.md,AGENT_POLICY.md' && made.touches.join() === 'src/not-yet.py' && made.tags.join() === 'chore,fresh,tag', `[${tag}] saved lists: ${JSON.stringify(made)}`);
+		await page.keyboard.press('Escape');
 
 		ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
 		await ctx.close();
