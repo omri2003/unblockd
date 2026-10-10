@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tickets</title>
+<title>unblockd</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cstyle%3E.a%7Bfill:%23B1402E%7D.b%7Bfill:%232A7864%7D@media(prefers-color-scheme:dark)%7B.a%7Bfill:%23E27A66%7D.b%7Bfill:%2364B79E%7D%7D%3C/style%3E%3Crect class='a' x='1' y='7' width='13' height='18' rx='3'/%3E%3Crect class='b' x='18' y='7' width='13' height='18' rx='3'/%3E%3C/svg%3E">
 <script>try{const g=k=>JSON.parse(localStorage.getItem(k)),t=g('theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;if(g('density')==='compact')document.documentElement.classList.add('compact')}catch{}</script>
 <style>
 /* Layout: ticket board. Header + filter bar, four status columns, a drawer
@@ -682,7 +683,7 @@ function applyConfig(c){
   PILLARS=CFG.pillars.map(p=>p.key); PNAME=Object.fromEntries(CFG.pillars.map(p=>[p.key,p.name||cap(p.key)]));
   HUMAN=new Set(CFG.owners.filter(o=>o.kind==='human').map(o=>o.name)); STALE=CFG.stale_days??7; WIP=CFG.wip_limit??null; DAYS=CFG.done_window_days??7;
   LANES=[...CFG.pillars.map(p=>[p.key,pname(p.key),pk(p.key)]),['OTHER',PILLARS.length?'Other':'All','muted']];
-  document.title=CFG.title; $('appTitle').textContent=CFG.title; $('chatT').textContent='Ask about '+CFG.title;
+  document.title=CFG.title+' · unblockd'; $('appTitle').textContent=CFG.title; $('chatT').textContent='Ask about '+CFG.title;
   const vars=[],cls=[];
   CFG.pillars.forEach((p,i)=>{const d=DEF_PC[i%DEF_PC.length],v=pk(p.key);vars.push(`--${v}:light-dark(${p.color||d[0]},${p.color_dark||p.color||d[1]})`);cls.push(`.card.${v}{--pc:var(--${v})}`);});
   let st=$('pillarCss'); if(!st){st=document.createElement('style');st.id='pillarCss';document.head.appendChild(st);}

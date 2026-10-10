@@ -77,6 +77,7 @@ try {
 		ok((await page.locator('section.col').count()) >= 4, `[${tag}] expected 4 board columns`);
 		ok(await page.evaluate((t) => document.documentElement.dataset.theme === t, theme), `[${tag}] theme not applied`);
 		ok(await page.locator('.col.doing .agc').count(), `[${tag}] claimed card chip missing (claim made via CLI)`);
+		ok(await page.evaluate(() => /unblockd/.test(document.title) && !!document.querySelector('link[rel=icon]')), `[${tag}] title / favicon missing`);
 		await noOverflow('board');
 		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
 		await page.reload(); await page.waitForSelector('.card', { state: 'attached' });
