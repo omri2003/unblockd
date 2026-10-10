@@ -44,7 +44,13 @@ python -m unblockd.cli --dir /tmp/demo/shop/tickets create --prefix API --title 
 
 Expected: JSON with `"id": "API-3"`, `"status": "todo"`; the card appears within 4 s.
 
-**4. Connect Claude Code.** One shared server for all your projects: `docker compose up -d` (`PROJECTS_DIR` in `.env`, default `./example`) serves the board and MCP at `http://localhost:8788/mcp` (not run here; `python -m unblockd.mcp_server --http` does the same without Docker and was). Then once:
+**4. Connect Claude Code.** One shared server for all your projects: `docker compose up -d` (pulls the image, no build; `PROJECTS_DIR` in `.env`, default `./example`) serves the board and MCP at `http://localhost:8788/mcp`. Board only, no clone (PowerShell: `${PWD}`):
+
+```sh
+docker run -d -p 127.0.0.1:8787:8787 -e UNBLOCKD_ALLOW_OPEN=1 -v "$PWD:/projects" ghcr.io/omri2003/unblockd
+```
+
+Then once:
 
 ```sh
 claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp
@@ -60,10 +66,10 @@ claude mcp list
 
 Expected: `unblockd: python -m unblockd.mcp_server - Connected`. `PYTHONPATH` must be this checkout (the package is not pip-installed).
 
-**5. Tell Claude:** *"use unblockd: run work_plan and work all ready tickets."* It plans, claims, heartbeats and completes tickets; watch cards move on the board. An empty claim returns `{ticket: null, reason}`: `dry` = nothing ready, `conflict` = ready tickets touch files a live claim holds (retry soon), `waiting` = work exists but is in flight, blocked, in review or waiting on a human.
+**5. Tell Claude:** *"use unblockd: run work_plan and work all ready tickets."* Watch cards move on the board. An empty claim returns `{ticket: null, reason}`: `dry` = nothing ready, `conflict` = ready tickets touch files a live claim holds (retry), `waiting` = work exists but is not ready.
 If the board defines agent profiles (the demo has `frontend` and `backend`), worker names must be `<profile>-N`, e.g. `backend-1`; anything else is refused with a message listing the profiles.
 
-**What the UI gives you:** the **Needs you** badge (`i`) collects, across all boards, questions agents asked, work waiting for your review and stuck tickets, and you answer, approve or reject inline. The title is the board switcher (`Shift+B`). Priority means P0 breaks things now, P1 must happen, P2 should, P3 nice to have (`p` then `0`-`3` sets it).
+**What the UI gives you:** the **Needs you** badge (`i`) collects, across all boards, questions agents asked, work waiting for your review and stuck tickets, and you answer, approve or reject inline. Title = board switcher (`Shift+B`). Priority means P0 breaks things now, P1 must happen, P2 should, P3 nice to have (`p` then `0`-`3` sets it).
 
 ## Concepts
 
@@ -89,7 +95,7 @@ Put your project rules (tests, commits, PRs, when to ask a human, summary langua
 |---|---|
 | `UNBLOCKD_ROOT` | Folder(s) of projects; every `<project>/tickets/unblockd.json` is a board. |
 | `HOST`, `PORT` | Bind address (default `127.0.0.1`, `8787`). |
-| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, and a non-loopback `HOST` then refuses to start unless `UNBLOCKD_ALLOW_OPEN=1` (compose sets it: its ports are published on 127.0.0.1 only). Writes must be `application/json` (415) and a foreign `Origin` is refused (403). The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI open the folder directly and ignore it. |
+| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, and a non-loopback `HOST` then refuses to start unless `UNBLOCKD_ALLOW_OPEN=1` (compose sets it: its ports are published on 127.0.0.1 only). Writes must be `application/json`; a foreign `Origin` is refused. The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI open the folder directly and ignore it. |
 
 ## More
 

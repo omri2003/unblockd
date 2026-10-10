@@ -2,8 +2,10 @@
 # PROJECTS_DIR = a folder of projects (set it in .env next to this file). Every <project>/tickets/
 # with an unblockd.json in it becomes a board; a tickets/ folder right at the top counts too.
 x-unblockd: &unblockd   # shared by both services
+  # image + build: `up` pulls the image (no build for you); when the pull finds none (not published yet) it builds from this folder.
+  # Contributors: `docker compose up --build` always builds.
+  image: ghcr.io/omri2003/unblockd:latest
   build: .
-  image: unblockd
   # The image runs as uid 1001 (OpenShift-style), which can't write your bind-mounted projects on Linux
   # (host-owned files). Root here keeps the board and CLI writes working; deploy the image without this line.
   user: "0"
