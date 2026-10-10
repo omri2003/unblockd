@@ -355,6 +355,7 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended 
 ## API
 
 ```
+GET    /healthz                       (no /api, no auth) {"status": "ok"}: container health check / k8s probes
 GET    /api/boards                    every board with ticket counts
 GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
                                       [{"id", "title", "items": [{"id", "kind": "question"|"review"|"proposal"|"stuck", "title", "priority", "score", "unblocks",
@@ -402,3 +403,9 @@ DELETE tickets/<id>                   ?agent=, ?reason= (rejecting a proposal; l
 Tests: `python -m unittest`. UI changes show on a browser reload; Python
 changes after `docker compose restart`.
 
+## Deploying the image (Kubernetes / OpenShift)
+
+- **User**: the image runs as uid 1001 and `/app`, `/data`, `/projects` are owned by group 0 with group = owner permissions, so it also runs under OpenShift's random UID (restricted SCC). compose.yaml sets `user: "0"` only because Linux bind mounts of your own projects are not writable by 1001; don't copy that to a cluster.
+- **Base**: `python:3.12-slim-bookworm` (the floating `3.12-slim` is not used). Pin a `@sha256` digest for fully reproducible builds.
+- **Health**: `GET /healthz` returns `200 {"status": "ok"}` with no auth even when `UNBLOCKD_TOKEN` is set. The Dockerfile `HEALTHCHECK` uses it; use it for liveness/readiness probes too.
+- **Storage (files backend)**: tickets are files and the claim lock is a file lock, so run `replicas: 1`, `strategy: Recreate` (a rolling update would briefly run two pods on one volume) and mount a ReadWriteOnce PVC at `/data` (`TICKETS_DIR=/data/tickets`) or at `/projects`. Set `UNBLOCKD_TOKEN` (the container binds `0.0.0.0`).

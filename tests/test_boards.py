@@ -283,6 +283,11 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(code, 1)
 		self.assertIn("can't reach", msg)
 
+	def test_healthz_needs_no_auth(self):
+		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
+			self.assertEqual(self.call("GET", "/healthz"), (200, {"status": "ok"}))
+			self.assertEqual(self.call("GET", "/api/tickets")[0], 401)
+
 	def test_token_auth(self):
 		self.assertEqual(self.call("GET", "/api/tickets")[0], 200)  # unset: open
 		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):

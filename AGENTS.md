@@ -19,7 +19,8 @@ unblockd/store.py       THE core. Ticket CRUD over one folder, validation (FIELD
                         code that touches ticket files.
 unblockd/boards.py      Several boards: discovers <root>/<project>/tickets/unblockd.json, ids,
                         create(). Every front door goes through Boards -> Store.
-unblockd/web.py         Stdlib HTTP server + REST API (Handler._route; `_needs()` = GET /api/needs for the UI's Needs you panel). Serves static/index.html.
+unblockd/web.py         Stdlib HTTP server + REST API (Handler._route; `_needs()` = GET /api/needs for the UI's Needs you panel). Serves static/index.html. `GET /healthz` (unauthenticated, before the auth check) is the container probe.
+Dockerfile              Pinned `python:3.12-slim-bookworm`, runs as 1001 with /app /data /projects group-0 writable (OpenShift random UID), HEALTHCHECK on /healthz. compose.yaml sets `user: "0"` ONLY because Linux bind mounts of host projects aren't writable by 1001; the mcp service disables the healthcheck. Deploy notes: docs/reference.md.
 unblockd/mcp_server.py  MCP tools (stdio by default; `--http` = Streamable HTTP at /mcp for ONE shared server, `MCP_PORT`, `MCP_ALLOWED_HOSTS`, `BearerAuth`; compose service `unblockd-mcp`) + the `plan_from_spec(board, path)` prompt (serves `PLAN_FROM_SPEC.md`: read spec, check overlap, propose <= 10 tickets, wait for human approval, create in dependency order; no parser) + the `work_loop` prompt / `unblockd://work-loop` resource (serve `WORK_LOOP.md`, filled with `string.Template`: $board, $profile_line, $agent_hint, $claim_args)
 unblockd/WORK_LOOP.md   THE worker protocol, as a doc (incl. "Never go silent" and "Your board's policy"); read via Path(__file__), Dockerfile copies the package dir. Not per-board.
                         (needs the `mcp` package; the only dependency).

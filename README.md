@@ -93,6 +93,6 @@ Put your project rules (tests, commits, PRs, when to ask a human, summary langua
 
 ## More
 
-- [docs/reference.md](docs/reference.md): all env vars, boards, profiles and claims, knowledge docs, chat, `unblockd.json` keys, ticket format, UI features, MCP tools (incl. Docker and Claude Desktop), CLI, REST API, notifications.
+- [docs/reference.md](docs/reference.md): all env vars, boards, profiles and claims, knowledge docs, chat, `unblockd.json` keys, ticket format, UI features, MCP tools (incl. Docker and Claude Desktop), deploying the image (non-root / OpenShift, `/healthz`, one replica), CLI, REST API, notifications.
 - [AGENTS.md](AGENTS.md): internals and design decisions for contributors.
 - Tests: `python -m unittest`. MIT license.

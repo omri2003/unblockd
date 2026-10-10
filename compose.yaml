@@ -4,6 +4,9 @@
 x-unblockd: &unblockd   # shared by both services
   build: .
   image: unblockd
+  # The image runs as uid 1001 (OpenShift-style), which can't write your bind-mounted projects on Linux
+  # (host-owned files). Root here keeps the board and CLI writes working; deploy the image without this line.
+  user: "0"
   volumes:
     - ${PROJECTS_DIR:-./example}:/projects
     # code mounted from this folder: UI edits show on browser reload,
@@ -31,6 +34,7 @@ services:
   unblockd-mcp:   # one MCP server for every project's Claude Code session
     <<: *unblockd
     command: python -m unblockd.mcp_server --http
+    healthcheck: {disable: true}   # the image's check probes the board's /healthz
     environment:
       <<: *env
       HOST: 0.0.0.0   # inside the container; the port below is published on this machine only
