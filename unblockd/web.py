@@ -46,6 +46,7 @@ POST   tickets/<id>/files                {"name", "content"}  attach a text file
 DELETE tickets/<id>/files/<name>
 
 Writes (POST/PATCH/PUT) must send Content-Type: application/json (else 415); an Origin header, when present, must be this server (else 403).
+GET    /healthz                          (no /api, never needs auth) {"status": "ok"}: container health / k8s probes
 Auth: none by default (binds to 127.0.0.1; a non-loopback HOST without a token refuses to start unless UNBLOCKD_ALLOW_OPEN=1). With UNBLOCKD_TOKEN set, /api/* needs `Authorization: Bearer <token>`
 or the `unblockd_token` cookie, which any page visited with `?token=<token>` sets. A shared secret, not per-user identity.
 """
@@ -215,6 +216,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self.end_headers()
 			if method == "GET" and parts in ([], ["index.html"]):
 				return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+			if method == "GET" and parts == ["healthz"]:  # liveness/readiness probe: no auth, nothing sensitive
+				return self._send(200, {"status": "ok"})
 			if parts[:1] != ["api"]:
 				return self._send(404, {"error": "not found"})
 			if bad := self._write_refused(method):
