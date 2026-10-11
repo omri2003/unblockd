@@ -13,12 +13,16 @@
   "waiting_on": "",
   "body": "",
   "created": "2026-10-03",
-  "updated": "2026-10-09",
+  "updated": "2026-10-11",
   "touches": [
     "web/index.html"
   ],
-  "docs": [],
+  "docs": [
+    "docs/arch/web-ui.md",
+    "docs/guide.md"
+  ],
   "components": [
     "web-ui"
-  ]
+  ],
+  "rev": 1
 }
