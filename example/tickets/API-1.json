@@ -11,8 +11,13 @@
   "waiting_on": "",
   "body": "",
   "created": "2026-10-03",
-  "updated": "2026-10-03",
+  "updated": "2026-10-11",
   "touches": [
     "store/**"
-  ]
+  ],
+  "rev": 3,
+  "docs": [
+    "docs/arch/store.md"
+  ],
+  "components": []
 }

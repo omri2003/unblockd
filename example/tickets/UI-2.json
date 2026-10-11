@@ -13,9 +13,14 @@
   "waiting_on": "",
   "body": "",
   "created": "2026-10-03",
-  "updated": "2026-10-03",
+  "updated": "2026-10-11",
   "touches": [
     "web/graph.js",
     "api/server.py"
+  ],
+  "rev": 1,
+  "docs": [
+    "docs/arch/web-ui.md",
+    "docs/arch/api.md"
   ]
 }
