@@ -545,6 +545,62 @@ try {
 		ok(!errs.length, `[chat] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
+	// 6b. "I am" + Mine, on a board with 2 human owners (the example board has one: the setting is hidden there)
+	await mkdir(join(root, 'zteam/tickets'), { recursive: true });
+	await writeFile(join(root, 'zteam/tickets/unblockd.json'), JSON.stringify({ id: 'zteam', title: 'Team board', owners: [{ name: 'Dana', kind: 'human' }, { name: 'Omri', kind: 'human' }, { name: 'Claude', kind: 'agent' }], default_owner: 'Dana' }));
+	const cliT = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zteam/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
+	cliT('create', '--prefix', 'ZT', '--title', 'dana owns', '--json', '{"owner":"Dana"}');
+	const zt2 = JSON.parse(cliT('create', '--prefix', 'ZT', '--title', 'agent for dana', '--json', '{"owner":"Claude"}')).id;
+	cliT('claim', '--agent', 'backend-1', '--id', zt2, '--principal', 'Dana');
+	cliT('create', '--prefix', 'ZT', '--title', 'omri owns', '--json', '{"owner":"Omri"}');
+	for (const [w, h] of [[1400, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
+		const tag = `i-am/${w}px/${theme}`;
+		const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
+		await ctx.addInitScript((t) => { try { localStorage.setItem('theme', JSON.stringify(t)); } catch {} }, theme);
+		const page = await ctx.newPage(); page.setDefaultTimeout(5000); lastPage = page;
+		const errs = [];
+		page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
+		page.on('console', (m) => m.type() === 'error' && errs.push('console.error: ' + m.text()));
+		const ok = (c, msg) => { if (!c) throw new Error(`[${tag}] ${msg}` + (errs.length ? '\n  browser errors so far:\n  ' + errs.join('\n  ') : '')); };
+		const noOver = async (what) => { const sw = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], `${what}: horizontal overflow ${sw[0]} > ${sw[1]}`); };
+		const cards = () => page.evaluate(() => [...document.querySelectorAll('#board .card')].map((e) => e.dataset.open).sort());
+		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' }); // the example board: one human, nothing to choose
+		await page.click('#spanel > summary');
+		ok(await page.locator('#setMe').isHidden(), 'the I am setting should be hidden with one human owner');
+		await page.click('#spanel > summary');
+		const qid = JSON.parse(cliT('create', '--prefix', 'ZT', '--title', 'question for the team', '--json', '{"owner":"Claude"}')).id;
+		cliT('claim', '--agent', 'backend-1', '--id', qid); cliT('ask', qid, '--agent', 'backend-1', '--question', 'Which way?');
+		await page.goto(base + '?board=zteam'); await page.waitForSelector('.card', { state: 'attached' });
+		ok(await page.locator('#mineSeg').isHidden(), 'Mine should be hidden until I am is set');
+		await page.click('#spanel > summary');
+		await page.waitForSelector('#setMe:not([hidden])');
+		await noOver('settings with I am');
+		await page.click('#setMe [data-pref="me:Dana"]');
+		await page.click('#spanel > summary');
+		const all = await cards(); ok(all.length >= 4, `expected all tickets, got ${all}`);
+		await page.click('#fpanel > summary'); await page.click('#mineSeg [data-mine="1"]');
+		await page.waitForSelector('#pills [data-mine="0"]');
+		const mine = await cards();
+		ok(mine.length === 2 && mine.includes(zt2) && mine.includes('ZT-1'), `Mine should be what Dana owns or an agent works on for Dana: ${mine}`);
+		ok(new URL(page.url()).searchParams.get('me') === '1', `URL should carry me=1: ${page.url()}`);
+		await page.click('#fpanel > summary');
+		await page.goto(page.url()); await page.waitForSelector('.card', { state: 'attached' }); // round trip: the link reproduces the view
+		await page.waitForSelector('#pills [data-mine="0"]');
+		ok(JSON.stringify(await cards()) === JSON.stringify(mine), 'reloading the link should show the same Mine view');
+		await noOver('Mine view');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/me-${w}-${theme}.png` });
+		await page.click('#pills [data-mine="0"]'); // the pill removes it
+		await page.waitForFunction(() => !new URL(location.href).searchParams.has('me') && !document.querySelector('#pills [data-mine]'));
+		ok((await cards()).length === all.length, 'removing the pill should show everything again');
+		await page.click('#needsBadge'); // answer from the Needs panel: the note is signed with the I am name
+		const qrow = `#npList .nr[data-key="zteam/${qid}"]`;
+		await page.fill(`${qrow} input[data-draft]`, 'This way'); await page.keyboard.press('Enter');
+		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
+		const ans = await page.evaluate((i) => fetch('/api/b/zteam/tickets/' + i).then((r) => r.json()), qid);
+		ok(/— Dana, \S+: Answer to: Which way\? — This way/.test(ans.body), `the answer should be signed Dana: ${ans.body}`);
+		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
+		await ctx.close();
+	}
 	// 7. editing the architecture from the Map, on a board with no architecture folder (the empty state): add components, connect, edit, remove + Undo, delete
 	await mkdir(join(root, 'zempty/tickets'), { recursive: true });
 	await writeFile(join(root, 'zempty/tickets/unblockd.json'), JSON.stringify({ id: 'zempty', title: 'Empty board' }));

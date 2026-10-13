@@ -521,6 +521,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
       <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
+      <div class="seg" id="setMe" data-l="I am" role="group" aria-label="I am" title="Signs your answers, approvals and notes with this name. Only the board's human owners." hidden></div>
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
   </header>
   <div class="strip" id="strip" aria-label="Status overview"></div>
@@ -531,6 +532,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
         <div class="seg" id="pillarSeg" data-l="Pillar" title="Pillar: the kind of work (one per ticket: prefix, colour, which agent)"></div>
         <div class="seg" id="compSeg" data-l="Component" title="Component: the parts of the system it changes (can be several)" hidden></div>
         <div class="seg" id="ownerSeg" data-l="Owner"></div>
+        <div class="seg" id="mineSeg" data-l="Mine" title="Mine: tickets I own, or that an agent works on for me (set 'I am' in Settings)" hidden></div>
         <div class="seg" id="prioSeg" data-l="Priority"></div>
         <div class="seg" id="agentSeg" data-l="Agent"></div>
         <div class="seg" id="parentSeg" data-l="Parent"></div>
@@ -702,7 +704,7 @@ const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
 const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','parent','agent'];
-const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),owner:store.get('owner','ALL'),parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
+const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
 const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
 const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
@@ -859,6 +861,8 @@ function renderBar(){
   $('pillarSeg').hidden=!PILLARS.length;
   if(PILLARS.length) chips($('pillarSeg'),[['ALL','All'],...PILLARS.map(p=>[esc(p),esc(pname(p)),pk(p)]),['OTHER','Other','muted']],state.pillar,'pillar');
   chips($('ownerSeg'),[['ALL','Anyone'],...CFG.owners.map(o=>[esc(o.name),esc(o.name)])],state.owner,'owner');
+  $('mineSeg').hidden=!me(); if(me()) chips($('mineSeg'),[['0','Everyone'],['1','Mine']],mineOn()?'1':'0','mine');
+  renderSettings();
   $('agentSeg').hidden=!CFG.agents?.length;
   if(CFG.agents?.length) chips($('agentSeg'),[['ALL','Any agent'],...CFG.agents.map(a=>[esc(a.name),esc(a.name)]),['NONE','Unrouted']],state.agent,'agent');
   const ps=T.filter(t=>t.children?.length).map(t=>t.id); if(state.parent!=='ALL'&&!ps.includes(state.parent)) state.parent='ALL'; // the parent is gone: don't hide everything
@@ -876,6 +880,9 @@ function renderBar(){
   chips($('prioSeg'),PRIOS.map(p=>[p,p]),state.prio,'prio');
   renderShow();
 }
+const me=()=>HUMAN.size>1&&HUMAN.has(SET.me)?SET.me:''; // "I am": one of the board's human owners, else '' (hidden with 0-1 humans: nothing changes)
+const mineOn=()=>state.mine&&!!me();
+const isMine=t=>t.owner===me()||t.claim?.principal===me()||t.result?.principal===me();
 const isBlocked=t=>t.status!=='done'&&(t.open_blockers||[]).length>0;
 const isFree=t=>t.status!=='done'&&t.status!=='review'&&!(t.open_blockers||[]).length&&!t.waiting_on;
 function matches(t){
@@ -884,6 +891,7 @@ function matches(t){
   if(dep==='BLOCKED'&&!isBlocked(t)) return false;
   if(state.pillar==='OTHER' ? t.pillar : (state.pillar!=='ALL' && t.pillar!==state.pillar)) return false;
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
+  if(mineOn()&&!isMine(t)) return false;
   if(state.comp!=='ALL' && !tcomps(t).includes(state.comp)) return false;
   if(state.parent!=='ALL' && t.parent!==state.parent) return false;
   if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
@@ -920,6 +928,7 @@ function activeFilters(){
   const ps=[];
   if(state.pillar!=='ALL') ps.push([`data-pillar="ALL"`,state.pillar==='OTHER'?'Other':pname(state.pillar)]);
   if(state.owner!=='ALL') ps.push([`data-owner="ALL"`,state.owner]);
+  if(mineOn()) ps.push([`data-mine="0"`,'Mine']);
   if(state.comp!=='ALL') ps.push([`data-comp="ALL"`,'Component: '+ctitle(state.comp)]);
   if(state.parent!=='ALL') ps.push([`data-parent="ALL"`,'Parent: '+state.parent]);
   if(state.agent!=='ALL') ps.push([`data-agent="ALL"`,state.agent==='NONE'?'Unrouted':state.agent]);
@@ -935,19 +944,20 @@ function renderPills(){
 const VIEWK=['board','graph','docs','map'], DEPS=['ALL','FREE','BLOCKED'];
 function urlWrite(){ // the view lives in the address bar (non-default values only): a link reproduces it. replaceState, so no history spam; ?board= and #ID stay
   const g=state.view==='graph',u=new URLSearchParams(location.search),sk=g?'showGraph':'showBoard';
-  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,comp:state.comp==='ALL'?'':state.comp,
+  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,me:mineOn()?'1':'',agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,comp:state.comp==='ALL'?'':state.comp,
     priority:state.prio.join(','),show:state[sk]===(g?'dim':'only')?'':state[sk],group:state.group==='none'?'':state.group,dep:g&&state.dep!=='ALL'?state.dep:''};
   for(const k in v)v[k]?u.set(k,v[k]):u.delete(k);
   const qs=u+'',now=location.search.slice(1);
   if(qs!==now.replace(/\+/g,'%20'))history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
 }
 function urlRead(){ // after applyConfig. Any of our params present = the link defines the whole view (the rest back to defaults); bad values are ignored
-  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','agent','parent','comp','priority','show','group','dep'];
+  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','me','agent','parent','comp','priority','show','group','dep'];
   if(!K.some(k=>u.has(k)))return;
   const g=k=>u.get(k)||'';
   state.view=pickOf(g('view'),VIEWK,'board');
   state.pillar=pickOf(g('pillar'),['OTHER',...PILLARS],'ALL');
   state.owner=pickOf(g('owner'),CFG.owners.map(o=>o.name),'ALL');
+  state.mine=g('me')==='1';
   state.agent=pickOf(g('agent'),['NONE',...CFG.agents.map(a=>a.name)],'ALL');
   state.parent=/^[A-Za-z0-9_-]+$/.test(g('parent'))?g('parent'):'ALL';
   state.comp=/^[a-z0-9-]+$/.test(g('comp'))?g('comp'):'ALL';
@@ -1117,15 +1127,16 @@ function closeNeeds(quiet){ // quiet: the drawer is taking over, which keeps the
   const el=$('npanel'); if(el.hidden) return; el.hidden=true; npShown=false; if($('drawer').hidden) $('scrim').hidden=true;
   if(!quiet) (lastNFocus?.isConnected?lastNFocus:$('needsBadge')).focus?.();
 }
+const by=()=>me()?{by:me()}:{}; // who is clicking: the "I am" name, else the server's default (human)
 const NFORM={answer:['text','Answered'],reject:['reason','Rejected'],notes:['text','Note added'],drop:['reason','Rejected']}; // drop = reject a proposal: DELETE, the reason is optional and only logged
 const refreshAfter=bd=>Promise.all([(!bd||bd===curBoard())&&load(true),loadNeeds()]);
 async function submitNeeds(f){ // panel + drawer forms: POST <board>/tickets/<id>/<answer|reject|notes>; the panel's carry data-board (any board, no switching)
   const id=f.dataset.id,kind=f.dataset.nform,i=f.elements.t,text=(DRAFTS[i.dataset.draft]??i.value).trim(),bd=f.dataset.board; if(!text&&kind!=='drop') return i.focus(); // text from DRAFTS: it keeps the newlines a collapsed one-line input cannot show
-  try{ const u=`${bd?'/api/b/'+bd:API}/tickets/${id}`; await (kind==='drop'?jf(`${u}?reason=${encodeURIComponent(text)}`,'DELETE'):jf(`${u}/${kind}`,'POST',{[NFORM[kind][0]]:text})); delete DRAFTS[i.dataset.draft]; await refreshAfter(bd); toast(`${NFORM[kind][1]}: ${id}`); }
+  try{ const u=`${bd?'/api/b/'+bd:API}/tickets/${id}`; await (kind==='drop'?jf(`${u}?reason=${encodeURIComponent(text)}`,'DELETE'):jf(`${u}/${kind}`,'POST',{[NFORM[kind][0]]:text,...by()})); delete DRAFTS[i.dataset.draft]; await refreshAfter(bd); toast(`${NFORM[kind][1]}: ${id}`); }
   catch(er){ toast(er.message,{err:1}); }
 }
 async function acceptTicket(bd,id){
-  try{ await jf(`/api/b/${bd}/tickets/${id}/accept`,'POST',{}); await refreshAfter(bd); toast(`Accepted: ${id}`); }
+  try{ await jf(`/api/b/${bd}/tickets/${id}/accept`,'POST',by()); await refreshAfter(bd); toast(`Accepted: ${id}`); }
   catch(er){ toast(er.message,{err:1}); }
 }
 function createdToast(t){ // a human's ticket that breaks the board's schema is still created: say what is missing, one click to fix it
@@ -1224,8 +1235,8 @@ function emptyState(){
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
 }
 function clearFilters(){
-  Object.assign(state,{pillar:'ALL',comp:'ALL',owner:'ALL',agent:'ALL',parent:'ALL',prio:[]});
-  for(const k of['pillar','comp','owner','parent'])store.set(k,'ALL');
+  Object.assign(state,{pillar:'ALL',comp:'ALL',owner:'ALL',mine:false,agent:'ALL',parent:'ALL',prio:[]});
+  for(const k of['pillar','comp','owner','parent'])store.set(k,'ALL'); store.set('mine',false);
   if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
 function lanes(ts){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
@@ -1318,7 +1329,7 @@ async function submitSplit(f){
   if(titles.length<2){m.className='msg err';m.textContent='Add at least 2 parts, one per line.';return;}
   m.className='msg';m.textContent='Splitting…';
   try{
-    const r=await api('POST','/'+id+'/split',{titles,sequential:$('sp-seq').checked});
+    const r=await api('POST','/'+id+'/split',{titles,sequential:$('sp-seq').checked,...by()});
     SPLIT=null; await load(true); showTicket(id,true);
     const msg=document.createElement('span'); msg.append(`Split ${id} into `);
     r.children.forEach((c,i)=>{if(i)msg.append(', ');const b=document.createElement('button');b.type='button';b.dataset.open=c.id;b.textContent=c.id;msg.append(b);});
@@ -1415,14 +1426,15 @@ async function submitForm(f){
 }
 
 // ---------- settings (gear): per browser, localStorage ----------
-const SET={theme:pickOf(store.get('theme','system'),['system','light','dark'],'system'),density:pickOf(store.get('density','comfortable'),['comfortable','compact'],'comfortable'),digest:pickOf(store.get('digest','on'),['on','off'],'on')};
-const SETS=[['theme','setTheme',[['system','System'],['light','Light'],['dark','Dark']]],['density','setDensity',[['comfortable','Comfortable'],['compact','Compact']]],['digest','setDigest',[['on','On'],['off','Off']]]];
-function renderSettings(){for(const[k,id,items]of SETS)chips($(id),items.map(([v,l])=>[k+':'+v,l]),k+':'+SET[k],'pref');}
+const SET={theme:pickOf(store.get('theme','system'),['system','light','dark'],'system'),density:pickOf(store.get('density','comfortable'),['comfortable','compact'],'comfortable'),digest:pickOf(store.get('digest','on'),['on','off'],'on'),me:store.get('me','')};
+const SETS=[['theme','setTheme',[['system','System'],['light','Light'],['dark','Dark']]],['density','setDensity',[['comfortable','Comfortable'],['compact','Compact']]],['digest','setDigest',[['on','On'],['off','Off']]],['me','setMe',()=>[['','Not set'],...[...HUMAN].map(n=>[n,n])]]];
+function renderSettings(){for(const[k,id,items]of SETS){const it=typeof items==='function'?items():items; if(k==='me'){$(id).hidden=HUMAN.size<2; if(HUMAN.size<2)continue;} chips($(id),it.map(([v,l])=>[esc(k+':'+v),esc(l)]),esc(k+':'+(k==='me'?me():SET[k])),'pref');}}
 function setPref(k,v){
   SET[k]=v; store.set(k,v); const r=document.documentElement;
   if(k==='theme'){if(v==='system')delete r.dataset.theme;else r.dataset.theme=v;readColors();kick();} // canvas colours are read from the resolved theme
   if(k==='density')r.classList.toggle('compact',v==='compact');
   if(k==='digest')renderDigest();
+  if(k==='me'){renderBar();render();}
   renderSettings();
 }
 renderSettings();
@@ -1434,7 +1446,8 @@ document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
   closeMenus(e.target);
   if(b=g('[data-aprange]')){AP.days=+b.dataset.aprange;store.set('agentDays',AP.days);loadAgents();return;}
-  if(b=g('[data-pref]')){const[k,v]=b.dataset.pref.split(':');setPref(k,v);return;}
+  if(b=g('[data-pref]')){const j=b.dataset.pref.indexOf(':');setPref(b.dataset.pref.slice(0,j),b.dataset.pref.slice(j+1));return;}
+  if(b=g('[data-mine]')){state.mine=b.dataset.mine==='1';store.set('mine',state.mine);renderBar();render();return;}
   for(const k of['pillar','comp','dep','owner','agent','parent','group']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
