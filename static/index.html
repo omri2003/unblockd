@@ -202,7 +202,7 @@ a.btn{display:inline-block;text-decoration:none}
 .agc{display:inline-flex;align-items:center;gap:5px;background:var(--amber-soft);color:var(--amber);border-radius:99px;padding:0 8px;font-size:.74rem;font-weight:700;white-space:nowrap;min-width:0}
 .agc time{font-weight:600;opacity:.85} .agc time.late{color:var(--cinnabar);opacity:1;font-weight:800}
 .wl{display:block;margin-top:5px;font-size:.78rem;font-weight:600}
-.wl.miss{color:var(--cinnabar)} .wl.stale{color:var(--amber)}
+.wl.miss,.wl.fail{color:var(--cinnabar)} .wl.stale{color:var(--amber)}
 .card.flash{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--jade-soft)}to{background:var(--surface)}}
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:3px}
@@ -1003,7 +1003,7 @@ function card(t){
   if(s==='done') meta.length=0; // done cards show no meta line, except the age and the path hint
   meta.push(`<span class="age" data-up="${esc(t.updated)}" data-st="${s}" title="Updated ${esc(t.updated)}"></span>`); // text filled by tickAges, never in the JSON
   if(onp) meta.push('<span class="onp" title="Doesn\'t match the filters; shown because it is on a chain through a match">on path</span>');
-  const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
+  const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:'',needMark(t)].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
   if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
@@ -1059,6 +1059,7 @@ function renderDigest(){
 }
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
+let NMARK=''; // ids of this board's failed-N-times cards; a change repaints the board (the cards read NEEDS)
 const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
 const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
 const parseNotes=b=>(b||'').split(/\n\n(?=— )/).map(c=>/^— ([^,\n]+), (\S+): ([\s\S]*)$/.exec(c)).filter(Boolean).map(m=>({by:m[1],at:m[2],text:m[3]})); // the `— by, ISO: text` lines _append_note writes
@@ -1069,7 +1070,9 @@ async function loadNeeds(){ // ETag: an idle poll costs headers only
   paintNeeds();
 }
 const NSEEN='unblockd.nseen'; // {board: [ids]} the badge has shown; an id not in there pulses it once
+function needMark(t){ const n=NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id&&i.kind==='stuck')?.attempts?.length; return n?`<span class="wl fail" title="Failed claims since a human last touched it; a note clears this">Failed ${n} times</span>`:''; }
 function paintNeeds(){
+  const nm=NEEDS.find(g=>g.id===curBoard())?.items.filter(i=>i.attempts?.length).map(i=>i.id+i.attempts.length).join(); if(nm!==NMARK){ NMARK=nm; if(typeof T!=='undefined'&&T.length) render(); }
   const b=$('needsBadge'),n=NEEDS.reduce((a,g)=>a+g.items.length,0),cur=curBoard(); b.hidden=!n;
   if(n){ b.innerHTML=`<i class="bang" aria-hidden="true">!</i><span class="n">${n}</span>`;
     b.title='Needs you (i)'+(NEEDS.length>1||NEEDS[0].id!==cur?'\n'+NEEDS.map(g=>`${g.id===cur?'This board':g.title}: ${g.items.length}`).join('\n'):''); b.setAttribute('aria-label',`Needs you: ${n}`); }

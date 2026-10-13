@@ -441,6 +441,13 @@ try {
 		ok((await page.locator(`${mrow} [data-release]`).count()) === 0 && (await page.locator(`${mrow} [data-open]`).count()) === 2, `[${tag}] a missing blocker only gets Open (id + button)`);
 		ok((await page.locator(`${srow} .nd-q`).innerText()).startsWith('In progress for '), `[${tag}] stale hint`);
 		await noOverflow('stuck rows');
+		// failed-N-times cue on the card: 3 claim+release rounds, gone after a human note
+		const fid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'keeps failing', '--json', '{"owner":"Claude"}')).id;
+		for (let i = 0; i < 3; i++) { cli('claim', '--agent', 'backend-1', '--id', fid); cli('release', fid, '--agent', 'backend-1', '--reason', 'tried ' + i); }
+		await page.waitForFunction((i) => /Failed 3 times/.test(document.querySelector(`#board [data-open="${i}"] .wl.fail`)?.textContent || ''), fid);
+		cli('note', fid, 'try the other approach', '--by', 'human');
+		await page.waitForFunction((i) => !document.querySelector(`#board [data-open="${i}"] .wl.fail`), fid);
+		ok(true, `[${tag}] failed-3-times cue shows on the card and clears after a human note`);
 		await page.click(`${srow} [data-release]`);
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${sid}`);
 		const rel = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), sid);
