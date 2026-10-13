@@ -21,15 +21,15 @@ GET    meta                              statuses, priorities, fields, config (u
 GET    agents                            who is working what right now + recent activity
 GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expired / complete / created / done log, newest first;
                                          since=<ISO time> keeps only newer events (the "While you were away" digest)
-POST   claim                             {"agent", "profile"?, "note"?}  best claimable ticket, or null
-POST   tickets/<id>/claim                {"agent", "note"?}
-POST   tickets/<id>/heartbeat            {"agent", "note"?}
-POST   tickets/<id>/release              {"agent", "reason"?}
+POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner}  best claimable ticket, or null
+POST   tickets/<id>/claim                {"agent", "note"?, "principal"?}
+POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?}
+POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/notes                {"by"?, "text"}  append a signed line to the body (by defaults to "human") -> the ticket
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
-POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text}  also stored as the ticket's `result`
+POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
@@ -259,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50), q.get("since")))
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
-				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", ""))))
+				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", "")), principal=b.get("principal")))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["files"]:
@@ -286,14 +286,14 @@ class Handler(BaseHTTPRequestHandler):
 				b, tid, act = self._body(), rest[1], rest[2]
 				agent = str(b.get("agent", ""))
 				if act == "claim":
-					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", ""))))
+					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal")))
 				if act == "heartbeat":
-					return self._send(200, store.heartbeat(tid, agent, str(b.get("note", ""))))
+					return self._send(200, store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal")))
 				if act == "release":
-					return self._send(200, store.release(tid, agent, str(b.get("reason", ""))))
+					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal")))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff")))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))

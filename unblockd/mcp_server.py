@@ -224,29 +224,29 @@ def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
 
 
 @tool
-def claim_next(agent: str, profile: str | None = None, note: str = "", board: str | None = None) -> dict:
+def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
-	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); profile defaults to the profile your name starts with. Skips tickets
+	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
 	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim)."""
 	store = BOARDS.get(board)
-	return kn.with_context(store, store.claim_next(agent, profile=profile, note=note))
+	return kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal))
 
 
 @tool
-def claim_ticket(id: str, agent: str, note: str = "", board: str | None = None) -> dict:
-	"""Claim one specific ticket (it must be ready, not human-owned, not claimed)."""
+def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal: see claim_next."""
 	store = BOARDS.get(board)
-	return kn.with_context(store, store.claim(agent, tid=id, note=note))
+	return kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal))
 
 
 @tool
-def heartbeat(id: str, agent: str, note: str = "", board: str | None = None) -> dict:
+def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
-	least every few minutes."""
-	return BOARDS.get(board).heartbeat(id, agent, note)
+	least every few minutes. Pass the same principal you claimed with."""
+	return BOARDS.get(board).heartbeat(id, agent, note, principal)
 
 
 @tool
@@ -277,18 +277,18 @@ def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
 
 
 @tool
-def release(id: str, agent: str, reason: str = "", board: str | None = None) -> dict:
+def release(id: str, agent: str, reason: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). Say why."""
-	return BOARDS.get(board).release(id, agent, reason)
+	return BOARDS.get(board).release(id, agent, reason, principal)
 
 
 @tool
 def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
-             handoff: str | None = None, board: str | None = None) -> dict:
+             handoff: str | None = None, principal: str | None = None, board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
-	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`."""
-	return BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff)
+	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with."""
+	return BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal)
 
 
 @tool

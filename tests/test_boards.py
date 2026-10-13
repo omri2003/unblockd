@@ -246,6 +246,20 @@ class ApiTest(unittest.TestCase):
 			code = cli.main(list(args))
 		return code, (json.loads(out.getvalue()) if out.getvalue() else err.getvalue().strip())
 
+	def test_principal_over_rest_and_cli_env(self):
+		self.call("POST", "/api/tickets", {"prefix": "CMB", "title": "a", "pillar": "COMBAT"})
+		self.call("POST", "/api/tickets", {"prefix": "CMB", "title": "b", "pillar": "COMBAT"})
+		code, d = self.call("POST", "/api/claim", {"agent": "backend-1", "principal": "Nobody"})
+		self.assertEqual((code, "not a human owner" in d["error"]), (400, True))
+		code, d = self.call("POST", "/api/tickets/CMB-1/claim", {"agent": "backend-1", "principal": "Me"})
+		self.assertEqual(d["claim"]["principal"], "Me")
+		code, d = self.call("POST", "/api/tickets/CMB-1/heartbeat", {"agent": "backend-1", "principal": "Dana"})
+		self.assertEqual(code, 400)
+		self.assertEqual(self.call("POST", "/api/tickets/CMB-1/complete", {"agent": "backend-1", "summary": "s", "principal": "Me"})[1]["result"]["principal"], "Me")
+		got = self.cli("claim", "--agent", "backend-1", UNBLOCKD_PRINCIPAL="Me")[1]  # env default
+		self.assertEqual(got["claim"]["principal"], "Me")
+		self.assertEqual(self.cli("complete", got["id"], "--agent", "backend-1", "--summary", "s", UNBLOCKD_PRINCIPAL="Me")[1]["result"]["principal"], "Me")
+
 	def test_remote_cli_round_trip(self):
 		self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", "parry", "--json", '{"pillar": "COMBAT"}')[1]["id"], "CMB-1")
 		self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", "dodge", "--json", '{"pillar": "COMBAT"}')[1]["id"], "CMB-2")

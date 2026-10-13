@@ -69,6 +69,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Never two on the same files**: give tickets `touches` (paths or globs).
   `claim_next` skips a ticket whose `touches` overlap a live claim.
 - **Never a human's ticket**: tickets owned by a `kind: human` owner are skipped.
+- **Whose agent is it?** `claim_next` / `claim_ticket` take an optional `principal`: the `kind: human` owner the agent works for
+  (CLI `--principal` or env `UNBLOCKD_PRINCIPAL`; REST body key; MCP arg). Anything else is refused, listing the human owners.
+  It is stored in the claim (shown as "backend-1 for Omri" in `agents_now`, the card tooltip and the drawer), copied to `result.principal`
+  by `complete`, and carried by the `claim` / `complete` / `release` activity events. Pass the same principal to `heartbeat` / `release` /
+  `complete`: when both the claim and the call name one and they differ, the call is refused, so two people's `backend-1` cannot
+  act on each other's claim. On a board with 2+ human owners a claim without one carries `warnings: ["no principal: ..."]` (not stored).
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
   (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
@@ -91,6 +97,13 @@ ignores itself in git.
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
 and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; reported, never claimable). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
+
+### Teams
+
+Run ONE shared server (`python -m unblockd.web`, plus `mcp_server --http` or the Remote CLI for agents on other machines): claims live in
+`tickets/.unblockd/` and are not in git, so two clones of the same repo can both claim a ticket. List each person as a `kind: human` owner and have
+each person's agents claim with their `principal`; the Done ticket then reads "Done by backend-1 for Omri". It is a label, not proof, until per-user
+tokens exist: anyone with the shared token can name any principal.
 
 ## Knowledge: tickets come with their instructions
 
@@ -355,7 +368,7 @@ MCP prompts are slash commands (`/mcp__<server>__<prompt> args`), not tools. `<p
 ```
 python -m unblockd.cli --dir <repo>/tickets next --owner Claude --agent backend
 python -m unblockd.cli --dir <repo>/tickets plan --per-agent 3
-python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1
+python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1 [--principal Omri]   # or env UNBLOCKD_PRINCIPAL; heartbeat/release/complete take it too
 python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 --note "running tests"
 python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests"
 python -m unblockd.cli --dir <repo>/tickets list --status todo
@@ -388,8 +401,8 @@ GET    next?owner=&pillar=&agent=&tag=&limit=
 GET    plan?per_agent=
 GET    agents                         who is working what now + recent activity
 GET    activity?ticket=&limit=
-POST   claim                          {"agent", "profile"?, "note"?}
-POST   tickets/<id>/claim|heartbeat|release|complete   {"agent", "note" | "reason" | "summary"}
+POST   claim                          {"agent", "profile"?, "note"?, "principal"?}
+POST   tickets/<id>/claim|heartbeat|release|complete   {"agent", "note" | "reason" | "summary", "principal"?}
 GET    tickets/<id>/context?inline=0  docs + attached files to read before working it
 GET    knowledge                      who reads what (tickets, docs, edges, problems)
 GET    architecture                   component notes, edges with contracts, open tickets per component, problems

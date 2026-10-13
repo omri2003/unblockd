@@ -96,7 +96,7 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at"}
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal"}
 
 
 OUTCOMES = {"expired": "expired", "release": "released", "rejected": "rejected"}  # activity events that end an attempt badly
@@ -759,8 +759,10 @@ class Store:
 		tmp.write_text(json.dumps(claims, indent=2), encoding="utf-8")
 		os.replace(tmp, p)
 
-	def _log(self, event: str, tid: str | None, agent: str | None, note: str = "") -> None:
+	def _log(self, event: str, tid: str | None, agent: str | None, note: str = "", principal: str | None = None) -> None:
 		line = {"ts": _now(), "event": event, "ticket": tid, "agent": agent, "note": note[:500]}
+		if principal:
+			line["principal"] = principal
 		p = self._rt() / "activity.jsonl"
 		if p.exists() and p.stat().st_size > ACTIVITY_MAX:
 			self._locked(lambda: p.stat().st_size > ACTIVITY_MAX and os.replace(p, p.with_name("activity.1.jsonl")))
@@ -846,12 +848,16 @@ class Store:
 			                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1) or pass profile=<name>")
 		return profile
 
-	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "") -> dict | None:
+	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None) -> dict | None:
 		"""Take a ticket for `agent` (a unique worker name, e.g. backend-1): the given one, or the best
 		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
-		claim overlaps. Sets it to doing. Returns the ticket, or None when nothing is claimable."""
+		claim overlaps. Sets it to doing. `principal` = the human owner (kind human) the agent works for; stored in the claim. Returns the ticket, or None when nothing is claimable."""
 		if not (isinstance(agent, str) and NAME_RE.match(agent)):
 			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. backend-1)")
+		humans = [o["name"] for o in self.config["owners"] if o.get("kind") == "human"]
+		principal = (principal or "").strip() or None
+		if principal and principal not in humans:
+			raise TicketError(f"principal {principal!r} is not a human owner on this board: {', '.join(humans) or 'no human owners configured'}")
 		profiles = [a["name"] for a in self.config["agents"]]
 		if profile is None:
 			profile = self.worker_profile(agent)
@@ -875,12 +881,13 @@ class Store:
 					return None
 			claims = self._claims()
 			now = _now()
-			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300]}
+			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300],
+				                      **({"principal": principal} if principal else {})}
 			self._save_claims(claims)
 			raw = self._read(self._path(pick["id"]))
 			raw["status"], raw["updated"] = "doing", date.today().isoformat()
 			self._write(raw)
-			self._log("claim", pick["id"], agent, note)
+			self._log("claim", pick["id"], agent, note, principal)
 			return pick["id"]
 
 		got = self._locked(take)
@@ -889,14 +896,16 @@ class Store:
 		t, c = self.get(got), self._claims()[got]
 		lease = self.config["lease_minutes"]
 		return {**t, "lease_minutes": lease, "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
-		        "previous_attempts": self.attempts(got, 5)}
+		        "previous_attempts": self.attempts(got, 5),
+		        **({"warnings": ["no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it"]}
+		           if not principal and len(humans) > 1 else {})}
 
-	def claim_next(self, agent: str, profile: str | None = None, note: str = "") -> dict:
+	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None) -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
 		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}, "ids": {same keys: [ticket ids]}, "orphaned": [doing ids with no live claim]}.
 		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
 		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
-		got = self.claim(agent, profile=profile, note=note)
+		got = self.claim(agent, profile=profile, note=note, principal=principal)
 		if got:
 			return got
 		if profile is None:
@@ -954,17 +963,20 @@ class Store:
 			claims[tid]["heartbeat_at"] = _now()
 			self._save_claims(claims)
 
-	def _holder(self, tid: str, agent: str) -> None:
+	def _holder(self, tid: str, agent: str, principal: str | None = None) -> dict:
 		c = self._live_claims().get(tid)
 		if not c:
 			raise TicketError(f"{tid} isn't claimed (or the claim expired): claim it again")
 		if c["agent"] != agent:
 			raise TicketError(f"{tid} is claimed by {c['agent']}, not {agent}")
+		if principal and c.get("principal") and c["principal"] != principal:  # same worker name, another human's worker
+			raise TicketError(f"{tid} is claimed by {agent} for {c['principal']}, not for {principal}")
+		return c
 
-	def heartbeat(self, tid: str, agent: str, note: str = "") -> dict:
+	def heartbeat(self, tid: str, agent: str, note: str = "", principal: str | None = None) -> dict:
 		"""Keep a claim alive and say what you're doing now (shown live on the board)."""
 		def beat():
-			self._holder(tid, agent)
+			self._holder(tid, agent, principal)
 			claims = self._claims()
 			claims[tid]["heartbeat_at"] = _now()
 			if note:
@@ -974,10 +986,10 @@ class Store:
 		self._locked(beat)
 		return self.get(tid)
 
-	def release(self, tid: str, agent: str, reason: str = "") -> dict:
+	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None) -> dict:
 		"""Give a claimed ticket back: claim ends, ticket returns to todo."""
 		def rel():
-			self._holder(tid, agent)
+			c = self._holder(tid, agent, principal)
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
@@ -987,7 +999,7 @@ class Store:
 			if reason.strip():
 				_append_note(raw, agent, f"released: {reason.strip()}", strict=False)
 			self._write(raw)
-			self._log("release", tid, agent, reason)
+			self._log("release", tid, agent, reason, c.get("principal"))
 		self._locked(rel)
 		return self.get(tid)
 
@@ -1080,10 +1092,10 @@ class Store:
 		return self.get(tid)
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
-	             refs: list[str] | None = None, handoff: str | None = None) -> dict:
+	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
-		downstream ticket must know. Tickets that wait on this one get it in their context() as `upstream`."""
+		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`."""
 		if not (isinstance(summary, str) and summary.strip()):
 			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
 		for name, v in (("files", files), ("refs", refs)):
@@ -1096,7 +1108,9 @@ class Store:
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
-			self._holder(tid, agent)
+			c = self._holder(tid, agent, principal)
+			if c.get("principal"):
+				result["principal"] = c["principal"]
 			raw = self._read(self._path(tid))
 			status = "review" if self.config["review"] else "done"
 			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
@@ -1107,7 +1121,7 @@ class Store:
 			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
 			raw["done_at"] = _now() if status == "done" else ""
 			self._write(raw)
-			self._log("complete", tid, agent, summary)
+			self._log("complete", tid, agent, summary, c.get("principal"))
 		self._locked(done)
 		return self.get(tid)
 
@@ -1142,7 +1156,7 @@ class Store:
 		live = self._live_claims()
 		titles = {t["id"]: t.get("title", "") for t in self._all_raw()}
 		working = [{"agent": c["agent"], "profile": c.get("profile"), "ticket": tid, "title": titles.get(tid, ""),
-		            "note": c.get("note", ""), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
+		            "note": c.get("note", ""), "principal": c.get("principal"), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
 		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
 

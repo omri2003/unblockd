@@ -63,6 +63,19 @@ class WorkLoopTest(unittest.TestCase):
 		self.assertNotIn("next_ready(agent", m.mcp.instructions)
 		self.assertIn("work_loop", m.mcp.instructions)
 
+	def test_principal_on_claim_next(self):
+		from unblockd import mcp_server as m
+		from mcp.server.mcpserver.exceptions import ToolError
+		(Path(self.tmp.name) / "unblockd.json").write_text(json.dumps({"owners": [{"name": "Omri", "kind": "human"}, {"name": "Dana", "kind": "human"}, {"name": "Claude", "kind": "agent"}]}), encoding="utf-8")
+		m.BOARDS = m.bd.from_env()  # BOARDS is built at import: point it at this test's folder
+		m.BOARDS.get(None).create({"title": "a"}, tid="B-1")
+		with self.assertRaisesRegex(ToolError, "not a human owner"):
+			m.claim_next("w-1", principal="Claude")
+		got = m.claim_next("w-1", principal="Dana")
+		self.assertEqual(got["claim"]["principal"], "Dana")
+		self.assertEqual(m.complete("B-1", "w-1", "done", principal="Dana")["result"]["principal"], "Dana")
+		self.assertIn("principal", m.work_loop_text())
+
 	def test_plan_from_spec_prompt(self):
 		from unblockd import mcp_server as m
 		self.assertIn("plan_from_spec", [p.name for p in asyncio.run(m.mcp.list_prompts())])
