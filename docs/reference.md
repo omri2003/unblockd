@@ -272,7 +272,7 @@ Every ticket comes back with derived fields: `effective_status`,
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
-- **Links**: the view is in the address bar, so a link reproduces it: `?view=graph&q=auth&priority=P0,P1&pillar=…&owner=…&agent=…&parent=…&show=paths&group=pillar&dep=FREE` (`dep` only in the Graph; only non-default values appear; `?board=` and `#ID` are kept; bad values are ignored). A link with any of these defines the whole view; without them your remembered filters apply. Switching board drops them.
+- **Links**: the view is in the address bar, so a link reproduces it: `?view=graph&q=auth&priority=P0,P1&pillar=…&owner=…&agent=…&parent=…&show=paths&group=pillar&dep=FREE&me=1` (`dep` only in the Graph; only non-default values appear; `?board=` and `#ID` are kept; bad values are ignored). A link with any of these defines the whole view; without them your remembered filters apply. Switching board drops them.
 - **Next up**: the 5 best ready tickets by score, above the columns.
 - **Pillar outlines** on cards, pillar dots on the filter chips.
 - **Component** (boards with an architecture): the parts of the system a ticket changes, as against the *pillar*, the kind of work (one per ticket: prefix, colour, which agent). Set it in the edit / New ticket form (a picker, like Blocked by: chips are the value, options are the components), for the selected cards from the bulk bar (**Component…** *adds* it to each), or `components` over REST / MCP / CLI `--component` (repeatable; on `update` it replaces the list). The Filters panel has a **Component** filter and Group by has **component**: a ticket matches / is listed under each of its components, explicit or derived from `touches` (a ticket on two components is in both lanes: that is its blast radius; no component = last lane). The drawer shows them as chips.
@@ -299,7 +299,7 @@ status, ring = pillar, size = how much is waiting on it.
 
 Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `i` Needs you, `Shift+B` board switcher, `p` priority, `j`/`k` move, `Enter` open,
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
-(Comfortable / Compact) and the "While you were away" digest, per browser.
+(Comfortable / Compact) and the "While you were away" digest, per browser. On a board with 2+ human owners it also has **I am** (one of them, or Not set): the web UI then sends that name as `by` on answer, reject, accept, notes and split, so the signed body note and the activity log say who clicked instead of `human`, and the Filters panel gets **Mine** (tickets you own, or that an agent claimed or finished for you; link param `me=1`). It is a label you pick, not a login.
 **Agents** (header button, or the "N agents working" badge) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.
 
 ## Connect the MCP server
