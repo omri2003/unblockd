@@ -33,6 +33,11 @@ try {
 	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board', agent_tickets: 'propose', schema: { prefixes: { ZQ: 'questions', ZP: 'proposed work' }, required: ['done_when', 'priority'], tags: ['bug', 'chore'], body_template: '## Why\n' } }));
 	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
 	cli('claim', '--agent', 'backend-1', '--note', 'smoke');
+	cli('create', '--prefix', 'SM', '--title', 'smoke ticket with a quiet worker', '--json', '{"owner":"Claude","pillar":"API"}');
+	cli('claim', '--agent', 'backend-2', '--note', 'quiet one');
+	{ const cp = join(root, 'example/tickets/.unblockd/claims.json'), cl = JSON.parse(await readFile(cp, 'utf8')); // age ONE heartbeat (8 of 15 min, just over half) so the quiet state shows
+		for (const c of Object.values(cl)) if (c.agent === 'backend-2') c.heartbeat_at = new Date(Date.now() - 8 * 60000).toISOString().replace(/\.\d+Z$/, '+00:00');
+		await writeFile(cp, JSON.stringify(cl)); }
 	cli('split', 'DOC-1', '--title', 'part one', '--title', 'part two');
 
 	// 2. server on a free port
@@ -76,7 +81,20 @@ try {
 		await page.waitForSelector('.card', { state: 'attached' });
 		ok((await page.locator('section.col').count()) >= 4, `[${tag}] expected 4 board columns`);
 		ok(await page.evaluate((t) => document.documentElement.dataset.theme === t, theme), `[${tag}] theme not applied`);
-		ok(await page.locator('.col.doing .agc').count(), `[${tag}] claimed card chip missing (claim made via CLI)`);
+		ok(await page.locator('.col.doing .liv').count(), `[${tag}] claimed card liveness line missing (claim made via CLI)`);
+		ok(/^live · /.test(await page.locator('.col.doing .liv:not(.quiet) [data-hb]').first().innerText()), `[${tag}] a fresh claim should read "live ·"`);
+		ok(/ of \d+ min lease used/.test(await page.locator('.col.doing .lbar').first().getAttribute('aria-label')), `[${tag}] lease bar needs a label`);
+		ok(await page.locator('.col.doing .own svg').count() > 0, `[${tag}] owner shows a glyph`);
+		ok(!(await page.locator('#strip, #working, #sub, #kbHint').count()), `[${tag}] strip, Working now, subtitle and the shortcuts link are gone`);
+		ok(/^Agents · \d+ live$/.test(await page.locator('#agBtn').innerText()), `[${tag}] Agents button counts live agents`);
+		ok(/To do/.test(await page.locator('.col.todo .colhead').innerText()) && /\d+ ready/.test(await page.locator('.col.todo .colhead .n').innerText()), `[${tag}] To do head shows "N ready"`);
+		{ const wh = await page.locator('.col.pending .colhead h2').innerText(), wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); ok(wh === 'Waiting' && wl.some((x) => /^on other work/i.test(x)), `[${tag}] Waiting column with "On other work" section: ${wh} / ${wl}`); }
+		ok(/needs? you/.test(await page.locator('#needsBadge').innerText()), `[${tag}] Needs badge is in words`);
+		{ // the second claim's heartbeat was aged 8 min in the temp copy (lease 15): it reads "quiet ·", the fresh one "live ·"
+			const q = await page.locator('.col.doing .liv.quiet [data-hb]').allInnerTexts();
+			ok(q.length === 1 && /^quiet · \d+ min$/.test(q[0]), `[${tag}] one stale claim should read "quiet · N min", got ${q}`);
+			ok(/^\d+ of 15 min lease used$/.test(await page.locator('.col.doing .liv.quiet + .lbar').getAttribute('aria-label')), `[${tag}] lease bar reads N of 15 min`);
+		}
 		ok(await page.evaluate(() => /unblockd/.test(document.title) && !!document.querySelector('link[rel=icon]')), `[${tag}] title / favicon missing`);
 		await noOverflow('board');
 		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
@@ -106,7 +124,7 @@ try {
 		await page.click('#bsum'); await page.click('#bbody [data-bd="example"]'); // and back
 		await page.waitForFunction((t) => document.getElementById('appTitle').textContent === t, title0);
 		await page.waitForSelector('.card', { state: 'attached' });
-		await page.evaluate(() => document.getElementById('kbHint').click()); // hidden at <=600px (no keyboard there), so click it directly
+		await page.evaluate(() => document.getElementById('kbBtn').click()); // hidden at <=600px (no keyboard there), so click it directly
 		await visible('#kb', 'shortcuts sheet from the hint');
 		ok((await page.locator('#kb').innerText()).includes('Shift'), `[${tag}] ? sheet should mention Shift-click select`);
 		const sp = await browser.newPage({ viewport: { width: w, height: h } }); // fresh page: an unknown board names itself
@@ -115,9 +133,9 @@ try {
 		await sp.close();
 		await page.keyboard.press('Escape');
 
-		if (w >= 1100) { // status strip labels fit (not clipped by the ellipsis)
-			const clip = await page.evaluate(() => [...document.querySelectorAll('.segbar button')].filter(b => b.scrollWidth > b.clientWidth).map(b => b.textContent));
-			ok(!clip.length, `[${tag}] status strip labels clipped: ${clip.join(', ')}`);
+		if (w >= 1100) { // one header row: the first column starts near the top of the page
+			const top = await page.evaluate(() => document.querySelector('.col').getBoundingClientRect().top + scrollY);
+			ok(top < 200, `[${tag}] header should be one row, the first column starts at ${top}px`);
 		}
 		await page.click('[data-view="graph"]');
 		await visible('#graph', 'graph canvas');
@@ -359,6 +377,8 @@ try {
 		const badge = () => page.locator('#needsBadge .n').innerText();
 		// the CLI wrote the files; the page sees this board on its next 4 s poll, so wait for the state
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '3');
+		{ const wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); // the agent question and the hand-parked ticket land in their own Waiting sections
+			ok(['on you', 'on other work', 'parked'].every((x) => wl.some((y) => y.toLowerCase().startsWith(x))), `[${tag}] Waiting sections On you / On other work / Parked: ${wl}`); }
 		ok((await page.getAttribute('#needsBadge', 'title')).includes('This board: 2') && (await page.getAttribute('#needsBadge', 'title')).includes('Second board: 1'), `[${tag}] badge tooltip should split the count per board`);
 		for (const v of ['graph', 'docs', 'board']) { // visible in every view; Free/Blocked only in the Graph
 			await page.click(`[data-view="${v}"]`);
@@ -426,6 +446,8 @@ try {
 		await page.click(`${rrow} .nttl`);
 		await visible(`${rrow} .rbox a[href^="https://example.com"]`, 'review result inside the expanded row');
 		ok((await page.locator(`${rrow} .dw li`).first().innerText()) === 'it works', `[${tag}] done_when in the expanded row`);
+		ok(/^Request changes/.test(await page.locator(`${rrow} .rqd > summary`).innerText()) && !(await page.locator(`${rrow} [data-approve]`).evaluate((e) => e.classList.contains('ghost'))), `[${tag}] review row: Approve is primary, sending back is a quiet "Request changes…"`);
+		await page.click(`${rrow} .rqd > summary`);
 		await page.fill(`${rrow} textarea`, 'half typed');
 		cli('note', rid, 'checked the diff', '--by', 'omri');
 		await page.waitForFunction((r) => document.querySelector(`${r} .nn`)?.textContent.includes('checked the diff'), rrow); // the 4 s poll brought it
@@ -452,7 +474,7 @@ try {
 			await page.click('#drawer [data-approve]'); await page.waitForFunction(() => /Approved/.test(document.querySelector('#toasts')?.textContent || ''));
 			ok(await page.waitForSelector('#toasts button:has-text("Undo")', { timeout: 3000 }).then(() => true, () => false) && (await st(aid)).status === 'done', `[${tag}] Approve from the drawer: done, with Undo`);
 			await open(xid);
-			await page.fill('#drawer [data-nform=reject] textarea', 'needs tests'); await page.click('#drawer [data-nform=reject] button[type=submit]');
+			await page.click('#drawer [data-nform=reject] .rqd > summary'); await page.fill('#drawer [data-nform=reject] textarea', 'needs tests'); await page.click('#drawer [data-nform=reject] button[type=submit]');
 			for (let n = 0; n < 50 && (await st(xid)).status !== 'todo'; n++) await page.waitForTimeout(100);
 			ok((await st(xid)).body.includes('Rejected: needs tests'), `[${tag}] Reject from the drawer: back to To do with the reason in the body`);
 			cli('delete', aid); cli('delete', xid);
@@ -574,13 +596,13 @@ try {
 		ok0(!errs.length, 'url: browser errors ' + errs.join('; '));
 		await ctx.close();
 	}
-	// 4c. phone chrome: Next up starts collapsed at 390 (a stored choice wins), touch targets >= 44px, desktop sizes unchanged
+	// 4c. phone chrome: Next up starts collapsed at every width (a stored choice wins), touch targets >= 44px, desktop sizes unchanged
 	{
 		const ok0 = (c, msg) => { if (!c) throw new Error('mobile: ' + msg); };
 		const heights = (page) => page.evaluate(() => ['.btn', '.chip', '#bsum', '.vico', '.tab'].flatMap((s) => [...document.querySelectorAll(s)].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [s, Math.round(r.width), Math.round(r.height)]; })));
 		const D = await browser.newContext({ viewport: { width: 1400, height: 900 } }), dp = await D.newPage(); dp.setDefaultTimeout(5000);
 		await dp.goto(base); await dp.waitForSelector('#nextUp:not([hidden])');
-		ok0(await dp.evaluate(() => !document.getElementById('nextUp').classList.contains('m-c')), 'desktop Next up must not start collapsed');
+		ok0(await dp.evaluate(() => document.getElementById('nextUp').classList.contains('m-c')), 'desktop Next up should also start collapsed with empty storage');
 		const dh = await heights(dp); ok0(dh.some(([s, , h]) => s === '.btn' && h < 44), 'desktop .btn grew to 44px');
 		await D.close();
 		const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), page = await ctx.newPage(); page.setDefaultTimeout(5000);
@@ -589,7 +611,7 @@ try {
 		ok0(await page.evaluate(() => document.getElementById('nextUp').classList.contains('m-c')), 'Next up should start collapsed at 390 with empty storage');
 		await page.click('#nextUp .nexttog'); // a stored choice wins on reload
 		await page.reload(); await page.waitForSelector('#nextUp:not([hidden])');
-		ok0(await page.evaluate(() => !document.getElementById('nextUp').classList.contains('m-c')), 'stored choice (top) should beat the phone default');
+		ok0(await page.evaluate(() => !document.getElementById('nextUp').classList.contains('m-c')), 'stored choice (top) should beat the collapsed default');
 		const small = (await heights(page)).filter(([, w, h]) => h < 44 || w < 44);
 		ok0(!small.length, 'targets under 44px on touch: ' + JSON.stringify(small.slice(0, 5)));
 		ok0(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow on touch');

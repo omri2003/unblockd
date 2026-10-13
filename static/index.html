@@ -41,23 +41,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--jade);outline-offset:2px}
 code{font-family:var(--mono);font-size:.88em;background:var(--jade-soft);padding:.05em .3em;border-radius:3px;overflow-wrap:anywhere}
 
-header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:14px}
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 14px;margin-bottom:14px}
 h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
-.sub{color:var(--muted);margin-top:4px;font-size:.88rem}
-.logo{display:flex;align-items:center;gap:7px;font:800 .95rem var(--display);letter-spacing:-.02em;color:var(--muted);margin-bottom:6px}
+.logo{display:flex;align-items:center;gap:7px;font:800 .95rem var(--display);letter-spacing:-.02em;color:var(--muted);margin-right:4px}
 .mark{width:22px;height:14px;background:linear-gradient(90deg,var(--cinnabar) 0 40%,transparent 40% 56%,var(--jade) 56%);border-radius:3px} /* a block, a gap, a block: unblocked */
-/* status strip: proportions of the whole board; a segment scrolls to its column */
-.strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px}
-.segbar{display:flex;gap:2px;flex:1 1 360px;min-width:0;border-radius:8px;overflow:hidden}
-.segbar button{flex:var(--n) 1 92px;transition:flex-grow .18s ease-out;min-width:0;border:0;padding:6px 8px;background:var(--c);color:var(--paper);cursor:pointer;text-align:left;line-height:1.1;font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.segbar button b{display:block;font:800 1.25rem var(--display);font-variant-numeric:tabular-nums}
-.segbar button:hover{filter:brightness(1.12)}
-.segbar button:is(:hover,:focus-visible){flex-grow:calc(var(--n) + var(--sum,0)*.12)} /* spill: a modest bump, neighbours give way; the widths stay a chart */
-.segbar .s-todo{--c:var(--muted)} .segbar .s-doing{--c:var(--amber)} .segbar .s-pending{--c:var(--slate)} .segbar .s-review{--c:var(--plum)} .segbar .s-done{--c:var(--jade);opacity:.8}
-.ready{font-weight:700;white-space:nowrap} .ready b{font:800 1.25rem var(--display);color:var(--jade);margin-right:4px}
-.agbadge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--amber);background:var(--amber-soft);color:var(--amber);border-radius:99px;padding:3px 12px;font-weight:700;cursor:pointer}
-.col.ping{animation:ping 1.1s ease-out}
-@keyframes ping{from{box-shadow:0 0 0 3px var(--c)}to{box-shadow:0 0 0 3px transparent}}
 .wip{margin-left:8px;font-size:.74rem;font-weight:800;color:var(--paper);background:var(--cinnabar);border-radius:99px;padding:0 8px}
 [id],.col{scroll-margin-top:64px}
 .btn{border:1px solid var(--jade);background:var(--jade);color:var(--surface);padding:6px 13px;border-radius:var(--r);cursor:pointer;font-weight:600}
@@ -89,27 +76,20 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 .bulk select,.bulk input{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:5px 8px;max-width:150px;min-width:0} .bulk input{width:110px}
 body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,90px) + 12px)}
 .lane{margin:6px 4px 0;font-size:.74rem;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);display:flex;gap:6px;border-bottom:1px solid var(--line);padding-bottom:2px;min-width:0} .lane:first-child{margin-top:0} .lane span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .lane .n{margin-left:auto;font-variant-numeric:tabular-nums}
-.working li.dimmed{opacity:.35}
 #bpanel summary{display:inline-flex;align-items:center;gap:8px;border-radius:var(--r);margin:0 -6px;padding:0 6px;cursor:pointer} #bpanel summary:hover,#bpanel[open] summary{background:var(--surface)}
 #bpanel summary[inert]{cursor:default;background:none} #bpanel summary[inert] .chev{display:none}
 .chev{width:.5em;height:.5em;border:solid var(--muted);border-width:0 2px 2px 0;transform:translateY(-.12em) rotate(45deg);flex:none} #bpanel[open] .chev{transform:translateY(.1em) rotate(-135deg)}
 #bpanel .sbody{left:0;right:auto;width:min(320px,calc(100vw - 32px));gap:2px;padding:6px}
 .bi{display:flex;justify-content:space-between;gap:12px;align-items:baseline;width:100%;text-align:left;border:0;background:none;border-radius:var(--r);padding:8px 10px;cursor:pointer;color:var(--ink);font:inherit} .bi:hover,.bi:focus-visible{background:var(--paper)} .bi[aria-current=true]{font-weight:700} .bi[aria-current=true]::after{content:"✓";order:2} .bi .hint{margin-left:auto}
-.khint{display:block;border:0;background:none;padding:0;margin-top:2px;color:var(--muted);font-size:.76rem;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px} .khint:hover{color:var(--ink)}
 .tag{font-size:.74rem;color:var(--muted)} .chip .n{font-variant-numeric:tabular-nums;opacity:.7;margin-left:2px} .ag{font-weight:700;color:var(--slate)}
 .chip{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:3px 11px;cursor:pointer;font-size:.85rem;line-height:1.4}
 .chip:hover{border-color:var(--muted)}
 .chip[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper);border-color:var(--ind)}
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
 .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
-/* next up strip */
-.working{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:8px;padding:8px 12px;margin-bottom:14px}
-.working h2{font-size:.95rem;margin:0 0 6px}
-.working ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
-.working li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;font-size:.9rem}
-.working .who{font-weight:700} .working .wn{color:var(--muted);overflow-wrap:anywhere} .working .quiet{color:var(--amber);font-weight:700}
-.working li button,.dg-l button,.dlist button:not(.kdoc){background:none;border:0;padding:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
-.working li button:hover .tid,.dg-l button:hover .tid,.dlist button:not(.kdoc):hover .tid{text-decoration:underline}
+/* dismissible bars: digest, drawer lists */
+.dg-l button,.dlist button:not(.kdoc){background:none;border:0;padding:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
+.dg-l button:hover .tid,.dlist button:not(.kdoc):hover .tid{text-decoration:underline}
 /* digest: what happened since you last looked */
 .digest{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--slate);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .dg-bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:.9rem}
@@ -123,6 +103,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .bang{display:inline-grid;place-items:center;flex:none;width:18px;height:18px;border-radius:50%;background:var(--plum);color:var(--surface);font-size:.75rem;font-weight:800;font-style:normal}
 /* Needs you: a header badge (any view) opens a side panel like the drawer; rows expand in place */
 .nbadge{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 12px 0 8px;border:1px solid var(--plum);background:var(--plum-soft);color:var(--plum);border-radius:var(--r);cursor:pointer;font-weight:800;font-variant-numeric:tabular-nums}
+.nbadge .w{font-weight:700}
 .nbadge:hover{background:var(--plum);color:var(--surface)} .nbadge:hover .bang{background:var(--surface);color:var(--plum)}
 .npanel{width:min(520px,100%);padding-top:0}
 .nphead{position:sticky;top:0;z-index:1;margin:0 -20px 2px;padding:18px 20px 10px;background:var(--surface);border-bottom:1px solid var(--line)}
@@ -149,6 +130,7 @@ a.btn{display:inline-block;text-decoration:none}
 .nn{list-style:none;margin:0;padding:0;display:grid;gap:7px} .nn li{border-left:2px solid var(--line);padding-left:9px}
 .nn p{margin:1px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.88rem} .nn time{color:var(--muted);font-size:.78rem}
 .nd-f{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 0} .nd-f input,.nd-f textarea{flex:1 1 200px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:5px 8px}
+.nd-f.rv{align-items:flex-start} .rqd{flex:1 1 200px;min-width:0} .rqd>summary{display:inline-block;cursor:pointer;color:var(--muted);font-size:.88rem;font-weight:600;text-decoration:underline dotted;text-underline-offset:3px;list-style:none;padding:5px 2px} .rqd>summary::-webkit-details-marker{display:none} .rqd[open]>summary{margin-bottom:4px} .rqd>textarea,.rqd>input{display:block;width:100%;margin-bottom:6px;box-sizing:border-box}
 .nd-f textarea{field-sizing:content;min-height:4.4em;max-height:45vh;resize:vertical}
 .nr.open .nd-f textarea{flex-basis:100%;order:-1;background:var(--surface)}
 .prb{display:inline-block;margin:6px 0;padding:1px 8px;border:1px solid var(--line);border-radius:10px;font-size:12px} .prb.bad{color:var(--cinnabar);border-color:var(--cinnabar)}
@@ -199,8 +181,12 @@ a.btn{display:inline-block;text-decoration:none}
 .card.blocked .ttl{font-weight:500;color:color-mix(in srgb,var(--ink) 72%,var(--muted))}
 .lock{width:.8em;height:.8em;vertical-align:-1px;margin-right:4px}
 .card.claimed{outline:2px solid var(--amber);outline-offset:-2px}
-.agc{display:inline-flex;align-items:center;gap:5px;background:var(--amber-soft);color:var(--amber);border-radius:99px;padding:0 8px;font-size:.74rem;font-weight:700;white-space:nowrap;min-width:0}
-.agc time{font-weight:600;opacity:.85} .agc time.late{color:var(--cinnabar);opacity:1;font-weight:800}
+/* liveness (cards in progress): dot + word + lease bar, so state never rests on colour; text and widths come from tickAges */
+.liv{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin-top:6px;font-size:.78rem;color:var(--ink);font-weight:600}
+.liv .who{display:inline-flex;align-items:center;gap:4px;font-weight:700;min-width:0;overflow-wrap:anywhere} .liv .st{margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:var(--amber);font-weight:700;white-space:nowrap}
+.liv .pulse{width:9px;height:9px;box-sizing:border-box} .liv.quiet .pulse{animation:none;background:transparent;border:2px solid var(--amber)} .liv.quiet .st{color:var(--cinnabar)}
+.lbar{display:block;height:3px;border-radius:2px;background:var(--line);overflow:hidden;margin-top:4px} .lbar i{display:block;height:100%;width:0;background:var(--amber)} .liv.quiet+.lbar i{background:var(--cinnabar)}
+.gl{flex:none;display:block}
 .wl{display:block;margin-top:5px;font-size:.78rem;font-weight:600}
 .wl.miss,.wl.fail{color:var(--cinnabar)} .wl.stale{color:var(--amber)}
 .card.flash{animation:flash 1.2s ease-out}
@@ -210,14 +196,14 @@ a.btn{display:inline-block;text-decoration:none}
 .seal{font-family:var(--mono);font-weight:700;font-size:.7rem;border:1px solid currentColor;border-radius:3px;padding:0 4px;line-height:1.45;color:var(--muted)}
 .seal.p0{color:var(--surface);background:var(--cinnabar);border-color:var(--cinnabar)}
 .seal.p1{color:var(--cinnabar)}
-.own{margin-left:auto;font-size:.74rem;font-weight:700;border-radius:99px;padding:0 8px;background:var(--jade-soft);color:var(--jade);white-space:nowrap}
+.own{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:.74rem;font-weight:700;border-radius:99px;padding:0 8px;background:var(--jade-soft);color:var(--jade);white-space:nowrap}
 .own.human{background:var(--amber-soft);color:var(--amber)}
-.card .ttl{display:block;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
+.card .ttl{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;font-weight:600;line-height:1.35;overflow-wrap:anywhere}
 .meta{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:6px;font-size:.78rem;color:var(--muted)}
-.why{color:var(--slate);font-weight:600}
+.why{color:var(--slate);font-weight:600} .card>.why{display:block;margin-bottom:3px;font-size:.78rem;font-weight:700}
 .done .card .ttl{font-weight:400;color:var(--muted)}
 .card.dn{display:flex;align-items:baseline;gap:8px;padding:4px 10px 4px 9px}
-.card.dn .ttl{flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.dn .ttl{display:block;-webkit-line-clamp:unset;line-clamp:unset;flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.dn .age{font-size:.76rem;color:var(--muted)}
 .cw.dn .mv{top:50%;bottom:auto;transform:translateY(-50%)}
 .cw.dn:hover .age,.cw.dn:focus-within .age,.cw.dn:has(.mv[open]) .age{visibility:hidden}
@@ -249,18 +235,18 @@ a.btn{display:inline-block;text-decoration:none}
 @media (max-width:600px){.board{grid-template-columns:1fr}
   .bar{position:relative;z-index:6} .bar>#depSeg{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .bar .chip{flex:none;padding:6px 12px} .bar>#depSeg{overflow:visible} #depSeg .vico{flex:1;justify-content:center} .fpanel{position:static} .fbody{left:0;right:0;width:auto;max-height:70vh;overflow-y:auto} .bar .fpanel summary{padding:8px 14px}
   .btn{padding:8px 14px} .card{padding:10px}
-  .sub,.segbar,.khint{display:none}
+  #kbBtn{display:none} /* no keyboard on a phone */
   header{position:relative} #bpanel{position:static} #bpanel .sbody{left:0;right:0;width:auto} .bi{padding:13px 12px;font-size:1rem}
   .tabs{display:flex;position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line);margin:0 -16px 10px;padding:0 16px}
   .tab{flex:1;border:0;border-bottom:3px solid transparent;background:none;padding:8px 2px 7px;font-weight:700;color:var(--muted);cursor:pointer;line-height:1.15}
   .tab .n{display:block;font:800 1.1rem var(--display);font-variant-numeric:tabular-nums}
   .tab.on{color:var(--ink)} .tab.todo.on{border-color:var(--muted)} .tab.doing.on{border-color:var(--amber)} .tab.pending.on{border-color:var(--slate)} .tab.review.on{border-color:var(--plum)} .tab.done.on{border-color:var(--jade)}
   .col{display:none} .col.active{display:block}
-  /* tabs right under the filters; Next up only on To do, Working now only on In progress */
-  .wrap{display:flex;flex-direction:column} header{order:0} .strip{order:1} .bar{order:2} .tabs{order:3} #digest{order:2} #working{order:4} #nextUp{order:5} #board{order:6} #graphWrap{order:7}
-  body:not([data-tab="todo"]) #nextUp,body:not([data-tab="doing"]) #working{display:none}
+  /* tabs right under the filters; Next up only on To do */
+  .wrap{display:flex;flex-direction:column} header{order:0} .bar{order:2} .tabs{order:3} #digest{order:2} #nextUp{order:5} #board{order:6} #graphWrap{order:7}
+  body:not([data-tab="todo"]) #nextUp{display:none}
   /* less chrome above the first card */
-  .wrap{padding-top:12px} header{gap:8px;margin-bottom:8px} header .hdr{gap:6px} .logo{margin-bottom:2px} .strip{margin-bottom:6px} .bar{margin-bottom:8px}}
+  .wrap{padding-top:12px} header{gap:8px;margin-bottom:8px} header .hdr{gap:6px} .bar{margin-bottom:8px}}
 
 .scrim,.docvscrim,.kbscrim{position:fixed;inset:0;background:rgba(10,16,13,.35)} .scrim{z-index:20} .docvscrim{z-index:40} .kbscrim{z-index:30}
 aside{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:21;overflow-y:auto;padding:18px 20px 28px;box-shadow:-12px 0 32px rgba(0,0,0,.14)}
@@ -510,7 +496,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
 }
 /* touch: 44px targets (UX-5); desktop and the compact density keep their sizes */
-@media (pointer:coarse){.btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
+@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
 /* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
 .sl{position:relative}
 .sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
@@ -520,21 +506,20 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.col.ping,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.segbar button,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><div class="trow"><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div><button type="button" class="nbadge" id="needsBadge" hidden title="Needs you (i)" aria-label="Needs you"></button></div><div class="sub" id="sub">Loading…</div><button type="button" class="khint" id="kbHint">Press ? for shortcuts</button></div>
-    <div class="hdr"><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" title="Per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
+    <div class="trow"><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div><button type="button" class="nbadge" id="needsBadge" hidden title="Needs you (i)" aria-label="Needs you"></button></div>
+    <div class="hdr"><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" id="agBtn" title="Agent stats: per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
       <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
       <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
       <div class="seg" id="setMe" data-l="I am" role="group" aria-label="I am" title="Signs your answers, approvals and notes with this name. Only the board's human owners." hidden></div>
-      <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button></div>
+      <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Shortcuts (?)">?</button></div>
   </header>
-  <div class="strip" id="strip" aria-label="Status overview"></div>
   <div class="bar" id="bar" role="search">
     <input type="search" id="q" placeholder="Search, an ID, or /regex/" title="Search (/). Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/" aria-label="Search tickets">
     <details class="fpanel" id="fpanel"><summary class="btn ghost">Filters <b class="fcount" id="fcount" hidden></b></summary>
@@ -554,7 +539,6 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   </div>
 
   <section class="digest" id="digest" hidden aria-label="While you were away"></section>
-  <section class="working" id="working" hidden aria-label="Agents working now"></section>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
   <div class="board" id="board"></div>
@@ -597,7 +581,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <span class="legend" aria-hidden="true"><b>Status:</b>
         <span><i style="--c:var(--ink);--f:var(--surface)"></i>Ready</span>
         <span><i style="--c:var(--amber)"></i>In progress</span>
-        <span><i style="--c:var(--slate)"></i>Pending</span>
+        <span><i style="--c:var(--slate)"></i>Waiting</span>
         <span><i style="--c:var(--jade)"></i>Done</span></span>
       <span class="legend" aria-hidden="true" id="pillarLegend"></span>
       <span class="legend" aria-hidden="true"><span><i class="badge" style="--c:var(--cinnabar)"></i>P0</span><span><i class="bang">!</i>Needs attention</span></span>
@@ -707,7 +691,7 @@ function applyConfig(c){
 let COLS,NAME;
 function setCols(){ // Review sits before Done on boards with review=true, or while any ticket is still in it
   const r=CFG.review||T.some(t=>t.status==='review');
-  COLS=[['todo','To do'],['doing','In progress'],['pending','Pending'],...(r?[['review','Review']]:[]),['done','Done']]; NAME=Object.fromEntries(COLS);
+  COLS=[['todo','To do'],['doing','In progress'],['pending','Waiting'],...(r?[['review','Review']]:[]),['done','Done']]; NAME=Object.fromEntries(COLS);
 }
 const store={get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
 let STALE=7; // days; from the config's stale_days
@@ -811,7 +795,6 @@ function authFail(text){ // 401: say how to get in, once (the 4 s poll must not 
   if(authShown) return; authShown=true;
   let m; try{ m=JSON.parse(text).error; }catch{}
   toast(m||'Unauthorized: open the board once with ?token=...',{err:1});
-  $('sub').textContent=m||'Unauthorized.';
 }
 let etag=null; // ETag of the last /tickets response; sent back so an unchanged board costs a 304
 async function load(force){
@@ -822,8 +805,6 @@ async function load(force){
   if(text===raw && !force) return;
   raw=text; T=JSON.parse(text); setCols(); loadNeeds(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!reduce.matches) noteFinished(prev);
-  const open=T.filter(t=>t.status!=='done').length;
-  $('sub').textContent=`${T.length} tickets, ${open} open. Updates live when an agent changes them.`;
   paint=()=>{ paint=null;
     renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(state.view==='map'||CFG.architecture)loadMap(); if(!$('chat').hidden&&!CH.busy) renderChat();
     if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
@@ -989,6 +970,9 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
   if(m){try{state.rx=new RegExp(m[1],'i');}catch(e){state.rx=/(?!)/;state.rxErr=e.message;}}
   $('q').classList.toggle('err',!!state.rxErr);$('q').title=state.rxErr||'Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/';
 }
+const GL={human:'<circle cx="8" cy="5.5" r="2.5"/><path d="M3 14c0-3 2.2-4.5 5-4.5s5 1.5 5 4.5"/>',agent:'<rect x="3" y="5.5" width="10" height="7.5" rx="2"/><path d="M8 5.5V3"/><circle cx="6" cy="9" r=".7"/><circle cx="10" cy="9" r=".7"/>'}; // person / bot, stroke only: who is a human or an agent is a shape + a word, not colour
+const glyph=k=>`<svg class="gl" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${GL[k]}</svg>`;
+const ownHtml=n=>{if(!n)return '';const h=HUMAN.has(n);return `<span class="own ${h?'human':'agent'}" title="${h?'Human owner':'Agent owner'}">${glyph(h?'human':'agent')}${esc(n)}</span>`;};
 const doneTip=r=>{const w=whoLine(r,1);return w.main+(w.muted?` (${w.muted})`:'');};
 function card(t){
   const s=t.effective_status; let why='';
@@ -996,7 +980,7 @@ function card(t){
   if(s==='pending') why=t.proposed_by?`<span class="why park">Proposal by ${esc(t.proposed_by)}</span>`:t.open_blockers.length?`<span class="why">${LOCK}Blocked by ${esc(t.open_blockers.join(', '))}</span>`:t.waiting_on?(t.asked_by?`<span class="why">Question from ${esc(t.asked_by)}</span>`:`<span class="why park">Parked: ${esc(t.waiting_on)}</span>`):'';
   else if(s==='doing'&&t.open_blockers.length) why=`<span class="why">Needs ${esc(t.open_blockers.join(', '))}</span>`;
   const openBlocks=t.unblocks||0;
-  const meta=[why,t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
+  const meta=[t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
     t.parent?`<span title="Part of ${esc(t.parent)}">↑ ${esc(t.parent)}</span>`:'',
     t.progress?.total?`<span class="prog" title="${t.progress.done} of ${t.progress.total} parts done"><i><b style="width:${100*t.progress.done/t.progress.total}%"></b></i>${t.progress.done}/${t.progress.total}</span>`:'',
     t.agent&&s!=='done'?`<span class="ag" title="Agent profile that should work this">→ ${esc(t.agent)}</span>`:'',
@@ -1008,7 +992,7 @@ function card(t){
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
   if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
-  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
+  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
@@ -1075,7 +1059,7 @@ function needMark(t){ const n=NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.
 function paintNeeds(){
   const nm=NEEDS.find(g=>g.id===curBoard())?.items.filter(i=>i.attempts?.length).map(i=>i.id+i.attempts.length).join(); if(nm!==NMARK){ NMARK=nm; if(typeof T!=='undefined'&&T.length) render(); }
   const b=$('needsBadge'),n=NEEDS.reduce((a,g)=>a+g.items.length,0),cur=curBoard(); b.hidden=!n;
-  if(n){ b.innerHTML=`<i class="bang" aria-hidden="true">!</i><span class="n">${n}</span>`;
+  if(n){ b.innerHTML=`<i class="bang" aria-hidden="true">!</i><span class="n">${n}</span><span class="w">${n===1?'needs':'need'} you</span>`;
     b.title='Needs you (i)'+(NEEDS.length>1||NEEDS[0].id!==cur?'\n'+NEEDS.map(g=>`${g.id===cur?'This board':g.title}: ${g.items.length}`).join('\n'):''); b.setAttribute('aria-label',`Needs you: ${n}`); }
   const was=store.get(NSEEN,null),seen=was||{},now={}; let fresh=false;
   for(const bd of BOARDS){ const ids=(NEEDS.find(g=>g.id===bd.id)?.items||[]).map(i=>i.id); now[bd.id]=ids; if(ids.some(id=>!(seen[bd.id]||[]).includes(id))) fresh=true; }
@@ -1100,6 +1084,9 @@ function needsMotion(ul,old){ // rows that arrived fade in; rows that left (answ
 	});
 }
 const bLink=(g,i)=>`?board=${encodeURIComponent(g.id)}#${encodeURIComponent(i.id)}`;
+const RQ={}; // review forms whose "Request changes…" is open, by draft key (a re-render keeps it open; a typed reason keeps it open too)
+const reviewForm=(dk,B,tag)=>`<form class="nd-f rv" data-nform="reject" ${B}><button type="button" class="btn" data-approve ${B}>Approve</button><details class="rqd" data-rq="${esc(dk)}"${RQ[dk]||DRAFTS[dk]?' open':''}><summary>Request changes…</summary>${draftField(dk,'','What needs to change…',tag)}<button class="btn ghost sm" type="submit">Send back</button></details></form>`; // Approve is the one primary action; sending back is quiet and goes through the same form[data-nform=reject] handler
+document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.rq){RQ[d.dataset.rq]=d.open; if(d.open)d.querySelector('[data-draft]')?.focus();}},true);
 function needsRow(g,i){
   const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
@@ -1115,7 +1102,7 @@ function needsRow(g,i){
     lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(ln.text.length>140?ln.text.slice(0,140)+'…':ln.text)}</p>`:'';
   const form=i.kind==='stuck'&&i.failed?`<form class="nd-f" data-nform="notes" ${B}>${f('n:','Add a note for the next attempt…')}<button class="btn sm" type="submit">Add note</button>${openBtn('btn ghost sm')}</form>`:i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
     :i.kind==='proposal'?`<form class="nd-f" data-nform="drop" ${B}><button type="button" class="btn sm" data-accept ${B}>Accept</button>${f('x:','Reject reason (optional)…')}<button class="btn ghost sm" type="submit">Reject</button></form>`
-    :`<form class="nd-f" data-nform="reject" ${B}><button type="button" class="btn sm" data-approve ${B}>Approve</button>${f('r:','Reject reason…')}<button class="btn ghost sm" type="submit">Reject</button></form>`;
+    :reviewForm('r:'+k,B,open?'textarea':'input');
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
     +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
     +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='proposal'?`<p class="nd-q">Proposed by ${esc(i.proposed_by)}</p>${open?'':dw}`:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
@@ -1179,13 +1166,6 @@ const whoLine=(r,done)=>{ // "Done by backend-1 for Omri · approved by Dana"; m
   return {main,muted:r.approved_by&&r.approved_by===r.principal?'self-approved':done&&!r.principal&&!r.approved_by&&HUMAN.size>1&&r.by&&!HUMAN.has(r.by)?'no human recorded':''};
 };
 const resultHtml=(r,done)=>!r?'':`<div class="rbox">${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<h5>Files changed</h5><ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<h5>References</h5><ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<h5>Handoff</h5><p>${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
-function renderWorking(){ // agents holding a claim right now; ages tick client-side
-  const el=$('working'),ws=T.filter(t=>t.claim&&onBoard(t)).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
-  el.hidden=!ws.length||state.view!=='board'; if(el.hidden) return;
-  const lease=(CFG.lease_minutes||15)*60000;
-  el.innerHTML=`<h2>Working now <span class="n">${ws.length}</span></h2><ul>${ws.map(t=>{const quiet=Date.now()-Date.parse(t.claim.heartbeat_at)>lease*.6;
-    return `<li${BV.mode==='dim'&&!BV.M.has(t.id)?' class="dimmed"':''}><i class="pulse" aria-hidden="true"></i><span class="who">${esc(t.claim.agent)}</span><button type="button" data-open="${esc(t.id)}"><span class="tid">${esc(t.id)}</span> ${inline(t.title)}</button>${t.claim.note?`<span class="wn">“${esc(t.claim.note)}”</span>`:''}<span class="${quiet?'quiet':'wn'}" title="Started ${esc(ago(t.claim.claimed_at))}">${quiet?'quiet ':''}${esc(ago(t.claim.heartbeat_at))}</span></li>`;}).join('')}</ul>`;
-}
 // Agent stats (#apanel): fetched when the panel opens or the range changes, never on the 4 s poll. One row per profile.
 let AP={days:store.get('agentDays',7),ev:null,err:''}, apTok=0;
 const profOf=a=>(CFG.agents||[]).map(p=>p.name).filter(p=>a===p||a.startsWith(p+'-')).sort((x,y)=>y.length-x.length)[0]||'Not in a profile';
@@ -1218,14 +1198,16 @@ function renderAgents(){
 }
 // heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
 function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const d=e.dataset.since,n=Math.floor((Date.now()-Date.parse(d))/864e5);e.textContent=d.includes('T00:00:00')?(n<1?'today':n+'d'):ago(d);e.title=e.dataset.since;});
-  const lim=(CFG.lease_minutes?CFG.lease_minutes/2:10)*60000;
-  document.querySelectorAll('[data-hb]').forEach(e=>{const t=Date.parse(e.dataset.hb);e.textContent=ago(e.dataset.hb).replace(' ago','');e.classList.toggle('late',Date.now()-t>lim);e.title=Date.now()-t>lim?'No heartbeat for a while':'';});
+  const lease=CFG.lease_minutes||20,lim=lease*30000,short=ms=>{const m=ms/6e4;return ms<6e4?Math.round(ms/1e3)+' s':m<60?Math.round(m)+' min':m<1440?Math.round(m/60)+' h':Math.round(m/1440)+' d';};
+  document.querySelectorAll('[data-hb]').forEach(e=>{const ms=Math.max(0,Date.now()-Date.parse(e.dataset.hb)),q=ms>lim,l=e.closest('.liv'),pct=Math.min(100,100*ms/(lease*6e4)),lb=l.nextElementSibling,tip=`${Math.min(lease,Math.round(ms/6e4))} of ${lease} min lease used`;
+    e.textContent=(q?'quiet · ':'live · ')+short(ms);l.classList.toggle('quiet',q);l.title=q?'No heartbeat for a while. The claim expires if it stays quiet.':'Heard from recently';
+    if(lb?.classList.contains('lbar')){lb.firstChild.style.width=pct+'%';lb.title=tip;lb.setAttribute('aria-label',tip);}});
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
     e.textContent=d<1?'today':d+'d';if(done)e.title='Closed '+(d<1?'today':d+' days ago');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
-setInterval(()=>{if(!$('working').hidden)renderWorking();tickAges();},15000);
+setInterval(tickAges,15000);
 const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
 let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
-function nextMode(){const m=store.get(NKEY(),null);return NMODES.includes(m)?m:matchMedia('(max-width:600px)').matches?'c':'top';} // no stored choice: collapsed on a phone
+function nextMode(){const m=store.get(NKEY(),null);return NMODES.includes(m)?m:'c';} // no stored choice: collapsed on every width
 function nextPaint(){ // classes + labels only, so the grid-rows transition runs on the live DOM
 	const el=$('nextUp'),m=nextMode(),b=el.querySelector('.nexttog'); if(!b) return;
 	el.classList.toggle('m-c',m==='c');el.classList.toggle('m-all',m==='all');
@@ -1268,8 +1250,11 @@ function clearFilters(){
   for(const k of['pillar','comp','owner','parent'])store.set(k,'ALL'); store.set('mine',false);
   if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
-function lanes(ts){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
-  const g=state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group; if(g==='none') return ts.map(card).join('');
+const WSEC=[['On you','a question for you or a proposal to accept'],['On other work','waiting for another ticket to finish'],['Parked','set aside by hand, with a note']]; // Waiting column sections, same order of reasons as the card's reason line
+const wsec=t=>t.proposed_by?0:t.open_blockers.length||(t.missing_blockers||[]).length?1:t.waiting_on&&t.asked_by?0:2;
+function lanes(ts,col){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
+  const g=state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group; if(g==='none'&&col==='pending') return WSEC.map(([n,tip],i)=>{const a=ts.filter(t=>wsec(t)===i);return a.length?`<h3 class="lane" title="${tip}"><span>${n}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`:'';}).join('');
+  if(g==='none') return ts.map(card).join('');
   const keys=t=>g==='component'?(tcomps(t).length?tcomps(t):['']):[(g==='pillar'?t.pillar:g==='parent'?t.parent:t.agent)||''],m=new Map();
   for(const t of ts)for(const k of keys(t))(m.get(k)||m.set(k,[]).get(k)).push(t);
   const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),component:'No component',parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='component'?ctitle(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
@@ -1304,7 +1289,7 @@ function renderBoard(){
         if(n>DONE_CAP){ts=ts.slice(0,DONE_CAP);more=`<button type="button" class="btn ghost more" data-alldone>+${n-DONE_CAP} more → view all</button>`;} }
     } else ts.sort(cmp);
     const total=ts.length;
-    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}</span>`}</div>${k==='todo'?qaForm():''}<div class="cards">${lanes(ts)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
+    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}${k==='todo'?` · ${ts.filter(t=>!t.waiting_on).length} ready`:''}</span>`}</div>${k==='todo'?qaForm():''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
   }).join('');
   if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
   if(flip?.size) playFlip(flip);
@@ -1381,7 +1366,7 @@ function showTicket(id,refresh){
   if(!MV.data&&!MV.tried)loadMap().then(()=>{if(openId===t.id&&!editing&&!$('drawer').hidden)showTicket(t.id,true);}); // so "Show on map" knows whether this ticket has a component
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button>${!MV.data||MV.data.ticket_map[t.id]?'<button type="button" data-onmap>Show on map</button>':''}<button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
     <h2 id="dTitle">${inline(t.title)}</h2>
-    <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div><span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span>${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
+    <div class="srow"><div class="segc" role="group" aria-label="Status" data-pk="${esc(t.id)}">${chipsHtml(COLS.filter(c=>c[0]!=='pending'),t.status,'setstatus')}</div>${ownHtml(t.owner)}${s!==t.status?`<span class="status ${s}">shows as ${NAME[s]}</span>`:''}${why?`<span class="why">${esc(why)}</span>`:''}</div>
     <div class="meta dmeta">${dm.join('')}</div>
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
@@ -1389,7 +1374,7 @@ function showTicket(id,refresh){
     ${t.proposed_by?`<h3>Proposal</h3><p class="nd-q">${esc(t.proposed_by)} suggested this ticket. It is not ready, and no agent can claim it, until you accept it. Rejecting deletes it.</p><form class="nd-f" data-nform="drop" ${DB}><button type="button" class="btn sm" data-accept ${DB}>Accept</button>${draftField('x:'+curBoard()+'/'+t.id,'','Reject reason (optional)…','textarea')}<button class="btn ghost sm" type="submit">Reject</button></form>`:''}
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
-    ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}<form class="nd-f" data-nform="reject" ${DB}><button type="button" class="btn sm" data-approve ${DB}>Approve</button>${draftField('r:'+curBoard()+'/'+t.id,'','Reject reason…','textarea')}<button class="btn ghost sm" type="submit">Reject</button></form>`:dw}
+    ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}`:''}
     ${partsHtml(t)}
@@ -1493,11 +1478,9 @@ document.addEventListener('click',async e=>{
   if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
   if(g('[data-clear]')){clearFilters();return;}
   if(g('[data-new]')){openId=null;editForm(null);return;}
-  if(b=g('[data-seg]')){if(state.view!=='board')setView('board');if(matchMedia('(max-width:600px)').matches)setTab(b.dataset.seg);goTo(document.querySelector(`[data-col="${b.dataset.seg}"]`));return;}
   if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
   if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());const el=$('digest'),done=()=>{DG=null;renderDigest();};
     if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
-  if(g('[data-toworking]')){$('apanel').open=true;$('apanel').scrollIntoView({block:'nearest'});return;}
   if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-glayout]')){setLayout(b.dataset.glayout);return;}
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
@@ -1510,7 +1493,7 @@ document.addEventListener('click',async e=>{
   if(b=g('.nr')){ if(g('[data-ntoggle]')||(e.target.closest('.nd-h,.nd-q')&&!e.target.closest('a,button,time')&&!getSelection().toString())){toggleNX(b.dataset.key);return;} if(!e.target.closest('[data-open]'))return; }
   if(b=g('[data-resume]')){api('PATCH','/'+b.dataset.resume,{waiting_on:''}).then(()=>load(true)).then(()=>toast('Resumed: '+b.dataset.resume)).catch(er=>toast(er.message,{err:1}));return;}
   if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
-  if(g('#kbBtn,#kbHint')){toggleKb();return;}
+  if(g('#kbBtn')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
@@ -1556,7 +1539,7 @@ document.addEventListener('click',async e=>{
 // one status move for drag-drop and the drawer's menu; Undo = one PATCH back to the old status
 async function moveTo(id,to,undoable=true){
   const t=BY.get(id),from=t?.status; if(!t||from===to) return;
-  if(to==='pending') return toast('Pending is derived: add a blocker (Blocked by) or a Waiting on note and the ticket shows there.',{err:1});
+  if(to==='pending') return toast('Waiting is derived: add a blocker (Blocked by) or a Waiting on note and the ticket shows there.',{err:1});
   if(to==='doing'&&t.open_blockers.length) return toast(`${id} is blocked by ${t.open_blockers.join(', ')}: it can't start yet.`,{err:1});
   try{ await api('PATCH','/'+id,{status:to}); await load(true);
     const n=BY.get(id);
@@ -2163,7 +2146,7 @@ const MPROB=[['nocontract',['edge without a contract','edges without a contract'
   ['dead',['dead path glob','dead path globs'],'dead_paths','bad','A paths glob in a note that matches no file in the repo.'],
   ['broken',['broken link','broken links'],'broken_links','bad','A link under Connections that points at no component note.'],
   ['cross',['ticket spans 2+ components','tickets span 2+ components'],'cross','','Open tickets that touch more than one component: their blast radius.']];
-const MCNT=[['doing','doing'],['todo','ready'],['pending','pending'],['review','review']];
+const MCNT=[['doing','doing'],['todo','ready'],['pending','waiting'],['review','review']];
 const mapBy=()=>new Map(MV.data.components.map(c=>[c.key,c]));
 function mapWhy(d){ // component key -> reasons it carries the problem dot
   const w={},T=mapBy(),add=(k,t)=>(w[k]=w[k]||[]).push(t),ti=k=>T.get(k)?.title||k;
@@ -2443,16 +2426,11 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	document.startViewTransition(()=>setView(v));
 }
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('bar').hidden=v==='docs'||v==='map';$('depSeg').hidden=v!=='graph';
-  paintViews(v);renderShow();if(v!=='graph')render();else{renderWorking();renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
-function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderWorking();renderDigest();renderNext();renderStrip();tickAges();if(state.view==='graph')syncGraph();}
-function renderStrip(){ // proportions of every ticket by what it shows as; a segment jumps to its column
-  const n=Object.fromEntries(COLS.map(([k])=>[k,0]));for(const t of T)n[t.effective_status]++;
-  const ready=T.filter(t=>t.effective_status==='todo'&&!t.waiting_on).length,ag=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size;
-  $('strip').hidden=!T.length;
-  const html=`<div class="segbar" role="group" aria-label="Tickets by status" style="--sum:${T.length}">${COLS.map(([k,l])=>`<button type="button" class="s-${k}" style="--n:${n[k]}" data-seg="${k}" title="${l}: ${n[k]}. Jump to the column"><b>${n[k]}</b>${l}</button>`).join('')}</div><span class="ready"><b>${ready}</b>ready</span>${ag?`<button type="button" class="agbadge" data-toworking title="Agent stats"><i class="pulse" aria-hidden="true"></i>${ag} agent${ag>1?'s':''} working</button>`:''}`;
-  if($('strip')._h!==html){$('strip')._h=html;$('strip').innerHTML=html;} // same markup = leave it alone, so a hovered segment keeps its width through the poll
+  paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
+function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();}
+function renderAgBtn(){ // "Agents · 2 live": distinct agents holding a claim right now
+  const n=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size,tx=n?`Agents · ${n} live`:'Agents'; if($('agBtn').textContent!==tx) $('agBtn').textContent=tx;
 }
-const goTo=el=>{if(!el||el.hidden)return;el.scrollIntoView({behavior:reduce.matches?'auto':'smooth',block:'start'});el.classList.remove('ping');void el.offsetWidth;el.classList.add('ping');};
 $('newBtn').addEventListener('click',()=>{openId=null;editForm(null);});
 $('q').addEventListener('input',e=>{setQ(e.target.value);render();});
 let BOARDS=[];
