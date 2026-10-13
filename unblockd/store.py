@@ -568,6 +568,8 @@ class Store:
 			self._check_parent(tid, clean["parent"])
 		if "components" in clean:
 			self._check_components(clean["components"], t.get("components", []))
+		if agent and self.profile_of(agent) and clean.get("status") in ("doing", "done", "review") and clean["status"] != t.get("status"):
+			raise TicketError(f"a worker can't set status {clean['status']}: use claim_ticket / complete / ask_human")
 		if clean.get("status") == "doing" and t.get("status") != "doing":
 			if t.get("proposed_by"):
 				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
@@ -598,6 +600,12 @@ class Store:
 		if held and held["agent"] != agent:
 			raise TicketError(f"{tid} is claimed by {held['agent']}; only the holder can change it "
 			                  "(use add_note to leave a note / ask the holder / wait for the lease to expire)")
+
+	def _human_only(self, action: str, by: str) -> None:
+		"""Worker guardrail (accident prevention, not security): a name that resolves to a configured profile (backend-1) may not
+		answer / reject / accept. Boards without profiles, and names matching no profile (claude, omri, human), are unrestricted."""
+		if self.profile_of(by.strip()):
+			raise TicketError(f"{action} is a human action, and {by.strip()!r} is a worker: tell the human (ask_human) or add_note")
 
 	def split(self, tid: str, titles: list[str], sequential: bool = False, by: str | None = None) -> dict:
 		"""Break a ticket that is too big into parts. One child per title (same prefix; pillar, owner, priority,
@@ -643,6 +651,7 @@ class Store:
 		"""A human accepts an agent's proposal: proposed_by is cleared (the ticket is ready as usual), note "Accepted by X", logs `accepted`."""
 		if not (isinstance(by, str) and by.strip()):
 			raise TicketError("accept needs `by`: who is accepting")
+		self._human_only("accept", by)
 		def run():
 			path = self._path(tid)
 			if not path.exists():
@@ -650,6 +659,8 @@ class Store:
 			raw = self._read(path)
 			if not raw.get("proposed_by"):
 				raise TicketError(f"{tid} isn't a proposal (nothing to accept)")
+			if raw["proposed_by"] == by.strip():
+				raise TicketError(f"{by.strip()} proposed {tid} and can't accept it: someone else decides")
 			who, raw["proposed_by"], raw["updated"] = raw["proposed_by"], "", date.today().isoformat()
 			_append_note(raw, by.strip(), f"Accepted by {by.strip()}")
 			self._write(raw)
@@ -663,6 +674,9 @@ class Store:
 			raise NotFound(f"no ticket {tid}")
 		self._holder_only(tid, agent)
 		t = self._read(path)
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		if agent and self.profile_of(agent) and t.get("owner") in humans:
+			raise TicketError(f"{tid} is owned by {t['owner']} (a human): a worker can't delete it; add_note or ask_human")
 		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
 		path.unlink()
 		self._drop_claim(tid, "ticket deleted")
@@ -1022,6 +1036,7 @@ class Store:
 		"""A human answers an ask(): appends "Answer to: <question> — <text>" as a note, clears waiting_on (the ticket is ready again), logs `answered`."""
 		if not (isinstance(by, str) and by.strip()):
 			raise TicketError("answer needs `by`: who is answering")
+		self._human_only("answer", by)
 		if not (isinstance(text, str) and text.strip()):
 			raise TicketError("answer needs text: what you decide")
 		def run():
@@ -1031,6 +1046,8 @@ class Store:
 			raw = self._read(path)
 			if not raw.get("waiting_on"):
 				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
+			if raw.get("asked_by") == by.strip():
+				raise TicketError(f"{by.strip()} asked this question and can't answer it: someone else decides")
 			_append_note(raw, by.strip(), f"Answer to: {raw['waiting_on']} — {text.strip()}")
 			raw["waiting_on"], raw["asked_at"], raw["asked_by"], raw["updated"] = "", "", "", date.today().isoformat()
 			self._write(raw)
@@ -1042,6 +1059,7 @@ class Store:
 		"""A human sends a ticket in review back: status todo, "Rejected: <reason>" appended as a note, logs `rejected`."""
 		if not (isinstance(by, str) and by.strip()):
 			raise TicketError("reject needs `by`: who is rejecting")
+		self._human_only("reject", by)
 		if not (isinstance(reason, str) and reason.strip()):
 			raise TicketError("reject needs a reason: say what is wrong, the worker reads it before redoing the ticket")
 		def run():
@@ -1051,6 +1069,8 @@ class Store:
 			raw = self._read(path)
 			if raw.get("status") != "review":
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
+			if (raw.get("result") or {}).get("by") == by.strip():
+				raise TicketError(f"{by.strip()} completed {tid} and can't reject it: someone else decides")
 			_append_note(raw, by.strip(), f"Rejected: {reason.strip()}")
 			raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			raw.pop("result", None)  # rejected work must not show as upstream

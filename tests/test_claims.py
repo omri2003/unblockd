@@ -77,7 +77,9 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(len(self.s.list()), 4)  # nothing split or deleted
 		self.assertIn("hello", self.s.add_note("CMB-1", "backend-2", "hello")["body"])  # notes from anyone, even on a held ticket
 		self.assertEqual(self.s.update("CMB-1", {"priority": "P0"}, agent="backend-1")["priority"], "P0")
-		self.assertEqual(self.s.update("CMB-2", {"status": "doing"}, agent="backend-2")["status"], "doing")  # unclaimed: fine
+		with self.assertRaisesRegex(TicketError, "claim_ticket / complete / ask_human"):  # a profile-named worker must claim
+			self.s.update("CMB-2", {"status": "doing"}, agent="backend-2")
+		self.assertEqual(self.s.update("CMB-2", {"status": "doing"}, agent="claude")["status"], "doing")  # a non-profile actor: fine
 		self.assertEqual(self.s.update("CMB-1", {"status": "todo"})["claim"], None)  # no agent = a human: as before
 
 	def test_release_and_manual_status_change_end_the_claim(self):
