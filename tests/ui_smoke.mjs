@@ -87,9 +87,9 @@ try {
 		ok(await page.locator('.col.doing .own svg').count() > 0, `[${tag}] owner shows a glyph`);
 		ok(!(await page.locator('#strip, #working, #sub, #kbHint').count()), `[${tag}] strip, Working now, subtitle and the shortcuts link are gone`);
 		ok(/^Agents · \d+ live$/.test(await page.locator('#agBtn').innerText()), `[${tag}] Agents button counts live agents`);
-		ok(/To do/.test(await page.locator('.col.todo .colhead').innerText()) && /\d+ ready/.test(await page.locator('.col.todo .colhead .n').innerText()), `[${tag}] To do head shows "N ready"`);
+		ok(/^\d+$/.test(await page.locator('.col.todo .colhead .n').innerText()), `[${tag}] To do head shows a plain count`);
 		{ const wh = await page.locator('.col.pending .colhead h2').innerText(), wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); ok(wh === 'Waiting' && wl.some((x) => /^on other work/i.test(x)), `[${tag}] Waiting column with "On other work" section: ${wh} / ${wl}`); }
-		ok(/needs? you/.test(await page.locator('#needsBadge').innerText()), `[${tag}] Needs badge is in words`);
+		ok(/needs? you/.test(await page.locator('#needsBadge').textContent()), `[${tag}] Needs badge is in words`);
 		{ // the second claim's heartbeat was aged 8 min in the temp copy (lease 15): it reads "quiet ·", the fresh one "live ·"
 			const q = await page.locator('.col.doing .liv.quiet [data-hb]').allInnerTexts();
 			ok(q.length === 1 && /^quiet · \d+ min$/.test(q[0]), `[${tag}] one stale claim should read "quiet · N min", got ${q}`);
@@ -615,6 +615,11 @@ try {
 		const small = (await heights(page)).filter(([, w, h]) => h < 44 || w < 44);
 		ok0(!small.length, 'targets under 44px on touch: ' + JSON.stringify(small.slice(0, 5)));
 		ok0(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow on touch');
+		{ const top = (pg) => pg.evaluate(() => Math.round(document.querySelector('#board .card').getBoundingClientRect().top + scrollY)), M = await browser.newContext({ viewport: { width: 390, height: 844 } }), mp = await M.newPage(); // first card: <= 483px with a mouse, <= 523px on touch (AGENTS.md "Phone chrome")
+			await mp.goto(base); await mp.waitForSelector('#board .card'); const mt = await top(mp); await M.close();
+			ok0(mt <= 483, `first card at 390 with a mouse starts ${mt}px down (max 483)`);
+			const T2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), tp = await T2.newPage(); await tp.goto(base); await tp.waitForSelector('#board .card'); const ct = await top(tp); await T2.close(); // fresh storage: this page above stored Next up open
+			ok0(ct <= 523, `first card at 390 on touch starts ${ct}px down (max 523)`); }
 		ok0(!errs.length, errs.join('; '));
 		await ctx.close();
 	}
