@@ -3,7 +3,7 @@
     python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
-    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P]   # take the next (or one) ticket
+    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
@@ -75,17 +75,17 @@ class Remote:
 	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
-	def claim(self, agent, tid=None, profile=None, note=""):
-		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note})
-	def claim_next(self, agent, profile=None, note=""): return self.claim(agent, profile=profile, note=note)  # the server answers with the reason when empty
-	def heartbeat(self, tid, agent, note=""): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note})
-	def release(self, tid, agent, reason=""): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason})
+	def claim(self, agent, tid=None, profile=None, note="", principal=None):
+		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal})
+	def claim_next(self, agent, profile=None, note="", principal=None): return self.claim(agent, profile=profile, note=note, principal=principal)  # the server answers with the reason when empty
+	def heartbeat(self, tid, agent, note="", principal=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal})
+	def release(self, tid, agent, reason="", principal=None): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
 	def add_note(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text})
-	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None):
-		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff})
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None):
+		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
@@ -124,11 +124,15 @@ def main(argv: list[str] | None = None) -> int:
 	cl.add_argument("--id")
 	cl.add_argument("--profile")
 	cl.add_argument("--note", default="")
+	pr = os.environ.get("UNBLOCKD_PRINCIPAL")
+	cl.add_argument("--principal", default=pr, help="the human owner you work for (default: env UNBLOCKD_PRINCIPAL)")
 	for name, extra in (("heartbeat", "--note"), ("release", "--reason"), ("ask", "--question"), ("complete", "--summary")):
 		x = sub.add_parser(name)
 		x.add_argument("id")
 		x.add_argument("--agent", required=True)
 		x.add_argument(extra, required=name in ("ask", "complete"), default="")
+		if name != "ask":
+			x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)")
 	cp = sub.choices["complete"]
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
@@ -178,16 +182,16 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note) if a.id else s.claim_next(a.agent, profile=a.profile, note=a.note)
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal) if a.id else s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal)
 			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
-			out = s.heartbeat(a.id, a.agent, a.note)
+			out = s.heartbeat(a.id, a.agent, a.note, a.principal)
 		elif a.cmd == "release":
-			out = s.release(a.id, a.agent, a.reason)
+			out = s.release(a.id, a.agent, a.reason, a.principal)
 		elif a.cmd == "ask":
 			out = s.ask(a.id, a.agent, a.question)
 		elif a.cmd == "complete":
-			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff)
+			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal)
 		elif a.cmd == "agents":
 			out = s.agents_now()
 		elif a.cmd == "context":

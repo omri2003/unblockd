@@ -526,5 +526,64 @@ class ClaimTest(unittest.TestCase):
 			self.assertEqual(self.s.get(tid)["status"], "doing", tid)
 
 
+class PrincipalTest(unittest.TestCase):
+	"""principal = the human an agent works for: validated, stored in the claim, copied to result, part of the holder check."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		self.dir = Path(self.tmp.name) / "tickets"
+		self.dir.mkdir()
+		self.cfg({**CFG, "owners": [{"name": "Omri", "kind": "human"}, {"name": "Dana", "kind": "human"}, {"name": "Claude", "kind": "agent"}]})
+		for i in (1, 2, 3):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+
+	def cfg(self, c):
+		(self.dir / "unblockd.json").write_text(json.dumps(c), encoding="utf-8")
+		self.s = Store(self.dir)
+
+	def test_stored_shown_and_copied_to_result(self):
+		t = self.s.claim("backend-1", tid="CMB-1", principal="Omri")
+		self.assertEqual(t["claim"]["principal"], "Omri")
+		self.assertNotIn("warnings", t)
+		self.assertEqual(self.s.agents_now()["working"][0]["principal"], "Omri")
+		self.s.heartbeat("CMB-1", "backend-1", "x", "Omri")
+		done = self.s.complete("CMB-1", "backend-1", "fixed", principal="Omri")
+		self.assertEqual((done["result"]["by"], done["result"]["principal"]), ("backend-1", "Omri"))
+		ev = {e["event"]: e for e in self.s.activity("CMB-1")}
+		self.assertEqual((ev["claim"]["principal"], ev["complete"]["principal"]), ("Omri", "Omri"))
+
+	def test_review_reject_clears_principal(self):
+		self.cfg({**CFG, "review": True, "owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}]})
+		self.s.claim("backend-1", tid="CMB-1", principal="Omri")
+		self.assertEqual(self.s.complete("CMB-1", "backend-1", "s")["result"]["principal"], "Omri")  # complete needs none: it comes from the claim
+		self.assertIsNone(self.s.reject("CMB-1", "Omri", "no").get("result"))
+
+	def test_unknown_or_agent_principal_refused(self):
+		for bad in ("Nobody", "Claude"):
+			with self.assertRaisesRegex(TicketError, "not a human owner.*Omri, Dana"):
+				self.s.claim("backend-1", tid="CMB-1", principal=bad)
+		self.assertIsNone(self.s.get("CMB-1")["claim"])
+
+	def test_same_worker_name_two_principals(self):
+		self.s.claim("backend-1", tid="CMB-1", principal="Omri")
+		for call in (lambda: self.s.heartbeat("CMB-1", "backend-1", "", "Dana"), lambda: self.s.complete("CMB-1", "backend-1", "s", principal="Dana"),
+		             lambda: self.s.release("CMB-1", "backend-1", "", "Dana")):
+			with self.assertRaisesRegex(TicketError, "for Omri, not for Dana"):
+				call()
+		self.assertEqual(self.s.get("CMB-1")["claim"]["principal"], "Omri")
+		self.s.heartbeat("CMB-1", "backend-1")  # no principal given: as before
+
+	def test_no_principal_works_and_warns_only_with_several_humans(self):
+		t = self.s.claim("backend-1", tid="CMB-1")
+		self.assertIn("no principal", t["warnings"][0])
+		self.assertNotIn("principal", t["claim"])
+		self.assertNotIn("principal", self.s.complete("CMB-1", "backend-1", "s")["result"])
+		self.assertNotIn("warnings", self.s.claim_next("backend-1", principal="Dana"))
+		self.assertIn("warnings", self.s.claim_next("backend-2"))
+		self.cfg(CFG)  # one human: nothing new
+		self.s.release("CMB-3", "backend-2")
+		self.assertNotIn("warnings", self.s.claim("backend-1", tid="CMB-3"))
+
+
 if __name__ == "__main__":
 	unittest.main()
