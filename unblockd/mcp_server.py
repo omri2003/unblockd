@@ -5,7 +5,7 @@ UNBLOCKD_TOKEN = Bearer token; MCP_ALLOWED_HOSTS = extra Host values, comma list
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, accept_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+create_ticket, accept_ticket, approve_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
@@ -268,6 +268,12 @@ def answer(id: str, by: str, text: str, board: str | None = None) -> dict:
 	"""The human side of ask_human: record the answer (note "Answer to: <question> — <text>"), clear waiting_on so the ticket is ready again.
 	Refused unless the ticket is waiting_on a question."""
 	return BOARDS.get(board).answer(id, by, text)
+
+
+@tool
+def approve_ticket(id: str, by: str, board: str | None = None) -> dict:
+	"""The human side of review: approve a ticket in review. It becomes done and records who approved (result.approved_by). Refused unless its status is review, for a worker, and for whoever completed it."""
+	return BOARDS.get(board).approve(id, by)
 
 
 @tool

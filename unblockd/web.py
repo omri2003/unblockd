@@ -15,6 +15,7 @@ GET    plan?per_agent=                   ready tickets grouped by agent profile 
 GET    tickets/<id>
 POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id": "BUG-13", ...}; "agent"? = the creating worker (strict schema, proposal gate); a human's ticket may come back with "warnings"
 POST   tickets/<id>/accept               {"by"?}  accept an agent's proposal (400 unless proposed_by is set)
+POST   tickets/<id>/approve              {"by"?}  review -> done, recording result.approved_by / approved_at (400 unless status is review; not the completer, not a worker)
 PATCH  tickets/<id>                      {...fields to change}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it
 DELETE tickets/<id>                      ?agent= (holder rule), ?reason= (a human rejecting a proposal; logged)
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
@@ -297,11 +298,13 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))
-			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject", "accept"):
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject", "accept", "approve"):
 				b = self._body()
 				by = str(b.get("by") or "human")
 				if rest[2] == "accept":
 					return self._send(200, store.accept(rest[1], by))
+				if rest[2] == "approve":
+					return self._send(200, store.approve(rest[1], by))
 				return self._send(200, store.answer(rest[1], by, b.get("text")) if rest[2] == "answer" else store.reject(rest[1], by, b.get("reason")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()

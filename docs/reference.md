@@ -26,7 +26,7 @@ default; the board you last opened is remembered.
 
 ## Notifications
 
-Set `UNBLOCKD_WEBHOOK` and the server posts a batched message every ~30 s when agents finish (✅), get stuck (⚠: expired lease or released) or the board runs dry (🏁). Keep the URL in `.env`, it is a secret.
+Set `UNBLOCKD_WEBHOOK` and the server posts a batched message every ~30 s when agents finish (✅), a human approves one (✅ `approved by`), get stuck (⚠: expired lease or released) or the board runs dry (🏁). Keep the URL in `.env`, it is a secret.
 Slack / Discord: `UNBLOCKD_WEBHOOK=https://hooks.slack.com/services/...` or `https://discord.com/api/webhooks/...` (json is the default; one payload carries both `text` and `content`).
 ntfy: `UNBLOCKD_WEBHOOK=https://ntfy.sh/my-topic UNBLOCKD_WEBHOOK_FORMAT=text`. Only events after startup are sent.
 
@@ -92,7 +92,7 @@ a dashed ring in the graph, and each ticket's **Agent activity** in its
 drawer. Claims and the activity log live in `tickets/.unblockd/`, which
 ignores itself in git.
 
-**Worker guardrails.** On a board with agent profiles, an actor whose name resolves to a profile (`backend`, `backend-1`) cannot `answer`, `reject` or `accept`, cannot set a ticket's status to doing / done / review with `update_ticket` (use `claim_ticket` / `complete` / `ask_human`), and cannot delete a human-owned ticket. Nobody can approve their own work: `answer` by the asker, `accept` by the proposer, `reject` by the completer are refused. Names that match no profile (`claude`, `omri`, `human`) and boards without profiles are unrestricted, so a solo owner's own Claude works as before. This is accident prevention, not security: an agent with a shell can edit the ticket files, and per-user tokens are the later fix. For worker subagents, also deny the tools client-side, e.g. in `.claude/settings.json` `permissions.deny`: `mcp__unblockd__answer`, `mcp__unblockd__reject`, `mcp__unblockd__accept_ticket`, `mcp__unblockd__create_board`, `mcp__unblockd__arch_*` (one entry per `arch_` tool).
+**Worker guardrails.** On a board with agent profiles, an actor whose name resolves to a profile (`backend`, `backend-1`) cannot `answer`, `reject`, `accept` or `approve`, cannot set a ticket's status to doing / done / review with `update_ticket` (use `claim_ticket` / `complete` / `ask_human`), and cannot delete a human-owned ticket. Nobody can approve their own work: `answer` by the asker, `accept` by the proposer, `reject` and `approve` by the completer are refused. Names that match no profile (`claude`, `omri`, `human`) and boards without profiles are unrestricted, so a solo owner's own Claude works as before. This is accident prevention, not security: an agent with a shell can edit the ticket files, and per-user tokens are the later fix. For worker subagents, also deny the tools client-side, e.g. in `.claude/settings.json` `permissions.deny`: `mcp__unblockd__answer`, `mcp__unblockd__reject`, `mcp__unblockd__accept_ticket`, `mcp__unblockd__approve_ticket`, `mcp__unblockd__create_board`, `mcp__unblockd__arch_*` (one entry per `arch_` tool).
 
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
@@ -102,8 +102,8 @@ and each worker runs the loop above until `claim_next` says to stop: `reason` "c
 
 Run ONE shared server (`python -m unblockd.web`, plus `mcp_server --http` or the Remote CLI for agents on other machines): claims live in
 `tickets/.unblockd/` and are not in git, so two clones of the same repo can both claim a ticket. List each person as a `kind: human` owner and have
-each person's agents claim with their `principal`; the Done ticket then reads "Done by backend-1 for Omri". It is a label, not proof, until per-user
-tokens exist: anyone with the shared token can name any principal.
+each person's agents claim with their `principal`; the Done ticket then reads "Done by backend-1 for Omri". On a board with `review: true`, **Approve** (Needs you, `approve_ticket`, `approve ID`, `POST tickets/<id>/approve`) records who looked: `result.approved_by` / `approved_at`, shown as "Done by backend-1 for Omri · approved by Dana" (muted "self-approved" when they are the same person; "no human recorded" on a board with 2+ humans when a done ticket has neither). A plain move to Done records no approver, because nobody approved. So "who took responsibility" means the approver on a review board and the principal otherwise. It is a label, not proof, until per-user
+tokens exist: anyone with the shared token can name any principal or approver.
 
 ## Knowledge: tickets come with their instructions
 
@@ -345,7 +345,7 @@ Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the packag
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
-start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `accept_ticket`,
+start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `accept_ticket`, `approve_ticket` (the human side of review: done + who approved),
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
 `knowledge_graph`, `architecture_map`, `read_doc`, `attach_file`, `detach_file`; to edit the architecture `arch_add_component`, `arch_update_component`, `arch_delete_component`, `arch_set_edge`, `arch_remove_edge` (each takes `agent`; they rewrite only the managed parts of the notes, see Architecture; there is no CLI command for them). Every tool takes `board=`

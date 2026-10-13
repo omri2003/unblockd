@@ -17,6 +17,7 @@
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--component KEY]... [--json '{"priority": "P1", ...}'] [--agent A]   # --agent: strict schema, may park as a proposal
     python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
+    python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
     python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
@@ -72,6 +73,7 @@ class Remote:
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
 	def create(self, data, tid=None, prefix=None, agent=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {})})
 	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
+	def approve(self, tid, by): return self._call("POST", f"/tickets/{tid}/approve", {"by": by})
 	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
@@ -156,10 +158,10 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("id")
 	no.add_argument("text")
 	no.add_argument("--by", default="human")
-	for name in ("answer", "reject", "accept"):
+	for name in ("answer", "reject", "accept", "approve"):
 		x = sub.add_parser(name)
 		x.add_argument("id")
-		if name != "accept":
+		if name not in ("accept", "approve"):
 			x.add_argument("text")
 		x.add_argument("--by", default="human")
 	a = ap.parse_args(argv)
@@ -209,6 +211,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.reject(a.id, a.by, a.text)
 		elif a.cmd == "accept":
 			out = s.accept(a.id, a.by)
+		elif a.cmd == "approve":
+			out = s.approve(a.id, a.by)
 		elif a.cmd == "delete":
 			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":

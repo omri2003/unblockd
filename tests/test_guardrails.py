@@ -52,6 +52,36 @@ class GuardrailTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "can't reject"):
 			s.reject("T-1", "claude", "meh")
 
+	def test_approve_rules(self):
+		s = self.s
+		s.create({"title": "a"}, tid="T-1")
+		with self.assertRaisesRegex(TicketError, "not review"):
+			s.approve("T-1", "omri")
+		s.claim("claude", tid="T-1", profile="backend")
+		s.complete("T-1", "claude", "done")  # review: true
+		for who, msg in (("backend-2", "human action"), ("claude", "can't approve"), (" ", "needs `by`")):
+			with self.assertRaisesRegex(TicketError, msg):
+				s.approve("T-1", who)
+		self.assertEqual(s.get("T-1")["status"], "review")
+		t = s.approve("T-1", "omri")
+		self.assertEqual((t["status"], t["result"]["approved_by"], t["result"]["by"]), ("done", "omri", "claude"))
+		self.assertTrue(t["result"]["approved_at"] and t["done_at"])
+		self.assertIn("Approved by omri", t["body"])
+		self.assertEqual(s.activity("T-1")[0]["event"], "approved")
+		t = s.update("T-1", {"status": "review"})  # Undo: nobody approves it any more
+		self.assertNotIn("approved_by", t["result"])
+		self.assertNotIn("approved_at", t["result"])
+		self.assertEqual(t["result"]["by"], "claude")
+
+	def test_plain_patch_to_done_records_no_approver(self):
+		s = self.s
+		s.create({"title": "a"}, tid="T-1")
+		s.claim("claude", tid="T-1", profile="backend")
+		s.complete("T-1", "claude", "done")
+		t = s.update("T-1", {"status": "done"})
+		self.assertEqual(t["status"], "done")
+		self.assertNotIn("approved_by", t["result"])
+
 	def test_worker_status_and_delete(self):
 		s = self.s
 		s.create({"title": "a"}, tid="T-1")
