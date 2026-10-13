@@ -394,6 +394,14 @@ try {
 		await page.click(`${rrow} [data-approve]`);
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${rid}`);
 		ok(await page.locator('.col.done .card:has-text("review me")').count(), `[${tag}] approved ticket should be in Done`);
+		{ // a done card is one compact row: id + title + age, no seal / owner chip, still opens the drawer, still has its Move-to menu
+			const d = page.locator('.col.done .card.dn').first(), td = page.locator('.col.todo .card').first();
+			ok(await d.getAttribute('data-open') && await d.getAttribute('title'), `[${tag}] done card keeps data-open and the full title`);
+			ok((await d.locator('.seal, .own').count()) === 0, `[${tag}] done card should show no priority seal or owner chip`);
+			ok((await d.locator('xpath=..').locator('[data-moveto]').count()) > 0, `[${tag}] done card keeps its Move-to menu`);
+			const hd = await d.boundingBox(), ht = await td.boundingBox();
+			if (hd && ht) ok(hd.height < ht.height / 2, `[${tag}] done card (${hd.height}px) should be under half a To do card (${ht.height}px)`);
+		}
 		// answer the other board's question from here: no board switch
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');

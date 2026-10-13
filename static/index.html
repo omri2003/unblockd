@@ -216,6 +216,12 @@ a.btn{display:inline-block;text-decoration:none}
 .meta{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:6px;font-size:.78rem;color:var(--muted)}
 .why{color:var(--slate);font-weight:600}
 .done .card .ttl{font-weight:400;color:var(--muted)}
+.card.dn{display:flex;align-items:baseline;gap:8px;padding:4px 10px 4px 9px}
+.card.dn .ttl{flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.dn .age{font-size:.76rem;color:var(--muted)}
+.cw.dn .mv{top:50%;bottom:auto;transform:translateY(-50%)}
+.cw.dn:hover .age,.cw.dn:focus-within .age,.cw.dn:has(.mv[open]) .age{visibility:hidden}
+@media (hover:none){.cw.dn .card{padding:4px 84px 4px 9px}}
 .more{margin-top:8px;width:100%}
 /* drag and drop */
 .card[draggable="true"]{cursor:grab}
@@ -712,7 +718,7 @@ const COMPS=()=>MV.data?.components||[], ctitle=k=>COMPS().find(c=>c.key===k)?.t
 const tcomps=t=>[...new Set([...(t.components||[]),...(MV.data?.ticket_map?.[t.id]||[])])]; // a ticket's components: explicit first, then those derived from its touches (GET /architecture ticket_map); explicit alone until that arrives
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','review','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
-const setTab=k=>{TAB=k;try{sessionStorage.setItem('unblockd.tab',k)}catch{}renderBoard();};
+const setTab=k=>{TAB=k;try{sessionStorage.setItem('unblockd.tab',k)}catch{}renderBoard();tickAges();};
 let DAYS=7, DONE_CAP=20; // DAYS = config done_window_days: the Done column shows only tickets done this recently
 let WIP=null; // from the config's wip_limit: more than this many in progress = warning on the column
 function toast(msg,{err,undo}={}){ // one aria-live region (#toasts); ~4s, errors a little longer
@@ -990,6 +996,7 @@ function card(t){
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
+  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title)}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
   return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
@@ -1192,7 +1199,7 @@ function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const 
   const lim=(CFG.lease_minutes?CFG.lease_minutes/2:10)*60000;
   document.querySelectorAll('[data-hb]').forEach(e=>{const t=Date.parse(e.dataset.hb);e.textContent=ago(e.dataset.hb).replace(' ago','');e.classList.toggle('late',Date.now()-t>lim);e.title=Date.now()-t>lim?'No heartbeat for a while':'';});
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
-    e.textContent=done?(d<1?'closed today':`closed ${d}d ago`):(d<1?'today':d+'d');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
+    e.textContent=d<1?'today':d+'d';if(done)e.title='Closed '+(d<1?'today':d+' days ago');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
 setInterval(()=>{if(!$('working').hidden)renderWorking();tickAges();},15000);
 const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
 let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
