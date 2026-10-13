@@ -1083,11 +1083,13 @@ class Store:
 			raw = self._read(path)
 			if raw.get("status") != "review":
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be approved")
-			res = raw.get("result") or {"summary": "(moved to review by hand, no worker result)", "files": [], "refs": [], "handoff": ""}
-			if res.get("by") == by:
+			res = raw.get("result")  # none = moved to review by hand: the note and the log record the approver, no result is invented
+			if res and res.get("by") == by:
 				raise TicketError(f"{by} completed {tid} and can't approve it: someone else decides")
 			_append_note(raw, by, f"Approved by {by}")
-			raw["result"] = {**res, "approved_by": by, "approved_at": _now()}
+			if res:
+				raw["result"] = {**res, "approved_by": by, "approved_at": _now()}
+			res = res or {}
 			raw["status"], raw["done_at"], raw["updated"] = "done", _now(), date.today().isoformat()
 			self._write(raw)
 			self._log("approved", tid, by, res.get("summary", ""), res.get("principal"))

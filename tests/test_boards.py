@@ -392,10 +392,12 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})[0], 400)  # not in review
 		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})
-		self.assertEqual((code, t["status"], t["result"]["approved_by"]), (200, "done", "ana"))
+		self.assertEqual((code, t["status"], t["result"]), (200, "done", None))  # moved to review by hand: no result is invented
+		self.assertIn("Approved by ana", t["body"])
 		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
 		code, t = self.cli("approve", "CMB-2", "--by", "ana")
-		self.assertEqual((code, t["status"], t["result"]["approved_by"]), (0, "done", "ana"))
+		self.assertEqual((code, t["status"]), (0, "done"))
+		self.assertIn("Approved by ana", t["body"])
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/approve", {})[0], 404)
 
 	def test_needs_lists_questions_and_reviews_on_every_board(self):
