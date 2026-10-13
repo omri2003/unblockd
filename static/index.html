@@ -258,7 +258,9 @@ a.btn{display:inline-block;text-decoration:none}
   .col{display:none} .col.active{display:block}
   /* tabs right under the filters; Next up only on To do, Working now only on In progress */
   .wrap{display:flex;flex-direction:column} header{order:0} .strip{order:1} .bar{order:2} .tabs{order:3} #digest{order:2} #working{order:4} #nextUp{order:5} #board{order:6} #graphWrap{order:7}
-  body:not([data-tab="todo"]) #nextUp,body:not([data-tab="doing"]) #working{display:none}}
+  body:not([data-tab="todo"]) #nextUp,body:not([data-tab="doing"]) #working{display:none}
+  /* less chrome above the first card */
+  .wrap{padding-top:12px} header{gap:8px;margin-bottom:8px} header .hdr{gap:6px} .logo{margin-bottom:2px} .strip{margin-bottom:6px} .bar{margin-bottom:8px}}
 
 .scrim,.docvscrim,.kbscrim{position:fixed;inset:0;background:rgba(10,16,13,.35)} .scrim{z-index:20} .docvscrim{z-index:40} .kbscrim{z-index:30}
 aside{position:fixed;top:0;right:0;bottom:0;width:min(560px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:21;overflow-y:auto;padding:18px 20px 28px;box-shadow:-12px 0 32px rgba(0,0,0,.14)}
@@ -507,6 +509,8 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   .mcon{list-style:none;margin:6px 0 0;padding:0 0 0 10px;border-left:2px solid var(--line);display:grid;gap:6px;font-size:.88rem}
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
 }
+/* touch: 44px targets (UX-5); desktop and the compact density keep their sizes */
+@media (pointer:coarse){.btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
 /* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
 .sl{position:relative}
 .sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
@@ -1203,7 +1207,7 @@ function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const 
 setInterval(()=>{if(!$('working').hidden)renderWorking();tickAges();},15000);
 const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
 let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
-function nextMode(){const m=store.get(NKEY(),'top');return NMODES.includes(m)?m:'top';}
+function nextMode(){const m=store.get(NKEY(),null);return NMODES.includes(m)?m:matchMedia('(max-width:600px)').matches?'c':'top';} // no stored choice: collapsed on a phone
 function nextPaint(){ // classes + labels only, so the grid-rows transition runs on the live DOM
 	const el=$('nextUp'),m=nextMode(),b=el.querySelector('.nexttog'); if(!b) return;
 	el.classList.toggle('m-c',m==='c');el.classList.toggle('m-all',m==='all');

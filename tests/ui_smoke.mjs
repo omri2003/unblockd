@@ -511,6 +511,28 @@ try {
 		ok0(!errs.length, 'url: browser errors ' + errs.join('; '));
 		await ctx.close();
 	}
+	// 4c. phone chrome: Next up starts collapsed at 390 (a stored choice wins), touch targets >= 44px, desktop sizes unchanged
+	{
+		const ok0 = (c, msg) => { if (!c) throw new Error('mobile: ' + msg); };
+		const heights = (page) => page.evaluate(() => ['.btn', '.chip', '#bsum', '.vico', '.tab'].flatMap((s) => [...document.querySelectorAll(s)].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [s, Math.round(r.width), Math.round(r.height)]; })));
+		const D = await browser.newContext({ viewport: { width: 1400, height: 900 } }), dp = await D.newPage(); dp.setDefaultTimeout(5000);
+		await dp.goto(base); await dp.waitForSelector('#nextUp:not([hidden])');
+		ok0(await dp.evaluate(() => !document.getElementById('nextUp').classList.contains('m-c')), 'desktop Next up must not start collapsed');
+		const dh = await heights(dp); ok0(dh.some(([s, , h]) => s === '.btn' && h < 44), 'desktop .btn grew to 44px');
+		await D.close();
+		const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), page = await ctx.newPage(); page.setDefaultTimeout(5000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+		await page.goto(base); await page.waitForSelector('#nextUp:not([hidden])');
+		ok0(await page.evaluate(() => document.getElementById('nextUp').classList.contains('m-c')), 'Next up should start collapsed at 390 with empty storage');
+		await page.click('#nextUp .nexttog'); // a stored choice wins on reload
+		await page.reload(); await page.waitForSelector('#nextUp:not([hidden])');
+		ok0(await page.evaluate(() => !document.getElementById('nextUp').classList.contains('m-c')), 'stored choice (top) should beat the phone default');
+		const small = (await heights(page)).filter(([, w, h]) => h < 44 || w < 44);
+		ok0(!small.length, 'targets under 44px on touch: ' + JSON.stringify(small.slice(0, 5)));
+		ok0(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow on touch');
+		ok0(!errs.length, errs.join('; '));
+		await ctx.close();
+	}
 	// 5. motion: a ticket moved behind the page's back slides (WAAPI) and ends in its new column with no leftover transform; under reduced motion nothing animates and everything still works
 	for (const reducedMotion of ['no-preference', 'reduce']) {
 		const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion });
