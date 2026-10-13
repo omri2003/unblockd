@@ -181,5 +181,53 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertNotIn("outside", " ".join(d["path"] for d in g["docs"] if "error" not in d))
 
 
+class CapabilitiesTest(unittest.TestCase):
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.repo = Path(self.tmp.name)
+		(self.repo / "skills").mkdir()
+		for n in range(10):
+			(self.repo / "skills" / f"s{n}.md").write_text(f"SECRET BODY {n}", encoding="utf-8")
+		(self.repo / "tickets").mkdir()
+		self.cfg = {"skills": {f"s{n}": {"path": f"skills/s{n}.md", "description": f"skill {n}"} for n in range(10)},
+		            "mcp": {"db": {"hint": "claude mcp add db", "doc": "skills/s0.md", "required": True}, "web": {"hint": "claude mcp add web"}},
+		            "use_skills": ["s0"], "use_mcp": ["web"], "pillars": [{"key": "COMBAT"}],
+		            "agents": [{"name": "backend", "pillars": ["COMBAT"], "instructions": "Stdlib only.", "model": "sonnet", "skills": ["s1", "s0"], "mcp": ["db"]}]}
+		self.write()
+
+	def write(self):
+		(self.repo / "tickets" / "unblockd.json").write_text(json.dumps(self.cfg), encoding="utf-8")
+		self.s = Store(self.repo / "tickets")
+
+	def tearDown(self):
+		self.tmp.cleanup()
+
+	def test_merge_dedupe_descriptors_only_and_profile_slice(self):
+		self.s.create({"title": "t", "pillar": "COMBAT", "skills": ["s2", "s1"], "mcp": ["web"]}, tid="CMB-1")
+		ctx = kn.context(self.s, "CMB-1")
+		caps = ctx["capabilities"]
+		self.assertEqual([(c["name"], c["source"]) for c in caps["skills"]], [("s0", "board"), ("s1", "profile"), ("s2", "ticket")])
+		self.assertEqual([(c["name"], c["source"], c["required"]) for c in caps["mcp"]], [("web", "board", False), ("db", "profile", True)])
+		self.assertEqual(set(caps["skills"][0]), {"name", "description", "path", "source", "trust"})
+		self.assertEqual(caps["skills"][0]["trust"], "trusted")
+		self.assertEqual(caps["mcp"][1]["doc"], "skills/s0.md")
+		self.assertNotIn("SECRET BODY", json.dumps(ctx))  # descriptors, never the SKILL.md body
+		self.assertEqual(ctx["profile"], {"name": "backend", "instructions": "Stdlib only.", "model": "sonnet", "trust": "trusted"})
+		self.assertEqual([g["skills"] for g in self.s.work_plan()["agents"]], [["s1", "s0"]])
+
+	def test_absent_when_empty_and_cap(self):
+		self.s.create({"title": "loose"}, tid="CMB-2")
+		ctx = kn.context(self.s, "CMB-2")
+		self.assertEqual([c["name"] for c in ctx["capabilities"]["skills"]], ["s0"])
+		self.assertNotIn("profile", ctx)  # not routed to a profile
+		self.cfg.update(use_skills=[], use_mcp=[])
+		self.write()
+		self.assertNotIn("capabilities", kn.context(self.s, "CMB-2"))
+		self.s.update("CMB-2", {"skills": [f"s{n}" for n in range(10)]})
+		caps = kn.context(self.s, "CMB-2")["capabilities"]
+		self.assertEqual(len(caps["skills"]), 8)
+		self.assertEqual(caps["more"], {"skills": ["s8", "s9"]})
+
+
 if __name__ == "__main__":
 	unittest.main()

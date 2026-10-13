@@ -196,6 +196,35 @@ def wrap(text: str, source: str) -> str:
 	return f'<untrusted source="{source.replace(chr(34), "")}">{text}</untrusted>'
 
 
+CAPS_MAX = 8  # descriptors per kind in a context; the rest are named
+
+
+def capabilities(store, t: dict) -> dict:
+	"""Skills and MCP servers a ticket's worker should have: the board's (use_skills / use_mcp), its profile's, the ticket's own, deduped by name (first source wins).
+	Descriptors only, from the committed registry: the SKILL.md body is never inlined (read_doc(path)) and a ticket can only pick registered names. {} when none."""
+	cfg = store.config
+	prof = next((a for a in cfg["agents"] if a["name"] == t.get("agent")), {})
+	out, more = {}, {}
+	for kind in ("skills", "mcp"):
+		picked = {}
+		for src, names in (("board", cfg["use_" + kind]), ("profile", prof.get(kind, [])), ("ticket", t.get(kind, []))):
+			for n in names:
+				if n in cfg[kind]:
+					picked.setdefault(n, src)
+		items = []
+		for n, src in picked.items():
+			e = cfg[kind][n]
+			items.append({"name": n, "description": e.get("description", ""), "path": e["path"], "source": src, "trust": "trusted"} if kind == "skills"
+			             else {"name": n, "hint": e["hint"], "doc": e.get("doc"), "required": bool(e.get("required")), "source": src})
+		if items:
+			out[kind] = items[:CAPS_MAX]
+		if len(items) > CAPS_MAX:
+			more[kind] = [i["name"] for i in items[CAPS_MAX:]]
+	if more:
+		out["more"] = more
+	return out
+
+
 def with_context(store, t: dict | None) -> dict | None:
 	"""A freshly claimed ticket plus its context bundle: what a worker reads first. Anything without an id
 	(None, or claim_next's "nothing, and why" answer) passes through."""
@@ -260,6 +289,11 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 	out = {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "protocol": PROTOCOL, "rule": RULE, "inlined_chars": budget - left,
 	       "note": "Read these before working the ticket. Items without content: read_doc(path)."
 	               + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
+	if (prof := next((a for a in store.config["agents"] if a["name"] == t.get("agent")), None)):  # committed config: trusted
+		out["profile"] = {"name": prof["name"], "instructions": prof.get("instructions", ""), "model": prof.get("model"), "trust": "trusted"}
+	if (caps := capabilities(store, t)):
+		out["capabilities"] = caps
+		out["note"] += " capabilities: skills to load (read their path) and MCP servers to have; a required one you lack = release(reason=\"missing capability <name>\")."
 	if keys:
 		near = []
 		for e in arch["edges"]:
