@@ -44,6 +44,25 @@ class WorkLoopTest(unittest.TestCase):
 		self.assertIn("work_loop", [p.name for p in asyncio.run(m.mcp.list_prompts())])
 		self.assertIn("unblockd://work-loop", [str(r.uri) for r in asyncio.run(m.mcp.list_resources())])
 
+	def test_next_ready_for_a_worker_skips_humans_and_refuses_unknown_names(self):
+		from unblockd import mcp_server as m
+		from mcp.server.mcpserver.exceptions import ToolError
+		(Path(self.tmp.name) / "unblockd.json").write_text(json.dumps({"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
+			"agents": [{"name": "backend", "tags": ["be"]}]}), encoding="utf-8")
+		s = m.BOARDS.get(None)
+		s.create({"title": "mine", "owner": "Omri", "tags": ["be"]}, tid="B-1")
+		s.create({"title": "bots", "owner": "Claude", "tags": ["be"]}, tid="B-2")
+		ids = lambda **kw: [t["id"] for t in m.next_ready(**kw)]
+		self.assertEqual(ids(), ["B-1", "B-2"])
+		self.assertEqual(ids(agent="backend-1"), ["B-2"])
+		with self.assertRaisesRegex(ToolError, "matches no agent profile"):
+			m.next_ready(agent="nobody")
+
+	def test_server_instructions_point_workers_at_claim_next(self):
+		from unblockd import mcp_server as m
+		self.assertNotIn("next_ready(agent", m.mcp.instructions)
+		self.assertIn("work_loop", m.mcp.instructions)
+
 	def test_plan_from_spec_prompt(self):
 		from unblockd import mcp_server as m
 		self.assertIn("plan_from_spec", [p.name for p in asyncio.run(m.mcp.list_prompts())])

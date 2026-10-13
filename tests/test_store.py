@@ -73,6 +73,22 @@ class StoreTest(unittest.TestCase):
 		self.assertEqual([k["parent"] for k in r["children"]], ["E-1", "E-1"])
 		self.assertEqual(r["parent"]["progress"], {"done": 0, "total": 2})
 
+	def test_split_twice_refused_until_children_are_done(self):
+		self.s.create({"title": "big"}, tid="E-1")
+		self.s.split("E-1", ["a", "b"])
+		with self.assertRaisesRegex(TicketError, r"E-1 is already split into E-2, E-3: work those, or split one of them"):
+			self.s.split("E-1", ["c", "d"])
+		self.s.update("E-2", {"status": "done"})
+		self.s.update("E-3", {"status": "done"})
+		self.assertEqual(len(self.s.split("E-1", ["c", "d"])["children"]), 2)
+
+	def test_created_and_deleted_log_the_actor(self):
+		self.s.create({"title": "x"}, tid="E-1", agent="backend-1")
+		self.s.create({"title": "y"}, tid="E-2")
+		self.s.delete("E-1", agent="backend-1")
+		ev = {(e["event"], e["ticket"]): e["agent"] for e in self.s.activity(limit=10)}
+		self.assertEqual((ev["created", "E-1"], ev["created", "E-2"], ev["deleted", "E-1"]), ("backend-1", None, "backend-1"))
+
 	def test_delete_cleans_up_and_reports_who_points_at_it(self):
 		self.s.create({"title": "gone"}, tid="E-1")
 		self.s.create({"title": "waits", "blocked_by": ["E-1"]}, tid="E-2")
@@ -336,6 +352,15 @@ class ConfigTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "one of UI"):
 			s.update(t["id"], {"pillar": "ART"})
 		s.update(t["id"], {"pillar": None})
+
+	def test_agent_profile_keys_and_owner_kind_are_validated(self):
+		owners = [{"name": "Omri", "kind": "human"}]
+		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*skills.*Allowed: docs, instructions, model, name, pillars, tags"):
+			self._store({"owners": owners, "agents": [{"name": "backend", "skills": ["x"]}]})
+		for kind in ("Human", None):
+			with self.assertRaisesRegex(TicketError, "owner Omri: kind must be"):
+				self._store({"owners": [{"name": "Omri", "kind": kind}]})
+		self._store({"owners": owners, "agents": [{"name": "backend", "model": "m", "instructions": "i"}]})
 
 	def test_config_legacy_files_and_bad_config(self):
 		(self.dir / "OLD.md").write_text("BUG-41 was here", encoding="utf-8")

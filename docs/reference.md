@@ -51,7 +51,7 @@ gets a derived `agent` (shown on its card, filterable in the bar).
 `work_plan` (MCP, `GET .../plan`, CLI `plan`) returns the ready tickets **not
 owned by a human**, grouped per profile with its `instructions` and `model`:
 everything an orchestrator needs to spawn one agent per group. A single agent
-asks `next_ready(agent="backend")` for its own queue.
+follows the `work_loop` prompt (`claim_next`); `next_ready(agent="backend")` only lists a profile's queue (MCP: without human-owned tickets, and a name matching no profile is refused).
 
 ## Agents at work: claims and the live view
 
@@ -59,7 +59,7 @@ Several agents can work one board at once without stepping on each other.
 Each worker uses a unique name (`backend-1`: profile + number) and loops:
 
 ```
-claim_next(agent)          -> best ready ticket for its profile, set to doing (or {ticket: null, reason, counts}: why nothing)
+claim_next(agent)          -> best ready ticket for its profile, set to doing (or {ticket: null, reason, counts, ids, orphaned}: why nothing, and which tickets)
 heartbeat(id, agent, note) -> "what I'm doing now", at least every few minutes
 complete(id, agent, summary)   or   release(id, agent, reason)
 ```
@@ -78,7 +78,7 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Too big? Split it** instead of half-doing it: `split_ticket(id, titles, sequential?)`
   (REST `POST tickets/<id>/split`, CLI `split`, drawer menu *Split…*) makes one child per
   title with the parent's pillar, owner, priority, tags, touches, docs and components, and the parent
-  now waits on all of them (your claim ends); then `claim_next`. *Do in order* chains the parts.
+  now waits on all of them (your claim ends); then `claim_next`. *Do in order* chains the parts. A ticket with open children is refused ("already split into ...": work those, or split one of them); once they are all done it can be split again.
 
 The board shows a **Working now** strip (agent, ticket, last note, how long
 ago; *quiet* when it's been silent a while), a pulsing line on claimed cards,
@@ -88,7 +88,7 @@ ignores itself in git.
 
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
-and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report.
+and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; reported, never claimable). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
 
 ## Knowledge: tickets come with their instructions
 
@@ -330,7 +330,7 @@ Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the packag
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
-start here; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `accept_ticket`,
+start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `accept_ticket`,
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
 `knowledge_graph`, `architecture_map`, `read_doc`, `attach_file`, `detach_file`; to edit the architecture `arch_add_component`, `arch_update_component`, `arch_delete_component`, `arch_set_edge`, `arch_remove_edge` (each takes `agent`; they rewrite only the managed parts of the notes, see Architecture; there is no CLI command for them). Every tool takes `board=`

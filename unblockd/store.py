@@ -127,6 +127,9 @@ class Conflict(TicketError):
 	"""update(expected_rev=) lost a race: the ticket was written after the caller read it (REST 409)."""
 
 
+AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs"}
+
+
 def load_config(tickets_dir: Path) -> dict:
 	"""DEFAULT_CONFIG overlaid with <tickets_dir>/unblockd.json when it exists."""
 	cfg = json.loads(json.dumps(DEFAULT_CONFIG))
@@ -160,6 +163,11 @@ def load_config(tickets_dir: Path) -> dict:
 			raise TicketError(f"{CONFIG_FILE}: each agent needs a name like backend (a-z, 0-9, - _)")
 		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", []) + ag.get("docs", [])):
 			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars and docs are lists of strings")
+		if set(ag) - AGENT_KEYS:
+			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: unknown key(s) {', '.join(sorted(set(ag) - AGENT_KEYS))}. Allowed: {', '.join(sorted(AGENT_KEYS))}")
+	for o in cfg["owners"]:
+		if o.get("kind") not in ("human", "agent"):
+			raise TicketError(f"{CONFIG_FILE}: owner {o['name']}: kind must be \"human\" or \"agent\" (got {o.get('kind')!r})")
 	if not (isinstance(cfg["docs"], list) and all(isinstance(x, str) for x in cfg["docs"])):
 		raise TicketError(f"{CONFIG_FILE}: docs is a list of repo paths")
 	if cfg["agent_tickets"] not in ("propose", "open"):
@@ -488,7 +496,7 @@ class Store:
 				msg = "ticket refused by the board schema: " + "; ".join(problems)
 				raise TicketError(msg[:400] + ("…" if len(msg) > 400 else "")
 				                  + (" (meanings: board_info; if none fits, ask_human, do not guess a near prefix)" if any(x.startswith("prefix") for x in problems) else ""))
-			t = self._create(data, tid, pre, proposed_by=agent if agent and self.config["agent_tickets"] == "propose" else "")
+			t = self._create(data, tid, pre, proposed_by=agent if agent and self.config["agent_tickets"] == "propose" else "", agent=agent)
 			return {**t, "warnings": problems} if problems else t
 		return self._locked(run)
 
@@ -508,7 +516,7 @@ class Store:
 			out.append("body is required (template: " + " / ".join(x for x in sc["body_template"].splitlines() if x.strip()) + ")")
 		return out
 
-	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), inherited_components: list[str] = (), proposed_by: str = "") -> dict:
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), inherited_components: list[str] = (), proposed_by: str = "", agent: str | None = None) -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -533,7 +541,7 @@ class Store:
 			t["asked_at"] = _now()
 		t["proposed_by"] = proposed_by
 		self._write(t)
-		self._log("created", tid, None, t["title"])
+		self._log("created", tid, agent, t["title"])
 		if proposed_by:
 			self._log("proposed", tid, proposed_by, t["title"])
 		return self.get(tid)
@@ -601,6 +609,9 @@ class Store:
 			self._holder_only(tid, by)
 			if parent["status"] == "done":
 				raise TicketError(f"{tid} is already done: split a ticket that is still open")
+			open_kids = [k for k in parent["children"] if self.get(k)["status"] != "done"]
+			if open_kids:
+				raise TicketError(f"{tid} is already split into {', '.join(open_kids)}: work those, or split one of them")
 			if not (isinstance(titles, list) and all(isinstance(x, str) for x in titles)):
 				raise TicketError("titles must be a list of strings, one per part")
 			titles_ = [x.strip() for x in titles if x.strip()]
@@ -656,7 +667,7 @@ class Store:
 		path.unlink()
 		self._drop_claim(tid, "ticket deleted")
 		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)  # attachments
-		self._log("deleted", tid, None, t["title"] + (f" (rejected: {reason.strip()})" if reason.strip() else ""))
+		self._log("deleted", tid, agent, t["title"] + (f" (rejected: {reason.strip()})" if reason.strip() else ""))
 		return {**t, "referenced_by": refs}  # still list it in blocked_by / parent: not edited, now dangling
 
 	# ---------- claims: which agent is working what, right now ----------
@@ -794,6 +805,33 @@ class Store:
 					return False
 		return True
 
+	def _unclaimable(self, t: dict, live: dict, by_id: dict) -> str:
+		"""Why _claimable said no, in words."""
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		if t.get("proposed_by"):
+			return f"it's a proposal by {t['proposed_by']} that a human has not accepted"
+		if t.get("waiting_on"):
+			return f"it's waiting on a human's answer ({t['waiting_on'][:80]})"
+		if t["open_blockers"]:
+			return "it's blocked by " + ", ".join(b["id"] if isinstance(b, dict) else b for b in t["open_blockers"])
+		if t["effective_status"] != "todo":
+			return f"it's {t['effective_status']}"
+		if t.get("owner") in humans:
+			return f"it's owned by {t['owner']} (a human)"
+		for other, c in live.items():
+			if any(_overlap(a, b) for a in t.get("touches", []) for b in by_id.get(other, {}).get("touches", [])):
+				return f"its touches overlap {other}, claimed by {c['agent']}"
+		return "it isn't ready"
+
+	def worker_profile(self, agent: str) -> str | None:
+		"""profile_of, but on a board with profiles a name matching none is refused (what claim and the MCP next_ready both want)."""
+		profile = self.profile_of(agent)
+		profiles = [a["name"] for a in self.config["agents"]]
+		if profiles and profile is None:
+			raise TicketError(f"worker {agent!r} matches no agent profile, so its tickets can't be routed: name workers <profile>-N "
+			                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1) or pass profile=<name>")
+		return profile
+
 	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "") -> dict | None:
 		"""Take a ticket for `agent` (a unique worker name, e.g. backend-1): the given one, or the best
 		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
@@ -802,10 +840,7 @@ class Store:
 			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. backend-1)")
 		profiles = [a["name"] for a in self.config["agents"]]
 		if profile is None:
-			profile = self.profile_of(agent)
-			if profiles and profile is None:
-				raise TicketError(f"worker {agent!r} matches no agent profile, so its tickets can't be routed: name workers <profile>-N "
-				                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1) or pass profile=")
+			profile = self.worker_profile(agent)
 		elif profile not in profiles:
 			raise TicketError(f"unknown profile {profile!r}: {', '.join(profiles) or 'none configured'}")
 
@@ -817,9 +852,7 @@ class Store:
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
 				if not self._claimable(t, live, by_id):
-					raise TicketError(f"{tid} can't be claimed: it's {t['effective_status']}"
-					                  + (f", owned by {t['owner']}" if t["effective_status"] == "todo" else "")
-					                  + " (or its touches overlap a live claim)")
+					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id)}")
 				pick = t
 			else:
 				ready = self.next_ready(limit=10_000, agent=profile)
@@ -846,7 +879,7 @@ class Store:
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "") -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
-		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}}.
+		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}, "ids": {same keys: [ticket ids]}, "orphaned": [doing ids with no live claim]}.
 		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
 		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
 		got = self.claim(agent, profile=profile, note=note)
@@ -855,22 +888,27 @@ class Store:
 		if profile is None:
 			profile = self.profile_of(agent)
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
-		counts = dict.fromkeys(("in_flight", "ready_conflicting", "in_review", "waiting_on_human", "blocked"), 0)
+		ids: dict[str, list[str]] = {k: [] for k in ("in_flight", "ready_conflicting", "in_review", "waiting_on_human", "blocked")}
+		orphaned = []
 		for t in self.list():
 			if t["status"] == "done" or (profile and t["agent"] != profile):
 				continue
 			if t["status"] == "doing":
-				counts["in_flight"] += 1
+				k = "in_flight"
+				if not t.get("claim"):
+					orphaned.append(t["id"])  # doing with no live claim: moved by hand, or the claim was lost (claims.json is not in git)
 			elif t["status"] == "review":
-				counts["in_review"] += 1
+				k = "in_review"
 			elif t.get("waiting_on") or t.get("proposed_by") or t.get("owner") in humans:
-				counts["waiting_on_human"] += 1
+				k = "waiting_on_human"
 			elif t["effective_status"] == "todo":
-				counts["ready_conflicting"] += 1
+				k = "ready_conflicting"
 			else:
-				counts["blocked"] += 1
+				k = "blocked"
+			ids[k].append(t["id"])
+		counts = {k: len(v) for k, v in ids.items()}
 		reason = "conflict" if counts["ready_conflicting"] else "waiting" if any(counts.values()) else "dry"
-		return {"ticket": None, "reason": reason, "counts": counts}
+		return {"ticket": None, "reason": reason, "counts": counts, "ids": ids, "orphaned": orphaned}
 
 	def attempts(self, tid: str, limit: int | None = None) -> list[dict]:
 		"""Failed claims on a ticket, newest first, from the activity log: [{agent, outcome: expired|released|rejected, at, note}]."""
