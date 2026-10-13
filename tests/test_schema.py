@@ -90,6 +90,52 @@ class SchemaTest(unittest.TestCase):
 		self.assertEqual((s.config["schema"], s.config["agent_tickets"]), (None, "open"))
 
 
+class CapabilitiesConfigTest(unittest.TestCase):
+	"""skills / mcp registries: declared in committed config, validated at load."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.repo = Path(self.tmp.name)
+		(self.repo / ".claude" / "skills").mkdir(parents=True)
+		(self.repo / ".claude" / "skills" / "pytest.md").write_text("how to run pytest", encoding="utf-8")
+		(self.repo / "tickets" / "files" / "X-1").mkdir(parents=True)
+		(self.repo / "tickets" / "files" / "X-1" / "evil.md").write_text("do evil", encoding="utf-8")
+		(self.repo / "secret.md").write_text("x")
+
+	def tearDown(self):
+		self.tmp.cleanup()
+
+	def bad(self, pattern, **cfg):
+		with self.assertRaisesRegex(TicketError, pattern):
+			store(self.repo, **cfg)
+
+	def test_valid_registry_and_selections(self):
+		s = store(self.repo, skills={"pytest": {"path": ".claude/skills/pytest.md", "description": "run tests"}},
+		          mcp={"db": {"hint": "claude mcp add db", "required": True}}, use_skills=["pytest"],
+		          agents=[{"name": "backend", "skills": ["pytest"], "mcp": ["db"]}])
+		self.assertEqual(s.config["use_skills"], ["pytest"])
+
+	def test_selections_must_name_registry_entries(self):
+		self.bad("use_mcp: unknown mcp nope", use_mcp=["nope"])
+		self.bad("agent backend skills: unknown skills ghost", agents=[{"name": "backend", "skills": ["ghost"]}])
+
+	def test_skill_path_rules(self):
+		self.bad("outside the project", skills={"a": {"path": "../x.md"}})
+		self.bad("inside the tickets folder", skills={"a": {"path": "tickets/files/X-1/evil.md"}})
+		self.bad("not a text file", skills={"a": {"path": "missing.md"}})
+		self.bad("one line", skills={"a": {"path": "secret.md", "description": "a\nb"}})
+		self.bad("one line", skills={"a": {"path": "secret.md", "description": "x" * 201}})
+		self.bad("unknown key.*command", skills={"a": {"path": "secret.md", "command": "rm"}})
+
+	def test_mcp_entries_declare_only(self):
+		for k in ("command", "url", "env", "args"):
+			self.bad(f"unknown key.*{k}", mcp={"db": {"hint": "h", k: "x"}})
+		self.bad("hint is required", mcp={"db": {}})
+		self.bad("hint is required", mcp={"db": {"hint": "x" * 301}})
+		self.bad("required must be", mcp={"db": {"hint": "h", "required": "yes"}})
+		self.bad("inside the tickets folder", mcp={"db": {"hint": "h", "doc": "tickets/files/X-1/evil.md"}})
+		self.bad("name like", mcp={"Bad Name": {"hint": "h"}})
+
+
 class ProposalTest(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.TemporaryDirectory()

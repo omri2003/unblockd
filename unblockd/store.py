@@ -42,6 +42,12 @@ DEFAULT_CONFIG = {
 	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
 	"architecture": "docs/arch",  # repo-relative folder of component notes (one .md per component, see knowledge.components); on when the folder exists, None = off
+	# Capabilities the agent harness provides. unblockd only DECLARES them (never starts a server, never stores a secret): the registry is the allow-list,
+	# agents[].skills/mcp, use_skills/use_mcp (every ticket on the board) and a ticket's skills/mcp field select from it by name.
+	"skills": {},  # {"pytest-runner": {"path": ".claude/skills/pytest-runner/SKILL.md", "description": "<= 200 chars, one line"}}
+	"mcp": {},  # {"postgres": {"hint": "claude mcp add ... (<= 300 chars, NEVER a credential)", "doc": "docs/mcp-postgres.md", "required": true}}
+	"use_skills": [],  # registry names every ticket on the board gets
+	"use_mcp": [],
 	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 	# What a new ticket must look like. None = anything goes. Agents are refused (every problem listed), humans get `warnings`.
@@ -90,6 +96,9 @@ FIELDS = {
 	"tags": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and TAG_RE.match(x) for x in v)),
 	# keys of the architecture notes (knowledge.components) this ticket changes: the explicit link, checked against the board's notes
 	"components": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x) <= 100 for x in v)),
+	# names from the board's `skills` / `mcp` registry (unblockd.json) this ticket needs, on top of the board's and its profile's
+	"skills": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x) <= 100 for x in v)),
+	"mcp": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x) <= 100 for x in v)),
 	# what complete() produced, for reviewers and downstream tickets (context().upstream): {summary, files, refs, handoff, by, at}
 	"result": (None, lambda v: v is None or (isinstance(v, dict) and set(v) <= RESULT_KEYS and isinstance(v.get("summary"), str)
 	                                          and all(_short_list(v.get(k, [])) for k in ("files", "refs")) and isinstance(v.get("handoff", ""), str) and len(v.get("handoff", "")) <= 2000)),
@@ -127,7 +136,8 @@ class Conflict(TicketError):
 	"""update(expected_rev=) lost a race: the ticket was written after the caller read it (REST 409)."""
 
 
-AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs"}
+AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp"}
+SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 
 def load_config(tickets_dir: Path) -> dict:
@@ -161,8 +171,8 @@ def load_config(tickets_dir: Path) -> dict:
 	for ag in cfg["agents"]:
 		if not (isinstance(ag, dict) and NAME_RE.match(str(ag.get("name", "")))):
 			raise TicketError(f"{CONFIG_FILE}: each agent needs a name like backend (a-z, 0-9, - _)")
-		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", []) + ag.get("docs", [])):
-			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars and docs are lists of strings")
+		if not all(isinstance(x, str) for x in ag.get("tags", []) + ag.get("pillars", []) + ag.get("docs", []) + ag.get("skills", []) + ag.get("mcp", [])):
+			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars, docs, skills and mcp are lists of strings")
 		if set(ag) - AGENT_KEYS:
 			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: unknown key(s) {', '.join(sorted(set(ag) - AGENT_KEYS))}. Allowed: {', '.join(sorted(AGENT_KEYS))}")
 	for o in cfg["owners"]:
@@ -173,10 +183,55 @@ def load_config(tickets_dir: Path) -> dict:
 	if cfg["agent_tickets"] not in ("propose", "open"):
 		raise TicketError(f"{CONFIG_FILE}: agent_tickets must be \"propose\" or \"open\"")
 	_check_schema(cfg["schema"])
+	_check_caps(cfg, Path(tickets_dir))
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
 		cfg["default_owner"] = (agents or [cfg["owners"][0]["name"]])[0]
 	return cfg
+
+
+def _check_caps(cfg: dict, tickets_dir: Path) -> None:
+	"""The skills / mcp registries and every list that selects from them (use_*, agents[].skills / mcp)."""
+	from .knowledge import _inside, _is_text  # lazy: knowledge imports this module
+	bad = lambda m: TicketError(f"{CONFIG_FILE}: {m}")
+	base, tdir = tickets_dir.resolve().parent, tickets_dir.resolve()
+
+	def path(what: str, rel) -> None:  # inside the project, an existing text file, NOT under the tickets folder (tickets/files/<ID>/ is writable by anyone with ticket access)
+		try:
+			p = _inside(base, rel)
+		except TicketError as e:
+			raise bad(f"{what}: {e}")
+		if p == tdir or tdir in p.parents:
+			raise bad(f"{what}: {rel!r} is inside the tickets folder, which tickets can write to; keep it in the repo, e.g. .claude/skills/")
+		if not (p.is_file() and _is_text(p)):
+			raise bad(f"{what}: {rel!r} is not a text file in the project")
+
+	for kind, keys in (("skills", SKILL_KEYS), ("mcp", MCP_KEYS)):
+		if not (isinstance(cfg[kind], dict) and all(NAME_RE.match(str(n)) and isinstance(e, dict) for n, e in cfg[kind].items())):
+			raise bad(f"{kind} must map a name like pytest-runner (a-z, 0-9, - _) to an object")
+		for n, e in cfg[kind].items():
+			if set(e) - keys:
+				raise bad(f"{kind} {n}: unknown key(s) {', '.join(sorted(set(e) - keys))}. Allowed: {', '.join(sorted(keys))} (unblockd declares, the agent harness loads: no command, url or env)")
+	for n, e in cfg["skills"].items():
+		path(f"skills {n}", e.get("path"))
+		d = e.get("description", "")
+		if not (isinstance(d, str) and len(d) <= 200 and len(d.splitlines()) <= 1):
+			raise bad(f"skills {n}: description must be one line of up to 200 characters")
+	for n, e in cfg["mcp"].items():
+		h = e.get("hint")
+		if not (isinstance(h, str) and h.strip() and len(h) <= 300 and len(h.splitlines()) <= 1):
+			raise bad(f"mcp {n}: hint is required: one line of up to 300 characters saying how to enable it (never a credential: every agent reads this config)")
+		if "doc" in e:
+			path(f"mcp {n} doc", e["doc"])
+		if not isinstance(e.get("required", False), bool):
+			raise bad(f"mcp {n}: required must be true or false")
+	picks = [("use_skills", cfg["use_skills"], "skills"), ("use_mcp", cfg["use_mcp"], "mcp")]
+	picks += [(f"agent {a['name']} {k}", a.get(k, []), k) for a in cfg["agents"] for k in ("skills", "mcp")]
+	for what, names, kind in picks:
+		if not (isinstance(names, list) and all(isinstance(x, str) for x in names)):
+			raise bad(f"{what} must be a list of {kind} names")
+		if (miss := [x for x in names if x not in cfg[kind]]):
+			raise bad(f"{what}: unknown {kind} {', '.join(miss)}. Registered: {', '.join(cfg[kind]) or 'none'} (the \"{kind}\" registry in {CONFIG_FILE})")
 
 
 def _check_schema(sc) -> None:
@@ -260,7 +315,7 @@ class Store:
 				v = v.strip()
 			if k == "tags" and isinstance(v, list):
 				v = list(dict.fromkeys(x.strip().lower() for x in v if isinstance(x, str) and x.strip()))
-			if k == "components" and isinstance(v, list):
+			if k in ("components", "skills", "mcp") and isinstance(v, list):
 				v = list(dict.fromkeys(x.strip() if isinstance(x, str) else x for x in v))
 			if k == "status" and v == "pending":
 				raise TicketError("status can't be set to pending: it is derived. A todo with an open blocker (blocked_by) or a waiting_on shows as pending; "
@@ -325,6 +380,13 @@ class Store:
 		if bad:
 			raise TicketError(f"unknown component(s) {', '.join(bad)}: this board's components are {', '.join(keys)} (the file names in its architecture folder)")
 
+	def _check_caps(self, clean: dict, old: dict) -> None:
+		"""Refuse skill / mcp names that are not in the board's registry, unless already on the ticket (an entry removed later keeps it editable)."""
+		for k in ("skills", "mcp"):
+			bad = [x for x in clean.get(k, []) if x not in old.get(k, []) and x not in self.config[k]]
+			if bad:
+				raise TicketError(f"unknown {k} {', '.join(bad)}: this board's {k} are {', '.join(self.config[k]) or 'none (register them in ' + CONFIG_FILE + ')'}")
+
 	def _check_parent(self, tid: str, parent: str | None) -> None:
 		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor."""
 		if parent is None:
@@ -383,7 +445,7 @@ class Store:
 				except ValueError:
 					stale = None
 			ks = kids.get(t["id"], [])
-			out.append({**t, "parent": t.get("parent"), "components": t.get("components", []), "children": [k["id"] for k in ks],
+			out.append({**t, "parent": t.get("parent"), "components": t.get("components", []), "skills": t.get("skills", []), "mcp": t.get("mcp", []), "children": [k["id"] for k in ks],
 			            "progress": {"done": sum(k.get("status") == "done" for k in ks), "total": len(ks)},
 			            "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
@@ -418,7 +480,7 @@ class Store:
 		out = []
 		for ag in self.config["agents"]:
 			mine = [t for t in ready if t["agent"] == ag["name"]]
-			out.append({**ag, "ready": len(mine), "tickets": mine[:max(0, int(per_agent))]})
+			out.append({**ag, "skills": ag.get("skills", []), "mcp": ag.get("mcp", []), "ready": len(mine), "tickets": mine[:max(0, int(per_agent))]})
 		unrouted = [t for t in ready if t["agent"] is None]
 		return {"agents": out, "unrouted": unrouted[:max(0, int(per_agent))], "unrouted_count": len(unrouted)}
 
@@ -516,7 +578,7 @@ class Store:
 			out.append("body is required (template: " + " / ".join(x for x in sc["body_template"].splitlines() if x.strip()) + ")")
 		return out
 
-	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), inherited_components: list[str] = (), proposed_by: str = "", agent: str | None = None) -> dict:
+	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), inherited_caps: dict = {}, inherited_components: list[str] = (), proposed_by: str = "", agent: str | None = None) -> dict:
 		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
@@ -528,6 +590,7 @@ class Store:
 		self._check_loop(tid, clean.get("blocked_by", []))
 		self._check_parent(tid, clean.get("parent"))
 		self._check_components(clean.get("components", []), inherited_components)
+		self._check_caps(clean, inherited_caps)
 		today = date.today().isoformat()
 		t = {"id": tid}
 		for k, (default, _) in FIELDS.items():
@@ -570,6 +633,7 @@ class Store:
 			self._check_components(clean["components"], t.get("components", []))
 		if agent and self.profile_of(agent) and clean.get("status") in ("doing", "done", "review") and clean["status"] != t.get("status"):
 			raise TicketError(f"a worker can't set status {clean['status']}: use claim_ticket / complete / ask_human")
+		self._check_caps(clean, t)
 		if clean.get("status") == "doing" and t.get("status") != "doing":
 			if t.get("proposed_by"):
 				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
@@ -630,11 +694,11 @@ class Store:
 			for x in titles_:  # validate everything before creating anything
 				self._clean({"title": x}, partial=True)
 			prefix = tid.split("-")[0]
-			keep = {k: parent[k] for k in ("pillar", "owner", "priority", "tags", "touches", "docs", "components") if k in parent}
+			keep = {k: parent[k] for k in ("pillar", "owner", "priority", "tags", "touches", "docs", "components", "skills", "mcp") if k in parent}
 			kids: list[dict] = []
 			for x in titles_:
 				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
-				kids.append(self._create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix, inherited=parent["blocked_by"], inherited_components=parent.get("components", [])))
+				kids.append(self._create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix, inherited=parent["blocked_by"], inherited_components=parent.get("components", []), inherited_caps=parent))
 			ids = [k["id"] for k in kids]
 			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
 			if parent["status"] == "doing":

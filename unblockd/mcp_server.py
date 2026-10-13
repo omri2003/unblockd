@@ -118,7 +118,7 @@ def create_board(id: str, title: str = "") -> dict:
 def board_info(board: str | None = None) -> dict:
 	"""A board's settings: title, owners, pillars, agent profiles (name, tags, pillars, model,
 	instructions), stale_days, the ticket rules: `schema` (prefixes with meanings, required fields, tags, body template) and `agent_tickets`,
-	and `components` [{key, title}] when it has an architecture (the keys `components` on tickets take)."""
+	`components` [{key, title}] when it has an architecture (the keys `components` on tickets take), and the `skills` / `mcp` registries (names `skills` / `mcp` on tickets take)."""
 	store = BOARDS.get(board)
 	info = dict(store.config)
 	comps = kn.components(store)["components"]
@@ -178,18 +178,20 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
-                  done_when: list[str] | None = None, components: list[str] | None = None) -> dict:
+                  done_when: list[str] | None = None, components: list[str] | None = None,
+                  skills: list[str] | None = None, mcp: list[str] | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). agent = your worker name. Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
 	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each),
 	components = keys of the architecture components (board_info / architecture_map) the work changes: set them, they link the ticket to its notes and the Map (refused when the board has no architecture or the key is unknown).
+	skills / mcp = names from board_info's `skills` / `mcp` registry this ticket needs beyond the board's and its profile's (unknown names are refused).
 	Read board_info first: its `schema` (allowed prefixes with meanings, required fields, allowed tags, body template) is enforced for you and a
 	break is refused with every problem listed; if no prefix fits, ask_human, do not guess a near one. With `agent_tickets: "propose"` the
 	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
-	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or []}
+	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or [], "skills": skills or [], "mcp": mcp or []}
 	return store.create(data, tid=id, prefix=prefix, agent=agent)
 
 
@@ -204,14 +206,14 @@ def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) 
 	"""Change fields of a ticket. agent = your worker name: you can't change a
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
 	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, components (list of architecture component keys the work changes), waiting_on, body."""
+	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
 	return BOARDS.get(board).update(id, changes, agent=agent)
 
 
 @tool
 def split_ticket(id: str, titles: list[str], agent: str, sequential: bool = False, board: str | None = None) -> dict:
 	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it, then
-	claim_next. One child per title (pillar, owner, priority, tags, touches, docs, components copied); the parent
+	claim_next. One child per title (pillar, owner, priority, tags, touches, docs, components, skills, mcp copied); the parent
 	then waits on all of them. sequential=true makes each part wait on the one before. If you hold the
 	claim, the parent goes back to todo and your claim ends. agent = your worker name (a ticket another agent holds can't be split). Returns {parent, children}."""
 	return BOARDS.get(board).split(id, titles, sequential=sequential, by=agent)

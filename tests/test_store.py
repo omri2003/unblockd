@@ -300,6 +300,37 @@ class DerivedTest(unittest.TestCase):
 		self.assertEqual(self.s.next_ready(owner="Me"), [])
 
 
+class CapabilityFieldsTest(unittest.TestCase):
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		(Path(self.tmp.name) / "sk.md").write_text("skill", encoding="utf-8")
+		d = Path(self.tmp.name) / "tickets"
+		d.mkdir()
+		self.cfg = {"skills": {"a": {"path": "sk.md"}, "b": {"path": "sk.md"}}, "mcp": {"db": {"hint": "h"}}}
+		(d / "unblockd.json").write_text(json.dumps(self.cfg), encoding="utf-8")
+		self.d, self.s = d, Store(d)
+
+	def tearDown(self):
+		self.tmp.cleanup()
+
+	def test_names_are_checked_against_the_registry(self):
+		t = self.s.create({"title": "x", "skills": ["a", "a"], "mcp": ["db"]}, prefix="BUG")
+		self.assertEqual((t["skills"], t["mcp"]), (["a"], ["db"]))
+		with self.assertRaisesRegex(TicketError, "unknown skills zzz: this board's skills are a, b"):
+			self.s.update("BUG-1", {"skills": ["zzz"]})
+		with self.assertRaisesRegex(TicketError, "unknown mcp x"):
+			self.s.create({"title": "y", "mcp": ["x"]}, prefix="BUG")
+		self.assertEqual(self.s.create({"title": "plain"}, prefix="BUG")["skills"], [])  # old tickets / no selection
+
+	def test_removed_registry_entry_keeps_the_ticket_editable_and_split_copies(self):
+		self.s.create({"title": "big", "skills": ["a"], "mcp": ["db"]}, prefix="BUG")
+		(self.d / "unblockd.json").write_text(json.dumps({"skills": {"b": {"path": "sk.md"}}}), encoding="utf-8")
+		s = Store(self.d)  # "a" and "db" are gone from the registry
+		s.update("BUG-1", {"skills": ["a", "b"], "title": "bigger"})
+		kids = s.split("BUG-1", ["one", "two"])["children"]
+		self.assertEqual([(k["skills"], k["mcp"]) for k in kids], [(["a", "b"], ["db"])] * 2)
+
+
 class CliTest(unittest.TestCase):
 	def test_create_note_update_list(self):
 		import io, contextlib, json
@@ -320,6 +351,22 @@ class CliTest(unittest.TestCase):
 			self.assertEqual([x["id"] for x in ls], ["BUG-1"])
 			with contextlib.redirect_stderr(io.StringIO()):
 				self.assertEqual(call("update", "BUG-1", "--json", '{"status": "maybe"}')[0], 1)
+
+	def test_skill_and_mcp_flags(self):
+		import io, contextlib
+		from unblockd import cli
+		with tempfile.TemporaryDirectory() as d:
+			(Path(d) / "sk.md").write_text("s", encoding="utf-8")
+			(Path(d) / "tickets").mkdir()
+			(Path(d) / "tickets" / "unblockd.json").write_text(json.dumps({"skills": {"a": {"path": "sk.md"}, "b": {"path": "sk.md"}}, "mcp": {"db": {"hint": "h"}}}))
+			def call(*a):
+				buf = io.StringIO()
+				with contextlib.redirect_stdout(buf):
+					self.assertEqual(cli.main(["--dir", str(Path(d) / "tickets"), *a]), 0)
+				return json.loads(buf.getvalue())
+			t = call("create", "--prefix", "BUG", "--title", "x", "--skill", "a", "--skill", "b", "--mcp", "db")
+			self.assertEqual((t["skills"], t["mcp"]), (["a", "b"], ["db"]))
+			self.assertEqual(call("update", "BUG-1", "--skill", "b")["skills"], ["b"])  # sets, does not add
 
 
 
@@ -355,8 +402,8 @@ class ConfigTest(unittest.TestCase):
 
 	def test_agent_profile_keys_and_owner_kind_are_validated(self):
 		owners = [{"name": "Omri", "kind": "human"}]
-		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*skills.*Allowed: docs, instructions, model, name, pillars, tags"):
-			self._store({"owners": owners, "agents": [{"name": "backend", "skills": ["x"]}]})
+		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*effort.*Allowed: docs, instructions, mcp, model, name, pillars, skills, tags"):
+			self._store({"owners": owners, "agents": [{"name": "backend", "effort": "x"}]})
 		for kind in ("Human", None):
 			with self.assertRaisesRegex(TicketError, "owner Omri: kind must be"):
 				self._store({"owners": [{"name": "Omri", "kind": kind}]})
