@@ -1318,6 +1318,7 @@ function linkList(ids){
   return '<ul class="links">'+ids.map(id=>{const t=BY.get(id);if(!t)return `<li><span class="none">${esc(id)} (no such ticket)</span></li>`;
     return `<li><button type="button" data-open="${esc(id)}"><span class="tid">${esc(id)}</span><span class="status ${t.effective_status}">${NAME[t.effective_status]}</span><span class="lt">${inline(t.title)}</span></button></li>`;}).join('')+'</ul>';
 }
+const partsHtml=t=>t.children?.length?`<h3>Parts${t.progress?.total?` <span class="prog" title="${t.progress.done} of ${t.progress.total} parts done"><i><b style="width:${100*t.progress.done/t.progress.total}%"></b></i>${t.progress.done}/${t.progress.total}</span>`:''}</h3>${linkList(t.children)}`:'';
 const ID_RE=/(^|[^:\w])([A-Z][A-Z0-9]*|\d[A-Z])-(\d+[a-z]?)/g;
 // Escape first, always. Code spans and links are lifted out into placeholders (so nothing inside them is re-processed), then the rest is escaped and decorated.
 function md(src){
@@ -1367,10 +1368,11 @@ async function submitSplit(f){
 function showTicket(id,refresh){
   const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
-  const s=t.effective_status;
+  const s=t.effective_status,DB=`data-board="${esc(curBoard())}" data-id="${esc(t.id)}"`;
   const why=s==='pending'?(t.proposed_by?`Proposal by ${t.proposed_by}`:t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
-  const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
+  const par=t.parent&&BY.get(t.parent),
+  dm=[par?`<span>Part of <button type="button" class="idlink" data-open="${esc(par.id)}">${esc(par.id)}</button> ${inline(par.title)}</span>`:'',t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     ...(tcomps(t).length?['<span>Components:</span>',...tcomps(t).map(k=>`<button type="button" class="cchip${(t.components||[]).includes(k)?'':' der'}" data-mapcomp="${esc(k)}" title="${(t.components||[]).includes(k)?'Open on the map':'Derived from this ticket\'s touches. Open on the map'}">${esc(ctitle(k))}</button>`)]:[]),
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.skills||[]).map(x=>`<span class="tag" title="Skill">skill: ${esc(x)}</span>`),...(t.mcp||[]).map(x=>`<span class="tag" title="MCP server">mcp: ${esc(x)}</span>`),...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
@@ -1383,12 +1385,13 @@ function showTicket(id,refresh){
     ${(t.status!=='done'&&((t.missing_blockers||[]).length||(t.stale_days!=null&&t.stale_days>=STALE)))?`<div class="dwarn">${(t.missing_blockers||[]).length?`<span class="miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:''}${t.stale_days>=STALE?`<span class="stale">No update for ${t.stale_days} days</span>`:''}</div>`:''}
     ${t.claim?`<div class="wk" style="font-size:.9rem"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''} is working on this (since ${esc(ago(t.claim.claimed_at))}, last heard ${esc(ago(t.claim.heartbeat_at))})${t.claim.note?`: “${esc(t.claim.note)}”`:''}</div>`:''}
     ${SPLIT===t.id?splitForm(t):''}
-    ${t.proposed_by?`<h3>Proposal</h3><p class="nd-q">${esc(t.proposed_by)} suggested this ticket. It is not ready, and no agent can claim it, until you accept it. To reject it, delete it.</p><button type="button" class="btn sm" data-accept data-board="${esc(curBoard())}" data-id="${esc(t.id)}">Accept</button>`:''}
+    ${t.proposed_by?`<h3>Proposal</h3><p class="nd-q">${esc(t.proposed_by)} suggested this ticket. It is not ready, and no agent can claim it, until you accept it. Rejecting deletes it.</p><form class="nd-f" data-nform="drop" ${DB}><button type="button" class="btn sm" data-accept ${DB}>Accept</button>${draftField('x:'+curBoard()+'/'+t.id,'','Reject reason (optional)…','textarea')}<button class="btn ghost sm" type="submit">Reject</button></form>`:''}
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
-    ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
+    ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}<form class="nd-f" data-nform="reject" ${DB}><button type="button" class="btn sm" data-approve ${DB}>Approve</button>${draftField('r:'+curBoard()+'/'+t.id,'','Reject reason…','textarea')}<button class="btn ghost sm" type="submit">Reject</button></form>`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}`:''}
+    ${partsHtml(t)}
     <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}

@@ -203,6 +203,17 @@ try {
 		ok((await page.locator('.card').count()) === 2, `[${tag}] Parent filter should leave the 2 parts`);
 		await page.click('#pills [data-parent]');
 		await page.click('#fpanel > summary');
+		{ // the parent's drawer lists its parts with the progress bar; a part's "Part of" link opens the parent
+			await page.evaluate(() => document.querySelector('[data-open="DOC-1"]').click()); await visible('#drawer #dTitle', 'parent drawer');
+			const parts = '#drawer h3:has(.prog) + ul.links';
+			ok((await page.locator(`${parts} li`).count()) === 2 && await page.locator('#drawer h3 .prog').count(), `[${tag}] parent drawer should list 2 parts and a progress bar`);
+			const ptitle = await page.locator('#drawer #dTitle').innerText();
+			await page.click(`${parts} li button`); await page.waitForFunction((t) => document.querySelector('#drawer #dTitle')?.textContent !== t, ptitle);
+			await page.click('#drawer .dmeta [data-open="DOC-1"]'); await page.waitForFunction((t) => document.querySelector('#drawer #dTitle')?.textContent === t, ptitle);
+			await noOverflow('drawer with parts');
+			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/parts-drawer-${w}-${theme}.png` });
+			await page.click('#drawer [data-close]');
+		}
 
 		{ // Components: filter (explicit OR derived), Group by (two lanes), picker, bulk add, drawer chip -> Map, Map -> board
 			await page.waitForFunction(() => !document.getElementById('compSeg').hidden); // /architecture has arrived
@@ -413,6 +424,21 @@ try {
 			if (hd && ht) ok(hd.height < ht.height / 2, `[${tag}] done card (${hd.height}px) should be under half a To do card (${ht.height}px)`);
 		}
 		ok((await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), rid)).result.approved_by === 'human', `[${tag}] Approve should record the approver (human when I am is not set)`);
+		{ // Approve / Reject from the drawer (same handlers, same draft key as the panel); own review tickets, so the panel checks around it stay as they are
+			const mk = (title) => { const id = JSON.parse(cli('create', '--prefix', 'NY', '--title', title, '--json', '{"owner":"Claude"}')).id; cli('claim', '--agent', 'backend-1', '--id', id); cli('complete', id, '--agent', 'backend-1', '--summary', 'done it'); cli('update', id, '--json', '{"status":"review"}'); return id; };
+			const st = async (id) => (await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), id));
+			const open = async (id) => { await page.keyboard.press('Escape'); await page.waitForFunction((i) => document.querySelector(`.col.review [data-open="${i}"]`), id); await page.evaluate((i) => document.querySelector(`[data-open="${i}"]`).click(), id); await visible('#drawer [data-nform=reject]', 'drawer reject form'); };
+			const aid = mk('approve me'), xid = mk('reject me');
+			await open(aid); await noOverflow('review drawer with decide');
+			await page.click('#drawer [data-approve]'); await page.waitForFunction(() => /Approved/.test(document.querySelector('#toasts')?.textContent || ''));
+			ok(await page.waitForSelector('#toasts button:has-text("Undo")', { timeout: 3000 }).then(() => true, () => false) && (await st(aid)).status === 'done', `[${tag}] Approve from the drawer: done, with Undo`);
+			await open(xid);
+			await page.fill('#drawer [data-nform=reject] textarea', 'needs tests'); await page.click('#drawer [data-nform=reject] button[type=submit]');
+			for (let n = 0; n < 50 && (await st(xid)).status !== 'todo'; n++) await page.waitForTimeout(100);
+			ok((await st(xid)).body.includes('Rejected: needs tests'), `[${tag}] Reject from the drawer: back to To do with the reason in the body`);
+			cli('delete', aid); cli('delete', xid);
+			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .nr', 'panel back');
+		}
 		// answer the other board's question from here: no board switch
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
