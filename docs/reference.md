@@ -49,7 +49,7 @@ gets a derived `agent` (shown on its card, filterable in the bar).
 ```
 
 `work_plan` (MCP, `GET .../plan`, CLI `plan`) returns the ready tickets **not
-owned by a human**, grouped per profile with its `instructions` and `model`:
+owned by a human**, grouped per profile with its `instructions`, `model`, `skills` and `mcp`:
 everything an orchestrator needs to spawn one agent per group. A single agent
 follows the `work_loop` prompt (`claim_next`); `next_ready(agent="backend")` only lists a profile's queue (MCP: without human-owned tickets, and a name matching no profile is refused).
 
@@ -155,6 +155,24 @@ One paragraph: what this component is.
 - The ticket's `context` then carries those notes in full (source `component:<key>`) plus `architecture`: `{"components": [keys], "neighbours": [{"key", "title", "path", "dir", "trust": "untrusted", "text", "summary"}], "others": [keys]}`, one contract line for each edge (`text` and `summary` are wrapped in `<untrusted>` tags like any note content) to a 1-hop neighbour (`dir` `out` = the ticket's note links to it, `in` = its note links to the ticket's) and only the names of everything else. Whole-architecture dumps hurt agents; the neighbours' contracts are what they need before changing an edge. `WORK_LOOP.md` tells workers to read them and to update the Connections line in the same commit when they change what crosses an edge.
 - `GET /architecture` and MCP `architecture_map`: `{folder, components: [{key, path, title, summary, paths, tickets, counts: {todo, pending, doing, review}}], edges: [{from, to, text}], broken_links, ticket_map: {open id: [keys]}, problems: {no_contract: [{from, to}], dead_paths: [{key, glob}], broken_links, cross: [{ticket, components}]}}`. `cross` = open tickets on two or more components (blast radius). A folder that does not exist yet gives `folder` and no components (no error; the first `POST architecture/components` creates it); a folder outside the project gives an `error` string; `folder: null` = off.
 
+## Skills and MCP servers
+
+unblockd **declares** what a worker should have; the agent harness (Claude Code, your orchestrator) **loads** it. unblockd never starts, installs or probes a server and never stores a secret. One committed registry in `unblockd.json` is the allow-list; everything else selects from it by name, so a ticket (UI form, agent proposal) can only point at what the board already vouches for.
+
+```json
+{
+  "skills": {"pytest-runner": {"path": ".claude/skills/pytest-runner/SKILL.md", "description": "Run and read the test suite (one line, <= 200 chars)"}},
+  "mcp": {"postgres": {"hint": "claude mcp add postgres -- <command> (see docs/mcp-postgres.md)", "doc": "docs/mcp-postgres.md", "required": true}},
+  "use_skills": ["pytest-runner"],
+  "agents": [{"name": "backend", "skills": ["pytest-runner"], "mcp": ["postgres"]}]
+}
+```
+
+- **Registry rules** (checked when the config loads): a skill `path` is a text file inside the project and **not** under the tickets folder (`tickets/files/<ID>/` is writable by anyone who can attach a file); an `mcp` entry has only `hint` (one line, <= 300 chars), optional `doc` (a project path) and `required` (bool): no command, URL or env. Every agent can read this config through `board_info`, so **never put credentials in `hint`**.
+- **Levels**: `use_skills` / `use_mcp` = every ticket on the board; `agents[].skills` / `mcp` = tickets routed to that profile; a ticket's own `skills` / `mcp` (Edit form pickers, `--skill` / `--mcp` on the CLI, `create_ticket` / `update_ticket` in MCP) = just that ticket. They add up, deduped by name; a ticket cannot remove a board-level entry. Names removed from the registry later stay on old tickets and are ignored. `split` copies them.
+- **In the claim**: `context.capabilities` = `{skills: [{name, description, path, source: board|profile|ticket, trust: "trusted"}], mcp: [{name, hint, doc, required, source}]}`. Descriptors only: a worker reads a skill with `read_doc(path)` when it needs it. At most 8 of each, the rest named under `more`. Absent when nothing applies. `context.profile` = `{name, instructions, model}` of the routed profile. `work_plan` groups list each profile's `skills` / `mcp`.
+- **Enforcement lives in the harness**: the work loop tells a worker that if a `required` MCP server is missing from its tools it must `release` the ticket with the reason `missing capability <name>` before spending the lease.
+
 ## Chat: ask about tickets and boards
 
 **Ask** (or `c`) opens a chat beside the board. Claude answers with read-only
@@ -220,6 +238,8 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `docs` | Knowledge every ticket on the board comes with, see Knowledge. |
 | `architecture` | Repo folder of component notes (default `docs/arch`, on when the folder exists; `null` = off), see Architecture. |
 | `context_budget` | Characters of docs inlined per ticket context (default 60000); the rest is listed. |
+| `skills`, `mcp` | Registries of the skills and MCP servers your agent harness provides, see Skills and MCP servers. Default `{}`. |
+| `use_skills`, `use_mcp` | Registry names every ticket on the board gets (default `[]`). A profile (`agents[].skills` / `mcp`) and a ticket (`skills` / `mcp`) add more. |
 | `schema` | Optional rules for new tickets, see below. Default `null`: anything goes. |
 | `agent_tickets` | `"open"` (default): agents create ready tickets. `"propose"`: a ticket an agent creates is a proposal until a human accepts it; turn it on for boards where several people or agents create work you want to vet. |
 
@@ -248,7 +268,7 @@ Every key is optional. `prefixes` maps a prefix to a one-line meaning (80 chars)
 ```json
 {"id": "BUG-10", "title": "Search ignores accents", "status": "todo", "priority": "P1",
  "owner": "Claude", "pillar": "COMBAT", "pillar_step": 1, "section": "",
- "blocked_by": ["CMB-4"], "tags": ["gdscript"], "touches": ["scripts/demon_3d.gd"], "components": ["combat"], "waiting_on": "", "body": "cause -> fix -> tests",
+ "blocked_by": ["CMB-4"], "tags": ["gdscript"], "touches": ["scripts/demon_3d.gd"], "components": ["combat"], "skills": ["pytest-runner"], "mcp": [], "waiting_on": "", "body": "cause -> fix -> tests",
  "rev": 1, "created": "2026-10-03", "updated": "2026-10-03"}
 ```
 
@@ -373,7 +393,7 @@ python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 -
 python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests"
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
-python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store
+python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store --skill pytest-runner --mcp postgres   # names from the board's registry
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent backend-1   # as a worker: strict schema, may park as a proposal
 python -m unblockd.cli --dir <repo>/tickets accept BUG-11 --by omri
 python -m unblockd.cli --dir <repo>/tickets split BUG-10 --title "part one" --title "part two" --sequential

@@ -49,5 +49,16 @@
       "instructions": "Stdlib only; add a test for every endpoint."
     }
   ],
-  "architecture": "docs/arch"
+  "architecture": "docs/arch",
+  "skills": {
+    "agent-policy": {
+      "path": "AGENT_POLICY.md",
+      "description": "How to work on this project: tests, commits, when to ask."
+    }
+  },
+  "mcp": {
+    "browser": {
+      "hint": "Needs a headless browser MCP server in your harness, e.g. claude mcp add playwright."
+    }
+  }
 }

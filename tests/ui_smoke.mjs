@@ -236,9 +236,19 @@ try {
 			await page.fill('#f-comp .pq', 'REST'); await page.keyboard.press('Enter');
 			ok((await page.locator('#f-comp .pc[data-id="api"]').innerText()).startsWith('REST API'), `[${tag}] chip shows the title, value is the key`);
 			await noOverflow('component picker');
+			await page.fill('#f-skills .pq', 'zzz-nothing'); await visible('#f-skills .pl .none', 'skill picker no-match row'); // closed list: registry names only
+			await page.keyboard.press('Enter');
+			ok((await page.locator('#f-skills .pc').count()) === 0, `[${tag}] no free text can become a skill`);
+			await page.fill('#f-skills .pq', 'policy'); await page.keyboard.press('Enter');
+			await page.fill('#f-mcp .pq', 'brow'); await page.keyboard.press('Enter');
+			ok((await page.locator('#f-skills .pc').evaluateAll(c => c.map(x => x.dataset.id))).join() === 'agent-policy', `[${tag}] skill chip is the registry name`);
 			await page.click('#editForm button[type="submit"]');
 			await visible('#toasts .toast:has-text("Saved UI-2")', 'save with components');
 			ok(JSON.parse(cli('get', 'UI-2')).components.join() === 'api', `[${tag}] the picker should set components`);
+			const u2 = JSON.parse(cli('get', 'UI-2'));
+			ok(u2.skills.join() === 'agent-policy' && u2.mcp.join() === 'browser', `[${tag}] the pickers should set skills and mcp`);
+			await visible('#drawer .tag:has-text("skill: agent-policy")', 'skill chip in the drawer');
+			cli('update', 'UI-2', '--json', '{"skills":[],"mcp":[]}');
 			await visible('#drawer [data-mapcomp="api"]:not(.der)', 'explicit chip after save');
 			cli('update', 'UI-2', '--json', '{"components":[]}');
 			await page.keyboard.press('Escape');

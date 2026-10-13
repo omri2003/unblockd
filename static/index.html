@@ -737,7 +737,7 @@ const flash=new Map(); // ticket id -> when it became ready, for the board's one
 const pickChip=(id,l=id)=>`<span class="pc" data-id="${esc(id)}">${esc(l)}<button type="button" data-pkrm aria-label="Remove ${esc(l)}">×</button></span>`;
 const pickIds=id=>[...$(id).querySelectorAll('.pc')].map(c=>c.dataset.id);
 // o.comp: the same picker over the architecture's components (chip = title, value = key) for a ticket's `components`
-const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''} ${o.comp?'data-comp-pick="1"':''} ${o.one?'data-one="1"':''} ${o.free?`data-free="${o.free}"`:''} ${o.ws?'data-ws="1"':''} ${o.pdraft?`data-pdraft="${esc(o.pdraft)}"`:''}><span class="pcs">${o.free?sel.map(x=>pickChip(x)).join(''):o.comp?sel.filter(k=>COMPS().some(c=>c.key===k)).map(k=>pickChip(k,ctitle(k))).join(''):sel.filter(x=>BY.has(x)).map(x=>pickChip(x)).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.comp?'Search components…':o.ph||'Search id or title…'}" aria-label="${o.label||(o.comp?'Components: search':(o.ph?'Parent':'Blocked by')+': search tickets')}"><ul class="pl" hidden></ul></div>`;
+const pickHtml=(id,sel,o={})=>`<div class="pick" id="${id}" data-skip="${esc(o.skip||'')}" ${o.single?'data-single="1"':''} ${o.none?'data-none="1"':''} ${o.comp?'data-comp-pick="1"':''} ${o.reg?`data-reg="${o.reg}"`:''} ${o.one?'data-one="1"':''} ${o.free?`data-free="${o.free}"`:''} ${o.ws?'data-ws="1"':''} ${o.pdraft?`data-pdraft="${esc(o.pdraft)}"`:''}><span class="pcs">${o.free?sel.map(x=>pickChip(x)).join(''):o.reg?sel.filter(k=>k in (CFG[o.reg]||{})).map(k=>pickChip(k)).join(''):o.comp?sel.filter(k=>COMPS().some(c=>c.key===k)).map(k=>pickChip(k,ctitle(k))).join(''):sel.filter(x=>BY.has(x)).map(x=>pickChip(x)).join('')}</span><input class="pq" role="combobox" autocomplete="off" placeholder="${o.reg?'Search '+(o.reg==='mcp'?'MCP servers':'skills')+'…':o.comp?'Search components…':o.ph||'Search id or title…'}" aria-label="${o.label||(o.reg?(o.reg==='mcp'?'MCP servers':'Skills')+': search':o.comp?'Components: search':(o.ph?'Parent':'Blocked by')+': search tickets')}"><ul class="pl" hidden></ul></div>`;
 // Suggestions for the free pickers (docs, touches, tags). FILES = GET /files, fetched when the form opens.
 let FILES={b:null,files:[],truncated:false};
 const dirsOf=fs=>[...new Set(fs.flatMap(f=>f.split('/').slice(0,-1).map((_,i,a)=>a.slice(0,i+1).join('/')+'/')))].sort();
@@ -753,6 +753,11 @@ function pickList(box){
     const m=SUG[box.dataset.free]().filter(x=>!have.has(x)&&x.toLowerCase().includes(q)).sort((a,b)=>b.toLowerCase().startsWith(q)-a.toLowerCase().startsWith(q)).slice(0,8);
     ul.innerHTML=m.map(x=>`<li data-pk="${esc(x)}">${esc(x)}</li>`).join('')+(q&&!m.includes(q)&&!have.has(q)?`<li class="none">Enter adds “${esc(q)}”</li>`:m.length?'':'<li class="none">Nothing to suggest; type a value and press Enter</li>')+(FILES.truncated&&box.dataset.free!=='tags'?`<li class="none">Showing the first ${FILES.files.length} files; type more of the path</li>`:'');
     ul.hidden=false; return; // no row is pre-selected: Enter adds what was typed, ArrowDown picks a suggestion
+  }
+  if(box.dataset.reg){ // skills / mcp: names from the board's registry (unblockd.json), no free text
+    const R=CFG[box.dataset.reg]||{}, m=Object.keys(R).filter(k=>!have.has(k)&&(k+' '+(R[k].description||R[k].hint||'')).toLowerCase().includes(q));
+    ul.innerHTML=m.map(k=>`<li data-pk="${esc(k)}"><b>${esc(k)}</b>${esc(R[k].description||R[k].hint||'')}</li>`).join('')||'<li class="none">No matching entry</li>';
+    ul.hidden=false; ul.querySelector('[data-pk]')?.classList.add('on'); return;
   }
   if(box.dataset.compPick){ // components: by title + key, no free text
     const m=COMPS().filter(c=>!have.has(c.key)&&(c.title+' '+c.key).toLowerCase().includes(q));
@@ -1365,7 +1370,7 @@ function showTicket(id,refresh){
   const dm=[t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     ...(tcomps(t).length?['<span>Components:</span>',...tcomps(t).map(k=>`<button type="button" class="cchip${(t.components||[]).includes(k)?'':' der'}" data-mapcomp="${esc(k)}" title="${(t.components||[]).includes(k)?'Open on the map':'Derived from this ticket\'s touches. Open on the map'}">${esc(ctitle(k))}</button>`)]:[]),
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
-    t.section?`<span>${esc(t.section)}</span>`:'',...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
+    t.section?`<span>${esc(t.section)}</span>`:'',...(t.skills||[]).map(x=>`<span class="tag" title="Skill">skill: ${esc(x)}</span>`),...(t.mcp||[]).map(x=>`<span class="tag" title="MCP server">mcp: ${esc(x)}</span>`),...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
     t.waiting_on&&!why?`<span>${t.asked_by?'Question from '+esc(t.asked_by):'Parked: '+esc(t.waiting_on)}</span>`:'',`<span>Updated ${esc(t.updated)}</span>`].filter(Boolean);
   if(!MV.data&&!MV.tried)loadMap().then(()=>{if(openId===t.id&&!editing&&!$('drawer').hidden)showTicket(t.id,true);}); // so "Show on map" knows whether this ticket has a component
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button>${!MV.data||MV.data.ticket_map[t.id]?'<button type="button" data-onmap>Show on map</button>':''}<button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
@@ -1420,6 +1425,8 @@ function editForm(t){
     <div class="full lbl"><span class="lt">Tags <span class="hint">pick or type a new one; <code>agent:name</code> sends it to that agent</span></span>${pickHtml('f-tags',t.tags||[],{free:'tags',ws:1,ph:'Search or add a tag…',label:'Tags: search or add a tag'})}</div>
     <div class="full lbl"><span class="lt">Blocked by <span class="hint">search by id or title</span></span>${pickHtml('f-blocked',t.blocked_by,{skip:t.id})}</div>
     ${COMPS().length?`<div class="full lbl"><span class="lt">Components <span class="hint">the parts of the system it changes; can be several</span></span>${pickHtml('f-comp',t.components||[],{comp:1})}</div>`:''}
+    ${Object.keys(CFG.skills||{}).length?`<div class="full lbl"><span class="lt">Skills <span class="hint">registered in unblockd.json; the worker loads them on top of the board's</span></span>${pickHtml('f-skills',t.skills||[],{reg:'skills'})}</div>`:''}
+    ${Object.keys(CFG.mcp||{}).length?`<div class="full lbl"><span class="lt">MCP servers <span class="hint">registered in unblockd.json; the worker's harness must provide them</span></span>${pickHtml('f-mcp',t.mcp||[],{reg:'mcp'})}</div>`:''}
     <label class="full" for="f-waiting">Waiting on<input id="f-waiting" maxlength="1000" value="${esc(t.waiting_on)}"></label>
     <label class="full${R('body')}" for="f-body">Details${S('body')} <span class="hint">blank line = new paragraph, \`code\`, **bold**</span><textarea id="f-body">${esc(t.body||(SC?.body_template||''))}</textarea></label>
     <div class="full formrow"><button class="btn" type="submit">${isNew?'Create ticket':'Save changes'}</button>${isNew?'':'<button class="btn danger" type="button" data-delete>Delete</button>'}<span class="msg" id="fMsg" role="status"></span></div>
@@ -1434,7 +1441,7 @@ async function submitForm(f){
   const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
-    blocked_by:pickIds('f-blocked'),...($('f-comp')?{components:pickIds('f-comp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
+    blocked_by:pickIds('f-blocked'),...($('f-comp')?{components:pickIds('f-comp')}:{}),...($('f-skills')?{skills:pickIds('f-skills')}:{}),...($('f-mcp')?{mcp:pickIds('f-mcp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
     tags:pickIds('f-tags'),touches:pickIds('f-touches'),docs:pickIds('f-docs'),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data,f.dataset.rev) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
