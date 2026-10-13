@@ -83,7 +83,7 @@ try {
 		await page.reload(); await page.waitForSelector('.card', { state: 'attached' });
 		await visible('#digest [data-dgtoggle]', 'digest bar');
 		await page.click('#digest [data-dgtoggle]');
-		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]').getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
+		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]')?.getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
 		await page.click('#digest [data-dgdismiss]'); await page.waitForSelector('#digest', { state: 'hidden' });
@@ -120,8 +120,8 @@ try {
 		await page.click('[data-view="board"]');
 
 		{ // Map view: example board has 4 component notes (docs/arch); UI-2 spans api + web-ui, DOC-1 maps to nothing
-			const view = (v) => page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`).getAttribute('aria-pressed') === 'true', v);
-			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
+			const view = (v) => page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`)?.getAttribute('aria-pressed') === 'true', v);
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]')?.getAttribute('aria-pressed') === 'true');
 			await page.keyboard.press('m'); await view('map'); // the shortcut
 			ok(await page.getAttribute('#viewSeg [data-view="map"]', 'title') === 'Map (m)', `[${tag}] Map tooltip should carry its key`);
 			await page.waitForFunction(() => document.querySelectorAll('#mapList .mc').length === 4);
@@ -166,7 +166,7 @@ try {
 					await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x0 + 60, y0 + 30, { steps: 5 }); await page.mouse.up();
 					const rel = async () => { const a = await box('store'), c = await box('api'), z = await k(); return (a.x - c.x) / z; };
 					const r1 = await rel(), b1 = await box('store'); ok(Math.abs(b1.x - b0.x - 60) < 3 && await page.locator('#drawer').isHidden(), `[${tag}] map: dragging a card moves it without opening it`);
-					await page.reload(); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]').getAttribute('aria-pressed') === 'true');
+					await page.reload(); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]')?.getAttribute('aria-pressed') === 'true');
 					await page.waitForTimeout(400);
 					ok(Math.abs((await rel()) - r1) < 2, `[${tag}] map: dragged position survives a reload`);
 					ok(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem(Object.keys(localStorage).find((x) => x.startsWith('mapPos.'))) || '{}')).includes('store')), `[${tag}] map: dragged position is saved`);
@@ -257,12 +257,12 @@ try {
 
 			await page.evaluate(() => document.querySelector('[data-open="UI-2"]').click()); // chip -> Map focused -> Show N on the board
 			await page.click('#drawer [data-mapcomp="api"]');
-			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]').getAttribute('aria-pressed') === 'true');
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]')?.getAttribute('aria-pressed') === 'true');
 			await page.waitForFunction(() => document.querySelector('#drawer #dTitle')?.textContent === 'REST API');
 			const n = await page.evaluate(() => +document.querySelector('#drawer [data-showboard]').textContent.match(/\d+/)[0]);
 			await page.click('#drawer [data-showboard="api"]');
-			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
-			await page.waitForFunction(() => document.querySelector('#compSeg [data-comp="api"]').getAttribute('aria-pressed') === 'true');
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]')?.getAttribute('aria-pressed') === 'true');
+			await page.waitForFunction(() => document.querySelector('#compSeg [data-comp="api"]')?.getAttribute('aria-pressed') === 'true');
 			ok((await ids()).length === n && n >= 2, `[${tag}] Show N tickets on the board: expected ${n} cards, got ${(await ids()).length}`);
 			await page.click('#pills [data-comp]');
 		}
@@ -329,14 +329,14 @@ try {
 		ok((await page.getAttribute('#needsBadge', 'title')).includes('This board: 2') && (await page.getAttribute('#needsBadge', 'title')).includes('Second board: 1'), `[${tag}] badge tooltip should split the count per board`);
 		for (const v of ['graph', 'docs', 'board']) { // visible in every view; Free/Blocked only in the Graph
 			await page.click(`[data-view="${v}"]`);
-			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`).getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
+			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`)?.getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
 		}
 		{ // Graph's Free/Blocked must not leak into the Board
 			await page.waitForFunction((x) => x.every((id) => document.querySelector(`#board .card[data-open="${id}"]`)), [rid, qid]); // the 4 s poll has brought this board's new tickets (the badge can come from the 15 s timer)
 			const n0 = await page.locator('#board .card').count();
-			await page.click('[data-view="graph"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="graph"]').getAttribute('aria-pressed') === 'true');
+			await page.click('[data-view="graph"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="graph"]')?.getAttribute('aria-pressed') === 'true');
 			await page.click('#depSeg [data-dep="BLOCKED"]');
-			await page.click('[data-view="board"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]').getAttribute('aria-pressed') === 'true');
+			await page.click('[data-view="board"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]')?.getAttribute('aria-pressed') === 'true');
 			await page.waitForTimeout(300);
 			{ const n1 = await page.locator("#board .card").count(); ok(n1 === n0, `[${tag}] Blocked chosen in the Graph should not filter the Board (${n0} -> ${n1})`); }
 			await page.click('[data-view="graph"]'); await page.click('#depSeg [data-dep="ALL"]'); await page.click('[data-view="board"]');
