@@ -790,11 +790,12 @@ async function jf(url, method='GET', body, hdr){ // JSON in, JSON out; throws Er
   return j;
 }
 const api=(method,path,body,rev)=>jf(API+'/tickets'+path,method,body,rev==null?undefined:{'If-Match':String(rev)}); // rev: the ticket's rev as the user saw it; a write since then = 409
-let authShown=false;
+let authShown=false,authMsg='';
 function authFail(text){ // 401: say how to get in, once (the 4 s poll must not repeat it or reload)
   if(authShown) return; authShown=true;
   let m; try{ m=JSON.parse(text).error; }catch{}
   toast(m||'Unauthorized: open the board once with ?token=...',{err:1});
+  authMsg=m||'Unauthorized: open the board once with ?token=...'; renderBoard(); // the board says why it is empty, not "No tickets yet"
 }
 let etag=null; // ETag of the last /tickets response; sent back so an unchanged board costs a 304
 async function load(force){
@@ -1241,6 +1242,7 @@ async function quickAdd(f,again){
   qaBusy=false; const n=document.querySelector('.qa-t'); if(again) n?.focus(); else n?.blur();
 }
 function emptyState(){
+  if(authMsg&&!T.length) return `<div class="empty"><h2>Not signed in</h2><p>${esc(authMsg)}</p></div>`;
   if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
   const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.q&&`“${state.q}”`].filter(Boolean);
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
