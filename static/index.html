@@ -141,8 +141,8 @@ a.btn{display:inline-block;text-decoration:none}
 .rq{color:var(--amber)} form.edit .rq-l.empty :is(input,select,textarea){border-color:var(--amber)}
 .nb{font-size:.72rem;font-weight:800;border:1px solid currentColor;border-radius:3px;padding:0 5px;color:var(--slate)} .nb.r{color:var(--plum)} .nb.s{color:var(--amber)}
 .nd-q{font-size:.9rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
-.nr:not(.open) .nd-q{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-.nr:not(.open) .nd-q.w{white-space:normal;overflow:visible;text-overflow:clip}
+.nr:not(.open) .nd-q{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;cursor:pointer}
+.nr:not(.open) .nd-q.w{display:block;overflow:visible}
 .nd-ln{font-size:.82rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
 .nr.open .nd-q{white-space:pre-wrap;color:var(--ink);font-size:.95rem;margin:6px 0 4px}
 .nr-x h4{margin:12px 0 4px;font-size:.8rem;color:var(--muted)} .nr-x p{margin:6px 0 0}
@@ -152,7 +152,7 @@ a.btn{display:inline-block;text-decoration:none}
 .nd-f textarea{field-sizing:content;min-height:4.4em;max-height:45vh;resize:vertical}
 .nr.open .nd-f textarea{flex-basis:100%;order:-1;background:var(--surface)}
 .prb{display:inline-block;margin:6px 0;padding:1px 8px;border:1px solid var(--line);border-radius:10px;font-size:12px} .prb.bad{color:var(--cinnabar);border-color:var(--cinnabar)}
-.rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere}
+.rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere} .rbox a{color:var(--jade)} .rbox h5{margin:4px 0 2px;font-size:.75rem;font-weight:600;color:var(--muted)}
 .dg-g{margin:10px 0 0;font-size:.82rem;font-weight:800;color:var(--muted)}
 .dg-l{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px;max-height:40vh;overflow:auto}
 .dg-l li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem}
@@ -1177,7 +1177,7 @@ const whoLine=(r,done)=>{ // "Done by backend-1 for Omri · approved by Dana"; m
   const main=[r.by&&(r.principal||r.approved_by||(done&&HUMAN.size>1))?`Done by ${r.by}${r.principal?' for '+r.principal:''}`:'',r.approved_by?`approved by ${r.approved_by}`:''].filter(Boolean).join(' · ');
   return {main,muted:r.approved_by&&r.approved_by===r.principal?'self-approved':done&&!r.principal&&!r.approved_by&&HUMAN.size>1&&r.by&&!HUMAN.has(r.by)?'no human recorded':''};
 };
-const resultHtml=(r,done)=>!r?'':`<div class="rbox">${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
+const resultHtml=(r,done)=>!r?'':`<div class="rbox">${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<h5>Files changed</h5><ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<h5>References</h5><ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<h5>Handoff</h5><p>${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 function renderWorking(){ // agents holding a claim right now; ages tick client-side
   const el=$('working'),ws=T.filter(t=>t.claim&&onBoard(t)).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
   el.hidden=!ws.length||state.view!=='board'; if(el.hidden) return;
