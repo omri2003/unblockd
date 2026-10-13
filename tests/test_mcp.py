@@ -130,7 +130,7 @@ class HttpServerTest(unittest.TestCase):
 	def test_tools_and_architecture_over_http(self):
 		url, demo = self.serve()
 		tools = {t.name: t for t in self.call(url, None, None).tools}
-		for n in ("arch_set_edge", "arch_add_component", "architecture_map", "claim_next", "board_info", "accept_ticket"):
+		for n in ("arch_set_edge", "arch_add_component", "architecture_map", "claim_next", "board_info", "accept_ticket", "approve_ticket"):
 			self.assertIn(n, tools)
 		self.assertIn("components", tools["create_ticket"].input_schema["properties"])
 		self.assertIn("agent", tools["create_ticket"].input_schema["required"])  # the proposal gate's identity, same tool as over stdio

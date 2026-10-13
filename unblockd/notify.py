@@ -31,6 +31,8 @@ def _line(board: str, e: dict, titles: dict) -> str | None:
 		return f"📝 {board}: {tid} {titles.get(tid, '')} proposed by {who}: accept or reject it in Needs you"
 	if ev == "accepted":
 		return f"👍 {board}: {tid} {titles.get(tid, '')} accepted by {who}"
+	if ev == "approved":
+		return f"✅ {board}: {tid} {titles.get(tid, '')} approved by {who}"
 	if ev == "ran_dry":
 		return f"🏁 {board} ran dry: no ready tickets and no agent working"
 	return None

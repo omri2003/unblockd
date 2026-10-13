@@ -96,7 +96,7 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal"}
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at"}
 
 
 OUTCOMES = {"expired": "expired", "release": "released", "rejected": "rejected"}  # activity events that end an attempt badly
@@ -588,6 +588,8 @@ class Store:
 		t.update(clean)
 		if t["status"] != was:
 			t["done_at"] = _now() if t["status"] == "done" else ""
+			if t["status"] != "done" and t.get("result"):  # leaving done (Undo of an approval, a reopen): nobody has approved this any more
+				t["result"] = {k: v for k, v in t["result"].items() if k not in ("approved_by", "approved_at")}
 		t["updated"] = date.today().isoformat()
 		self._write(t)
 		if t["status"] == "done" and was != "done":  # by hand; an agent's complete() logs its own event
@@ -1064,6 +1066,31 @@ class Store:
 			raw["waiting_on"], raw["asked_at"], raw["asked_by"], raw["updated"] = "", "", "", date.today().isoformat()
 			self._write(raw)
 			self._log("answered", tid, by, text.strip())
+		self._locked(run)
+		return self.get(tid)
+
+	def approve(self, tid: str, by: str) -> dict:
+		"""A human approves work in review: status done, `result.approved_by` / `approved_at` (a plain update to done leaves them empty:
+		nobody approved), note "Approved by X", logs `approved`. Refused unless the status is review, for a worker, and for the completer."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("approve needs `by`: who is approving")
+		self._human_only("approve", by)
+		by = by.strip()
+		def run():
+			path = self._path(tid)
+			if not path.exists():
+				raise NotFound(f"no ticket {tid}")
+			raw = self._read(path)
+			if raw.get("status") != "review":
+				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be approved")
+			res = raw.get("result") or {"summary": "(moved to review by hand, no worker result)", "files": [], "refs": [], "handoff": ""}
+			if res.get("by") == by:
+				raise TicketError(f"{by} completed {tid} and can't approve it: someone else decides")
+			_append_note(raw, by, f"Approved by {by}")
+			raw["result"] = {**res, "approved_by": by, "approved_at": _now()}
+			raw["status"], raw["done_at"], raw["updated"] = "done", _now(), date.today().isoformat()
+			self._write(raw)
+			self._log("approved", tid, by, res.get("summary", ""), res.get("principal"))
 		self._locked(run)
 		return self.get(tid)
 

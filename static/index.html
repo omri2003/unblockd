@@ -983,6 +983,7 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
   if(m){try{state.rx=new RegExp(m[1],'i');}catch(e){state.rx=/(?!)/;state.rxErr=e.message;}}
   $('q').classList.toggle('err',!!state.rxErr);$('q').title=state.rxErr||'Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/';
 }
+const doneTip=r=>{const w=whoLine(r,1);return w.main+(w.muted?` (${w.muted})`:'');};
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
@@ -1000,8 +1001,8 @@ function card(t){
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:''].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
-  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title)}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
-  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
+  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
+  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}"><span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${t.claim?`<span class="agc" title="Claimed by ${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}; last heartbeat"><i class="pulse" aria-hidden="true"></i>${esc(t.claim.agent)} <time data-hb="${esc(t.claim.heartbeat_at)}"></time></span>`:''}<span class="own ${HUMAN.has(t.owner)?'human':''}">${esc(t.owner)}</span></span><span class="ttl">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
@@ -1146,6 +1147,10 @@ async function submitNeeds(f){ // panel + drawer forms: POST <board>/tickets/<id
   try{ const u=`${bd?'/api/b/'+bd:API}/tickets/${id}`; await (kind==='drop'?jf(`${u}?reason=${encodeURIComponent(text)}`,'DELETE'):jf(`${u}/${kind}`,'POST',{[NFORM[kind][0]]:text,...by()})); delete DRAFTS[i.dataset.draft]; await refreshAfter(bd); toast(`${NFORM[kind][1]}: ${id}`); }
   catch(er){ toast(er.message,{err:1}); }
 }
+async function approveTicket(bd,id){ // POST approve (records who); Undo = one PATCH back to review, which drops the approver
+  try{ await jf(`/api/b/${bd}/tickets/${id}/approve`,'POST',by()); await refreshAfter(bd); toast(`Approved: ${id}`,{undo:()=>nPatch(bd,id,{status:'review'},{status:'done'},`${id} back in review`)}); }
+  catch(er){ toast(er.message,{err:1}); }
+}
 async function acceptTicket(bd,id){
   try{ await jf(`/api/b/${bd}/tickets/${id}/accept`,'POST',by()); await refreshAfter(bd); toast(`Accepted: ${id}`); }
   catch(er){ toast(er.message,{err:1}); }
@@ -1160,7 +1165,11 @@ async function nPatch(bd,id,ch,back,msg){ // approve / release from the panel; U
   catch(er){ toast(er.message,{err:1}); }
 }
 const prHtml=p=>{if(!p||!/^https:\/\/github\.com\//.test(p.url||''))return '';const c=p.checks||{};return `<a class="prb${c.failed?' bad':''}" href="${esc(p.url)}" target="_blank" rel="noopener" title="${esc(p.title||'')}">PR #${+p.number} · ${esc(p.state)} · ✓${+c.passed} ✗${+c.failed} …${+c.pending}</a>`};
-const resultHtml=r=>!r?'':`<div class="rbox">${r.principal?`<p class="hint">Done by ${esc(r.by)} for ${esc(r.principal)}</p>`:''}${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
+const whoLine=(r,done)=>{ // "Done by backend-1 for Omri · approved by Dana"; muted: self-approved (approver = principal), or on a 2+ human board a finished ticket nobody is recorded on
+  const main=[r.by&&(r.principal||r.approved_by||(done&&HUMAN.size>1))?`Done by ${r.by}${r.principal?' for '+r.principal:''}`:'',r.approved_by?`approved by ${r.approved_by}`:''].filter(Boolean).join(' · ');
+  return {main,muted:r.approved_by&&r.approved_by===r.principal?'self-approved':done&&!r.principal&&!r.approved_by&&HUMAN.size>1&&r.by&&!HUMAN.has(r.by)?'no human recorded':''};
+};
+const resultHtml=(r,done)=>!r?'':`<div class="rbox">${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<p><b>Handoff:</b> ${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 function renderWorking(){ // agents holding a claim right now; ages tick client-side
   const el=$('working'),ws=T.filter(t=>t.claim&&onBoard(t)).sort((a,b)=>a.claim.claimed_at.localeCompare(b.claim.claimed_at));
   el.hidden=!ws.length||state.view!=='board'; if(el.hidden) return;
@@ -1371,7 +1380,7 @@ function showTicket(id,refresh){
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
-    ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result)}`:''}
+    ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}`:''}
     <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
     <h3>Blocks</h3>${linkList(t.blocks)}
@@ -1480,7 +1489,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-unlink]')){removeLink(b.dataset.a,b.dataset.b);return;}
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
   if(b=g('[data-accept]')){acceptTicket(b.dataset.board,b.dataset.id);return;}
-  if(b=g('[data-approve]')){nPatch(b.dataset.board,b.dataset.id,{status:'done'},{status:'review'},`Approved: ${b.dataset.id}`);return;}
+  if(b=g('[data-approve]')){approveTicket(b.dataset.board,b.dataset.id);return;}
   if(b=g('[data-release]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'doing'},`${b.dataset.id} released to To do`);return;}
   if(g('#needsBadge')){$('npanel').hidden?openNeeds():closeNeeds();return;}
   if(g('[data-nclose]')||(e.target===$('scrim')&&!$('npanel').hidden)){closeNeeds();return;}

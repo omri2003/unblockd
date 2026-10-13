@@ -402,6 +402,7 @@ try {
 			const hd = await d.boundingBox(), ht = await td.boundingBox();
 			if (hd && ht) ok(hd.height < ht.height / 2, `[${tag}] done card (${hd.height}px) should be under half a To do card (${ht.height}px)`);
 		}
+		ok((await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), rid)).result.approved_by === 'human', `[${tag}] Approve should record the approver (human when I am is not set)`);
 		// answer the other board's question from here: no board switch
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
@@ -577,7 +578,7 @@ try {
 	}
 	// 6b. "I am" + Mine, on a board with 2 human owners (the example board has one: the setting is hidden there)
 	await mkdir(join(root, 'zteam/tickets'), { recursive: true });
-	await writeFile(join(root, 'zteam/tickets/unblockd.json'), JSON.stringify({ id: 'zteam', title: 'Team board', owners: [{ name: 'Dana', kind: 'human' }, { name: 'Omri', kind: 'human' }, { name: 'Claude', kind: 'agent' }], default_owner: 'Dana' }));
+	await writeFile(join(root, 'zteam/tickets/unblockd.json'), JSON.stringify({ id: 'zteam', title: 'Team board', owners: [{ name: 'Dana', kind: 'human' }, { name: 'Omri', kind: 'human' }, { name: 'Claude', kind: 'agent' }], default_owner: 'Dana', review: true }));
 	const cliT = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zteam/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
 	cliT('create', '--prefix', 'ZT', '--title', 'dana owns', '--json', '{"owner":"Dana"}');
 	const zt2 = JSON.parse(cliT('create', '--prefix', 'ZT', '--title', 'agent for dana', '--json', '{"owner":"Claude"}')).id;
@@ -600,6 +601,8 @@ try {
 		await page.click('#spanel > summary');
 		const qid = JSON.parse(cliT('create', '--prefix', 'ZT', '--title', 'question for the team', '--json', '{"owner":"Claude"}')).id;
 		cliT('claim', '--agent', 'backend-1', '--id', qid); cliT('ask', qid, '--agent', 'backend-1', '--question', 'Which way?');
+		const rvid = JSON.parse(cliT('create', '--prefix', 'ZT', '--title', 'agent work to review', '--json', '{"owner":"Claude"}')).id; // finished by an agent for Omri: Dana will approve it
+		cliT('claim', '--agent', 'backend-1', '--id', rvid, '--principal', 'Omri'); cliT('complete', rvid, '--agent', 'backend-1', '--summary', 'did it', '--principal', 'Omri');
 		await page.goto(base + '?board=zteam'); await page.waitForSelector('.card', { state: 'attached' });
 		ok(await page.locator('#mineSeg').isHidden(), 'Mine should be hidden until I am is set');
 		await page.click('#spanel > summary');
@@ -625,9 +628,22 @@ try {
 		await page.click('#needsBadge'); // answer from the Needs panel: the note is signed with the I am name
 		const qrow = `#npList .nr[data-key="zteam/${qid}"]`;
 		await page.fill(`${qrow} input[data-draft]`, 'This way'); await page.keyboard.press('Enter');
-		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
+		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `zteam/${qid}`);
 		const ans = await page.evaluate((i) => fetch('/api/b/zteam/tickets/' + i).then((r) => r.json()), qid);
 		ok(/— Dana, \S+: Answer to: Which way\? — This way/.test(ans.body), `the answer should be signed Dana: ${ans.body}`);
+		// approve in the Needs panel: the approver is recorded and the drawer says so
+		const vrow = `#npList .nr[data-key="zteam/${rvid}"]`;
+		await page.click(`${vrow} .nttl`); await page.click(`${vrow} [data-approve]`);
+		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `zteam/${rvid}`);
+		const appr = await page.evaluate((i) => fetch('/api/b/zteam/tickets/' + i).then((r) => r.json()), rvid);
+		ok(appr.status === 'done' && appr.result.approved_by === 'Dana' && appr.result.principal === 'Omri', `approve should record Dana: ${JSON.stringify(appr.result)}`);
+		await page.keyboard.press('Escape');
+		await page.evaluate((i) => document.querySelector(`#board .card[data-open="${i}"]`).click(), rvid); await page.waitForSelector('#drawer .rbox'); // the Done tab may be hidden at 390px
+		ok((await page.innerText('#drawer .rbox')).includes('Done by backend-1 for Omri · approved by Dana'), `drawer Result line: ${await page.innerText('#drawer .rbox')}`);
+		ok((await page.getAttribute(`#board .card[data-open="${rvid}"]`, 'title')).endsWith(' · Done by backend-1 for Omri · approved by Dana'), 'done card tooltip: title, then who did it');
+		await noOver('drawer with approver');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/approved-${w}-${theme}.png` });
+		await page.keyboard.press('Escape');
 		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
 		await ctx.close();
 	}
