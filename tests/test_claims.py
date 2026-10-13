@@ -404,6 +404,27 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual((r["reason"], sum(r["counts"].values())), ("dry", 0))  # ART-1 is blender's: not counted for backend
 		self.assertEqual(why("blender-1")["counts"]["waiting_on_human"], 1)
 
+	def test_claim_next_empty_answer_lists_ids_and_orphans(self):
+		self.s.claim_next("backend-1")  # CMB-1
+		self.s.claim_next("backend-2")  # CMB-3
+		self.s.create({"title": "hand", "pillar": "COMBAT", "touches": ["x"]}, tid="CMB-4")
+		self.s.update("CMB-4", {"status": "doing"})  # moved by hand: no claim
+		r = self.s.claim_next("backend-3")
+		self.assertEqual(r["ids"], {"in_flight": ["CMB-1", "CMB-3", "CMB-4"], "ready_conflicting": ["CMB-2"], "in_review": [], "waiting_on_human": [], "blocked": []})
+		self.assertEqual(r["counts"]["in_flight"], 3)
+		self.assertEqual(r["orphaned"], ["CMB-4"])
+
+	def test_claim_refusal_names_the_cause(self):
+		self.s.create({"title": "b", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-5")
+		self.s.create({"title": "q", "pillar": "COMBAT", "waiting_on": "which?"}, tid="CMB-6")
+		self.s.claim("backend-1", tid="CMB-1")
+		for tid, pat in (("CMB-5", "blocked by CMB-1"), ("CMB-6", "waiting on a human.*which"), ("ART-1", "owned by Omri"),
+		                 ("CMB-2", "touches overlap CMB-1, claimed by backend-1")):
+			with self.assertRaisesRegex(TicketError, pat):
+				self.s.claim("backend-2", tid=tid)
+		with self.assertRaisesRegex(TicketError, r"or pass profile=<name>"):
+			self.s.claim("claude-1")
+
 	def test_unknown_worker_name_is_refused_on_a_board_with_profiles(self):
 		with self.assertRaisesRegex(TicketError, "matches no agent profile.*backend, blender.*backend-1"):
 			self.s.claim("claude-1")
