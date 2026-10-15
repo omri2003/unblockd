@@ -109,12 +109,7 @@ try {
 		await page.evaluate(() => document.getElementById('kbHint').click()); // hidden at <=600px (no keyboard there), so click it directly
 		await visible('#kb', 'shortcuts sheet from the hint');
 		ok((await page.locator('#kb').innerText()).includes('Shift'), `[${tag}] ? sheet should mention Shift-click select`);
-		const sp = await browser.newPage({ viewport: { width: w, height: h } }); // fresh page: the first Tab is the skip link; an unknown board names itself
-		await sp.goto(base + '?board=example'); await sp.waitForSelector('.card', { state: 'attached' });
-		await sp.keyboard.press('Tab');
-		ok(await sp.evaluate(() => document.activeElement.id) === 'skip', `[${tag}] first Tab should focus the skip link`);
-		await sp.keyboard.press('Enter');
-		ok(await sp.evaluate(() => !!document.activeElement.closest('#board')), `[${tag}] the skip link should move focus into the board`);
+		const sp = await browser.newPage({ viewport: { width: w, height: h } }); // fresh page: an unknown board names itself
 		await sp.goto(base + '?board=nope');
 		ok(await sp.waitForSelector('#toasts .toast:has-text("nope")', { timeout: 3000 }).then(() => true, () => false), `[${tag}] an unknown board's toast should name it`);
 		await sp.close();

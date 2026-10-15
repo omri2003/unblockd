@@ -35,7 +35,6 @@
 [hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
-.skip{position:absolute;left:8px;top:-60px;z-index:100;padding:8px 12px;background:var(--ink);color:var(--paper);border-radius:6px}.skip:focus{top:8px}
 .wrap{max-width:1500px;margin:0 auto;padding:20px 16px 48px}
 h1,h2{font-family:var(--display);text-wrap:balance;margin:0;font-weight:700;letter-spacing:-.01em}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -525,7 +524,6 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 </style>
 </head>
 <body>
-<a href="#" class="skip" id="skip">Skip to board</a>
 <div class="wrap">
   <header>
     <div><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><div class="trow"><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div><button type="button" class="nbadge" id="needsBadge" hidden title="Needs you (i)" aria-label="Needs you"></button></div><div class="sub" id="sub">Loading…</div><button type="button" class="khint" id="kbHint">Press ? for shortcuts</button></div>
@@ -559,7 +557,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   <section class="working" id="working" hidden aria-label="Agents working now"></section>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
-  <div class="board" id="board" tabindex="-1"></div>
+  <div class="board" id="board"></div>
   <section class="docswrap" id="docsWrap" hidden aria-label="What agents read">
     <div class="dprob" id="dProb" role="group" aria-label="Problems"></div>
     <div class="dtools"><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
@@ -1513,7 +1511,6 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-resume]')){api('PATCH','/'+b.dataset.resume,{waiting_on:''}).then(()=>load(true)).then(()=>toast('Resumed: '+b.dataset.resume)).catch(er=>toast(er.message,{err:1}));return;}
   if(g('[data-splitcancel]')){SPLIT=null;showTicket(openId,true);return;}
   if(g('#kbBtn,#kbHint')){toggleKb();return;}
-  if(g('#skip')){e.preventDefault();(document.querySelector('#board .card')||$('board')).focus();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
