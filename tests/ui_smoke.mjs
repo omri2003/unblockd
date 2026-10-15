@@ -108,8 +108,17 @@ try {
 		await page.waitForSelector('.card', { state: 'attached' });
 		await page.evaluate(() => document.getElementById('kbHint').click()); // hidden at <=600px (no keyboard there), so click it directly
 		await visible('#kb', 'shortcuts sheet from the hint');
+		ok((await page.locator('#kb').innerText()).includes('Shift'), `[${tag}] ? sheet should mention Shift-click select`);
+		const sp = await browser.newPage({ viewport: { width: w, height: h } }); // fresh page: an unknown board names itself
+		await sp.goto(base + '?board=nope');
+		ok(await sp.waitForSelector('#toasts .toast:has-text("nope")', { timeout: 3000 }).then(() => true, () => false), `[${tag}] an unknown board's toast should name it`);
+		await sp.close();
 		await page.keyboard.press('Escape');
 
+		if (w >= 1100) { // status strip labels fit (not clipped by the ellipsis)
+			const clip = await page.evaluate(() => [...document.querySelectorAll('.segbar button')].filter(b => b.scrollWidth > b.clientWidth).map(b => b.textContent));
+			ok(!clip.length, `[${tag}] status strip labels clipped: ${clip.join(', ')}`);
+		}
 		await page.click('[data-view="graph"]');
 		await visible('#graph', 'graph canvas');
 		await noOverflow('graph');
@@ -289,6 +298,9 @@ try {
 		}
 		await toggle('#spanel', 'Settings panel');
 		await toggle('#apanel', 'Agents panel');
+		await page.click('#apanel > summary'); await visible('#apanel .fbody', 'Agents panel');
+		ok(!/\bother\b/i.test(await page.locator('#apanel .fbody').innerText()), `[${tag}] Agents panel should not have an "other" row`);
+		await page.click('#apanel > summary');
 
 		await page.locator('.card >> visible=true').nth(0).click({ modifiers: ['Shift'] }); // bulk edit: select 2, set priority, Undo
 		await page.locator('.card >> visible=true').nth(1).click({ modifiers: ['Shift'] });

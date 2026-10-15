@@ -49,7 +49,7 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 /* status strip: proportions of the whole board; a segment scrolls to its column */
 .strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-bottom:12px}
 .segbar{display:flex;gap:2px;flex:1 1 360px;min-width:0;border-radius:8px;overflow:hidden}
-.segbar button{flex:var(--n) 1 76px;transition:flex-grow .18s ease-out;min-width:0;border:0;padding:6px 8px;background:var(--c);color:var(--paper);cursor:pointer;text-align:left;line-height:1.1;font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.segbar button{flex:var(--n) 1 92px;transition:flex-grow .18s ease-out;min-width:0;border:0;padding:6px 8px;background:var(--c);color:var(--paper);cursor:pointer;text-align:left;line-height:1.1;font-size:.72rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .segbar button b{display:block;font:800 1.25rem var(--display);font-variant-numeric:tabular-nums}
 .segbar button:hover{filter:brightness(1.12)}
 .segbar button:is(:hover,:focus-visible){flex-grow:calc(var(--n) + var(--sum,0)*.12)} /* spill: a modest bump, neighbours give way; the widths stay a chart */
@@ -504,7 +504,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .adel{border:1px solid var(--cinnabar);border-radius:8px;padding:10px 12px;margin:10px 0;display:grid;gap:8px} .adel p{margin:0}
 .mapmsg .btn{margin-bottom:4px}
 @media (max-width:700px){
-  .mapstage{display:none} .mlist{display:grid}
+  .mapstage,#mapWrap .mhint{display:none} .mlist{display:grid}
   .mlist .mc{position:relative;width:100%;height:auto;min-height:64px}
   .mcon{list-style:none;margin:6px 0 0;padding:0 0 0 10px;border-left:2px solid var(--line);display:grid;gap:6px;font-size:.88rem}
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
@@ -576,7 +576,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <span><i class="sw" style="border:2px solid var(--amber);border-radius:3px"></i>Being worked on</span>
       <span><i class="sw" style="background:var(--cinnabar);border-radius:50%"></i>Has a problem</span>
       <span><i class="sw" style="border-top:2px dashed var(--cinnabar);height:0;width:14px"></i>Edge with no contract</span>
-      <span class="hint">An arrow goes from the note that lists a link to the note it links to. Darker cards have more open tickets. Click a component to see its neighbours; hover an edge to read what crosses it. Drag a component to move it, drag the background to pan, scroll to zoom.</span></div>
+      <span class="hint mhint">An arrow goes from the note that lists a link to the note it links to. Darker cards have more open tickets. Click a component to see its neighbours; hover an edge to read what crosses it. Drag a component to move it, drag the background to pan, scroll to zoom.</span></div>
     <p class="mnote" id="mNote" hidden></p>
     <div class="mapmsg" id="mapMsg" hidden></div>
     <div class="mapstage" id="mapStage"><div class="mapin" id="mapIn"><svg id="mapSvg" aria-hidden="true"></svg><div id="mapCards"></div></div><div class="maptip" id="mapTip" hidden role="tooltip"></div><div class="mzoom" id="mZoom" role="group" aria-label="Map view"><button type="button" class="btn ghost sm" data-mz="out" title="Zoom out (-)" aria-label="Zoom out">−</button><button type="button" class="btn ghost sm" data-mz="in" title="Zoom in (+)" aria-label="Zoom in">+</button><button type="button" class="btn ghost sm" data-mz="fit" title="Fit all components (0)">Fit</button><button type="button" class="btn ghost sm" data-mz="reset" id="mReset" title="Forget the positions you dragged on this board">Reset layout</button></div></div>
@@ -644,6 +644,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt><kbd>p</kbd> then <kbd>0</kbd> <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Set the priority of the focused card or open ticket (<kbd>-</kbd> clears it, <kbd>Esc</kbd> cancels)</dd>
     <dt><kbd>t</kbd></dt><dd>Cycle the theme: System, Light, Dark</dd>
     <dt><kbd>?</kbd></dt><dd>Show or hide this list</dd>
+    <dt><kbd>Shift</kbd> / <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + click</dt><dd>Select cards for bulk edit (status, owner, priority, tags, parent)</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close a panel, clear a selection, cancel a link</dd>
   </dl>
   <h3>Priority</h3>
@@ -814,10 +815,10 @@ function authFail(text){ // 401: say how to get in, once (the 4 s poll must not 
 }
 let etag=null; // ETag of the last /tickets response; sent back so an unchanged board costs a 304
 async function load(force){
-  let text;
+  let text, msg404; // msg404: the server's "no board 'x'. Boards: ..."
   try{ const r=await fetch(API+'/tickets',{cache:'no-store',headers:etag&&!force?{'If-None-Match':etag}:{}}); if(r.status===304) return; // unchanged since the last ETag
-    text=await r.text(); if(r.status===401){ authFail(text); return; } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
-  catch{ toast('Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
+    text=await r.text(); if(r.status===401){ authFail(text); return; } if(r.status===404){ try{ msg404=JSON.parse(text).error; }catch{} } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
+  catch{ toast(msg404||'Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
   if(text===raw && !force) return;
   raw=text; T=JSON.parse(text); setCols(); loadNeeds(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!reduce.matches) noteFinished(prev);
@@ -1187,7 +1188,7 @@ function renderWorking(){ // agents holding a claim right now; ages tick client-
 }
 // Agent stats (#apanel): fetched when the panel opens or the range changes, never on the 4 s poll. One row per profile.
 let AP={days:store.get('agentDays',7),ev:null,err:''}, apTok=0;
-const profOf=a=>(CFG.agents||[]).map(p=>p.name).filter(p=>a===p||a.startsWith(p+'-')).sort((x,y)=>y.length-x.length)[0]||'other';
+const profOf=a=>(CFG.agents||[]).map(p=>p.name).filter(p=>a===p||a.startsWith(p+'-')).sort((x,y)=>y.length-x.length)[0]||'Not in a profile';
 const median=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length?s.length%2?s[m]:(s[m-1]+s[m])/2:null;}; // check: median([3,1,2])===2, median([1,2,3,10])===2.5, median([])===null
 const dur=ms=>ms==null?'–':ms<6e4?'<1 min':ms<36e5?`${Math.round(ms/6e4)} min`:ms<1728e5?`${(ms/36e5).toFixed(1)} h`:`${(ms/864e5).toFixed(1)} d`; // check: dur(42*6e4)==='42 min', dur(3.1*36e5)==='3.1 h'
 function agentStats(ev){ // ev oldest first. check: claim t0, complete t0+30min, same ticket+agent -> d=[30 min]; release or expired -> stuck++ only if that claim was seen in range (else rate could pass 100%), no duration
@@ -2490,7 +2491,7 @@ async function submitBoard(){
   }catch(er){ m.className='msg err'; m.textContent=er.message; }
 }
 loadBoards().then(loadNeeds);
-fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
+fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD&&!location.search.includes('board=')){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
   urlRead(); readColors(); renderBar(); setView(state.view);
   load(true).then(loadDigest).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
 });
