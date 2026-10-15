@@ -38,7 +38,7 @@ Ties go to the simplest thing that works.
 
 - One JSON file per ticket in the project's git repo. [AGENTS: "Why files, not a database"]
 - Stdlib Python, one-file UI, no build step, no CDN libraries. [AGENTS: "Conventions"]
-- Needs you is a header badge plus a side panel. There is no strip on the board any more. [AGENTS: "Needs you: header badge + side panel"]
+- Needs you is a header badge plus a side panel. There is no strip on the board, no status strip and no Working now band. [AGENTS: "Needs you: header badge + side panel"]
 - The Done column shows only recent tickets, capped. Search and "view all" show the rest. [AGENTS: "Filter chrome"]
 - Schema is strict for agents and guided for humans (warnings, never blocked). [AGENTS: "Schema and proposal gate"]
 - The proposal gate (`agent_tickets: "propose"`) is opt-in. [AGENTS: "Schema and proposal gate"]
@@ -119,7 +119,7 @@ Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs and M
 - Cards are buttons wrapped in `.cw`. Moves go through `moveTo()` (drag-drop, Move to, drawer status). It refuses `doing` with open blockers.
 - Do not use class `board` on anything but the board grid. Use `.bref` for board links in chat.
 - At 600px and below, `#tabs` shows one column at a time. `body[data-tab]` drives CSS. Never use a bare `[data-tab]` selector in the click handler.
-- Card ages and heartbeats are filled by `tickAges`, never in the JSON.
+- Card ages, heartbeats and the lease bar are filled by `tickAges`, never in the JSON. The Pending column is labelled Waiting (value stays `pending`); owners carry a person/bot glyph; claimed cards show `live ·` / `quiet ·` with a dot shape, not colour alone.
 - Empty and "filters hide everything" use `emptyState()` and a way out (`clearFilters`).
 
 ### 5.4 Pickers
