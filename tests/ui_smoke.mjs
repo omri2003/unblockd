@@ -375,6 +375,11 @@ try {
 		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
 		ok((await page.locator(`.card:has-text("question me") .why`).first().innerText()) === 'Question from backend-1', `[${tag}] agent question card should say Question from <agent>, not the first word`);
 		await noOverflow('needs panel');
+		{ // a long collapsed question shows up to 3 lines
+			const q = page.locator('#npList .nr:not(.open) .nd-q').first();
+			const [h1, h] = await q.evaluate((e) => { const lh = parseFloat(getComputedStyle(e).lineHeight); e.textContent = 'word '.repeat(400); return [lh, e.getBoundingClientRect().height]; });
+			ok(h > h1 * 1.5 && h <= h1 * 3.2, `[${tag}] collapsed question should clamp to 3 lines (line ${h1}, height ${h})`);
+		}
 		// expand the question: full text, a multi-line answer box; Enter = newline, Ctrl+Enter sends
 		const boardId = 'example', qrow = `#npList .nr[data-key="${boardId}/${qid}"]`;
 		await page.click(`${qrow} .nttl`);
@@ -396,6 +401,8 @@ try {
 		// the review: open the ticket from the panel (the panel gives way to the drawer)
 		await page.click(`#npList .nr:has(.nb.r) .nid`);
 		await visible('#drawer .rbox a[href^="https://example.com"]', 'review result with link');
+		ok((await page.locator('#drawer .rbox h5').allInnerTexts()).join('|') === 'Files changed|References|Handoff', `[${tag}] result box labels`);
+		ok((await page.locator('#drawer .rbox a').first().evaluate((e) => getComputedStyle(e).color)) !== 'rgb(0, 0, 238)', `[${tag}] result link should use the app link colour`);
 		ok(await page.locator('#npanel').isHidden(), `[${tag}] opening a ticket should close the panel`);
 		ok(await page.locator('#drawer details.kn[open]').count(), `[${tag}] review drawer should open Knowledge and activity`);
 		await noOverflow('review drawer');
