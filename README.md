@@ -8,7 +8,7 @@ Tickets are JSON files in your repo: reviewed in PRs next to the code, no SaaS, 
 Front doors: web, MCP, CLI, chat (experimental).
 Humans get a live board and dependency graph; agents get lease-based claims, so several work in parallel.
 
-![unblockd board: agents working, tickets in columns, a badge for what needs you](docs/screenshots/board.webp)
+![unblockd board: live and quiet agents on their cards, Waiting split by reason, a badge for what needs you](docs/screenshots/board.webp)
 
 **Why not Trello / Linear / GitHub Projects?** Those track work for people. A ticket here knows what blocks it, which files it touches and which docs a worker must read, and an agent claims, heartbeats and finishes it through MCP or a CLI.
 
@@ -31,7 +31,7 @@ Humans get a live board and dependency graph; agents get lease-based claims, so 
 docker run -d -p 127.0.0.1:8787:8787 -e UNBLOCKD_ALLOW_OPEN=1 -v "$PWD:/projects" ghcr.io/omri2003/unblockd
 ```
 
-On the board, `g` is the graph, `d` the docs agents read, `?` lists shortcuts.
+On the board, `g` is the graph, `d` the docs agents read, `j`/`k` step through cards, `?` lists shortcuts.
 
 **2. Connect Claude Code** (one shared server for all your projects):
 
@@ -39,7 +39,7 @@ On the board, `g` is the graph, `d` the docs agents read, `?` lists shortcuts.
 claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp
 ```
 
-With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board (snippet in docs/reference.md). Then tell Claude: *"use unblockd: run work_plan and work all ready tickets."* Watch cards move. An empty claim returns `{ticket: null, reason}`: `dry` = nothing ready, `conflict` = ready tickets touch files a live claim holds (retry), `waiting` = work exists but is not ready. With agent profiles (the demo has `frontend`, `backend`), worker names must be `<profile>-N`, e.g. `backend-1`.
+With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board (snippet in docs/reference.md). Then tell Claude: *"use unblockd: run work_plan and work all ready tickets."* Watch cards move. An empty claim says why (`dry`, `conflict` = retry, `waiting`; see docs/reference.md). With agent profiles (the demo has `frontend`, `backend`), worker names must be `<profile>-N`, e.g. `backend-1`.
 
 **3. Without Docker** (Python 3.10+; the board and CLI are stdlib only). Run a copy of the demo project, never `example/` itself:
 
@@ -65,7 +65,7 @@ claude mcp list
 
 Expected: `unblockd: python -m unblockd.mcp_server - Connected`. `PYTHONPATH` must be this checkout (not pip-installed).
 
-**In the UI:** the **Needs you** badge (`i`) collects, across all boards, agents' questions, work awaiting review and stuck tickets; answer, approve or reject inline. The title switches boards (`Shift+B`). Priorities: P0 breaks things now, P1 must happen, P2 should, P3 nice to have (`p` then `0`-`3`).
+**In the UI:** a working agent's card says `live · 40 s` or `quiet · 11 min`, with its lease bar. **Waiting** splits by reason: *On you*, *On other work*, *Parked*. The **Needs you** badge (`i`) collects, across all boards, questions, reviews and stuck tickets; answer, approve or *Request changes…* inline. The title switches boards (`Shift+B`). Priorities: P0 breaks things now, P1 must happen, P2 should, P3 nice to have (`p` then `0`-`3`).
 
 ## What your agents see
 
@@ -79,7 +79,7 @@ Map: an agent on one component gets the contracts of the parts it touches.
 
 | Term | Meaning |
 |---|---|
-| **Ticket** | One JSON file in `<project>/tickets/`. Status `todo`, `doing`, `review`, `done` (`pending` is derived: a todo with an open blocker or a `waiting_on` question). |
+| **Ticket** | One JSON file in `<project>/tickets/`. Status `todo`, `doing`, `review`, `done` (`pending` is derived: a todo with an open blocker or a `waiting_on` question; shown as **Waiting**). |
 | **Ready** | Open, nothing open blocks it, not human-owned, not waiting on a person. Agents only claim ready tickets. |
 | **Blocked / pending** | Derived: a `todo` with an open `blocked_by` is pending until its blockers are done. |
 | **Pillar** | A workstream (UI, API, ...): a colour, filter and graph lane. |
