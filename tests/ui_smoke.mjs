@@ -408,7 +408,7 @@ try {
 		await visible('#toasts .toast:has-text("back in")', 'undo confirmation toast');
 		await page.keyboard.press('Escape');
 
-		// Needs you (header badge + side panel, every board): a review + an agent question here, a question on the other board
+		// Needs you (header badge + side panel, this board only): a review + an agent question here; the question on the other board shows only there
 		const rid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'review me', '--json', '{"owner":"Claude","done_when":["it works"]}')).id;
 		cli('claim', '--agent', 'backend-1', '--id', rid); // result is only written by complete(); the example board has no review gate, so move it to review by hand
 		cli('complete', rid, '--agent', 'backend-1', '--summary', 'Did the **thing**', '--file', 'a.py', '--ref', 'https://example.com/pull/1', '--handoff', 'nothing');
@@ -525,7 +525,7 @@ try {
 			for (let n = 0; n < 50 && (await st(xid)).status !== 'todo'; n++) await page.waitForTimeout(100);
 			ok((await st(xid)).notes.some((n) => n.kind === 'rejected' && n.text === 'needs tests'), `[${tag}] Reject from the drawer: back to To do with the reason in the body`);
 			cli('delete', aid); cli('delete', xid);
-			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .nr', 'panel back');
+			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .none:not([hidden])', 'panel back, empty (this board is done)');
 		}
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden); // this board is clear
 		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
