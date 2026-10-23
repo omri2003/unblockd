@@ -552,6 +552,7 @@ try {
 		const bk = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'the blocker', '--json', '{"owner":"Claude"}')).id;
 		const did = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'doing while blocked', '--json', '{"owner":"Claude"}')).id;
 		cli('claim', '--agent', 'backend-1', '--id', did); await age(did, { blocked_by: [bk] }); // claimed first (claim refuses a blocked ticket), blocker added in the JSON
+		await refresh(); // as the 4 s poll would
 		await page.waitForFunction(() => document.querySelectorAll('#npList .nb.s').length === 3);
 		ok((await page.locator('#npSum').innerText()) === '3 stuck', `[${tag}] header counts: ${await page.locator('#npSum').innerText()}`);
 		const srow = `#npList .nr[data-key="${boardId}/${sid}"]`, mrow = `#npList .nr[data-key="${boardId}/${mid}"]`;
@@ -565,8 +566,10 @@ try {
 		// failed-N-times cue on the card: 3 claim+release rounds, gone after a human note
 		const fid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'keeps failing', '--json', '{"owner":"Claude"}')).id;
 		for (let i = 0; i < 3; i++) { cli('claim', '--agent', 'backend-1', '--id', fid); cli('release', fid, '--agent', 'backend-1', '--reason', 'tried ' + i); }
+		await refresh();
 		await page.waitForFunction((i) => /Failed 3 times/.test(document.querySelector(`#board [data-open="${i}"] .wl.fail`)?.textContent || ''), fid);
 		cli('note', fid, 'try the other approach', '--by', 'human');
+		await refresh();
 		await page.waitForFunction((i) => !document.querySelector(`#board [data-open="${i}"] .wl.fail`), fid);
 		ok(true, `[${tag}] failed-3-times cue shows on the card and clears after a human note`);
 		await page.click(`${srow} [data-release]`);
@@ -575,6 +578,7 @@ try {
 		ok(rel.status === 'todo' && !rel.claim, `[${tag}] Release to To do should drop the claim: ${rel.status}`);
 		cli('delete', did); cli('delete', bk);
 		cli('delete', mid); // the other one goes when its ticket does
+		await refresh();
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		await page.keyboard.press('Escape');
 		await page.evaluate(() => scrollTo(0, 0));
@@ -901,4 +905,4 @@ try {
 	}
 	await cleanup();
 	console.log(`UI smoke OK: board/graph/docs/map/drawer/filters/settings/agents/toast x 1400+390px (full flow light, quick pass dark), no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-} catch (e) { await die(process.env.DEBUG ? e.stack : e.message); }
+} catch (e) { await die(process.env.DEBUG ? e.stack : e.message + '\n  at ' + ((e.stack || '').match(/ui_smoke\.mjs:\d+/g) || ['?']).join(' <- ')); } // the test line(s), so a CI failure says where
