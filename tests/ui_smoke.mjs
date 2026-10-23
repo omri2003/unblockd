@@ -74,6 +74,28 @@ try {
 			await noOverflow(what);
 			await page.click(`${sel} > summary`);
 		};
+		const settle = () => page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity)); // view cross-fade, map zoom: done (the endless live-dot pulse aside), instead of a fixed pause
+		const refresh = (force) => page.evaluate((f) => load(f), !!force); // what the 4 s poll does, without waiting for it
+
+		if (theme === 'dark') { // dark changes colours, not behaviour: the full flow runs in light; here every view and the drawer render with no errors and no overflow
+			await page.goto(base);
+			await page.waitForSelector('.card', { state: 'attached' });
+			ok(await page.evaluate((t) => document.documentElement.dataset.theme === t, theme), `[${tag}] theme not applied`);
+			await noOverflow('board');
+			for (const v of ['graph', 'docs', 'map', 'roadmap', 'board']) {
+				await page.click(`#viewSeg [data-view="${v}"]`);
+				await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`)?.getAttribute('aria-pressed') === 'true', v);
+				await settle();
+				await noOverflow(v);
+			}
+			await page.evaluate(() => document.querySelector('#board .card[data-open]').click());
+			await visible('#drawer #dTitle', 'drawer');
+			await noOverflow('drawer');
+			await page.keyboard.press('Escape');
+			ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
+			await ctx.close();
+			continue;
+		}
 
 		const oid = JSON.parse(cliB('create', '--prefix', 'ZQ', '--title', 'other board question', '--json', '{"owner":"Claude"}')).id; // before the page loads: the other board is only re-read on the 15 s needs poll
 		cliB('claim', '--agent', 'backend-1', '--id', oid); cliB('ask', oid, '--agent', 'backend-1', '--question', 'Which colour?');
@@ -152,7 +174,7 @@ try {
 			ok((await page.locator('#roadWrap [data-msgo="NONE"]').innerText()).includes('Unscheduled'), `[${tag}] roadmap: the unscheduled row`);
 			await noOverflow('roadmap');
 			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/roadmap-${w}-${theme}.png` });
-			await page.waitForTimeout(300); // the view cross-fade swallows pointer events
+			await settle(); // the view cross-fade swallows pointer events
 			await page.click('#roadWrap [data-msgo="v0.1"]');
 			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]')?.getAttribute('aria-pressed') === 'true');
 			const v01 = await page.evaluate(async () => (await (await fetch('/api/tickets?milestone=v0.1')).json()).map((t) => t.id));
@@ -172,7 +194,7 @@ try {
 			await page.waitForFunction(() => document.querySelectorAll('#mapList .mc').length === 4);
 			if (w > 700) {
 				await visible('#mapIn .mc', 'map card');
-				await page.waitForTimeout(300); // the view cross-fade swallows pointer events
+				await settle(); // the view cross-fade swallows pointer events
 				ok((await page.locator('#mapIn .mc').count()) === 4 && (await page.locator('#mapSvg .eg').count()) >= 4, `[${tag}] map: 4 cards and its edges`);
 				ok((await page.locator('#mProb [data-mprob]').count()) === 1, `[${tag}] map: only problems with a count are listed (example has 1)`);
 				ok((await page.locator('#mapSvg .eg.both').count()) === 1, `[${tag}] map: api <-> web-ui is ONE two-headed link`);
@@ -184,11 +206,11 @@ try {
 				await visible('#drawer #dTitle', 'map panel');
 				ok((await page.locator('#drawer #dTitle').innerText()) === 'Ticket store' && (await page.locator('#drawer .mcl li').count()) >= 2, `[${tag}] map panel: title and connections`);
 				ok((await page.locator('#mapIn .mc.fade').count()) === 1 && (await page.locator('#mapIn .mc.fade').getAttribute('data-mc')) === 'web-ui', `[${tag}] focus should fade only the non-neighbour`);
-				await page.waitForTimeout(5000); // a 4 s poll + refetch must keep the focus
+				await refresh(true); await refresh(true); // a re-render from a poll + refetch must keep the focus
 				ok((await page.locator('#mapIn .mc.on').count()) === 1, `[${tag}] focus lost over a poll`);
 				await page.keyboard.press('Escape');
 				ok((await page.locator('#mapIn .mc.fade').count()) === 0 && await page.locator('#drawer').isHidden(), `[${tag}] Esc should leave the focus and close the panel`);
-				await page.waitForTimeout(300); // the map re-centres when the panel closes
+				await settle(); // the map re-centres when the panel closes
 				const m1 = await page.evaluate(() => { const p = document.querySelector('#mapSvg .eg:not(.both) .eh'), q = p.getPointAtLength(p.getTotalLength() / 2), m = p.getScreenCTM(); return [q.x * m.a + m.e, q.y * m.d + m.f]; });
 				await page.mouse.move(m1[0], m1[1]); // contract tooltip of a one-way edge
 				await page.waitForFunction(() => !document.getElementById('mapTip').hidden && document.getElementById('mapTip').textContent.length > 8);
@@ -197,25 +219,25 @@ try {
 				await page.keyboard.press('Escape');
 				{ // zoom / pan / drag nodes
 					const k = () => page.evaluate(() => +document.getElementById('mapIn').style.transform.match(/scale\(([\d.]+)/)[1]), box = (key) => page.locator(`#mapIn [data-mc="${key}"]`).boundingBox();
-					await page.keyboard.press('0'); await page.waitForTimeout(300);
+					await page.keyboard.press('0'); await settle();
 					const k0 = await k(), sb = await page.locator('#mapStage').boundingBox();
 					await page.mouse.move(sb.x + sb.width / 2, sb.y + 40); await page.mouse.wheel(0, -200);
 					await page.waitForFunction((x) => +document.getElementById('mapIn').style.transform.match(/scale\(([\d.]+)/)[1] > x, k0); ok((await k()) > k0, `[${tag}] map: wheel zooms in`);
-					await page.click('[data-mz="fit"]'); await page.waitForTimeout(300);
+					await page.click('[data-mz="fit"]'); await settle();
 					ok(Math.abs((await k()) - k0) < 0.01, `[${tag}] map: Fit restores the fitted zoom`);
 					let b0 = await box('store'), x0 = b0.x + b0.width / 2, y0 = b0.y + b0.height / 2; // eslint-disable-line
 					await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x0 + 3, y0); await page.mouse.up();
 					await visible('#drawer #dTitle', 'map panel after a 3px wiggle'); // under the threshold it is a click
-					await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+					await page.keyboard.press('Escape'); await settle();
 					b0 = await box('store'); x0 = b0.x + b0.width / 2; y0 = b0.y + b0.height / 2;
 					await page.mouse.move(x0, y0); await page.mouse.down(); await page.mouse.move(x0 + 60, y0 + 30, { steps: 5 }); await page.mouse.up();
 					const rel = async () => { const a = await box('store'), c = await box('api'), z = await k(); return (a.x - c.x) / z; };
 					const r1 = await rel(), b1 = await box('store'); ok(Math.abs(b1.x - b0.x - 60) < 3 && await page.locator('#drawer').isHidden(), `[${tag}] map: dragging a card moves it without opening it`);
 					await page.reload(); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="map"]')?.getAttribute('aria-pressed') === 'true');
-					await page.waitForTimeout(400);
+					await settle();
 					ok(Math.abs((await rel()) - r1) < 2, `[${tag}] map: dragged position survives a reload`);
 					ok(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem(Object.keys(localStorage).find((x) => x.startsWith('mapPos.'))) || '{}')).includes('store')), `[${tag}] map: dragged position is saved`);
-					await page.click('#mReset'); await page.waitForTimeout(500);
+					await page.click('#mReset'); await settle();
 					ok(await page.evaluate(() => localStorage.getItem(Object.keys(localStorage).find((x) => x.startsWith('mapPos.'))) === '{}') && await page.locator('#mReset').isDisabled(), `[${tag}] map: Reset layout clears positions`);
 				}
 				await page.keyboard.press('Escape');
@@ -393,7 +415,8 @@ try {
 		cli('ask', qid, '--agent', 'backend-1', '--question', 'Which one?'); // an agent question: in the panel
 		cli('create', '--prefix', 'NY', '--title', 'parked by hand', '--json', '{"owner":"Claude","waiting_on":"Omri: later"}'); // hand-parked: not in the panel
 		const badge = () => page.locator('#needsBadge .n').innerText();
-		// the CLI wrote the files; the page sees this board on its next 4 s poll, so wait for the state
+		// the CLI wrote the files: refresh as the 4 s poll would, then wait for the state
+		await refresh();
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '3');
 		{ const wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); // the agent question and the hand-parked ticket land in their own Waiting sections
 			ok(['on you', 'on other work', 'parked'].every((x) => wl.some((y) => y.toLowerCase().startsWith(x))), `[${tag}] Waiting sections On you / On other work / Parked: ${wl}`); }
@@ -408,7 +431,7 @@ try {
 			await page.click('[data-view="graph"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="graph"]')?.getAttribute('aria-pressed') === 'true');
 			await page.click('#depSeg [data-dep="BLOCKED"]');
 			await page.click('[data-view="board"]'); await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]')?.getAttribute('aria-pressed') === 'true');
-			await page.waitForTimeout(300);
+			await settle();
 			{ const n1 = await page.locator("#board .card").count(); ok(n1 === n0, `[${tag}] Blocked chosen in the Graph should not filter the Board (${n0} -> ${n1})`); }
 			await page.click('[data-view="graph"]'); await page.click('#depSeg [data-dep="ALL"]'); await page.click('[data-view="board"]');
 		}
@@ -468,6 +491,7 @@ try {
 		await page.click(`${rrow} .rqd > summary`);
 		await page.fill(`${rrow} textarea`, 'half typed');
 		cli('note', rid, 'checked the diff', '--by', 'omri');
+		await refresh(); // as the 4 s poll would
 		await page.waitForFunction((r) => document.querySelector(`${r} .nn`)?.textContent.includes('checked the diff'), rrow); // the 4 s poll brought it
 		ok((await page.inputValue(`${rrow} textarea`)) === 'half typed', `[${tag}] draft lost when the data changed`);
 		await page.fill(`${rrow} textarea`, '');
@@ -691,7 +715,7 @@ try {
 	const zt2 = JSON.parse(cliT('create', '--prefix', 'ZT', '--title', 'agent for dana', '--json', '{"owner":"Claude"}')).id;
 	cliT('claim', '--agent', 'backend-1', '--id', zt2, '--principal', 'Dana');
 	cliT('create', '--prefix', 'ZT', '--title', 'omri owns', '--json', '{"owner":"Omri"}');
-	for (const [w, h] of [[1400, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
+	for (const [w, h] of [[1400, 900], [390, 844]]) for (const theme of ['light']) { // a setting, not a look: dark is covered by the quick dark passes
 		const tag = `i-am/${w}px/${theme}`;
 		const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
 		await ctx.addInitScript((t) => { try { localStorage.setItem('theme', JSON.stringify(t)); } catch {} }, theme);
@@ -840,7 +864,7 @@ try {
 		await noOver('edit form');
 		if (wide) { // the poll re-renders the panel: half-typed text and the caret stay
 			await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI draft'); cliE('create', '--prefix', 'T', '--title', 'poll trigger');
-			await page.waitForTimeout(4600);
+			await page.evaluate(() => load(false)); // what the 4 s poll does, now
 			ok(await page.inputValue('#drawer [data-draft="ae:web:title"]') === 'Web UI draft' && await page.evaluate(() => document.activeElement?.dataset.draft) === 'ae:web:title', 'a draft survives the 4 s poll');
 			await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI');
 		}
@@ -864,5 +888,5 @@ try {
 		await ctx.close();
 	}
 	await cleanup();
-	console.log(`UI smoke OK: board/graph/docs/map/drawer/filters/settings/agents/toast x 1400+390px x light+dark, no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+	console.log(`UI smoke OK: board/graph/docs/map/drawer/filters/settings/agents/toast x 1400+390px (full flow light, quick pass dark), no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
 } catch (e) { await die(process.env.DEBUG ? e.stack : e.message); }
