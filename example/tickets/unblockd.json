@@ -60,5 +60,26 @@
     "browser": {
       "hint": "Needs a headless browser MCP server in your harness, e.g. claude mcp add playwright."
     }
-  }
+  },
+  "milestones": [
+    {
+      "key": "v0.1",
+      "title": "First board",
+      "goal": "Tickets you can list and move from the web board",
+      "exit_criteria": [
+        "Tickets have a schema",
+        "The REST API serves them",
+        "The board shows four columns"
+      ],
+      "target": "2026-11-15"
+    },
+    {
+      "key": "v0.2",
+      "title": "See the dependencies",
+      "goal": "Blockers you can see at a glance",
+      "exit_criteria": [
+        "A graph view of blocked_by"
+      ]
+    }
+  ]
 }

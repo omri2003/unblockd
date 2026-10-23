@@ -69,6 +69,11 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Never two on the same files**: give tickets `touches` (paths or globs).
   `claim_next` skips a ticket whose `touches` overlap a live claim.
 - **Never a human's ticket**: tickets owned by a `kind: human` owner are skipped.
+- **Git worktrees share one lock**: when the tickets folder is inside a linked worktree (`git worktree add`), its lock, `claims.json`
+  and `activity.jsonl` live in the MAIN checkout's copy of that folder (`<main>/tickets/.unblockd/`), so workers in different worktrees
+  of one repo never claim the same ticket; the ticket files stay per branch. The CLI refuses a `--dir` that does not exist instead of
+  creating an empty board (a worktree of a repo whose `tickets/` is not committed has none): pass `--dir` or set `TICKETS_DIR` to the
+  main checkout's tickets folder. The worker protocol says: one worktree per ticket, branch and PR in `complete(refs=...)`.
 - **Whose agent is it?** `claim_next` / `claim_ticket` take an optional `principal`: the `kind: human` owner the agent works for
   (CLI `--principal` or env `UNBLOCKD_PRINCIPAL`; REST body key; MCP arg). Anything else is refused, listing the human owners.
   It is stored in the claim (shown as "backend-1 for Omri" in `agents_now`, the card tooltip and the drawer), copied to `result.principal`
@@ -242,6 +247,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `skills`, `mcp` | Registries of the skills and MCP servers your agent harness provides, see Skills and MCP servers. Default `{}`. |
 | `use_skills`, `use_mcp` | Registry names every ticket on the board gets (default `[]`). A profile (`agents[].skills` / `mcp`) and a ticket (`skills` / `mcp`) add more. |
 | `schema` | Optional rules for new tickets, see below. Default `null`: anything goes. |
+| `milestones` | The roadmap, in order: `[{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]`. Only `key` (letters, digits, `. _ -`) and `title` are required. See Milestones below. Default `[]`. |
 | `agent_tickets` | `"open"` (default): agents create ready tickets. `"propose"`: a ticket an agent creates is a proposal until a human accepts it; turn it on for boards where several people or agents create work you want to vet. |
 
 ### Ticket schema and the proposal gate
@@ -264,6 +270,18 @@ Every key is optional. `prefixes` maps a prefix to a one-line meaning (80 chars)
 
 **Proposal gate** (opt-in, `agent_tickets: "propose"`): a ticket created with an agent name gets `proposed_by`, is pending and cannot be claimed. It appears in **Needs you** as a *Proposal* (who proposed it, Done when, body on expand) with **Accept** (`accept_ticket`, `accept ID`, `POST tickets/<id>/accept`) and **Reject** (deletes it; an optional reason is logged). Tickets created by humans (UI, chat Create button, CLI without `--agent`) and split children are never proposals. The webhook reports `proposed` and `accepted`.
 
+### Milestones (the roadmap)
+
+A milestone is a version of the roadmap: v0.1, v0.2... Put them in `milestones` in `unblockd.json`, **in order** (the position is the order; reordering the roadmap is a one-line diff in a PR). A ticket points at one with its `milestone` field, which is separate from `parent`, so a ticket can be part of a feature epic AND ship in a version. A key the board doesn't list is refused (one already on a ticket is kept, so removing a milestone never locks a ticket; such a ticket counts as unscheduled).
+
+- **Progress is derived**, never stored: per milestone the counts of done, in review, in progress, ready, waiting on a person and blocked tickets.
+- **Next** = the first milestone that is not `closed`. A human closes one by setting `"closed": true` after checking its exit criteria: the last ticket finishing does not close it (the Roadmap shows "All done: close it?").
+- **Agents**: `claim_next` prefers the next milestone's tickets when two ready tickets have the same score (a tie-break: a higher score from another milestone still wins).
+- **Unscheduled** = tickets with no milestone: the backlog.
+- **Web**: the Roadmap view (`r`): the milestones in order with progress, counts, goal, exit criteria and the Next badge; click one to see its tickets on the board. Filters → Milestone (and Unscheduled), Group by → Milestone, the edit form's Milestone, the drawer's "Milestone" link.
+- **Agents and scripts**: REST `GET roadmap` and `GET tickets?milestone=v0.1` (`-` = none), MCP `roadmap` and `list_tickets(milestone=)`, `create_ticket(milestone=)`, CLI `roadmap`, `list --milestone`, `create|update --milestone KEY` (`-` clears).
+- **Moving from version epics** (one epic ticket per version with every ticket's `parent` set to it): add the milestones to the config, then `python -m unblockd.cli migrate-milestones REL-1=v0.1 REL-2=v0.2`: every ticket under each epic gets that milestone and its `parent` cleared. The epic tickets stay; delete or close them when you're happy.
+
 ## Tickets
 
 ```json
@@ -284,6 +302,8 @@ Every ticket comes back with derived fields: `effective_status`,
 `open_blockers`, `blocks`, `unblocks` (open tickets downstream, transitive),
 `missing_blockers`, `stale_days`, `agent` and `score` = priority weight
 (P0 8, P1 4, P2 2, P3 1) x (1 + `unblocks`).
+
+**Notes** are a list on the ticket, separate from `body` (the description): `"notes": [{"by": "backend-1", "at": "2026-10-20T10:00:00+00:00", "kind": "note", "text": "found the cause"}]`, oldest first. `add_note` (MCP / CLI `note` / REST `POST tickets/<id>/notes`) adds a `note`; asking, answering (`q` holds the question), approving, rejecting, accepting, releasing with a reason, an expired claim and `complete` (`status`, plus the `done_when` it was finished against) add their own kinds. They are append-only: `update` refuses `notes`, and editing the body never touches them. Tickets written before notes were a field kept them as lines in the body; they are split out when read and saved as `notes` on the ticket's next write.
 
 ## The board
 
@@ -401,7 +421,10 @@ python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --
 python -m unblockd.cli --dir <repo>/tickets accept BUG-11 --by omri
 python -m unblockd.cli --dir <repo>/tickets split BUG-10 --title "part one" --title "part two" --sequential
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --json '{"status":"done"}'
-python -m unblockd.cli --dir <repo>/tickets note BUG-10 "dated finding appended to the body"
+python -m unblockd.cli --dir <repo>/tickets note BUG-10 "a signed, dated finding added to the ticket's notes"
+python -m unblockd.cli --dir <repo>/tickets roadmap                          # milestones in order with progress
+python -m unblockd.cli --dir <repo>/tickets update BUG-10 --milestone v0.2   # - clears it
+python -m unblockd.cli --dir <repo>/tickets migrate-milestones REL-1=v0.1 REL-2=v0.2   # version epics -> milestones
 ```
 
 ## API

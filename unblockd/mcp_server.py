@@ -6,7 +6,7 @@ Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the work
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, accept_ticket, approve_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
-release, ask_human, add_note, answer, reject, complete, agents_now, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
+release, ask_human, add_note, answer, reject, complete, agents_now, roadmap, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
 from __future__ import annotations
@@ -98,7 +98,7 @@ def tool(fn):
 
 
 def _summary(t: dict) -> dict:
-	keys = ("id", "title", "effective_status", "priority", "owner", "pillar", "tags", "agent", "open_blockers")
+	keys = ("id", "title", "effective_status", "priority", "owner", "pillar", "milestone", "tags", "agent", "open_blockers")
 	return {k: t.get(k) for k in keys}
 
 
@@ -158,11 +158,12 @@ def next_ready(board: str | None = None, owner: str | None = None, pillar: str |
 @tool
 def list_tickets(board: str | None = None, status: str | None = None, pillar: str | None = None,
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
-                 agent: str | None = None, parent: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
+                 agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
 	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
-	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts), q (words to search).
+	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts),
+	milestone (a key from board_info's milestones; "-" = tickets with none), q (words to search).
 	Returns short summaries unless full=true."""
-	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent)
+	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent, milestone=milestone)
 	return res if full else [_summary(t) for t in res]
 
 
@@ -179,20 +180,29 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
                   done_when: list[str] | None = None, components: list[str] | None = None,
-                  skills: list[str] | None = None, mcp: list[str] | None = None) -> dict:
+                  skills: list[str] | None = None, mcp: list[str] | None = None, milestone: str | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). agent = your worker name. Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
 	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each),
 	components = keys of the architecture components (board_info / architecture_map) the work changes: set them, they link the ticket to its notes and the Map (refused when the board has no architecture or the key is unknown).
 	skills / mcp = names from board_info's `skills` / `mcp` registry this ticket needs beyond the board's and its profile's (unknown names are refused).
+	milestone = the roadmap version it ships in (a key of board_info's `milestones`), separate from parent.
 	Read board_info first: its `schema` (allowed prefixes with meanings, required fields, allowed tags, body template) is enforced for you and a
 	break is refused with every problem listed; if no prefix fits, ask_human, do not guess a near one. With `agent_tickets: "propose"` the
 	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
-	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or [], "skills": skills or [], "mcp": mcp or []}
+	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or [], "skills": skills or [], "mcp": mcp or [], "milestone": milestone}
 	return store.create(data, tid=id, prefix=prefix, agent=agent)
+
+
+@tool
+def roadmap(board: str | None = None) -> dict:
+	"""The board's milestones (versions) in roadmap order, each with progress counts (total, done, review, doing, ready, waiting_on_human,
+	blocked), its goal and exit_criteria, `next` = the current one (first not closed), plus the counts of unscheduled tickets.
+	claim_next prefers the next milestone's tickets when scores tie."""
+	return BOARDS.get(board).roadmap()
 
 
 @tool
@@ -206,7 +216,7 @@ def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) 
 	"""Change fields of a ticket. agent = your worker name: you can't change a
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
 	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
-	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
+	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), milestone (a key of board_info's milestones, or null), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
 	return BOARDS.get(board).update(id, changes, agent=agent)
 
 
@@ -260,8 +270,8 @@ def ask_human(id: str, agent: str, question: str, board: str | None = None) -> d
 
 @tool
 def add_note(id: str, agent: str, text: str, board: str | None = None) -> dict:
-	"""Record progress or a finding on a ticket: appends a signed, timestamped line to its body, safely (never replaces the body, so it can't
-	clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not."""
+	"""Record progress or a finding on a ticket: appends a signed, timestamped note to its `notes` ({by, at, kind, text}), safely (never touches
+	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not."""
 	return BOARDS.get(board).add_note(id, agent, text)
 
 

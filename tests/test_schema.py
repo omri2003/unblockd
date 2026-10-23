@@ -164,7 +164,7 @@ class ProposalTest(unittest.TestCase):
 		self.assertEqual(self.s.claim_next("bot-2")["counts"]["waiting_on_human"], 1)
 		a = self.s.accept("BUG-1", "omri")
 		self.assertEqual((a["proposed_by"], a["effective_status"]), ("", "todo"))
-		self.assertIn("Accepted by omri", a["body"])
+		self.assertEqual((a["notes"][-1]["kind"], a["notes"][-1]["by"]), ("accepted", "omri"))
 		self.assertEqual([e["event"] for e in self.s.activity("BUG-1")][:2], ["accepted", "proposed"])
 		self.assertEqual(self.s.claim("bot-2")["id"], "BUG-1")
 		with self.assertRaisesRegex(TicketError, "isn't a proposal"):

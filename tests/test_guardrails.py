@@ -66,7 +66,7 @@ class GuardrailTest(unittest.TestCase):
 		t = s.approve("T-1", "omri")
 		self.assertEqual((t["status"], t["result"]["approved_by"], t["result"]["by"]), ("done", "omri", "claude"))
 		self.assertTrue(t["result"]["approved_at"] and t["done_at"])
-		self.assertIn("Approved by omri", t["body"])
+		self.assertEqual((t["notes"][-1]["kind"], t["notes"][-1]["text"]), ("approved", "Approved by omri"))
 		self.assertEqual(s.activity("T-1")[0]["event"], "approved")
 		t = s.update("T-1", {"status": "review"})  # Undo: nobody approves it any more
 		self.assertNotIn("approved_by", t["result"])

@@ -19,5 +19,6 @@
   "docs": [
     "docs/arch/store.md"
   ],
-  "components": []
+  "components": [],
+  "milestone": "v0.1"
 }

@@ -24,5 +24,6 @@
   "components": [
     "web-ui"
   ],
-  "rev": 1
+  "rev": 1,
+  "milestone": "v0.1"
 }

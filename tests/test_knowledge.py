@@ -108,8 +108,8 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(ctx["done_when"], ["parry window is 0.2s", "tests pass"])
 		self.assertIn("done_when", ctx["note"])
 		self.s.claim("backend-1", tid="CMB-1")
-		body = self.s.complete("CMB-1", "backend-1", "window 0.2s; tests pass")["body"]
-		self.assertTrue(body.endswith("window 0.2s; tests pass\nDone when:\n- parry window is 0.2s\n- tests pass"))
+		n = self.s.complete("CMB-1", "backend-1", "window 0.2s; tests pass")["notes"][-1]
+		self.assertEqual((n["text"], n["done_when"]), ("window 0.2s; tests pass", ["parry window is 0.2s", "tests pass"]))
 		for bad in ("x", [""], ["a"] * 21, [1]):
 			with self.assertRaises(TicketError):
 				self.s.update("CMB-1", {"done_when": bad})

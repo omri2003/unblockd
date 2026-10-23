@@ -288,7 +288,7 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.cli("claim", "--agent", "backend-1", "--id", other["id"])[1]["id"], other["id"])
 		self.assertEqual(self.cli("release", other["id"], "--agent", "backend-1", "--reason", "x")[1]["status"], "todo")
 		self.assertEqual(self.cli("get", "CMB-2")[1]["id"], "CMB-2")
-		self.assertIn("— ana, ", self.cli("note", "CMB-2", "hi", "--by", "ana")[1]["body"])
+		self.assertEqual(self.cli("note", "CMB-2", "hi", "--by", "ana")[1]["notes"][-1]["by"], "ana")
 		self.assertEqual(self.cli("answer", "CMB-2", "x")[0], 1)  # Remote.answer / reject reach the server's refusals
 		self.assertIn("not review", self.cli("reject", "CMB-2", "x")[1])  # Remote.add_note -> POST notes
 		self.assertEqual(self.cli("plan")[1]["agents"][0]["ready"], 1)
@@ -367,7 +367,7 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"text": "looks right"})
 		self.assertEqual(code, 200)
-		self.assertRegex(t["body"], r"^— human, .*: looks right$")
+		self.assertEqual([(n["by"], n["text"]) for n in t["notes"]], [("human", "looks right")])
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/notes", {"by": "ana"})[0], 400)
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/notes", {"text": "x"})[0], 404)
 
@@ -379,11 +379,11 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "backend-1", "question": "which?"})
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual((code, t["waiting_on"]), (200, ""))
-		self.assertRegex(t["body"], r"— human, .*Answer to: which\? — this one$")
+		self.assertEqual({k: t["notes"][-1][k] for k in ("by", "kind", "q", "text")}, {"by": "human", "kind": "answer", "q": "which?", "text": "this one"})
 		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/reject", {"by": "ana", "reason": "redo"})
 		self.assertEqual((code, t["status"]), (200, "todo"))
-		self.assertIn("— ana, ", t["body"])
+		self.assertEqual((t["notes"][-1]["by"], t["notes"][-1]["kind"]), ("ana", "rejected"))
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/answer", {"text": "x"})[0], 404)
 
 	def test_approve_route_and_cli(self):
@@ -393,11 +393,11 @@ class ApiTest(unittest.TestCase):
 		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})
 		self.assertEqual((code, t["status"], t["result"]), (200, "done", None))  # moved to review by hand: no result is invented
-		self.assertIn("Approved by ana", t["body"])
+		self.assertEqual(t["notes"][-1]["kind"], "approved")
 		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
 		code, t = self.cli("approve", "CMB-2", "--by", "ana")
 		self.assertEqual((code, t["status"]), (0, "done"))
-		self.assertIn("Approved by ana", t["body"])
+		self.assertEqual(t["notes"][-1]["text"], "Approved by ana")
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/NOPE-1/approve", {})[0], 404)
 
 	def test_needs_lists_questions_and_reviews_on_every_board(self):
@@ -417,8 +417,8 @@ class ApiTest(unittest.TestCase):
 		# score order: the P1 review before the unprioritised question; the hand-parked and plain tickets are not listed
 		self.assertEqual([(i["id"], i["kind"]) for i in n[0]["items"]], [("CMB-2", "review"), ("CMB-1", "question")])
 		q = n[0]["items"][1]
-		self.assertEqual((q["waiting_on"], q["since"][:4].isdigit(), "question: which?" in q["body"]), ("which?", True, True))
-		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "missing_blockers", "stale_days", "done_when", "result", "body"}, set(q))  # open_blockers/claim_note: stuck only
+		self.assertEqual((q["waiting_on"], q["since"][:4].isdigit(), q["notes"][-1]["text"]), ("which?", True, "which?"))
+		self.assertEqual({"id", "kind", "title", "priority", "score", "unblocks", "since", "waiting_on", "missing_blockers", "stale_days", "done_when", "result", "body", "notes"}, set(q))  # open_blockers/claim_note: stuck only
 		self.assertEqual([i["id"] for i in n[1]["items"]], ["WEB-1"])
 		self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual([i["id"] for i in self.call("GET", "/api/needs")[1][0]["items"]], ["CMB-2"])

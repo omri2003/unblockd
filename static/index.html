@@ -332,7 +332,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vico{display:inline-flex;align-items:center;gap:0;height:28px;padding:0 7px;border:0;background:none;color:var(--muted);border-radius:calc(var(--r) - 2px);cursor:pointer;font:inherit;font-size:.82rem;font-weight:600}
 .vico.lbl{gap:6px;font-size:.88rem} .vico .n{opacity:.7;font-variant-numeric:tabular-nums}
 .vico:hover{color:var(--ink)} .vico[aria-pressed="true"]{--ind:var(--ink);background:var(--ind);color:var(--paper)} .vi{display:block;flex:none}
-@media (max-width:600px){.vico{height:34px;padding:0 10px}}
+@media (max-width:600px){.vico{height:34px;padding:0 9px}}
 .hdr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .graphwrap{position:relative;background:var(--sunk);border-radius:8px;overflow:hidden}
 .gtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:.85rem}
@@ -406,6 +406,16 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dprob button.bad{border-color:var(--cinnabar);color:var(--cinnabar)}
 .dprob button.zero{color:var(--muted);cursor:default;font-weight:400}
 .dprob button[aria-pressed=true]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.roadwrap{max-width:860px} .rm{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.rmi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:6px}
+.rmi.rnext{border-color:var(--jade);box-shadow:inset 3px 0 0 var(--jade)} .rmi.rclosed{opacity:.7}
+.rmh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px} .rmh .ttl{font-weight:700;font-size:1rem;background:none;border:0;padding:0;color:var(--ink);cursor:pointer;text-align:left} .rmh .ttl:hover{text-decoration:underline}
+.rmh .k{font-family:var(--mono,monospace);font-size:.78rem;color:var(--muted)} .rmh .tg{margin-left:auto;font-size:.8rem;color:var(--muted)}
+.rmb{font-size:.72rem;font-weight:700;border-radius:999px;padding:1px 8px;border:1px solid currentColor} .rmb.rnext{color:var(--jade)} .rmb.rclosed{color:var(--muted)} .rmb.rall{color:var(--amber)}
+.rmi .goal{color:var(--muted)} .rmi .prog i{width:120px} .rmc{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.84rem;color:var(--muted)} .rmc b{color:var(--ink);font-variant-numeric:tabular-nums}
+.rmi ul{margin:0;padding-left:18px;font-size:.88rem} .rmi h4{margin:4px 0 0;font-size:.74rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.roadwrap pre{font:.82rem/1.45 var(--mono);background:var(--sunk);padding:10px 12px;border-radius:8px;overflow:auto;max-width:100%}
+.rmu{display:flex;gap:10px;align-items:center;font-size:.9rem;color:var(--muted);padding:4px 2px}
 .dtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:10px;font-size:.82rem;color:var(--muted)}
 .dtools .sw{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
 .dstage{position:relative;background:var(--sunk);border-radius:8px;padding:12px 12px}
@@ -526,6 +536,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
       <div class="fbody" id="fbody">
         <div class="seg" id="pillarSeg" data-l="Pillar" title="Pillar: the kind of work (one per ticket: prefix, colour, which agent)"></div>
         <div class="seg" id="compSeg" data-l="Component" title="Component: the parts of the system it changes (can be several)" hidden></div>
+        <div class="seg" id="msSeg" data-l="Milestone" title="Milestone: the roadmap version it ships in" hidden></div>
         <div class="seg" id="ownerSeg" data-l="Owner"></div>
         <div class="seg" id="mineSeg" data-l="Mine" title="Mine: tickets I own, or that an agent works on for me (set 'I am' in Settings)" hidden></div>
         <div class="seg" id="prioSeg" data-l="Priority"></div>
@@ -542,6 +553,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
   <div class="board" id="board"></div>
+  <section class="roadwrap" id="roadWrap" hidden aria-label="Roadmap"></section>
   <section class="docswrap" id="docsWrap" hidden aria-label="What agents read">
     <div class="dprob" id="dProb" role="group" aria-label="Problems"></div>
     <div class="dtools"><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
@@ -619,6 +631,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
     <dt><kbd>m</kbd></dt><dd>Switch between Board and Map (how components connect, and where the work is)</dd>
+    <dt><kbd>r</kbd></dt><dd>Switch between Board and Roadmap (milestones in order, how far each one is)</dd>
     <dt><kbd>n</kbd></dt><dd>New ticket</dd>
     <dt><kbd>B</kbd></dt><dd>Switch board (<kbd>Shift</kbd> + <kbd>b</kbd>), then arrows and Enter</dd>
     <dt><kbd>i</kbd></dt><dd>Needs you: questions and reviews, on every board</dd>
@@ -698,12 +711,13 @@ let STALE=7; // days; from the config's stale_days
 const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
 const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
-const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','parent','agent'];
-const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
+const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','milestone','parent','agent'];
+const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
 const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
 const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
 const COMPS=()=>MV.data?.components||[], ctitle=k=>COMPS().find(c=>c.key===k)?.title||k;
+const MSL=()=>CFG.milestones||[], mtitle=k=>MSL().find(m=>m.key===k)?.title||k, msOf=t=>MSL().some(m=>m.key===t.milestone)?t.milestone:''; // the roadmap (config order); a key no longer listed counts as unscheduled
 const tcomps=t=>[...new Set([...(t.components||[]),...(MV.data?.ticket_map?.[t.id]||[])])]; // a ticket's components: explicit first, then those derived from its touches (GET /architecture ticket_map); explicit alone until that arrives
 const LOCK='<svg class="lock" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="5.5" width="8" height="5.5" rx="1" fill="currentColor"/><path d="M4 5.5V4a2 2 0 014 0v1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
 let TAB=(()=>{try{return sessionStorage.getItem('unblockd.tab')}catch{}})();if(!['todo','doing','pending','review','done'].includes(TAB))TAB='todo'; // mobile: one column at a time, remembered for the session
@@ -867,7 +881,9 @@ function renderBar(){
   $('parentSeg').hidden=!ps.length; if(ps.length) chips($('parentSeg'),[['ALL','Any'],...ps.map(id=>[esc(id),esc(id)])],state.parent,'parent');
   const cs=COMPS(); if(state.comp!=='ALL'&&(MV.data||!CFG.architecture)&&!cs.some(c=>c.key===state.comp)) state.comp='ALL'; // the component is gone: do not hide everything
   $('compSeg').hidden=!cs.length; if(cs.length) chips($('compSeg'),[['ALL','Any'],...cs.map(c=>[esc(c.key),esc(c.title)])],state.comp,'comp');
-  chips($('groupSeg'),GROUPS.filter(g=>g!=='component'||(CFG.architecture&&(COMPS().length||!MV.data))).map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
+  const ms=MSL(); if(state.ms!=='ALL'&&state.ms!=='NONE'&&!ms.some(m=>m.key===state.ms)) state.ms='ALL'; // the milestone is gone: do not hide everything
+  $('msSeg').hidden=!ms.length; if(ms.length) chips($('msSeg'),[['ALL','Any'],...ms.map(m=>[esc(m.key),esc(m.title)]),['NONE','Unscheduled']],state.ms,'ms');
+  chips($('groupSeg'),GROUPS.filter(g=>(g!=='milestone'||ms.length)&&(g!=='component'||(CFG.architecture&&(COMPS().length||!MV.data)))).map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
   $('depSeg').hidden=state.view!=='graph';
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
@@ -891,11 +907,12 @@ function matches(t){
   if(state.owner!=='ALL' && t.owner!==state.owner) return false;
   if(mineOn()&&!isMine(t)) return false;
   if(state.comp!=='ALL' && !tcomps(t).includes(state.comp)) return false;
+  if(state.ms!=='ALL' && msOf(t)!==(state.ms==='NONE'?'':state.ms)) return false;
   if(state.parent!=='ALL' && t.parent!==state.parent) return false;
   if(state.agent!=='ALL' && (state.agent==='NONE' ? t.agent : t.agent!==state.agent)) return false;
   if(state.prio.length && !state.prio.includes(t.priority)) return false;
   if(state.q&&state.rx!==null){ if(state.rxErr||!(state.rx.test(t.id+' '+t.title)||state.rx.test(t.id))) return false; }
-  else if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+t.section+' '+t.owner+' '+(t.tags||[]).join(' ')+' '+(t.agent||'')).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
+  else if(state.q){ const hay=(t.id+' '+t.title+' '+t.body+' '+(t.notes||[]).map(n=>n.text).join(' ')+' '+t.section+' '+t.owner+' '+(t.tags||[]).join(' ')+' '+(t.agent||'')).toLowerCase(); if(!state.q.toLowerCase().split(/\s+/).every(w=>hay.includes(w))) return false; }
   return true;
 }
 // ---------- show mode: Only / Paths / Dim, applied to every filter ----------
@@ -928,6 +945,7 @@ function activeFilters(){
   if(state.owner!=='ALL') ps.push([`data-owner="ALL"`,state.owner]);
   if(mineOn()) ps.push([`data-mine="0"`,'Mine']);
   if(state.comp!=='ALL') ps.push([`data-comp="ALL"`,'Component: '+ctitle(state.comp)]);
+  if(state.ms!=='ALL') ps.push([`data-ms="ALL"`,state.ms==='NONE'?'Unscheduled':'Milestone: '+mtitle(state.ms)]);
   if(state.parent!=='ALL') ps.push([`data-parent="ALL"`,'Parent: '+state.parent]);
   if(state.agent!=='ALL') ps.push([`data-agent="ALL"`,state.agent==='NONE'?'Unrouted':state.agent]);
   for(const p of state.prio) ps.push([`data-prio="${p}"`,p]);
@@ -939,17 +957,17 @@ function renderPills(){
   $('pills').innerHTML=ps.map(([a,l])=>`<button type="button" class="pill" ${a} aria-label="Remove filter ${esc(l)}">${esc(l)}</button>`).join('');
   $('fcount').hidden=!ps.length;$('fcount').textContent=ps.length;
 }
-const VIEWK=['board','graph','docs','map'], DEPS=['ALL','FREE','BLOCKED'];
+const VIEWK=['board','graph','docs','map','roadmap'], DEPS=['ALL','FREE','BLOCKED'];
 function urlWrite(){ // the view lives in the address bar (non-default values only): a link reproduces it. replaceState, so no history spam; ?board= and #ID stay
   const g=state.view==='graph',u=new URLSearchParams(location.search),sk=g?'showGraph':'showBoard';
-  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,me:mineOn()?'1':'',agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,comp:state.comp==='ALL'?'':state.comp,
+  const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,me:mineOn()?'1':'',agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,comp:state.comp==='ALL'?'':state.comp,milestone:state.ms==='ALL'?'':state.ms==='NONE'?'-':state.ms,
     priority:state.prio.join(','),show:state[sk]===(g?'dim':'only')?'':state[sk],group:state.group==='none'?'':state.group,dep:g&&state.dep!=='ALL'?state.dep:''};
   for(const k in v)v[k]?u.set(k,v[k]):u.delete(k);
   const qs=u+'',now=location.search.slice(1);
   if(qs!==now.replace(/\+/g,'%20'))history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
 }
 function urlRead(){ // after applyConfig. Any of our params present = the link defines the whole view (the rest back to defaults); bad values are ignored
-  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','me','agent','parent','comp','priority','show','group','dep'];
+  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','me','agent','parent','comp','milestone','priority','show','group','dep'];
   if(!K.some(k=>u.has(k)))return;
   const g=k=>u.get(k)||'';
   state.view=pickOf(g('view'),VIEWK,'board');
@@ -959,6 +977,7 @@ function urlRead(){ // after applyConfig. Any of our params present = the link d
   state.agent=pickOf(g('agent'),['NONE',...CFG.agents.map(a=>a.name)],'ALL');
   state.parent=/^[A-Za-z0-9_-]+$/.test(g('parent'))?g('parent'):'ALL';
   state.comp=/^[a-z0-9-]+$/.test(g('comp'))?g('comp'):'ALL';
+  state.ms=g('milestone')==='-'?'NONE':pickOf(g('milestone'),MSL().map(m=>m.key),'ALL');
   state.prio=g('priority').split(',').filter(p=>PRIOS.includes(p));
   state.group=pickOf(g('group'),GROUPS,'none');
   state.dep=pickOf(g('dep'),DEPS,'ALL');
@@ -1048,7 +1067,11 @@ function renderDigest(){
 let NMARK=''; // ids of this board's failed-N-times cards; a change repaints the board (the cards read NEEDS)
 const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
 const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
-const parseNotes=b=>(b||'').split(/\n\n(?=— )/).map(c=>/^— ([^,\n]+), (\S+): ([\s\S]*)$/.exec(c)).filter(Boolean).map(m=>({by:m[1],at:m[2],text:m[3]})); // the `— by, ISO: text` lines _append_note writes
+const noteLine=n=>{const k=n.kind; return k==='answer'?`Answer to “${n.q}”: ${n.text}`:k==='question'?'Question: '+n.text:k==='rejected'?'Rejected: '+n.text:k==='released'?'Released: '+n.text:k==='complete'?(n.status==='review'?'Finished, for review: ':'Finished: ')+n.text:n.text;}; // a ticket's notes ({by, at, kind, text}, the store's _append_note) in words; claim notes and attempts have text only
+const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: the panel already shows the question
+const ntime=at=>at.length>10?new Date(at).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):at; // old complete() notes carry a date only
+function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
+  return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time><p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
 async function loadNeeds(){ // ETag: an idle poll costs headers only
   if(!BOARDS.length) return; const tok=++nTok;
   try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||!r.ok||tok!==nTok) return; const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
@@ -1091,16 +1114,16 @@ document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.rq){RQ[d.
 function needsRow(g,i){
   const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
-  const notes=parseNotes(i.body).filter(n=>!(i.kind==='question'&&n.text==='question: '+i.waiting_on)).slice(-3);
+  const notes=(i.notes||[]).filter(n=>!(i.kind==='question'&&isAsk(n,i.waiting_on))).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
-  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(n.text.length>900?n.text.slice(0,900)+'…':n.text)}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
+  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(noteLine(n).length>900?noteLine(n).slice(0,900)+'…':noteLine(n))}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
   const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
   const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
     !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
     i.failed&&`${i.failed}. Add a note for the next attempt: the next worker reads it first.`,
     mb.length&&`Points at ${mb.join(', ')}, which ${mb.length>1?'were':'was'} deleted. Open it to remove or replace the blocker.`].filter(Boolean).join(' ');
-  const ln=i.kind==='stuck'&&(i.claim_note||(i.attempts||[])[0]?.note&&{by:i.attempts[0].agent,at:i.attempts[0].at,text:i.attempts[0].note}||parseNotes(i.body).filter(n=>n.text!=='question: '+i.waiting_on).pop()),
-    lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(ln.text.length>140?ln.text.slice(0,140)+'…':ln.text)}</p>`:'';
+  const ln=i.kind==='stuck'&&(i.claim_note||(i.attempts||[])[0]?.note&&{by:i.attempts[0].agent,at:i.attempts[0].at,text:i.attempts[0].note}||(i.notes||[]).filter(n=>!isAsk(n,i.waiting_on)).pop()),lt=ln&&noteLine(ln),
+    lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(lt.length>140?lt.slice(0,140)+'…':lt)}</p>`:'';
   const form=i.kind==='stuck'&&i.failed?`<form class="nd-f" data-nform="notes" ${B}>${f('n:','Add a note for the next attempt…')}<button class="btn sm" type="submit">Add note</button>${openBtn('btn ghost sm')}</form>`:i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
     :i.kind==='proposal'?`<form class="nd-f" data-nform="drop" ${B}><button type="button" class="btn sm" data-accept ${B}>Accept</button>${f('x:','Reject reason (optional)…')}<button class="btn ghost sm" type="submit">Reject</button></form>`
     :reviewForm('r:'+k,B,open?'textarea':'input');
@@ -1248,8 +1271,8 @@ function emptyState(){
   return `<div class="empty"><h2>No tickets match</h2><p class="fl">${fl.map(f=>`<span>${esc(f)}</span>`).join('')}</p><button type="button" class="btn" data-clear>Clear filters</button></div>`;
 }
 function clearFilters(){
-  Object.assign(state,{pillar:'ALL',comp:'ALL',owner:'ALL',mine:false,agent:'ALL',parent:'ALL',prio:[]});
-  for(const k of['pillar','comp','owner','parent'])store.set(k,'ALL'); store.set('mine',false);
+  Object.assign(state,{pillar:'ALL',comp:'ALL',ms:'ALL',owner:'ALL',mine:false,agent:'ALL',parent:'ALL',prio:[]});
+  for(const k of['pillar','comp','ms','owner','parent'])store.set(k,'ALL'); store.set('mine',false);
   if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
 const WSEC=[['On you','a question for you or a proposal to accept'],['On other work','waiting for another ticket to finish'],['Parked','set aside by hand, with a note']]; // Waiting column sections, same order of reasons as the card's reason line
@@ -1257,10 +1280,11 @@ const wsec=t=>t.proposed_by?0:t.open_blockers.length||(t.missing_blockers||[]).l
 function lanes(ts,col){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
   const g=state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group; if(g==='none'&&col==='pending') return WSEC.map(([n,tip],i)=>{const a=ts.filter(t=>wsec(t)===i);return a.length?`<h3 class="lane" title="${tip}"><span>${n}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`:'';}).join('');
   if(g==='none') return ts.map(card).join('');
-  const keys=t=>g==='component'?(tcomps(t).length?tcomps(t):['']):[(g==='pillar'?t.pillar:g==='parent'?t.parent:t.agent)||''],m=new Map();
+  const keys=t=>g==='component'?(tcomps(t).length?tcomps(t):['']):[(g==='pillar'?t.pillar:g==='milestone'?msOf(t):g==='parent'?t.parent:t.agent)||''],m=new Map();
   for(const t of ts)for(const k of keys(t))(m.get(k)||m.set(k,[]).get(k)).push(t);
-  const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),component:'No component',parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='component'?ctitle(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
-  return [...m].sort((a,b)=>!a[0]-!b[0]).map(([k,a])=>`<h3 class="lane" title="${esc(name(k))}"><span>${esc(name(k))}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`).join('');
+  const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),component:'No component',milestone:'Unscheduled',parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='component'?ctitle(k):g==='milestone'?mtitle(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
+  const mo=k=>MSL().findIndex(x=>x.key===k); // milestone lanes follow the roadmap order
+  return [...m].sort((a,b)=>!a[0]-!b[0]||(g==='milestone'?mo(a[0])-mo(b[0]):0)).map(([k,a])=>`<h3 class="lane" title="${esc(name(k))}"><span>${esc(name(k))}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`).join('');
 }
 const cardRects=()=>new Map([...document.querySelectorAll('#board .card[data-open]')].map(c=>[c.dataset.open,c.getBoundingClientRect()]));
 function playFlip(prev){ // FLIP: cards that moved glide from their old spot, new ones fade in. More than 60 moved = just jump.
@@ -1333,7 +1357,7 @@ function bodyHtml(b){
   fp();fl();return out.join('')||'<p class="none">No details yet.</p>';
 }
 function mentions(t){ const seen=new Set([t.id,...t.blocked_by,...t.blocks]); const out=[];
-  (t.body||'').replace(ID_RE,(m,a,p,n)=>{const id=p+'-'+n;if(BY.has(id)&&!seen.has(id)){seen.add(id);out.push(id);}}); return out; }
+  [t.body||'',...(t.notes||[]).map(n=>n.text)].join('\n').replace(ID_RE,(m,a,p,n)=>{const id=p+'-'+n;if(BY.has(id)&&!seen.has(id)){seen.add(id);out.push(id);}}); return out; }
 // Split: an inline form in the drawer (SPLIT = ticket being split, SPLITD = the half-typed draft, so the 4 s refresh keeps it)
 let SPLIT=null, SPLITD={text:'',seq:false};
 const splitForm=t=>`<form class="splitf" id="splitForm" data-for="${esc(t.id)}"><h3>Split ${esc(t.id)}</h3>
@@ -1360,7 +1384,7 @@ function showTicket(id,refresh){
   const why=s==='pending'?(t.proposed_by?`Proposal by ${t.proposed_by}`:t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const par=t.parent&&BY.get(t.parent),
-  dm=[par?`<span>Part of <button type="button" class="idlink" data-open="${esc(par.id)}">${esc(par.id)}</button> ${inline(par.title)}</span>`:'',t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
+  dm=[msOf(t)?`<span>Milestone <button type="button" class="idlink" data-msgo="${esc(t.milestone)}" title="Show this milestone's tickets on the board">${esc(mtitle(t.milestone))}</button></span>`:'',par?`<span>Part of <button type="button" class="idlink" data-open="${esc(par.id)}">${esc(par.id)}</button> ${inline(par.title)}</span>`:'',t.pillar?`<span>${esc(CFG.pillar_label)}: ${esc(pname(t.pillar))}${t.pillar_step?`, step ${t.pillar_step}`:''}</span>`:'',
     ...(tcomps(t).length?['<span>Components:</span>',...tcomps(t).map(k=>`<button type="button" class="cchip${(t.components||[]).includes(k)?'':' der'}" data-mapcomp="${esc(k)}" title="${(t.components||[]).includes(k)?'Open on the map':'Derived from this ticket\'s touches. Open on the map'}">${esc(ctitle(k))}</button>`)]:[]),
     t.agent?`<span class="ag">→ ${esc(t.agent)}${(CFG.agents||[]).some(a=>a.name===t.agent)?'':' (no such profile)'}</span>`:'',
     t.section?`<span>${esc(t.section)}</span>`:'',...(t.skills||[]).map(x=>`<span class="tag" title="Skill">skill: ${esc(x)}</span>`),...(t.mcp||[]).map(x=>`<span class="tag" title="MCP server">mcp: ${esc(x)}</span>`),...(t.tags||[]).map(x=>`<span class="tag">#${esc(x)}</span>`),
@@ -1378,6 +1402,7 @@ function showTicket(id,refresh){
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
+    ${notesHtml(t)}
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}`:''}
     ${partsHtml(t)}
     <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
@@ -1411,6 +1436,7 @@ function editForm(t){
     <label class="${R('owner').trim()}" for="f-owner">Owner${S('owner')}<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
     <label class="full${R('priority')}" for="f-priority">Priority${S('priority')}<select id="f-priority">${opt(PLAB,t.priority)}</select></label>
     <label class="${R('pillar').trim()}" for="f-pillar" title="The kind of work: one per ticket (prefix, colour, which agent)">${esc(CFG.pillar_label)}${S('pillar')}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
+    ${MSL().length||t.milestone?`<label class="full" for="f-ms" title="The roadmap version it ships in">Milestone <span class="hint">the roadmap version it ships in</span><select id="f-ms">${opt([['','Unscheduled'],...MSL().map(m=>[m.key,m.title+(m.closed?' (closed)':'')]),...(t.milestone&&!MSL().some(m=>m.key===t.milestone)?[[t.milestone,t.milestone]]:[])],t.milestone)}</select></label>`:''}
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
     <label class="full" for="f-section">Section <span class="hint">pick one used on this board or type a new one</span><input id="f-section" maxlength="80" list="dl-section" value="${esc(t.section)}"><datalist id="dl-section">${[...new Set(T.map(x=>x.section).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
     <label class="full${R('done_when')}" for="f-done">Done when${S('done_when')} <span class="hint">one acceptance criterion per line: the bar an agent must meet and answer in its summary</span><textarea id="f-done" rows="3">${esc((t.done_when||[]).join('\n'))}</textarea></label>
@@ -1435,7 +1461,7 @@ async function submitForm(f){
   const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
     pillar:$('f-pillar').value||null,pillar_step:$('f-step').value?parseInt($('f-step').value,10):null,section:$('f-section').value,
-    blocked_by:pickIds('f-blocked'),...($('f-comp')?{components:pickIds('f-comp')}:{}),...($('f-skills')?{skills:pickIds('f-skills')}:{}),...($('f-mcp')?{mcp:pickIds('f-mcp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
+    blocked_by:pickIds('f-blocked'),...($('f-ms')?{milestone:$('f-ms').value||null}:{}),...($('f-comp')?{components:pickIds('f-comp')}:{}),...($('f-skills')?{skills:pickIds('f-skills')}:{}),...($('f-mcp')?{mcp:pickIds('f-mcp')}:{}),waiting_on:$('f-waiting').value,body:$('f-body').value,
     tags:pickIds('f-tags'),touches:pickIds('f-touches'),docs:pickIds('f-docs'),done_when:$('f-done').value.split('\n').map(s=>s.trim()).filter(Boolean)};
   try{
     const t=f.dataset.id ? await api('PATCH','/'+f.dataset.id,data,f.dataset.rev) : await api('POST','',{prefix:$('f-prefix').value.trim().toUpperCase(),...data});
@@ -1469,7 +1495,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-aprange]')){AP.days=+b.dataset.aprange;store.set('agentDays',AP.days);loadAgents();return;}
   if(b=g('[data-pref]')){const j=b.dataset.pref.indexOf(':');setPref(b.dataset.pref.slice(0,j),b.dataset.pref.slice(j+1));return;}
   if(b=g('[data-mine]')){state.mine=b.dataset.mine==='1';store.set('mine',state.mine);renderBar();render();return;}
-  for(const k of['pillar','comp','dep','owner','agent','parent','group']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
+  for(const k of['pillar','comp','ms','dep','owner','agent','parent','group']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
@@ -1517,6 +1543,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-mclear]')){mapClear();return;}
   if(g('[data-onmap]')){const id=openId;closeDrawer();showOnMap(id);return;}
   if(b=g('[data-mapcomp]')){const k=b.dataset.mapcomp;closeDrawer();showComp(k);return;}
+  if(b=g('[data-msgo]')){state.ms=b.dataset.msgo;store.set('ms',state.ms);if(!$('drawer').hidden)closeDrawer();setView('board');renderBar();return;}
   if(b=g('[data-showboard]')){state.comp=b.dataset.showboard;store.set('comp',state.comp);setView('board');renderBar();return;}
   if(state.view==='map'&&g('#mapWrap')&&!g('a,button,.eg,.mapmsg,#mProb,#mTools,#mNote')&&(MV.foc||MV.multi||MV.f)){mapClear();return;}
   if((e.shiftKey||e.ctrlKey||e.metaKey)&&(b=g('.card[data-open]'))){e.preventDefault();const id=b.dataset.open;SEL.has(id)?SEL.delete(id):SEL.add(id);renderBulk();renderBoard();return;}
@@ -1617,6 +1644,7 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
   else if(e.key==='d') viewTo(state.view==='docs'?'board':'docs');
   else if(e.key==='m') viewTo(state.view==='map'?'board':'map');
+  else if(e.key==='r') viewTo(state.view==='roadmap'?'board':'roadmap');
   else if(e.key==='i') $('npanel').hidden?openNeeds():closeNeeds();
   else if(e.key==='B'){ e.preventDefault(); if(!$('bsum').inert){ $('bpanel').open=true; } }
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
@@ -2417,7 +2445,7 @@ async function showOnMap(id){ // ticket drawer -> Map, focused on its component(
   setView('map');if(MV.foc)openMapPanel();
 }
 // ---------- view switch ----------
-const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>", "map": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"5.5\" y=\"1.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"1.75\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"9.25\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><path d=\"M8 5.25v2.5M4.25 10.75v-3h7.5v3\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d'],['map','Map','m']];
+const VICON={"board": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"1.75\" y=\"2.5\" width=\"3.5\" height=\"11\" rx=\"1\"/><rect x=\"6.25\" y=\"2.5\" width=\"3.5\" height=\"7\" rx=\"1\"/><rect x=\"10.75\" y=\"2.5\" width=\"3.5\" height=\"9\" rx=\"1\"/></svg>", "graph": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"3.5\" cy=\"11.5\" r=\"1.9\"/><circle cx=\"8\" cy=\"3.8\" r=\"1.9\"/><circle cx=\"12.7\" cy=\"11.5\" r=\"1.9\"/><path d=\"M4.6 9.9 6.9 5.5M9.1 5.5l2.5 4.4M5.4 11.5h5.4\"/></svg>", "docs": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M3.5 1.75h5.6l3.4 3.4v8.6a.5.5 0 0 1-.5.5h-8.5a.5.5 0 0 1-.5-.5v-11.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M9 1.9v3.4h3.3M5.5 8.5h5M5.5 11h5\"/></svg>", "roadmap": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M2 13.5h12\"/><circle cx=\"3.5\" cy=\"13.5\" r=\"1.3\"/><circle cx=\"8\" cy=\"13.5\" r=\"1.3\"/><path d=\"M12.5 13.5V2.5\"/><path d=\"M12.5 2.75h-4l1.2 1.6-1.2 1.6h4\"/></svg>", "map": "<svg class=\"vi\" viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"5.5\" y=\"1.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"1.75\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><rect x=\"9.25\" y=\"10.75\" width=\"5\" height=\"3.5\" rx=\".8\"/><path d=\"M8 5.25v2.5M4.25 10.75v-3h7.5v3\"/></svg>"};const VIEWS=[['board','Board',''],['graph','Graph','g'],['docs','Docs','d'],['map','Map','m'],['roadmap','Roadmap','r']];
 function paintViews(v){const s=$('viewSeg'); // built once: the buttons stay, only aria-pressed moves, so labels and the indicator can animate
 	if(!s.firstChild){s.dataset.track='';s.innerHTML=VIEWS.map(([n,l,k])=>`<button type="button" class="vico" data-view="${n}" aria-pressed="${v===n}" aria-label="${l}" title="${l}${k?` (${k})`:''}">${VICON[n]}<span class="vl"><span>${l}</span></span></button>`).join('');}
 	else s.querySelectorAll('.vico').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===v));
@@ -2427,9 +2455,29 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	if(!document.startViewTransition||reduce.matches) return setView(v);
 	document.startViewTransition(()=>setView(v));
 }
-function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('bar').hidden=v==='docs'||v==='map';$('depSeg').hidden=v!=='graph';
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('roadWrap').hidden=v!=='roadmap';$('bar').hidden=v==='docs'||v==='map'||v==='roadmap';$('depSeg').hidden=v!=='graph';
   paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
-function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();}
+function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
+// ---------- Roadmap: the board's milestones (unblockd.json, in order) with progress from the tickets; same counts as GET /roadmap ----------
+const RMC=[['ready','ready'],['doing','in progress'],['review','in review'],['waiting','waiting on a person'],['blocked','blocked']];
+function rmCounts(ts){const c={total:ts.length,done:0,review:0,doing:0,ready:0,waiting:0,blocked:0};
+  for(const t of ts){const s=t.effective_status;c[s==='done'?'done':s==='review'?'review':s==='doing'?'doing':s==='todo'?'ready':t.waiting_on||t.proposed_by?'waiting':'blocked']++;} return c;}
+function renderRoad(){
+  const el=$('roadWrap'),ms=MSL();
+  if(!ms.length){const h=`<p class="hint">No milestones on this board yet. A milestone is a version of the roadmap (v0.1, v0.2...): its tickets, its exit criteria, how far it is. Add them, in order, to <code>milestones</code> in <code>${esc(BOARD||'tickets')}/unblockd.json</code>, then set a ticket's Milestone in its edit form:</p><pre class="code">"milestones": [
+  {"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15"},
+  {"key": "v0.2", "title": "Sync"}
+]</pre>`;if(el.innerHTML!==h)el.innerHTML=h;return;}
+  const nxt=ms.find(m=>!m.closed)?.key,un=T.filter(t=>!msOf(t)),uo=un.filter(t=>t.status!=='done').length;
+  const row=m=>{const ts=T.filter(t=>t.milestone===m.key),c=rmCounts(ts),all=c.total&&c.done===c.total,pct=c.total?Math.round(100*c.done/c.total):0;
+    const badge=m.closed?'<span class="rmb rclosed">Closed</span>':m.key===nxt?'<span class="rmb rnext">Next</span>':'',ad=!m.closed&&all?'<span class="rmb rall" title="Every ticket is done: check the exit criteria, then set closed: true in unblockd.json">All done: close it?</span>':'';
+    return `<li class="rmi${m.key===nxt?' rnext':''}${m.closed?' rclosed':''}"><div class="rmh"><button type="button" class="ttl" data-msgo="${esc(m.key)}" title="Show its tickets on the board">${esc(m.title)}</button><span class="k">${esc(m.key)}</span>${badge}${ad}${m.target?`<span class="tg">Target ${esc(m.target)}</span>`:''}</div>
+      ${m.goal?`<div class="goal">${inline(m.goal)}</div>`:''}
+      <div class="rmc"><span class="prog" title="${c.done} of ${c.total} done"><i><b style="width:${pct}%"></b></i>${c.total?`${c.done} of ${c.total} done`:'no tickets yet'}</span>${RMC.filter(([k])=>c[k]).map(([k,l])=>`<span><b>${c[k]}</b> ${l}</span>`).join('')}</div>
+      ${(m.exit_criteria||[]).length?`<h4>Exit criteria</h4><ul>${m.exit_criteria.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:''}</li>`;};
+  const h=`<ol class="rm">${ms.map(row).join('')}</ol><div class="rmu">${un.length?`<button type="button" class="btn ghost sm" data-msgo="NONE">Unscheduled: ${uo} open</button><span>tickets with no milestone</span>`:''}</div>`;
+  if(el.innerHTML!==h) el.innerHTML=h; // the 4 s poll re-renders only when something changed
+}
 function renderAgBtn(){ // "Agents · 2 live": distinct agents holding a claim right now
   const n=new Set(T.filter(t=>t.claim).map(t=>t.claim.agent)).size,tx=n?`Agents · ${n} live`:'Agents'; if($('agBtn').textContent!==tx) $('agBtn').textContent=tx;
 }

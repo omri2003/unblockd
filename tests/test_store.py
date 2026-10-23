@@ -344,7 +344,7 @@ class CliTest(unittest.TestCase):
 			code, t = call("create", "--prefix", "BUG", "--title", "Probe", "--json", '{"priority": "P2"}')
 			self.assertEqual((code, t["id"], t["priority"]), (0, "BUG-1", "P2"))
 			code, t = call("note", "BUG-1", "first finding")
-			self.assertIn("first finding", t["body"])
+			self.assertEqual(t["notes"][-1]["text"], "first finding")
 			code, t = call("update", "BUG-1", "--json", '{"status": "done"}')
 			self.assertEqual(t["status"], "done")
 			code, ls = call("list", "--status", "done")
