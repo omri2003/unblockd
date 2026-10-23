@@ -172,11 +172,23 @@ try {
 		await noOverflow('docs');
 		{ // Roadmap view: example has 2 milestones (v0.1 is next) and one unscheduled ticket; a milestone opens the board filtered to it
 			await page.click('[data-view="roadmap"]');
-			await page.waitForFunction(() => document.querySelectorAll('#roadWrap .rmi').length === 2);
+			await page.waitForFunction(() => document.querySelectorAll('#roadWrap .rmi:not(.run)').length === 2);
 			ok(await page.getAttribute('#viewSeg [data-view="roadmap"]', 'title') === 'Roadmap (r)', `[${tag}] Roadmap tooltip should carry its key`);
-			ok((await page.locator('#roadWrap .rmi').first().getAttribute('class')).includes('rnext'), `[${tag}] roadmap: v0.1 should be Next`);
-			ok((await page.locator('#roadWrap [data-msgo="NONE"]').innerText()).includes('Unscheduled'), `[${tag}] roadmap: the unscheduled row`);
+			const first = page.locator('#roadWrap .rmi').first();
+			ok((await first.getAttribute('class')).includes('rnext') && (await first.getAttribute('class')).includes('open'), `[${tag}] roadmap: v0.1 is Next and starts expanded`);
+			ok((await first.locator('.rbar').getAttribute('aria-label')).includes('done'), `[${tag}] roadmap: the bar says its states in words`);
+			const chips = await first.locator('.rch').evaluateAll((c) => c.map((x) => x.dataset.open));
+			const v01ids = await page.evaluate(async () => (await (await fetch('/api/tickets?milestone=v0.1')).json()).map((t) => t.id));
+			ok(chips.length === v01ids.length && chips.every((id) => v01ids.includes(id)), `[${tag}] roadmap: v0.1's tickets as chips: ${chips} vs ${v01ids}`);
+			ok((await page.locator('#roadWrap .rmi.run').innerText()).includes('Unscheduled') && !(await page.locator('#roadWrap .rmi.run').getAttribute('class')).includes('open'), `[${tag}] roadmap: the unscheduled row, collapsed`);
+			await page.click('#roadWrap .rmi.run [data-rmx]'); // expand: its open tickets
+			await page.waitForFunction(() => document.querySelector('#roadWrap .rmi.run.open .rch'));
+			await page.click('#roadWrap .rmi.run [data-rmx]'); // and collapse
+			await page.waitForFunction(() => !document.querySelector('#roadWrap .rmi.run.open'));
 			await noOverflow('roadmap');
+			await first.locator('.rch').first().click(); // a chip opens its ticket
+			await visible('#drawer #dTitle', 'ticket from a roadmap chip');
+			await page.keyboard.press('Escape');
 			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/roadmap-${w}-${theme}.png` });
 			await settle(); // the view cross-fade swallows pointer events
 			await page.click('#roadWrap [data-msgo="v0.1"]');
