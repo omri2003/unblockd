@@ -116,7 +116,6 @@ try {
 		ok(/^Agents · \d+ live$/.test(await page.locator('#agBtn').innerText()), `[${tag}] Agents button counts live agents`);
 		ok(/^\d+$/.test(await page.locator('.col.todo .colhead .n').innerText()), `[${tag}] To do head shows a plain count`);
 		{ const wh = await page.locator('.col.pending .colhead h2').innerText(), wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); ok(wh === 'Waiting' && wl.some((x) => /^on other work/i.test(x)), `[${tag}] Waiting column with "On other work" section: ${wh} / ${wl}`); }
-		ok(/needs? you/.test(await page.locator('#needsBadge').textContent()), `[${tag}] Needs badge is in words`);
 		{ // the second claim's heartbeat was aged 8 min in the temp copy (lease 15): it reads "quiet ·", the fresh one "live ·"
 			const q = await page.locator('.col.doing .liv.quiet [data-hb]').allInnerTexts();
 			ok(q.length === 1 && /^quiet · \d+ min$/.test(q[0]), `[${tag}] one stale claim should read "quiet · N min", got ${q}`);
@@ -423,6 +422,7 @@ try {
 		// the CLI wrote the files: refresh as the 4 s poll would, then wait for the state
 		await refresh();
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '2'); // this board only: the second board's question is not counted here
+		ok(/needs? you/.test(await page.locator('#needsBadge').textContent()), `[${tag}] Needs badge is in words`);
 		{ const wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); // the agent question and the hand-parked ticket land in their own Waiting sections
 			ok(['on you', 'on other work', 'parked'].every((x) => wl.some((y) => y.toLowerCase().startsWith(x))), `[${tag}] Waiting sections On you / On other work / Parked: ${wl}`); }
 		ok((await page.getAttribute('#needsBadge', 'title')) === 'Needs you (i)', `[${tag}] badge tooltip`);
