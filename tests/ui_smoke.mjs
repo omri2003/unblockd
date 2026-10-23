@@ -116,7 +116,6 @@ try {
 		ok(/^Agents · \d+ live$/.test(await page.locator('#agBtn').innerText()), `[${tag}] Agents button counts live agents`);
 		ok(/^\d+$/.test(await page.locator('.col.todo .colhead .n').innerText()), `[${tag}] To do head shows a plain count`);
 		{ const wh = await page.locator('.col.pending .colhead h2').innerText(), wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); ok(wh === 'Waiting' && wl.some((x) => /^on other work/i.test(x)), `[${tag}] Waiting column with "On other work" section: ${wh} / ${wl}`); }
-		ok(/needs? you/.test(await page.locator('#needsBadge').textContent()), `[${tag}] Needs badge is in words`);
 		{ // the second claim's heartbeat was aged 8 min in the temp copy (lease 15): it reads "quiet ·", the fresh one "live ·"
 			const q = await page.locator('.col.doing .liv.quiet [data-hb]').allInnerTexts();
 			ok(q.length === 1 && /^quiet · \d+ min$/.test(q[0]), `[${tag}] one stale claim should read "quiet · N min", got ${q}`);
@@ -409,7 +408,7 @@ try {
 		await visible('#toasts .toast:has-text("back in")', 'undo confirmation toast');
 		await page.keyboard.press('Escape');
 
-		// Needs you (header badge + side panel, every board): a review + an agent question here, a question on the other board
+		// Needs you (header badge + side panel, this board only): a review + an agent question here; the question on the other board shows only there
 		const rid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'review me', '--json', '{"owner":"Claude","done_when":["it works"]}')).id;
 		cli('claim', '--agent', 'backend-1', '--id', rid); // result is only written by complete(); the example board has no review gate, so move it to review by hand
 		cli('complete', rid, '--agent', 'backend-1', '--summary', 'Did the **thing**', '--file', 'a.py', '--ref', 'https://example.com/pull/1', '--handoff', 'nothing');
@@ -422,10 +421,11 @@ try {
 		const badge = () => page.locator('#needsBadge .n').innerText();
 		// the CLI wrote the files: refresh as the 4 s poll would, then wait for the state
 		await refresh();
-		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '3');
+		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '2'); // this board only: the second board's question is not counted here
+		ok(/needs? you/.test(await page.locator('#needsBadge').textContent()), `[${tag}] Needs badge is in words`);
 		{ const wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); // the agent question and the hand-parked ticket land in their own Waiting sections
 			ok(['on you', 'on other work', 'parked'].every((x) => wl.some((y) => y.toLowerCase().startsWith(x))), `[${tag}] Waiting sections On you / On other work / Parked: ${wl}`); }
-		ok((await page.getAttribute('#needsBadge', 'title')).includes('This board: 2') && (await page.getAttribute('#needsBadge', 'title')).includes('Second board: 1'), `[${tag}] badge tooltip should split the count per board`);
+		ok((await page.getAttribute('#needsBadge', 'title')) === 'Needs you (i)', `[${tag}] badge tooltip`);
 		for (const v of ['graph', 'docs', 'board']) { // visible in every view; Free/Blocked only in the Graph
 			await page.click(`[data-view="${v}"]`);
 			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`)?.getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
@@ -446,8 +446,8 @@ try {
 		ok(await page.locator('#npanel').isHidden(), `[${tag}] Escape should close the panel`);
 		await page.keyboard.press('i');
 		await visible('#npanel .nr', 'Needs you panel via the i key');
-		ok((await page.locator('#npList .nr').count()) === 3, `[${tag}] panel should list 2 here + 1 on the other board`);
-		ok((await page.locator('#npList .ng').allInnerTexts()).join('|').replace(/\s+/g, ' ') === 'This board (2)|Second board (1)', `[${tag}] board groups: this board first`);
+		ok((await page.locator('#npList .nr').count()) === 2, `[${tag}] panel should list this board's 2 items only`);
+		ok((await page.locator('#npList .ng').count()) === 0 && (await page.locator(`#npList .nr[data-key="zsecond/${oid}"]`).count()) === 0, `[${tag}] only this board's items, no board groups`);
 		ok((await page.locator('#npList .nr').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
 		ok(!(await page.locator('#npanel').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the panel`);
 		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
@@ -473,7 +473,7 @@ try {
 		ok((await page.inputValue(`${qrow} textarea`)) === 'line one\nline two\nline three\nline four', `[${tag}] draft should survive collapse and expand`);
 		await page.keyboard.press('Control+Enter'); // not the Enter key alone: that was a newline
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${qid}`);
-		ok((await badge()) === '2', `[${tag}] badge should drop to 2 after answering`);
+		ok((await badge()) === '1', `[${tag}] badge should drop to 1 after answering`);
 		const answered = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), qid);
 		ok(answered.notes.some((n) => n.kind === 'answer' && n.q === 'Which one?' && n.text === 'line one\nline two\nline three\nline four') && !answered.waiting_on, `[${tag}] the multi-line answer should be on the ticket: ${answered.body}`);
 		// the review: open the ticket from the panel (the panel gives way to the drawer)
@@ -525,16 +525,23 @@ try {
 			for (let n = 0; n < 50 && (await st(xid)).status !== 'todo'; n++) await page.waitForTimeout(100);
 			ok((await st(xid)).notes.some((n) => n.kind === 'rejected' && n.text === 'needs tests'), `[${tag}] Reject from the drawer: back to To do with the reason in the body`);
 			cli('delete', aid); cli('delete', xid);
-			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .nr', 'panel back');
+			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .none:not([hidden])', 'panel back, empty (this board is done)');
 		}
-		// answer the other board's question from here: no board switch
+		await page.waitForFunction(() => document.getElementById('needsBadge').hidden); // this board is clear
+		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
+		// the other board's question shows on that board
+		await page.keyboard.press('Escape');
+		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' });
+		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
+		await page.keyboard.press('i');
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
-		ok(page.url().includes('board=zsecond') === false, `[${tag}] answering must not switch boards`);
 		const oans = await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), oid);
 		ok(oans.notes.some((n) => n.kind === 'answer' && n.q === 'Which colour?' && n.text === 'Teal'), `[${tag}] the other board's ticket should carry the answer`);
-		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
+		await page.keyboard.press('Escape');
+		await page.goto(base + '?board=' + boardId); await page.waitForSelector('.card', { state: 'attached' }); // explicit: the page reopens the last board (zsecond) otherwise
+		await page.keyboard.press('i'); await page.waitForSelector('#npanel .none:not([hidden])');
 		ok((await page.locator('#attnSeg').count()) === 0, `[${tag}] the Needs attention chip is gone (Stuck lives in the panel)`);
 		// Stuck: a doing ticket nobody touched for stale_days, and a todo whose blocker file is gone (both crafted in the JSON); the open panel picks them up
 		const age = async (id, change) => { const f = join(root, 'example/tickets', `${id}.json`); await writeFile(f, JSON.stringify({ ...JSON.parse(await readFile(f, 'utf8')), ...change })); };
@@ -545,6 +552,7 @@ try {
 		const bk = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'the blocker', '--json', '{"owner":"Claude"}')).id;
 		const did = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'doing while blocked', '--json', '{"owner":"Claude"}')).id;
 		cli('claim', '--agent', 'backend-1', '--id', did); await age(did, { blocked_by: [bk] }); // claimed first (claim refuses a blocked ticket), blocker added in the JSON
+		await refresh(); // as the 4 s poll would
 		await page.waitForFunction(() => document.querySelectorAll('#npList .nb.s').length === 3);
 		ok((await page.locator('#npSum').innerText()) === '3 stuck', `[${tag}] header counts: ${await page.locator('#npSum').innerText()}`);
 		const srow = `#npList .nr[data-key="${boardId}/${sid}"]`, mrow = `#npList .nr[data-key="${boardId}/${mid}"]`;
@@ -558,8 +566,10 @@ try {
 		// failed-N-times cue on the card: 3 claim+release rounds, gone after a human note
 		const fid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'keeps failing', '--json', '{"owner":"Claude"}')).id;
 		for (let i = 0; i < 3; i++) { cli('claim', '--agent', 'backend-1', '--id', fid); cli('release', fid, '--agent', 'backend-1', '--reason', 'tried ' + i); }
+		await refresh();
 		await page.waitForFunction((i) => /Failed 3 times/.test(document.querySelector(`#board [data-open="${i}"] .wl.fail`)?.textContent || ''), fid);
 		cli('note', fid, 'try the other approach', '--by', 'human');
+		await refresh();
 		await page.waitForFunction((i) => !document.querySelector(`#board [data-open="${i}"] .wl.fail`), fid);
 		ok(true, `[${tag}] failed-3-times cue shows on the card and clears after a human note`);
 		await page.click(`${srow} [data-release]`);
@@ -568,6 +578,7 @@ try {
 		ok(rel.status === 'todo' && !rel.claim, `[${tag}] Release to To do should drop the claim: ${rel.status}`);
 		cli('delete', did); cli('delete', bk);
 		cli('delete', mid); // the other one goes when its ticket does
+		await refresh();
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		await page.keyboard.press('Escape');
 		await page.evaluate(() => scrollTo(0, 0));
@@ -576,7 +587,7 @@ try {
 
 		// proposal gate + schema (second board): an agent's ticket parks in Needs you, Accept clears it; the New ticket form lists prefixes with meanings
 		const pid = JSON.parse(cliB('create', '--prefix', 'ZP', '--title', 'agent idea', '--agent', 'backend-1', '--json', '{"priority":"P2","done_when":["it works"],"body":"## Why\\nbecause"}')).id;
-		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' }); // a proposal shows on its own board
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
 		await page.keyboard.press('i');
 		const prow = `#npList .nr[data-key="zsecond/${pid}"]`;
@@ -894,4 +905,4 @@ try {
 	}
 	await cleanup();
 	console.log(`UI smoke OK: board/graph/docs/map/drawer/filters/settings/agents/toast x 1400+390px (full flow light, quick pass dark), no errors, no overflow (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-} catch (e) { await die(process.env.DEBUG ? e.stack : e.message); }
+} catch (e) { await die(process.env.DEBUG ? e.stack : e.message + '\n  at ' + ((e.stack || '').match(/ui_smoke\.mjs:\d+/g) || ['?']).join(' <- ')); } // the test line(s), so a CI failure says where

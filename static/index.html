@@ -1082,12 +1082,11 @@ const NSEEN='unblockd.nseen'; // {board: [ids]} the badge has shown; an id not i
 function needMark(t){ const n=NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id&&i.kind==='stuck')?.attempts?.length; return n?`<span class="wl fail" title="Failed claims since a human last touched it; a note clears this">Failed ${n} times</span>`:''; }
 function paintNeeds(){
   const nm=NEEDS.find(g=>g.id===curBoard())?.items.filter(i=>i.attempts?.length).map(i=>i.id+i.attempts.length).join(); if(nm!==NMARK){ NMARK=nm; if(typeof T!=='undefined'&&T.length) render(); }
-  const b=$('needsBadge'),n=NEEDS.reduce((a,g)=>a+g.items.length,0),cur=curBoard(); b.hidden=!n;
+  const b=$('needsBadge'),cur=curBoard(),n=NEEDS.find(g=>g.id===cur)?.items.length||0; b.hidden=!n; // this board only: another board's items show on that board
   if(n){ b.innerHTML=`<i class="bang" aria-hidden="true">!</i><span class="n">${n}</span><span class="w">${n===1?'needs':'need'} you</span>`;
-    b.title='Needs you (i)'+(NEEDS.length>1||NEEDS[0].id!==cur?'\n'+NEEDS.map(g=>`${g.id===cur?'This board':g.title}: ${g.items.length}`).join('\n'):''); b.setAttribute('aria-label',`Needs you: ${n}`); }
-  const was=store.get(NSEEN,null),seen=was||{},now={}; let fresh=false;
-  for(const bd of BOARDS){ const ids=(NEEDS.find(g=>g.id===bd.id)?.items||[]).map(i=>i.id); now[bd.id]=ids; if(ids.some(id=>!(seen[bd.id]||[]).includes(id))) fresh=true; }
-  store.set(NSEEN,now);
+    b.title='Needs you (i)'; b.setAttribute('aria-label',`Needs you: ${n}`); }
+  const was=store.get(NSEEN,null),seen=was||{},now={...seen},ids=(NEEDS.find(g=>g.id===cur)?.items||[]).map(i=>i.id),fresh=ids.some(id=>!(seen[cur]||[]).includes(id));
+  now[cur]=ids; store.set(NSEEN,now);
   if(fresh&&was&&n&&!reduce.matches&&$('npanel').hidden) b.animate([{boxShadow:'0 0 0 0 var(--plum)',transform:'scale(1)'},{boxShadow:'0 0 0 7px transparent',transform:'scale(1.12)',offset:.5},{boxShadow:'0 0 0 0 transparent',transform:'scale(1)'}],{duration:600,easing:'ease-out'});
   if(!$('npanel').hidden) renderNeedsPanel();
 }
@@ -1133,7 +1132,7 @@ function needsRow(g,i){
     +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='proposal'?`<p class="nd-q">Proposed by ${esc(i.proposed_by)}</p>${open?'':dw}`:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
 }
 function renderNeedsPanel(){
-  const cur=curBoard(),gs=[...NEEDS].sort((a,b)=>(b.id===cur)-(a.id===cur)),all=gs.flatMap(g=>g.items),multi=BOARDS.length>1;
+  const cur=curBoard(),gs=NEEDS.filter(g=>g.id===cur),all=gs.flatMap(g=>g.items),multi=false; // this board only
   if(NX&&!gs.some(g=>g.items.some(i=>nkey(g,i)===NX))) NX=null;
   const c=k=>all.filter(i=>i.kind===k).length;
   $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&l==='question'?'s':''}`).join(', '):'';
