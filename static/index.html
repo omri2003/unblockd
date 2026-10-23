@@ -1067,11 +1067,11 @@ function renderDigest(){
 let NMARK=''; // ids of this board's failed-N-times cards; a change repaints the board (the cards read NEEDS)
 const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
 const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
-const noteLine=n=>{const k=n.kind; return k==='answer'?`Answer to “${n.q}”: ${n.text}`:k==='question'?'Question: '+n.text:k==='rejected'?'Rejected: '+n.text:k==='released'?'Released: '+n.text:k==='complete'?(n.status==='review'?'Finished, for review: ':'Finished: ')+n.text:n.text;}; // a ticket's notes ({by, at, kind, text}, the store's _append_note) in words; claim notes and attempts have text only
+const noteLine=n=>{const k=n.kind; return k==='answer'?`Answer to “${n.q}”: ${n.text}`:k==='question'?'Question: '+n.text:k==='rejected'?'Rejected: '+n.text:k==='released'?'Released: '+n.text:k==='complete'?(n.status==='review'?'Finished, for review: ':'Finished: ')+n.text:k==='decision'?'Decision: '+n.text:k==='finding'?'Finding: '+n.text:k==='warning'?'Warning: '+n.text:n.text;}; // a ticket's notes ({by, at, kind, text}, the store's _append_note) in words; claim notes and attempts have text only
 const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: the panel already shows the question
 const ntime=at=>at.length>10?new Date(at).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):at; // old complete() notes carry a date only
 function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
-  return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time><p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
+  return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.pinned&&!n.superseded_by?' <span class="hint" title="Always sent to the next agent">· pinned</span>':''}${n.superseded_by?` <span class="hint">· replaced by note ${esc(n.superseded_by)}</span>`:''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
 async function loadNeeds(){ // ETag: an idle poll costs headers only
   if(!BOARDS.length) return; const tok=++nTok;
   try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||!r.ok||tok!==nTok) return; const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)

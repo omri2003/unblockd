@@ -49,6 +49,73 @@ class NotesTest(unittest.TestCase):
 		t = self.s.update("A-1", {"body": "a better why"})  # the edit form saves the body: notes untouched
 		self.assertEqual((t["body"], [n["text"] for n in t["notes"]]), ("a better why", ["first"]))
 
+	def test_human_notes_answers_and_decisions_are_pinned_agent_chatter_is_not(self):
+		cfg = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}], "agents": [{"name": "backend"}]}
+		(self.d / "unblockd.json").write_text(json.dumps(cfg), encoding="utf-8")
+		s = Store(self.d)
+		s.create({"title": "x"}, tid="A-1")
+		s.claim("backend-1", tid="A-1")
+		s.add_note("A-1", "backend-1", "looking at store.py")
+		s.add_note("A-1", "backend-1", "chose a bitset because the DFS was O(n^2)", kind="decision")
+		s.add_note("A-1", "backend-1", "tests fail on Windows: CRLF in fixtures", kind="finding")
+		s.add_note("A-1", "Omri", "keep the old API working")
+		s.add_note("A-1", "human", "from the web board")
+		s.ask("A-1", "backend-1", "which db?")
+		s.answer("A-1", "Omri", "postgres")
+		pins = [(n["by"], n["kind"]) for n in s.get("A-1")["notes"] if n.get("pinned")]
+		self.assertEqual(pins, [("backend-1", "decision"), ("backend-1", "finding"), ("Omri", "note"), ("human", "note"), ("Omri", "answer")])
+
+	def test_a_claim_sends_every_pinned_note_and_the_last_five_others(self):
+		s = self.s
+		s.create({"title": "x"}, tid="A-1")
+		s.add_note("A-1", "human", "DECISION-EARLY: never touch the payments table")  # a person: pinned, and old
+		s.claim("w", tid="A-1")
+		for i in range(40):  # the worker holding the claim: not pinned
+			s.add_note("A-1", "w", f"progress {i} " + "x" * 120)
+		s.release("A-1", "w")
+		t = s.claim("w2", tid="A-1")
+		texts = [n["text"] for n in t["notes"]]
+		self.assertIn("DECISION-EARLY: never touch the payments table", texts)
+		self.assertEqual(sum(x.startswith("progress") for x in texts), 5)
+		self.assertTrue(texts[-1].startswith("progress 39"))
+		self.assertIn("35 older notes", t["notes_omitted"])  # 41 - 1 pinned - 5 latest
+		self.assertEqual(len(s.get("A-1")["notes"]), 41)  # get_ticket still has everything
+
+	def test_a_short_history_is_sent_whole(self):
+		self.s.create({"title": "x"}, tid="A-1")
+		self.s.claim("w", tid="A-1")
+		for i in range(8):
+			self.s.add_note("A-1", "w", f"n{i}")
+		self.s.release("A-1", "w")
+		t = self.s.claim("w", tid="A-1")
+		self.assertEqual((len(t["notes"]), "notes_omitted" in t), (8, False))
+
+	def test_old_notes_keep_human_decisions_pinned(self):
+		(self.d / "A-1.json").write_text(json.dumps({"id": "A-1", "title": "parry", "status": "todo", "body": OLD}), encoding="utf-8")
+		self.assertEqual([n["kind"] for n in self.s.get("A-1")["notes"] if n.get("pinned")], ["answer", "approved"])
+
+	def test_supersedes_unpins_and_replies_travel_with_their_target(self):
+		s = self.s
+		s.create({"title": "x"}, tid="A-1")
+		s.claim("w", tid="A-1")
+		s.add_note("A-1", "w", "use sqlite for the cache", kind="decision")  # n1
+		s.add_note("A-1", "w", "should the cache survive a restart? " + "x" * 50)  # n2: plain, would fall out of the tail
+		for i in range(30):
+			s.add_note("A-1", "w", f"progress {i} " + "y" * 120)
+		s.add_note("A-1", "w", "in-memory cache instead: sqlite was a second copy", kind="decision", supersedes=1)
+		s.add_note("A-1", "w", "no: it rebuilds from the files", reply_to=2)
+		with self.assertRaisesRegex(TicketError, "note number"):
+			s.add_note("A-1", "w", "x", reply_to=99)
+		with self.assertRaisesRegex(TicketError, "kind"):
+			s.add_note("A-1", "w", "x", kind="urgent")
+		s.release("A-1", "w")
+		sent = {n["n"]: n for n in s.claim("w", tid="A-1")["notes"]}
+		self.assertIn(33, sent)  # the new decision
+		self.assertIn(1, sent)  # the old one rides along as what 33 replaced, marked superseded
+		self.assertEqual(sent[1]["superseded_by"], 33)
+		self.assertIn(2, sent)  # the question that 34 answers
+		self.assertNotIn(3, sent)  # old progress is left out
+
 
 if __name__ == "__main__":
 	unittest.main()
