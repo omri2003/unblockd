@@ -2706,6 +2706,7 @@ $('drawer').addEventListener('drop',e=>{if(!e.dataTransfer?.files?.length||!open
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('docv').hidden){e.stopImmediatePropagation();closeDoc();}},true);
 if(store.get('chatOpen',false)) openChat();
 setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ load(false); loadNeeds(); } }); // back on the tab: fresh at once, not up to 4 s later
 setInterval(()=>{ if(document.visibilityState==='visible') loadNeeds(); },15000); // other boards' questions: no tickets poll covers them // picks up edits made through the MCP
 })();
 </script>
