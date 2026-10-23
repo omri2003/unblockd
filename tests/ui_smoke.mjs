@@ -10,6 +10,11 @@ import { fileURLToPath } from 'node:url';
 
 const { chromium } = createRequire(import.meta.url)('playwright'); // require, not import: ESM ignores NODE_PATH
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
+// the board refetches when its tab becomes visible again: fire that instead of waiting for the 4 s poll, wait for the reply and a frame to render it
+const backOnTab = async (page) => {
+	await Promise.all([page.waitForResponse((r) => /\/tickets(\?|$)/.test(r.url())), page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))]);
+	await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
+};
 const t0 = Date.now();
 let server, browser, lastPage;
 const die = async (msg) => { console.error('UI SMOKE FAIL: ' + msg); if (process.env.DEBUG && lastPage) { console.error(JSON.stringify(lastPage.viewportSize())); await lastPage.screenshot({ path: process.env.DEBUG + '/fail.png' }).catch(() => {}); } if (process.env.DEBUG && lastPage) console.error(await lastPage.evaluate(() => 'TOASTS: ' + document.getElementById('toasts').innerText + '\nPANEL: ' + document.getElementById('npanel').innerText.slice(0, 600)).catch(() => '')); await cleanup(); process.exit(1); };
@@ -75,7 +80,7 @@ try {
 			await page.click(`${sel} > summary`);
 		};
 		const settle = () => page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity)); // view cross-fade, map zoom: done (the endless live-dot pulse aside), instead of a fixed pause
-		const refresh = (force) => page.evaluate((f) => load(f), !!force); // what the 4 s poll does, without waiting for it
+		const refresh = () => backOnTab(page); // what the 4 s poll does, without waiting for it
 
 		if (theme === 'dark') { // dark changes colours, not behaviour: the full flow runs in light; here every view and the drawer render with no errors and no overflow
 			await page.goto(base);
@@ -206,7 +211,7 @@ try {
 				await visible('#drawer #dTitle', 'map panel');
 				ok((await page.locator('#drawer #dTitle').innerText()) === 'Ticket store' && (await page.locator('#drawer .mcl li').count()) >= 2, `[${tag}] map panel: title and connections`);
 				ok((await page.locator('#mapIn .mc.fade').count()) === 1 && (await page.locator('#mapIn .mc.fade').getAttribute('data-mc')) === 'web-ui', `[${tag}] focus should fade only the non-neighbour`);
-				await refresh(true); await refresh(true); // a re-render from a poll + refetch must keep the focus
+				await refresh(); // a poll + refetch must keep the focus
 				ok((await page.locator('#mapIn .mc.on').count()) === 1, `[${tag}] focus lost over a poll`);
 				await page.keyboard.press('Escape');
 				ok((await page.locator('#mapIn .mc.fade').count()) === 0 && await page.locator('#drawer').isHidden(), `[${tag}] Esc should leave the focus and close the panel`);
@@ -864,7 +869,7 @@ try {
 		await noOver('edit form');
 		if (wide) { // the poll re-renders the panel: half-typed text and the caret stay
 			await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI draft'); cliE('create', '--prefix', 'T', '--title', 'poll trigger');
-			await page.evaluate(() => load(false)); // what the 4 s poll does, now
+			await backOnTab(page); // what the 4 s poll does, now
 			ok(await page.inputValue('#drawer [data-draft="ae:web:title"]') === 'Web UI draft' && await page.evaluate(() => document.activeElement?.dataset.draft) === 'ae:web:title', 'a draft survives the 4 s poll');
 			await page.fill('#drawer [data-draft="ae:web:title"]', 'Web UI');
 		}
