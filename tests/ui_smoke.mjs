@@ -540,7 +540,7 @@ try {
 		const oans = await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), oid);
 		ok(oans.notes.some((n) => n.kind === 'answer' && n.q === 'Which colour?' && n.text === 'Teal'), `[${tag}] the other board's ticket should carry the answer`);
 		await page.keyboard.press('Escape');
-		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		await page.goto(base + '?board=' + boardId); await page.waitForSelector('.card', { state: 'attached' }); // explicit: the page reopens the last board (zsecond) otherwise
 		await page.keyboard.press('i'); await page.waitForSelector('#npanel .none:not([hidden])');
 		ok((await page.locator('#attnSeg').count()) === 0, `[${tag}] the Needs attention chip is gone (Stuck lives in the panel)`);
 		// Stuck: a doing ticket nobody touched for stale_days, and a todo whose blocker file is gone (both crafted in the JSON); the open panel picks them up
