@@ -422,10 +422,10 @@ try {
 		const badge = () => page.locator('#needsBadge .n').innerText();
 		// the CLI wrote the files: refresh as the 4 s poll would, then wait for the state
 		await refresh();
-		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '3');
+		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '2'); // this board only: the second board's question is not counted here
 		{ const wl = await page.locator('[data-col=pending] .lane').allInnerTexts(); // the agent question and the hand-parked ticket land in their own Waiting sections
 			ok(['on you', 'on other work', 'parked'].every((x) => wl.some((y) => y.toLowerCase().startsWith(x))), `[${tag}] Waiting sections On you / On other work / Parked: ${wl}`); }
-		ok((await page.getAttribute('#needsBadge', 'title')).includes('This board: 2') && (await page.getAttribute('#needsBadge', 'title')).includes('Second board: 1'), `[${tag}] badge tooltip should split the count per board`);
+		ok((await page.getAttribute('#needsBadge', 'title')) === 'Needs you (i)', `[${tag}] badge tooltip`);
 		for (const v of ['graph', 'docs', 'board']) { // visible in every view; Free/Blocked only in the Graph
 			await page.click(`[data-view="${v}"]`);
 			await page.waitForFunction((x) => document.querySelector(`#viewSeg [data-view="${x}"]`)?.getAttribute('aria-pressed') === 'true' && !document.getElementById('needsBadge').hidden && (x === 'graph') === !document.getElementById('depSeg').hidden, v);
@@ -447,7 +447,7 @@ try {
 		await page.keyboard.press('i');
 		await visible('#npanel .nr', 'Needs you panel via the i key');
 		ok((await page.locator('#npList .nr').count()) === 3, `[${tag}] panel should list 2 here + 1 on the other board`);
-		ok((await page.locator('#npList .ng').allInnerTexts()).join('|').replace(/\s+/g, ' ') === 'This board (2)|Second board (1)', `[${tag}] board groups: this board first`);
+		ok((await page.locator('#npList .ng').count()) === 0 && (await page.locator(`#npList .nr[data-key="zsecond/${oid}"]`).count()) === 0, `[${tag}] only this board's items, no board groups`);
 		ok((await page.locator('#npList .nr').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
 		ok(!(await page.locator('#npanel').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the panel`);
 		ok((await page.locator(".card:has-text(\"parked by hand\") .why.park").first().innerText()) === 'Parked: Omri: later', `[${tag}] hand-parked card should say Parked`);
@@ -473,7 +473,7 @@ try {
 		ok((await page.inputValue(`${qrow} textarea`)) === 'line one\nline two\nline three\nline four', `[${tag}] draft should survive collapse and expand`);
 		await page.keyboard.press('Control+Enter'); // not the Enter key alone: that was a newline
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${qid}`);
-		ok((await badge()) === '2', `[${tag}] badge should drop to 2 after answering`);
+		ok((await badge()) === '1', `[${tag}] badge should drop to 1 after answering`);
 		const answered = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), qid);
 		ok(answered.notes.some((n) => n.kind === 'answer' && n.q === 'Which one?' && n.text === 'line one\nline two\nline three\nline four') && !answered.waiting_on, `[${tag}] the multi-line answer should be on the ticket: ${answered.body}`);
 		// the review: open the ticket from the panel (the panel gives way to the drawer)
@@ -527,14 +527,21 @@ try {
 			cli('delete', aid); cli('delete', xid);
 			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .nr', 'panel back');
 		}
-		// answer the other board's question from here: no board switch
+		await page.waitForFunction(() => document.getElementById('needsBadge').hidden); // this board is clear
+		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
+		// the other board's question shows on that board
+		await page.keyboard.press('Escape');
+		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' });
+		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
+		await page.keyboard.press('i');
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
-		ok(page.url().includes('board=zsecond') === false, `[${tag}] answering must not switch boards`);
 		const oans = await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), oid);
 		ok(oans.notes.some((n) => n.kind === 'answer' && n.q === 'Which colour?' && n.text === 'Teal'), `[${tag}] the other board's ticket should carry the answer`);
-		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
+		await page.keyboard.press('Escape');
+		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		await page.keyboard.press('i'); await page.waitForSelector('#npanel .none:not([hidden])');
 		ok((await page.locator('#attnSeg').count()) === 0, `[${tag}] the Needs attention chip is gone (Stuck lives in the panel)`);
 		// Stuck: a doing ticket nobody touched for stale_days, and a todo whose blocker file is gone (both crafted in the JSON); the open panel picks them up
 		const age = async (id, change) => { const f = join(root, 'example/tickets', `${id}.json`); await writeFile(f, JSON.stringify({ ...JSON.parse(await readFile(f, 'utf8')), ...change })); };
@@ -576,7 +583,7 @@ try {
 
 		// proposal gate + schema (second board): an agent's ticket parks in Needs you, Accept clears it; the New ticket form lists prefixes with meanings
 		const pid = JSON.parse(cliB('create', '--prefix', 'ZP', '--title', 'agent idea', '--agent', 'backend-1', '--json', '{"priority":"P2","done_when":["it works"],"body":"## Why\\nbecause"}')).id;
-		await page.goto(base); await page.waitForSelector('.card', { state: 'attached' });
+		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' }); // a proposal shows on its own board
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
 		await page.keyboard.press('i');
 		const prow = `#npList .nr[data-key="zsecond/${pid}"]`;
