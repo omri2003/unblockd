@@ -1121,10 +1121,11 @@ function needsRow(g,i){
   const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
     !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
     i.failed&&`${i.failed}. Add a note for the next attempt: the next worker reads it first.`,
-    mb.length&&`Points at ${mb.join(', ')}, which ${mb.length>1?'were':'was'} deleted. Open it to remove or replace the blocker.`].filter(Boolean).join(' ');
+    mb.length&&`Points at ${mb.join(', ')}, which ${mb.length>1?'were':'was'} deleted. Open it to remove or replace the blocker.`,
+    ...(i.needs||[]).map(n=>`Needs tool ${n.tool}${n.profile?` (profile ${n.profile} doesn't have it)`:''}: ${n.why}. Give ${n.profile?'that profile':'the workers'} the tool, then Clear.`)].filter(Boolean).join(' ');
   const ln=i.kind==='stuck'&&(i.claim_note||(i.attempts||[])[0]?.note&&{by:i.attempts[0].agent,at:i.attempts[0].at,text:i.attempts[0].note}||(i.notes||[]).filter(n=>!isAsk(n,i.waiting_on)).pop()),lt=ln&&noteLine(ln),
     lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(lt.length>140?lt.slice(0,140)+'…':lt)}</p>`:'';
-  const form=i.kind==='stuck'&&i.failed?`<form class="nd-f" data-nform="notes" ${B}>${f('n:','Add a note for the next attempt…')}<button class="btn sm" type="submit">Add note</button>${openBtn('btn ghost sm')}</form>`:i.kind==='stuck'?`<div class="nd-f">${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+  const form=i.kind==='stuck'&&i.failed?`<form class="nd-f" data-nform="notes" ${B}>${f('n:','Add a note for the next attempt…')}<button class="btn sm" type="submit">Add note</button>${openBtn('btn ghost sm')}</form>`:i.kind==='stuck'?`<div class="nd-f">${(i.needs||[]).length?`<button type="button" class="btn sm" data-clearneeds ${B}>Clear</button>`:''}${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
     :i.kind==='proposal'?`<form class="nd-f" data-nform="drop" ${B}><button type="button" class="btn sm" data-accept ${B}>Accept</button>${f('x:','Reject reason (optional)…')}<button class="btn ghost sm" type="submit">Reject</button></form>`
     :reviewForm('r:'+k,B,open?'textarea':'input');
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
@@ -1515,6 +1516,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-split]')){closeMenus();SPLIT=openId;SPLITD={text:'',seq:false};showTicket(openId,true);$('sp-t')?.focus();$('splitForm')?.scrollIntoView({block:'nearest'});return;}
   if(b=g('[data-accept]')){acceptTicket(b.dataset.board,b.dataset.id);return;}
   if(b=g('[data-approve]')){approveTicket(b.dataset.board,b.dataset.id);return;}
+  if(b=g('[data-clearneeds]')){const old=(NEEDS.find(x=>x.id===b.dataset.board)?.items.find(x=>x.id===b.dataset.id)||{}).needs||[];nPatch(b.dataset.board,b.dataset.id,{needs:[]},{needs:old},`${b.dataset.id}: missing tool cleared`);return;}
   if(b=g('[data-release]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'doing'},`${b.dataset.id} released to To do`);return;}
   if(g('#needsBadge')){$('npanel').hidden?openNeeds():closeNeeds();return;}
   if(g('[data-nclose]')||(e.target===$('scrim')&&!$('npanel').hidden)){closeNeeds();return;}

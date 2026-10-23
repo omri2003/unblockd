@@ -5,6 +5,10 @@ on:
     tags: ["v*"]
   pull_request:
 
+concurrency:  # a new push to a PR cancels its outdated run
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -13,6 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - run: pip install -r requirements.txt  # the same as the Docker image, so the MCP tests run instead of skipping
       - run: python -m unittest -v
 
   ui:
@@ -26,7 +31,7 @@ jobs:
         with:
           node-version: 22
       - run: npm i --no-save playwright@1
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install chromium  # no --with-deps: the ubuntu runner already has Chrome's system libraries (apt took ~11 min)
       - run: node tests/ui_smoke.mjs
 
   image:

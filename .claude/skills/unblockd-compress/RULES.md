@@ -1,5 +1,7 @@
 Rewrite DOCUMENT shorter for an AI agent to read. Same meaning, fewer words.
 
+The test for what to keep: anything a brand-new agent would need to do the work without knowing what happened before.
+
 Cut:
 - filler, hedging, politeness, repetition ("it is worth noting that", "basically", "in order to" -> "to")
 - articles where the sentence still reads clearly

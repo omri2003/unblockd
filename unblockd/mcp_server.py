@@ -21,6 +21,7 @@ import json
 import os
 import string
 import sys
+import time
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -107,25 +108,41 @@ def _ack(t: dict) -> dict:
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {})}
 
 
-SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: content hash}: the board / profile docs this process already sent
+SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
+CLAIMS: dict[tuple, int] = {}  # (board, worker) -> claims taken in this session
 DEDUPE = False  # on for stdio, where one server process = one agent session; the shared --http server can't tell sessions apart
 
 
-def _dedupe(board: str | None, agent: str, res: dict | None) -> dict | None:
-	"""Board and profile docs already sent to this worker in this session, unchanged, are not inlined again. The ticket's own docs,
-	component notes and attachments are always sent."""
-	ctx = (res or {}).get("context")
-	if not (DEDUPE and ctx):
+def _session_done(board: str | None, agent: str) -> dict | None:
+	"""The board's session_tickets limit (stdio only): past it claim_next says stop, so a long session never runs into compaction."""
+	limit = BOARDS.get(board).config.get("session_tickets")
+	n = CLAIMS.get((board or "", agent), 0)
+	if DEDUPE and limit and n >= limit:
+		return {"ticket": None, "reason": "session_done",
+		        "note": f"you took {n} tickets in this session (the board's session_tickets is {limit}): stop and report; a fresh worker continues with a clean context"}
+	return None
+
+
+def _dedupe(board: str | None, agent: str, res: dict | None, fresh: bool = False) -> dict | None:
+	"""Count the claim; inline board and profile docs already sent to this worker in this session only when they changed or the board's
+	docs_resend window (claims AND minutes since they were sent) has passed, so a doc lost to compaction comes back. fresh = send
+	everything again. The ticket's own docs, component notes and attachments are always sent."""
+	if not (DEDUPE and res and "id" in res):
 		return res
-	seen = SENT.setdefault((board or "", agent), {})
-	for d in ctx.get("docs", []):
+	key = (board or "", agent)
+	CLAIMS[key] = n = CLAIMS.get(key, 0) + 1
+	if fresh:
+		SENT.pop(key, None)
+	win = BOARDS.get(board).config.get("docs_resend") or {}
+	seen, now = SENT.setdefault(key, {}), time.time()
+	for d in (res.get("context") or {}).get("docs", []):
 		if d.get("source") in ("board", "agent") and d.get("content") is not None:
-			h = hash(d["content"])
-			if seen.get(d["path"]) == h:
+			h, prev = hash(d["content"]), seen.get(d["path"])
+			if prev and prev[0] == h and n - prev[1] < win.get("claims", 3) and now - prev[2] < 60 * win.get("minutes", 30):
 				d["content"] = None
-				d["unchanged"] = "already sent on your earlier claim in this session, unchanged: read_doc(path) if you no longer have it"
+				d["unchanged"] = "sent on a recent claim in this session, unchanged: read_doc(path) if you no longer have it (or claim with fresh=true after your context was compacted)"
 			else:
-				seen[d["path"]] = h
+				seen[d["path"]] = (h, n, now)
 	return res
 
 
@@ -285,22 +302,24 @@ def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
 
 
 @tool
-def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
+def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False,
+               board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
 	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
 	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
-	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim)."""
+	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim).
+	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted)."""
 	store = BOARDS.get(board)
-	return _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal)))
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal)), fresh)
 
 
 @tool
-def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
-	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal: see claim_next."""
+def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, board: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh: see claim_next."""
 	store = BOARDS.get(board)
-	return _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal)))
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal)), fresh)
 
 
 @tool
@@ -348,9 +367,11 @@ def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
 
 
 @tool
-def release(id: str, agent: str, reason: str = "", principal: str | None = None, board: str | None = None) -> dict:
-	"""Give your claimed ticket back (it returns to todo). Say why."""
-	return _ack(BOARDS.get(board).release(id, agent, reason, principal))
+def release(id: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
+            board: str | None = None) -> dict:
+	"""Give your claimed ticket back (it returns to todo). Say why. Missing a tool you need (a browser, a database, an unblockd tool)?
+	missing = its name, why = one line on what you needed it for: the human is told, and workers like you skip it until it is fixed."""
+	return _ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why))
 
 
 @tool
