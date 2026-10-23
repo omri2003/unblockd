@@ -7,6 +7,11 @@ from unittest import mock
 
 from unblockd.store import Store, TicketError
 
+try:
+	import mcp
+except ImportError:  # CI runs the store tests without the mcp package
+	mcp = None
+
 CFG = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
        "agents": [{"name": "gui", "tags": ["ui"]}, {"name": "backend", "tags": ["ui"]}]}
 
@@ -51,6 +56,7 @@ class MissingToolTest(unittest.TestCase):
 		self.assertEqual([(i["id"], i["kind"], i["needs"][0]["tool"]) for i in items], [("UI-1", "stuck", "browser")])
 
 
+@unittest.skipIf(mcp is None, "mcp not installed")
 class SessionTest(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.TemporaryDirectory()
