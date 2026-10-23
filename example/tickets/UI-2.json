@@ -22,5 +22,6 @@
   "docs": [
     "docs/arch/web-ui.md",
     "docs/arch/api.md"
-  ]
+  ],
+  "milestone": "v0.2"
 }

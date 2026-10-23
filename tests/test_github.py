@@ -70,7 +70,7 @@ class GithubTest(unittest.TestCase):
 		return f"https://github.com/o/r/pull/{n}"
 
 	def cache(self):
-		return github.load(self.tdir)
+		return github.load(self.tdir / ".unblockd")
 
 	def test_open_pr_caches_check_summary(self):
 		PRS[1] = pr(1)
@@ -82,7 +82,7 @@ class GithubTest(unittest.TestCase):
 		c = self.cache()["BUG-1"]
 		self.assertEqual((c["number"], c["state"], c["checks"]), (1, "open", {"passed": 3, "failed": 1, "pending": 2}))
 		self.assertEqual(self.s.get("BUG-1")["status"], "review")
-		self.assertNotIn("PR", self.s.get("BUG-1")["body"].split("done")[-1])  # ticket untouched
+		self.assertNotIn("PR", json.dumps(self.s.get("BUG-1")["notes"][-1]))  # ticket untouched: its last note is still the complete
 		self.assertEqual(SEEN[0][1], "Bearer tok")
 
 	def test_needs_exposes_pr_without_noted(self):
@@ -101,8 +101,7 @@ class GithubTest(unittest.TestCase):
 		self.sync.poll()
 		t = self.s.get("BUG-2")
 		self.assertEqual(t["status"], "done")
-		self.assertIn("— github,", t["body"])
-		self.assertIn("PR #2 merged — moved to done", t["body"])
+		self.assertEqual((t["notes"][-1]["by"], t["notes"][-1]["text"]), ("github", "PR #2 merged — moved to done"))
 		self.assertEqual(self.cache(), {})
 		self.assertIn("done", [e["event"] for e in self.s.activity("BUG-2", 5)])
 
@@ -113,7 +112,7 @@ class GithubTest(unittest.TestCase):
 		self.sync.poll()
 		t = self.s.get("BUG-3")
 		self.assertEqual(t["status"], "review")
-		self.assertEqual(t["body"].count("closed without merging"), 1)
+		self.assertEqual(sum("closed without merging" in n["text"] for n in t["notes"]), 1)
 		self.assertEqual(self.cache()["BUG-3"]["state"], "closed")
 
 	def test_ignored_tickets_and_bad_urls(self):

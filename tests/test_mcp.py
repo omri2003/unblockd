@@ -32,7 +32,7 @@ class WorkLoopTest(unittest.TestCase):
 	def test_prompt_and_resource_carry_the_protocol(self):
 		from unblockd import mcp_server as m
 		text = m.work_loop_text("game", "backend")
-		for word in ("claim_next(agent=<your name>, profile=backend, board=game)", "backend-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry", "Answer to", "Rejected"):
+		for word in ("claim_next(agent=<your name>, profile=backend, board=game)", "backend-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry", "`answer`", "`rejected`", "worktree", "Fresh context"):
 			self.assertIn(word, text)
 		self.assertIn("board_info", m.work_loop_text())
 		self.assertIn("Never go silent", text)

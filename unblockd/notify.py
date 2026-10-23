@@ -69,7 +69,7 @@ class Notifier:
 	def _board(self, bid: str, tdir) -> None:
 		store = self.boards.get(bid)
 		ts = store.list()  # also sweeps expired claims, which logs `expired` even when nobody has the UI open
-		p = tdir / ".unblockd" / "activity.jsonl"
+		p = store.rt / "activity.jsonl"
 		size = p.stat().st_size if p.exists() else 0
 		off = self.offset.setdefault(str(p), size)  # first sight: start at the end, never replay history
 		events = []

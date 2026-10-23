@@ -21,7 +21,7 @@
     python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
-    python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped line to the body (by defaults to "human")
+    python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets. With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
 command goes to that server's REST API instead of a local folder, so agents on other machines share one board and one lock. Settings come from
@@ -68,6 +68,7 @@ class Remote:
 
 	def list(self, **f): return self._call("GET", "/tickets", **f)
 	def next_ready(self, **f): return self._call("GET", "/next", **f)
+	def roadmap(self): return self._call("GET", "/roadmap")
 	def work_plan(self, per_agent=3): return self._call("GET", "/plan", per_agent=per_agent)
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
@@ -98,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
 	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
 	sub = ap.add_subparsers(dest="cmd", required=True)
 	ls = sub.add_parser("list")
-	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent"):
+	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
 		ls.add_argument(f"--{f}")
 	ls.add_argument("-q")
 	nx = sub.add_parser("next")
@@ -108,6 +109,9 @@ def main(argv: list[str] | None = None) -> int:
 	nx.add_argument("--tag")
 	nx.add_argument("--limit", type=int, default=5)
 	sub.add_parser("plan").add_argument("--per-agent", type=int, default=3)
+	sub.add_parser("roadmap")
+	mm = sub.add_parser("migrate-milestones", help="move tickets from a version epic (parent) to a milestone: REL-1=v0.1 REL-2=v0.2 ...")
+	mm.add_argument("pairs", nargs="+", metavar="PARENT=KEY")
 	sub.add_parser("get").add_argument("id")
 	cr = sub.add_parser("create")
 	cr.add_argument("--prefix")
@@ -116,12 +120,14 @@ def main(argv: list[str] | None = None) -> int:
 	cr.add_argument("--json", default="{}")
 	cr.add_argument("--agent", help="the worker creating it: the board's schema is strict for agents, and its ticket may park as a proposal until a human accepts it")
 	cr.add_argument("--component", action="append", help="a component key of the board's architecture (repeatable)")
+	cr.add_argument("--milestone", help="the roadmap milestone key (milestones in unblockd.json)")
 	cr.add_argument("--skill", action="append", help="a skill name from the board's registry (repeatable)")
 	cr.add_argument("--mcp", action="append", help="an MCP server name from the board's registry (repeatable)")
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", default="{}")
 	up.add_argument("--component", action="append", help="set the ticket's components to these keys (repeatable)")
+	up.add_argument("--milestone", help="set the roadmap milestone key; - clears it")
 	up.add_argument("--skill", action="append", help="set the ticket's skills to these registry names (repeatable)")
 	up.add_argument("--mcp", action="append", help="set the ticket's MCP servers to these registry names (repeatable)")
 	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
@@ -172,15 +178,27 @@ def main(argv: list[str] | None = None) -> int:
 
 	try:
 		url = os.environ.get("UNBLOCKD_URL")
+		if not url and not Path(a.dir).is_dir():  # creating it would hand a worker an empty board (e.g. in a git worktree where tickets/ is not committed)
+			raise st.TicketError(f"no board at {Path(a.dir).resolve()}: run from the project root, or pass --dir / set TICKETS_DIR to the tickets folder "
+			                     "(in a git worktree, the main checkout's). To start a new board, create the folder first.")
 		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
 			st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
 		ctx = s.context if url else lambda tid: kn.context(s, tid)
 		if a.cmd == "list":
-			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent)
+			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone)
 			out = [{k: t.get(k) for k in ("id", "title", "effective_status", "priority", "owner", "pillar", "agent", "open_blockers")} for t in res]
 		elif a.cmd == "next":
 			out = [{**{k: t.get(k) for k in ("id", "title", "priority", "owner", "pillar", "agent")}, "score": t["score"], "unblocks": t["unblocks"]}
 			       for t in s.next_ready(owner=a.owner, pillar=a.pillar, agent=a.agent, tag=a.tag, limit=a.limit)]
+		elif a.cmd == "roadmap":
+			out = s.roadmap()
+		elif a.cmd == "migrate-milestones":
+			pairs = [p.split("=", 1) for p in a.pairs]
+			if not all(len(p) == 2 and p[0] and p[1] for p in pairs):
+				raise st.TicketError("give pairs like REL-1=v0.1 (the version epic's id = the milestone key in unblockd.json)")
+			out = {}
+			for parent, key in pairs:  # every ticket under that epic: milestone set, parent cleared (it was the version, not a feature epic)
+				out[parent] = [s.update(t["id"], {"milestone": key, "parent": None})["id"] for t in s.list(parent=parent)]
 		elif a.cmd == "plan":
 			out = s.work_plan(per_agent=a.per_agent)
 			short = lambda t: {k: t.get(k) for k in ("id", "title", "priority", "score")}
@@ -222,9 +240,10 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "get":
 			out = s.get(a.id)
 		elif a.cmd == "create":
-			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent)
+			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent)
 		elif a.cmd == "update":
-			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v}}, agent=a.agent)
+			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
+			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent)
 		else:
 			out = s.add_note(a.id, a.by, a.text)
 	except (st.TicketError, json.JSONDecodeError) as e:

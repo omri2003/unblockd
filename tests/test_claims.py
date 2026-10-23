@@ -26,6 +26,16 @@ def _claim_all(args):
 	return got
 
 
+def last(t: dict) -> tuple:
+	"""(by, kind, text) of a ticket's newest note."""
+	n = t["notes"][-1]
+	return n["by"], n["kind"], n["text"]
+
+
+def texts(t: dict) -> str:
+	return "\n".join(n["text"] for n in t["notes"])
+
+
 class ClaimTest(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.TemporaryDirectory()
@@ -60,7 +70,8 @@ class ClaimTest(unittest.TestCase):
 			self.s.complete("CMB-1", "backend-1", " ")
 		t = self.s.complete("CMB-1", "backend-1", "fixed; tests pass")
 		self.assertEqual((t["status"], t["claim"]), ("done", None))
-		self.assertIn("(backend-1, done): fixed; tests pass", t["body"])
+		self.assertEqual(last(t), ("backend-1", "complete", "fixed; tests pass"))
+		self.assertEqual(t["notes"][-1]["status"], "done")
 		self.assertEqual([e["event"] for e in self.s.activity("CMB-1")], ["complete", "heartbeat", "claim", "created"])
 
 	def test_update_by_another_agent_cannot_touch_a_claimed_ticket(self):
@@ -75,7 +86,7 @@ class ClaimTest(unittest.TestCase):
 			with self.assertRaisesRegex(TicketError, "only the holder"):
 				call()
 		self.assertEqual(len(self.s.list()), 4)  # nothing split or deleted
-		self.assertIn("hello", self.s.add_note("CMB-1", "backend-2", "hello")["body"])  # notes from anyone, even on a held ticket
+		self.assertEqual(last(self.s.add_note("CMB-1", "backend-2", "hello")), ("backend-2", "note", "hello"))  # notes from anyone, even on a held ticket
 		self.assertEqual(self.s.update("CMB-1", {"priority": "P0"}, agent="backend-1")["priority"], "P0")
 		with self.assertRaisesRegex(TicketError, "claim_ticket / complete / ask_human"):  # a profile-named worker must claim
 			self.s.update("CMB-2", {"status": "doing"}, agent="backend-2")
@@ -132,7 +143,9 @@ class ClaimTest(unittest.TestCase):
 	def test_add_note_appends_signed_lines_and_survives_a_concurrent_complete(self):
 		self.s.claim("backend-1", tid="CMB-1")
 		t = self.s.add_note("CMB-1", "backend-1", "found the cause")
-		self.assertRegex(t["body"], r"^— backend-1, \d{4}-\d\d-\d\dT[\d:]+\+00:00: found the cause$")
+		self.assertEqual(last(t), ("backend-1", "note", "found the cause"))
+		self.assertRegex(t["notes"][-1]["at"], r"^\d{4}-\d\d-\d\dT[\d:]+\+00:00$")
+		self.assertEqual(t["body"], "")  # notes no longer go into the body
 		self.assertEqual(self.s.activity("CMB-1")[0]["event"], "note")
 		for bad in (("", "x"), ("a", "  ")):
 			with self.assertRaises(TicketError):
@@ -143,7 +156,7 @@ class ClaimTest(unittest.TestCase):
 		ts.append(threading.Thread(target=lambda: Store(self.dir).complete("CMB-1", "backend-1", "all done")))
 		[x.start() for x in ts]
 		[x.join() for x in ts]
-		body = self.s.get("CMB-1")["body"]
+		body = texts(self.s.get("CMB-1"))
 		self.assertEqual([f"n{i}" in body for i in range(8)], [True] * 8)  # nothing lost, whatever the order
 		self.assertIn("all done", body)
 		self.assertIn("found the cause", body)
@@ -154,14 +167,14 @@ class ClaimTest(unittest.TestCase):
 			self.s.ask("CMB-1", "backend-1", "x" * 1001)
 		long_q = "q" * 900
 		self.assertEqual(self.s.ask("CMB-1", "backend-1", long_q)["waiting_on"], long_q)
-		self.assertIn("question: " + long_q, self.s.get("CMB-1")["body"])  # kept after waiting_on is cleared
+		self.assertEqual(last(self.s.get("CMB-1")), ("backend-1", "question", long_q))
 		self.s.update("CMB-1", {"waiting_on": ""})
-		self.assertIn("question: ", self.s.get("CMB-1")["body"])
+		self.assertEqual(last(self.s.get("CMB-1"))[1], "question")  # kept after waiting_on is cleared
 		self.s.claim("backend-1", tid="CMB-2")
-		self.assertIn("released: too big", self.s.release("CMB-2", "backend-1", "too big")["body"])
+		self.assertEqual(last(self.s.release("CMB-2", "backend-1", "too big")), ("backend-1", "released", "too big"))
 		self.s.claim("backend-1", tid="CMB-3")
 		with mock.patch("time.time", return_value=time.time() + 3600):
-			self.assertIn("claim by backend-1 expired", self.s.get("CMB-3")["body"])
+			self.assertEqual(last(self.s.get("CMB-3"))[1], "expired")
 
 	def test_answer_clears_the_question_and_leaves_a_note(self):
 		with self.assertRaisesRegex(TicketError, "isn't waiting"):
@@ -172,7 +185,8 @@ class ClaimTest(unittest.TestCase):
 			self.s.answer("CMB-2", "Omri", " ")
 		t = self.s.answer("CMB-2", "Omri", "keep them")
 		self.assertEqual((t["waiting_on"], t["effective_status"]), ("", "todo"))
-		self.assertRegex(t["body"], r"— Omri, [^\n]*: Answer to: keep i-frames\? — keep them$")
+		self.assertEqual(last(t), ("Omri", "answer", "keep them"))
+		self.assertEqual(t["notes"][-1]["q"], "keep i-frames?")
 		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "answered")
 		with self.assertRaises(TicketError):
 			self.s.answer("CMB-2", "Omri", "again")  # already answered
@@ -194,18 +208,18 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(self.s.get("CMB-2")["claim"]["agent"], "backend-1")
 		# a nearly full body: explicit writes are refused (claim kept), automatic ones skip the note
 		raw = self.s._read(self.s._path("CMB-2"))
-		raw["body"] = "b" * (st.BODY_MAX - 20)
+		raw["body"] = "b" * (st.BODY_MAX - 5)
 		self.s._write(raw)
 		for call in (lambda: self.s.complete("CMB-2", "backend-1", "done it"),
 		             lambda: self.s.ask("CMB-2", "backend-1", "what now?"),
 		             lambda: self.s.add_note("CMB-2", "Omri", "hello there")):
-			with self.assertRaisesRegex(TicketError, "body would pass"):
+			with self.assertRaisesRegex(TicketError, "would pass"):
 				call()
 		t = self.s.get("CMB-2")
 		self.assertEqual((t["status"], t["claim"]["agent"], t["waiting_on"], t["result"]), ("doing", "backend-1", "", None))
 		self.s.release("CMB-2", "backend-1", "reason that does not fit")
 		t = self.s.get("CMB-2")
-		self.assertEqual((t["status"], len(t["body"])), ("todo", st.BODY_MAX - 20))
+		self.assertEqual((t["status"], len(t["body"]), t["notes"]), ("todo", st.BODY_MAX - 5, []))
 		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "release")
 
 	def test_answer_and_reject_need_by(self):
@@ -230,7 +244,7 @@ class ClaimTest(unittest.TestCase):
 			s.reject("CMB-1", "Omri", "")
 		t = s.reject("CMB-1", "Omri", "window is 0.3s, not 0.2s")
 		self.assertEqual((t["status"], t["effective_status"]), ("todo", "todo"))
-		self.assertRegex(t["body"], r"— Omri, [^\n]*: Rejected: window is 0.3s, not 0.2s$")
+		self.assertEqual(last(t), ("Omri", "rejected", "window is 0.3s, not 0.2s"))
 		self.assertEqual(s.activity("CMB-1")[0]["event"], "rejected")
 		self.assertIsNone(t.get("result"))  # rejected work is not upstream
 		self.assertEqual(s.claim("backend-1", tid="CMB-1")["id"], "CMB-1")  # claimable again
@@ -245,7 +259,7 @@ class ClaimTest(unittest.TestCase):
 		s.claim("backend-1", tid="CMB-1")
 		t = s.complete("CMB-1", "backend-1", "did it")
 		self.assertEqual((t["status"], t["claim"]), ("review", None))
-		self.assertIn("(backend-1, review): did it", t["body"])
+		self.assertEqual((last(t), t["notes"][-1]["status"]), (("backend-1", "complete", "did it"), "review"))
 		b = s.get("CMB-2")
 		self.assertEqual((b["effective_status"], b["open_blockers"]), ("pending", ["CMB-1"]))  # review is not done
 		self.assertIsNone(s.claim("backend-2"))  # nothing claimable, review is for a human

@@ -48,7 +48,7 @@ Ties go to the simplest thing that works.
 
 ### 2.2 Do not re-propose what exists
 
-Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs and Map views; `j`/`k` card focus; `p` then `0`-`3` priority; bulk bar; Needs you panel (`i`); digest; split; Undo toasts; settings (theme, density, digest); free pickers; Component filter and Group by; agent stats panel. Improve them. Do not add a second one.
+Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map and Roadmap views; `j`/`k` card focus; `p` then `0`-`3` priority; bulk bar; Needs you panel (`i`); digest; split; Undo toasts; settings (theme, density, digest); free pickers; Component and Milestone filters and Group by; agent stats panel. Improve them. Do not add a second one.
 
 ## 3. Hard rules (from AGENTS.md "Conventions")
 
@@ -63,7 +63,7 @@ Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs and M
 - **Motion.** At most 200 ms, card slides at most 280 ms, ease-out, only where it explains a change. Off under `prefers-reduced-motion: reduce`: CSS in the one `@media` block at the end of `<style>`, JS checks `reduce.matches`. JS motion is Web Animations (`el.animate`).
 - **Init order.** Anything `chips()` or `slidePill` reaches runs during init. Every `const` they read must be declared above the first call (`reduce` once broke this).
 - **The view lives in the URL.** A new filter needs a param in `urlWrite()`/`urlRead()`, validated with `pickOf`, plus a removable pill. [AGENTS: "View in the URL", "Filter chrome"]
-- **Shortcuts.** A new shortcut updates the `?` sheet AND the tooltip. Do not reuse `b`, `B`, `i`, `p`. Keys already in use include `n`, `g`, `d`, `m`, `a` (in the Map), `t`, `j`, `k`. [AGENTS: "Boards", "Priority", "Needs you"]
+- **Shortcuts.** A new shortcut updates the `?` sheet AND the tooltip. Do not reuse `b`, `B`, `i`, `p`. Keys already in use include `n`, `g`, `d`, `m`, `r`, `a` (in the Map), `t`, `j`, `k`. [AGENTS: "Boards", "Priority", "Needs you"]
 
 ## 4. Interaction rules
 

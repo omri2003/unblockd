@@ -144,6 +144,24 @@ try {
 		await visible('#dStage .dn', 'docs strip node'); // #dSvg (edges) is display:none on mobile by design
 		if (w > 600) await visible('#dSvg', 'docs strip svg');
 		await noOverflow('docs');
+		{ // Roadmap view: example has 2 milestones (v0.1 is next) and one unscheduled ticket; a milestone opens the board filtered to it
+			await page.click('[data-view="roadmap"]');
+			await page.waitForFunction(() => document.querySelectorAll('#roadWrap .rmi').length === 2);
+			ok(await page.getAttribute('#viewSeg [data-view="roadmap"]', 'title') === 'Roadmap (r)', `[${tag}] Roadmap tooltip should carry its key`);
+			ok((await page.locator('#roadWrap .rmi').first().getAttribute('class')).includes('rnext'), `[${tag}] roadmap: v0.1 should be Next`);
+			ok((await page.locator('#roadWrap [data-msgo="NONE"]').innerText()).includes('Unscheduled'), `[${tag}] roadmap: the unscheduled row`);
+			await noOverflow('roadmap');
+			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/roadmap-${w}-${theme}.png` });
+			await page.waitForTimeout(300); // the view cross-fade swallows pointer events
+			await page.click('#roadWrap [data-msgo="v0.1"]');
+			await page.waitForFunction(() => document.querySelector('#viewSeg [data-view="board"]')?.getAttribute('aria-pressed') === 'true');
+			const v01 = await page.evaluate(async () => (await (await fetch('/api/tickets?milestone=v0.1')).json()).map((t) => t.id));
+			const shown = await page.evaluate(() => [...new Set([...document.querySelectorAll('#board .card')].map((c) => c.dataset.open))]);
+			ok(shown.length && shown.every((id) => v01.includes(id)), `[${tag}] milestone filter: ${shown} should all be in v0.1 (${v01})`);
+			ok(new URL(page.url()).searchParams.get('milestone') === 'v0.1', `[${tag}] the milestone filter should be in the URL`);
+			await page.click('#pills [data-ms]');
+			await page.waitForFunction(() => !new URL(location.href).searchParams.has('milestone'));
+		}
 		await page.click('[data-view="board"]');
 
 		{ // Map view: example board has 4 component notes (docs/arch); UI-2 spans api + web-ui, DOC-1 maps to nothing
@@ -429,7 +447,7 @@ try {
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${qid}`);
 		ok((await badge()) === '2', `[${tag}] badge should drop to 2 after answering`);
 		const answered = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), qid);
-		ok(answered.body.includes('Answer to: Which one? — line one\nline two\nline three\nline four') && !answered.waiting_on, `[${tag}] the multi-line answer should be on the ticket: ${answered.body}`);
+		ok(answered.notes.some((n) => n.kind === 'answer' && n.q === 'Which one?' && n.text === 'line one\nline two\nline three\nline four') && !answered.waiting_on, `[${tag}] the multi-line answer should be on the ticket: ${answered.body}`);
 		// the review: open the ticket from the panel (the panel gives way to the drawer)
 		await page.click(`#npList .nr:has(.nb.r) .nid`);
 		await visible('#drawer .rbox a[href^="https://example.com"]', 'review result with link');
@@ -476,7 +494,7 @@ try {
 			await open(xid);
 			await page.click('#drawer [data-nform=reject] .rqd > summary'); await page.fill('#drawer [data-nform=reject] textarea', 'needs tests'); await page.click('#drawer [data-nform=reject] button[type=submit]');
 			for (let n = 0; n < 50 && (await st(xid)).status !== 'todo'; n++) await page.waitForTimeout(100);
-			ok((await st(xid)).body.includes('Rejected: needs tests'), `[${tag}] Reject from the drawer: back to To do with the reason in the body`);
+			ok((await st(xid)).notes.some((n) => n.kind === 'rejected' && n.text === 'needs tests'), `[${tag}] Reject from the drawer: back to To do with the reason in the body`);
 			cli('delete', aid); cli('delete', xid);
 			await page.keyboard.press('Escape'); await page.keyboard.press('i'); await visible('#npanel .nr', 'panel back');
 		}
@@ -486,7 +504,7 @@ try {
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		ok(page.url().includes('board=zsecond') === false, `[${tag}] answering must not switch boards`);
 		const oans = await page.evaluate((i) => fetch('/api/b/zsecond/tickets/' + i).then((r) => r.json()), oid);
-		ok(oans.body.includes('Answer to: Which colour? — Teal'), `[${tag}] the other board's ticket should carry the answer`);
+		ok(oans.notes.some((n) => n.kind === 'answer' && n.q === 'Which colour?' && n.text === 'Teal'), `[${tag}] the other board's ticket should carry the answer`);
 		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
 		ok((await page.locator('#attnSeg').count()) === 0, `[${tag}] the Needs attention chip is gone (Stuck lives in the panel)`);
 		// Stuck: a doing ticket nobody touched for stale_days, and a todo whose blocker file is gone (both crafted in the JSON); the open panel picks them up
@@ -719,7 +737,7 @@ try {
 		await page.fill(`${qrow} input[data-draft]`, 'This way'); await page.keyboard.press('Enter');
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `zteam/${qid}`);
 		const ans = await page.evaluate((i) => fetch('/api/b/zteam/tickets/' + i).then((r) => r.json()), qid);
-		ok(/— Dana, \S+: Answer to: Which way\? — This way/.test(ans.body), `the answer should be signed Dana: ${ans.body}`);
+		ok(ans.notes.some((n) => n.by === 'Dana' && n.kind === 'answer' && n.q === 'Which way?' && n.text === 'This way'), `the answer should be signed Dana: ${JSON.stringify(ans.notes)}`);
 		// approve in the Needs panel: the approver is recorded and the drawer says so
 		const vrow = `#npList .nr[data-key="zteam/${rvid}"]`;
 		await page.click(`${vrow} .nttl`); await page.click(`${vrow} [data-approve]`);

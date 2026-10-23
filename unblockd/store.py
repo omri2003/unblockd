@@ -54,14 +54,27 @@ DEFAULT_CONFIG = {
 	"schema": None,  # {"prefixes": {"FOG": "fog + explored map"}, "required": ["done_when"], "tags": ["bug"], "body_template": "## Why\n"}
 	# "open" (default): agents create ready tickets; "propose": a ticket created by an agent is a proposal (not claimable) until a human accepts it
 	"agent_tickets": "open",
+	# The roadmap: versions in order (position = order). Tickets point at one with `milestone`; progress is derived, never stored.
+	"milestones": [],  # [{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]
 }
+MILESTONE_KEYS = {"key", "title", "goal", "exit_criteria", "target", "closed"}
+MILESTONE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
 SCHEMA_KEYS = ("prefixes", "required", "tags", "body_template")
 SCHEMA_REQUIRED = ("done_when", "priority", "touches", "docs", "pillar", "owner", "parent", "body")
-BODY_MAX = 50_000
+BODY_MAX = 50_000  # chars of body + every note's text
+NOTES_MAX = 500  # notes on one ticket
+NOTE_KINDS = ("note", "question", "answer", "approved", "rejected", "accepted", "released", "expired", "complete")
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
+
+# Per-process caches, keyed by folder / file path, so every Store on the same folder (the web server builds one per request)
+# shares them. Files stay the only truth: every read re-stats the folder and re-parses only files whose (inode, mtime, size)
+# changed, so another process's write, a git pull or a hand edit is seen on the next call. Never written back.
+_RAW: dict[str, dict] = {}  # tickets folder -> {stem: (stamp, parsed ticket)}
+_DEC: dict[str, tuple] = {}  # tickets folder -> (signature, {id: decorated ticket})
+_LOG: dict[str, tuple] = {}  # activity file -> (inode, bytes parsed, [events oldest first])
 
 # Field -> (default, validator). Add a field here and the API + MCP accept it.
 FIELDS = {
@@ -74,6 +87,8 @@ FIELDS = {
 	"section": ("", lambda v: isinstance(v, str) and len(v) <= 80),
 	"blocked_by": ([], lambda v: isinstance(v, list) and all(isinstance(x, str) and ID_RE.match(x) for x in v)),
 	# a group (epic), not a blocker: this ticket is a part of that one. Loop-checked, the parent must exist
+	# the roadmap version this ticket ships in: a key of the board's `milestones` (separate from parent, so a ticket can be in an epic AND a version)
+	"milestone": (None, lambda v: v is None or (isinstance(v, str) and MILESTONE_RE.match(v) is not None)),
 	"parent": (None, lambda v: v is None or (isinstance(v, str) and ID_RE.match(v) is not None)),
 	# the bar for done, apart from the background in `body`: shown first in context(), echoed into complete()'s body entry
 	"done_when": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in v)),
@@ -88,6 +103,9 @@ FIELDS = {
 	# the agent that created this ticket while the board's agent_tickets is "propose"; set by create(agent=), cleared by accept(); read-only. While set the ticket is pending
 	"proposed_by": ("", lambda v: isinstance(v, str) and len(v) <= 40),
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
+	# what happened on the ticket, oldest first: [{by, at, kind, text, q? (answer: the question), status? (complete: done|review)}].
+	# Append-only, written only by add_note / ask / answer / approve / reject / accept / release / complete / the expiry sweep; read-only for update
+	"notes": ([], lambda v: isinstance(v, list) and all(isinstance(n, dict) and isinstance(n.get("text"), str) for n in v)),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
 	# repo paths / folders / globs this ticket's worker should read (knowledge.py); files attached
@@ -183,6 +201,7 @@ def load_config(tickets_dir: Path) -> dict:
 	if cfg["agent_tickets"] not in ("propose", "open"):
 		raise TicketError(f"{CONFIG_FILE}: agent_tickets must be \"propose\" or \"open\"")
 	_check_schema(cfg["schema"])
+	_check_milestones(cfg["milestones"])
 	_check_caps(cfg, Path(tickets_dir))
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
@@ -234,6 +253,36 @@ def _check_caps(cfg: dict, tickets_dir: Path) -> None:
 			raise bad(f"{what}: unknown {kind} {', '.join(miss)}. Registered: {', '.join(cfg[kind]) or 'none'} (the \"{kind}\" registry in {CONFIG_FILE})")
 
 
+def _check_milestones(ms) -> None:
+	bad = lambda m: TicketError(f"{CONFIG_FILE}: milestones {m}")
+	if not isinstance(ms, list):
+		raise bad('must be a list like [{"key": "v0.1", "title": "Foundations"}], in roadmap order')
+	seen = set()
+	for m in ms:
+		if not (isinstance(m, dict) and isinstance(m.get("key"), str) and MILESTONE_RE.match(m["key"])):
+			raise bad('need a key like v0.1 (letters, digits, . _ -, up to 40)')
+		k = m["key"]
+		if set(m) - MILESTONE_KEYS:
+			raise bad(f"{k}: unknown key(s) {', '.join(sorted(set(m) - MILESTONE_KEYS))}. Allowed: {', '.join(sorted(MILESTONE_KEYS))}")
+		if k in seen:
+			raise bad(f"{k} is listed twice")
+		seen.add(k)
+		if not (isinstance(m.get("title"), str) and 0 < len(m["title"].strip()) <= 80):
+			raise bad(f"{k}: title is required (up to 80 characters)")
+		if not (isinstance(m.get("goal", ""), str) and len(m.get("goal", "")) <= 300 and len(m.get("goal", "").splitlines()) <= 1):
+			raise bad(f"{k}: goal is one line of up to 300 characters")
+		ec = m.get("exit_criteria", [])
+		if not (isinstance(ec, list) and len(ec) <= 20 and all(isinstance(x, str) and 0 < len(x.strip()) <= 200 for x in ec)):
+			raise bad(f"{k}: exit_criteria is a list of up to 20 short lines")
+		if "target" in m:
+			try:
+				date.fromisoformat(str(m["target"]))
+			except ValueError:
+				raise bad(f"{k}: target is a date like 2026-11-15")
+		if not isinstance(m.get("closed", False), bool):
+			raise bad(f"{k}: closed is true or false")
+
+
 def _check_schema(sc) -> None:
 	if sc is None:
 		return
@@ -259,6 +308,12 @@ class Store:
 		self.stale_days = int(self.config["stale_days"])
 		# Old ticket lists: new IDs never reuse a number seen there.
 		self.legacy_files = [Path(p) for p in (legacy_files or []) if p] + [self.dir / p for p in self.config["legacy_files"]]
+		self._key = str(self.dir.resolve())
+		# runtime state (lock, claims, activity): <tickets>/.unblockd, except in a linked git worktree, where it is the MAIN
+		# checkout's copy of the same folder: every worktree then shares one lock and one claims.json (ticket files stay per branch)
+		wt = linked_worktree(self.dir.resolve())
+		self.rt = (wt[1] / self.dir.resolve().relative_to(wt[0]) if wt else self.dir) / ".unblockd"
+		self._cfg_sig = json.dumps(self.config, sort_keys=True)
 
 	# ---------- files ----------
 	def _path(self, tid: str) -> Path:
@@ -272,6 +327,8 @@ class Store:
 		if t.get("status") == "pending":  # derived only (effective_status); old files stored it, read as todo
 			t["status"] = "todo"
 		t.setdefault("rev", 0)
+		if "notes" not in t:  # old files: notes were appended to the body; split them out (written back on the ticket's next write)
+			t["body"], t["notes"] = split_notes(t.get("body", ""))
 		return t
 
 	def _write(self, t: dict) -> None:
@@ -283,12 +340,41 @@ class Store:
 			f.write("\n")
 		os.replace(tmp, path)  # atomic: a reader never sees half a file
 
+	def _scan(self) -> dict[str, tuple]:
+		"""{stem: (stamp, ticket)} for every ticket file, re-parsing only the files that changed since the last call (any Store, this process)."""
+		old, new = _RAW.get(self._key, {}), {}
+		with os.scandir(self.dir) as it:
+			for e in it:
+				if not e.name.endswith(".json") or not ID_RE.match(stem := e.name[:-5]):
+					continue
+				st = e.stat()
+				stamp = (st.st_ino, st.st_mtime_ns, st.st_size)  # os.replace makes a new file, so a rewrite changes the stamp even within one clock tick
+				hit = old.get(stem)
+				new[stem] = hit if hit and hit[0] == stamp else (stamp, self._read(Path(e.path)))
+		_RAW[self._key] = dict(sorted(new.items()))
+		return _RAW[self._key]
+
 	def _all_raw(self) -> list[dict]:
-		out = []
-		for p in sorted(self.dir.glob("*.json")):
-			if ID_RE.match(p.stem):
-				out.append(self._read(p))
-		return out
+		return [_copy(t) for _, t in self._scan().values()]
+
+	def _board(self) -> dict[str, dict]:
+		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket file, the claims, an attachment, the config or the date changed."""
+		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
+		raw = self._scan()
+		sig = (tuple((k, v[0]) for k, v in raw.items()), _stamp(self.rt / "claims.json"), self._files_sig(), date.today(), self._cfg_sig)
+		hit = _DEC.get(self._key)
+		if hit and hit[0] == sig:
+			return hit[1]
+		dec = {t["id"]: t for t in self._decorate([t for _, t in raw.values()])}  # _decorate builds new dicts and only reads the cached ones
+		_DEC[self._key] = (sig, dec)
+		return dec
+
+	def _files_sig(self) -> tuple:
+		fd = self.dir / "files"
+		if not fd.is_dir():
+			return ()
+		with os.scandir(fd) as it:  # the names themselves: a directory's mtime is not reliably bumped on every OS
+			return tuple(sorted((d.name, tuple(sorted(os.listdir(d.path)))) for d in it if d.is_dir()))
 
 	# ---------- validation ----------
 	def _clean(self, data: dict, partial: bool) -> dict:
@@ -303,6 +389,8 @@ class Store:
 				continue
 			if k == "result":
 				raise TicketError("result is set only by complete(): it can be read, not written")
+			if k == "notes":
+				raise TicketError("notes can't be written: add one with add_note (they are append-only)")
 			if k == "proposed_by":
 				raise TicketError("proposed_by is set when an agent creates a ticket and cleared by accept(): it can be read, not written")
 			if k in ("asked_at", "asked_by"):
@@ -380,6 +468,42 @@ class Store:
 		if bad:
 			raise TicketError(f"unknown component(s) {', '.join(bad)}: this board's components are {', '.join(keys)} (the file names in its architecture folder)")
 
+	def _check_milestone(self, new: str | None, old: str | None) -> None:
+		"""Refuse a milestone key the board doesn't list, unless it is already on the ticket (a milestone removed later keeps it editable)."""
+		keys = [m["key"] for m in self.config["milestones"]]
+		if new is None or new == old or new in keys:
+			return
+		if not keys:
+			raise TicketError(f"milestone {new}: this board has no milestones. Add them to \"milestones\" in {CONFIG_FILE} "
+			                  "(in roadmap order: [{\"key\": \"v0.1\", \"title\": \"...\"}]), or leave milestone empty")
+		raise TicketError(f"unknown milestone {new}: this board's milestones are {', '.join(keys)} (milestones in {CONFIG_FILE})")
+
+	def next_milestone(self) -> str | None:
+		"""The current roadmap step: the first milestone not closed."""
+		return next((m["key"] for m in self.config["milestones"] if not m.get("closed")), None)
+
+	def roadmap(self) -> dict:
+		"""The milestones in order with derived progress: {milestones: [{key, title, goal, exit_criteria, target, closed, next, all_done,
+		counts}], next, unscheduled: counts of tickets with no milestone (or one no longer listed)}. counts = total, done, review, doing,
+		ready, waiting_on_human (a question or a proposal), blocked: each ticket in exactly one of the last six."""
+		ts, nxt = self.list(), self.next_milestone()
+		def counts(group: list[dict]) -> dict:
+			c = dict.fromkeys(("total", "done", "review", "doing", "ready", "waiting_on_human", "blocked"), 0)
+			for t in group:
+				c["total"] += 1
+				st = t["effective_status"]
+				c["done" if st == "done" else "review" if st == "review" else "doing" if st == "doing" else "ready" if st == "todo"
+				  else "waiting_on_human" if t.get("waiting_on") or t.get("proposed_by") else "blocked"] += 1
+			return c
+		keys = {m["key"] for m in self.config["milestones"]}
+		out = []
+		for m in self.config["milestones"]:
+			c = counts([t for t in ts if t["milestone"] == m["key"]])
+			out.append({"key": m["key"], "title": m["title"], "goal": m.get("goal", ""), "exit_criteria": m.get("exit_criteria", []),
+			            "target": m.get("target"), "closed": bool(m.get("closed")), "next": m["key"] == nxt,
+			            "all_done": c["total"] > 0 and c["done"] == c["total"], "counts": c})
+		return {"milestones": out, "next": nxt, "unscheduled": counts([t for t in ts if t["milestone"] not in keys])}
+
 	def _check_caps(self, clean: dict, old: dict) -> None:
 		"""Refuse skill / mcp names that are not in the board's registry, unless already on the ticket (an entry removed later keeps it editable)."""
 		for k in ("skills", "mcp"):
@@ -421,16 +545,38 @@ class Store:
 			for b in t.get("blocked_by", []):
 				if b in blocks:
 					blocks[b].append(t["id"])
-		def unblocks(tid: str) -> int:
-			seen: set[str] = set()
-			stack = list(blocks[tid])
+		# everything downstream of each ticket as one bitset, built in a single pass (a ticket's set = its dependents' sets + them)
+		idx = {x: i for i, x in enumerate(by_id)}
+		open_mask = 0
+		for x, t in by_id.items():
+			if t.get("status") != "done":
+				open_mask |= 1 << idx[x]
+		down: dict[str, int] = {}
+		for root in by_id:
+			if root in down:
+				continue
+			acc, onpath, stack = {root: 0}, {root}, [(root, iter(blocks[root]))]
 			while stack:
-				x = stack.pop()
-				if x not in seen:
-					seen.add(x)
-					stack += blocks.get(x, [])
-			seen.discard(tid)
-			return sum(1 for x in seen if by_id[x].get("status") != "done")
+				x, it = stack[-1]
+				for y in it:
+					if y in down:
+						acc[x] |= down[y] | 1 << idx[y]
+					elif y in onpath:  # a blocked_by loop in an old file: count it, don't follow it
+						acc[x] |= 1 << idx[y]
+					else:
+						onpath.add(y)
+						acc[y] = 0
+						stack.append((y, iter(blocks[y])))
+						break
+				else:
+					stack.pop()
+					onpath.discard(x)
+					down[x] = acc.pop(x)
+					if stack:
+						acc[stack[-1][0]] |= down[x] | 1 << idx[x]
+
+		def unblocks(tid: str) -> int:
+			return bin(down[tid] & open_mask & ~(1 << idx[tid])).count("1")
 
 		today = date.today()
 		out = []
@@ -445,14 +591,14 @@ class Store:
 				except ValueError:
 					stale = None
 			ks = kids.get(t["id"], [])
-			out.append({**t, "parent": t.get("parent"), "components": t.get("components", []), "skills": t.get("skills", []), "mcp": t.get("mcp", []), "children": [k["id"] for k in ks],
+			out.append({**t, "parent": t.get("parent"), "milestone": t.get("milestone"), "components": t.get("components", []), "skills": t.get("skills", []), "mcp": t.get("mcp", []), "children": [k["id"] for k in ks],
 			            "progress": {"done": sum(k.get("status") == "done" for k in ks), "total": len(ks)},
 			            "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
 			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
-			            "docs": t.get("docs", []), "files": attached.get(t["id"], []),
+			            "docs": t.get("docs", []), "notes": t.get("notes", []), "files": attached.get(t["id"], []),
 			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None})
 		return out
 
@@ -487,10 +633,9 @@ class Store:
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
-	         agent: str | None = None, parent: str | None = None) -> list[dict]:
-		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos)."""
-		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
-		res = self._decorate(self._all_raw())
+	         agent: str | None = None, parent: str | None = None, milestone: str | None = None) -> list[dict]:
+		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none."""
+		res = list(self._board().values())  # cached: filter first, copy what is returned
 		if status:
 			res = [t for t in res if t["effective_status"] == status]
 		if pillar:
@@ -506,29 +651,29 @@ class Store:
 			res = [t for t in res if t["agent"] == agent]
 		if parent:
 			res = [t for t in res if t["parent"] == parent]
+		if milestone:
+			res = [t for t in res if t["milestone"] == (None if milestone == "-" else milestone)]
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]
-		return res
+		return [_copy(t) for t in res]
 
 	def next_ready(self, owner: str | None = None, pillar: str | None = None, limit: int = 5,
 	               agent: str | None = None, tag: str | None = None) -> list[dict]:
 		"""Ready tickets (effective todo: not blocked, started or done), best first:
-		score = priority weight x (1 + open tickets it unblocks), then priority, then id."""
+		score = priority weight x (1 + open tickets it unblocks), then the current milestone's tickets (a tie-break: it never beats a
+		higher score), then priority, then id."""
 		res = self.list(status="todo", pillar=pillar, owner=owner, agent=agent, tag=tag)
-		res.sort(key=lambda t: (-t["score"], PRIORITIES.index(t["priority"]) if t.get("priority") else 9, t["id"]))
+		nxt = self.next_milestone()
+		res.sort(key=lambda t: (-t["score"], not (nxt and t["milestone"] == nxt), PRIORITIES.index(t["priority"]) if t.get("priority") else 9, t["id"]))
 		return res[:max(0, int(limit))]
 
 	def get(self, tid: str) -> dict:
-		path = self._path(tid)
-		if not path.exists():
+		self._path(tid)  # validates the id
+		t = self._board().get(tid)
+		if t is None:
 			raise NotFound(f"no ticket {tid}")
-		self._live_claims()
-		target = self._read(path)
-		for t in self._decorate(self._all_raw()):
-			if t["id"] == target["id"]:
-				return t
-		return target
+		return _copy(t)
 
 	def next_id(self, prefix: str) -> str:
 		if not PREFIX_RE.match(prefix or ""):
@@ -589,6 +734,7 @@ class Store:
 		self._check_blockers(clean.get("blocked_by", []), inherited)
 		self._check_loop(tid, clean.get("blocked_by", []))
 		self._check_parent(tid, clean.get("parent"))
+		self._check_milestone(clean.get("milestone"), None)
 		self._check_components(clean.get("components", []), inherited_components)
 		self._check_caps(clean, inherited_caps)
 		today = date.today().isoformat()
@@ -631,6 +777,8 @@ class Store:
 			self._check_parent(tid, clean["parent"])
 		if "components" in clean:
 			self._check_components(clean["components"], t.get("components", []))
+		if "milestone" in clean:
+			self._check_milestone(clean["milestone"], t.get("milestone"))
 		if agent and self.profile_of(agent) and clean.get("status") in ("doing", "done", "review") and clean["status"] != t.get("status"):
 			raise TicketError(f"a worker can't set status {clean['status']}: use claim_ticket / complete / ask_human")
 		self._check_caps(clean, t)
@@ -694,7 +842,7 @@ class Store:
 			for x in titles_:  # validate everything before creating anything
 				self._clean({"title": x}, partial=True)
 			prefix = tid.split("-")[0]
-			keep = {k: parent[k] for k in ("pillar", "owner", "priority", "tags", "touches", "docs", "components", "skills", "mcp") if k in parent}
+			keep = {k: parent[k] for k in ("pillar", "owner", "priority", "tags", "touches", "docs", "components", "skills", "mcp", "milestone") if k in parent}
 			kids: list[dict] = []
 			for x in titles_:
 				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
@@ -728,7 +876,7 @@ class Store:
 			if raw["proposed_by"] == by.strip():
 				raise TicketError(f"{by.strip()} proposed {tid} and can't accept it: someone else decides")
 			who, raw["proposed_by"], raw["updated"] = raw["proposed_by"], "", date.today().isoformat()
-			_append_note(raw, by.strip(), f"Accepted by {by.strip()}")
+			_append_note(raw, by.strip(), f"Accepted by {by.strip()}", kind="accepted")
 			self._write(raw)
 			self._log("accepted", tid, by.strip(), f"proposed by {who}")
 		self._locked(run)
@@ -754,9 +902,9 @@ class Store:
 	# Runtime state, not ticket content: kept in <tickets>/.unblockd/ (git-ignored by a .gitignore
 	# inside it), so heartbeats never show up as changes in the project repo.
 	def _rt(self) -> Path:
-		d = self.dir / ".unblockd"
+		d = self.rt
 		if not d.is_dir():
-			d.mkdir(exist_ok=True)  # parallel first calls race here
+			d.mkdir(parents=True, exist_ok=True)  # parallel first calls race here
 			(d / ".gitignore").write_text("*\n", encoding="utf-8")
 		return d
 
@@ -812,7 +960,7 @@ class Store:
 			guard.unlink(missing_ok=True)
 
 	def _claims(self) -> dict:
-		p = self.dir / ".unblockd" / "claims.json"
+		p = self.rt / "claims.json"
 		try:
 			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 		except json.JSONDecodeError as e:
@@ -856,7 +1004,7 @@ class Store:
 						if t.get("status") == "doing":
 							t["status"] = "todo"
 							t["updated"] = date.today().isoformat()
-							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)", strict=False)
+							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)", strict=False, kind="expired")
 							self._write(t)
 					self._log("expired", tid, c["agent"], f"no heartbeat for {int(lease // 60)} min; back to todo")
 				self._save_claims(cur)
@@ -1063,7 +1211,7 @@ class Store:
 			if raw.get("status") == "doing":
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			if reason.strip():
-				_append_note(raw, agent, f"released: {reason.strip()}", strict=False)
+				_append_note(raw, agent, reason.strip(), strict=False, kind="released")
 			self._write(raw)
 			self._log("release", tid, agent, reason, c.get("principal"))
 		self._locked(rel)
@@ -1081,7 +1229,7 @@ class Store:
 			self._holder(tid, agent)
 			raw = self._read(self._path(tid))
 			raw.update(status="todo", waiting_on=q, asked_at=_now(), asked_by=agent, updated=date.today().isoformat())
-			_append_note(raw, agent, f"question: {q}")  # refuses before the claim is touched
+			_append_note(raw, agent, q, kind="question")  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
@@ -1126,7 +1274,7 @@ class Store:
 				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
 			if raw.get("asked_by") == by.strip():
 				raise TicketError(f"{by.strip()} asked this question and can't answer it: someone else decides")
-			_append_note(raw, by.strip(), f"Answer to: {raw['waiting_on']} — {text.strip()}")
+			_append_note(raw, by.strip(), text.strip(), kind="answer", q=raw["waiting_on"])
 			raw["waiting_on"], raw["asked_at"], raw["asked_by"], raw["updated"] = "", "", "", date.today().isoformat()
 			self._write(raw)
 			self._log("answered", tid, by, text.strip())
@@ -1150,7 +1298,7 @@ class Store:
 			res = raw.get("result")  # none = moved to review by hand: the note and the log record the approver, no result is invented
 			if res and res.get("by") == by:
 				raise TicketError(f"{by} completed {tid} and can't approve it: someone else decides")
-			_append_note(raw, by, f"Approved by {by}")
+			_append_note(raw, by, f"Approved by {by}", kind="approved")
 			if res:
 				raw["result"] = {**res, "approved_by": by, "approved_at": _now()}
 			res = res or {}
@@ -1176,7 +1324,7 @@ class Store:
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
 			if (raw.get("result") or {}).get("by") == by.strip():
 				raise TicketError(f"{by.strip()} completed {tid} and can't reject it: someone else decides")
-			_append_note(raw, by.strip(), f"Rejected: {reason.strip()}")
+			_append_note(raw, by.strip(), reason.strip(), kind="rejected")
 			raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			raw.pop("result", None)  # rejected work must not show as upstream
 			self._write(raw)
@@ -1206,8 +1354,8 @@ class Store:
 				result["principal"] = c["principal"]
 			raw = self._read(self._path(tid))
 			status = "review" if self.config["review"] else "done"
-			bar = "".join(f"\n- {x.strip()}" for x in raw.get("done_when", []))
-			_append(raw, f"{date.today().isoformat()} ({agent}, {status}): {summary.strip()}" + (f"\nDone when:{bar}" if bar else ""))  # refuses before the claim is touched
+			bar = {"done_when": raw["done_when"]} if raw.get("done_when") else {}  # the bar it was finished against, next to the summary
+			_append_note(raw, agent, summary.strip(), kind="complete", status=status, **bar)  # refuses before the claim is touched
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
@@ -1230,19 +1378,35 @@ class Store:
 		limit = max(0, int(limit))
 		out = []
 		for name in ("activity.jsonl", "activity.1.jsonl"):  # newest first, so stop as soon as the limit or the floor is reached
-			p = self.dir / ".unblockd" / name
-			for line in (reversed(p.read_text(encoding="utf-8").splitlines()) if p.exists() else ()):
+			for e in reversed(self._events(self.rt / name)):
 				if len(out) >= limit:
 					return out
-				try:
-					e = json.loads(line)
-				except json.JSONDecodeError:
-					continue
 				if floor is not None and _ts(e["ts"]) < floor:
 					return out
 				if tid is None or e.get("ticket") == tid:
-					out.append(e)
+					out.append(dict(e))
 		return out
+
+	@staticmethod
+	def _events(p: Path) -> list[dict]:
+		"""Parsed lines of one activity file, oldest first. The log only grows (or is renamed away by rotation), so a repeat call
+		parses just the bytes appended since; a different inode or a shorter file = read it again. A half-written last line waits."""
+		try:
+			st = p.stat()
+		except FileNotFoundError:
+			return []
+		ino, done, events = _LOG.get(str(p), (None, 0, []))
+		if ino != st.st_ino or st.st_size < done:
+			done, events = 0, []
+		if st.st_size > done:
+			with open(p, "rb") as f:
+				f.seek(done)
+				chunk = f.read(st.st_size - done)
+			end = chunk.rfind(b"\n") + 1
+			events = events + [e for e in (_jline(x) for x in chunk[:end].decode("utf-8", "replace").splitlines()) if e is not None]
+			done += end
+		_LOG[str(p)] = (st.st_ino, done, events)
+		return events
 
 	def agents_now(self) -> dict:
 		"""The live view: one row per working agent, plus recent activity."""
@@ -1254,22 +1418,97 @@ class Store:
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
 
 
-def _append(raw: dict, line: str, strict: bool = True) -> bool:
-	"""The one way a note enters a body (caller holds the lock and writes). Over BODY_MAX: strict raises (explicit writes),
-	otherwise the note is skipped and False comes back (automatic ones: expiry, release reason; the activity log keeps the event)."""
-	body = raw.get("body", "")
-	new = (body + "\n\n" if body else "") + line
-	if len(new) > BODY_MAX:
+def _append_note(raw: dict, by: str, text: str, strict: bool = True, kind: str = "note", **extra) -> bool:
+	"""The one way a note enters a ticket (caller holds the lock and writes): {by, at, kind, text, **extra} at the end of `notes`.
+	Over BODY_MAX (body + notes) or NOTES_MAX: strict raises (explicit writes), otherwise the note is skipped and False comes back
+	(automatic ones: expiry, release reason; the activity log keeps the event)."""
+	notes = raw.setdefault("notes", [])
+	size = len(raw.get("body", "")) + sum(len(n.get("text", "")) for n in notes) + len(text)
+	if size > BODY_MAX or len(notes) >= NOTES_MAX:
 		if strict:
-			raise TicketError(f"{raw['id']}'s body would pass {BODY_MAX} chars: move old notes into an attached file (attach_file) first")
+			raise TicketError(f"{raw['id']} would pass {BODY_MAX} chars or {NOTES_MAX} notes: move old detail into an attached file (attach_file) first")
 		return False
-	raw["body"] = new
+	notes.append({"by": by, "at": _now(), "kind": kind, "text": text, **extra})
 	return True
 
 
-def _append_note(raw: dict, by: str, text: str, strict: bool = True) -> bool:
-	"""Add `— by, time: text` to raw's body after a blank line."""
-	return _append(raw, f"— {by}, {_now()}: {text}", strict)
+_NOTE_RE = re.compile(r"— ([^,\n]+), (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:[+-]\d\d:\d\d|Z)?): ([\s\S]*)")
+_DONE_RE = re.compile(r"(\d{4}-\d\d-\d\d) \(([^,\n]+), (done|review)\): ([\s\S]*)")
+_LEGACY = (("question: ", "question"), ("Rejected: ", "rejected"), ("released: ", "released"))
+
+
+def split_notes(body: str) -> tuple[str, list[dict]]:
+	"""An old body (notes appended as `— by, ISO: text` and complete()'s `YYYY-MM-DD (agent, done): summary`) -> (description, notes).
+	A chunk starts at a blank line followed by one of those two shapes; anything else stays with the chunk before it."""
+	chunks = re.split(r"\n\n(?=— [^,\n]+, \d{4}-\d\d-\d\dT|\d{4}-\d\d-\d\d \([^,\n]+, (?:done|review)\): )", body or "")
+	desc, notes = [], []
+	for c in chunks:
+		if (m := _NOTE_RE.fullmatch(c)):
+			by, at, text = m.groups()
+			n = {"by": by, "at": at, "kind": "note", "text": text}
+			if text.startswith("Answer to: ") and " — " in text:
+				n["q"], n["text"] = text[11:].split(" — ", 1)
+				n["kind"] = "answer"
+			elif text.startswith(("Approved by ", "Accepted by ")):
+				n["kind"] = "approved" if text.startswith("Approved") else "accepted"
+			elif text.startswith("claim by ") and " expired" in text:
+				n["kind"] = "expired"
+			else:
+				for pre, kind in _LEGACY:
+					if text.startswith(pre):
+						n["kind"], n["text"] = kind, text[len(pre):]
+			notes.append(n)
+		elif (m := _DONE_RE.fullmatch(c)):
+			day, by, status, text = m.groups()
+			notes.append({"by": by, "at": day, "kind": "complete", "text": text.split("\nDone when:")[0], "status": status})
+		elif notes:  # text after a note that is not a note: keep it with that note
+			notes[-1]["text"] += "\n\n" + c
+		else:
+			desc.append(c)
+	return "\n\n".join(desc), notes
+
+
+def linked_worktree(path: Path) -> tuple[Path, Path] | None:
+	"""(worktree root, main checkout root) when `path` is inside a linked git worktree (`git worktree add`: its .git is a FILE
+	pointing at <main>/.git/worktrees/<name>, which has a `commondir`), else None (a normal checkout, a submodule, no git)."""
+	for d in (path, *path.parents):
+		g = d / ".git"
+		if g.is_dir():
+			return None
+		if g.is_file():
+			m = re.match(r"gitdir:\s*(.+)", g.read_text(encoding="utf-8", errors="replace").strip())
+			if not m:
+				return None
+			gd = Path(m[1].strip())
+			gd = gd if gd.is_absolute() else d / gd
+			cf = gd / "commondir"
+			if not cf.is_file():
+				return None  # a submodule: its own repo, nothing to share
+			common = (gd / cf.read_text(encoding="utf-8").strip()).resolve()
+			return (d, common.parent) if common.name == ".git" else None  # a bare repo has no main checkout
+	return None
+
+
+def _copy(t: dict) -> dict:
+	"""A copy of a cached ticket that a caller may change freely (lists and dicts copied two levels deep: result.files, claim)."""
+	return {k: v[:] if isinstance(v, list) else {a: b[:] if isinstance(b, list) else b for a, b in v.items()} if isinstance(v, dict) else v
+	        for k, v in t.items()}
+
+
+def _stamp(p: Path) -> tuple | None:
+	try:
+		st = p.stat()
+	except FileNotFoundError:
+		return None
+	return (st.st_ino, st.st_mtime_ns, st.st_size)
+
+
+def _jline(line: str) -> dict | None:
+	try:
+		e = json.loads(line)
+	except json.JSONDecodeError:
+		return None
+	return e if isinstance(e, dict) else None
 
 
 def _now() -> str:

@@ -19,9 +19,10 @@ PR_URL = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)/?$")
 FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failure", "error"}
 
 
-def load(tdir) -> dict:
+def load(rt) -> dict:
+	"""prs.json from a board's runtime folder (Store.rt)."""
 	try:
-		return json.loads((tdir / ".unblockd" / "prs.json").read_text(encoding="utf-8"))
+		return json.loads((rt / "prs.json").read_text(encoding="utf-8"))
 	except (OSError, ValueError):
 		return {}
 
@@ -47,7 +48,8 @@ class Syncer:
 		self.failing = self.failed
 
 	def _board(self, bid: str, tdir) -> None:
-		store, old, new = self.boards.get(bid), load(tdir), {}
+		store = self.boards.get(bid)
+		old, new = load(store.rt), {}
 		for t in store.list():
 			if t["status"] != "review":
 				continue
@@ -72,8 +74,8 @@ class Syncer:
 				e["noted"] = True
 			new[t["id"]] = e
 		if new != old:
-			d = tdir / ".unblockd"
-			d.mkdir(exist_ok=True)
+			d = store.rt
+			d.mkdir(parents=True, exist_ok=True)
 			(d / "prs.json").write_text(json.dumps(new, indent=1), encoding="utf-8")
 
 	def _check(self, m, prev: dict) -> dict:

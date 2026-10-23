@@ -4,12 +4,12 @@ GET    /api/boards                       every board: id, title, ticket counts
 POST   /api/boards                       {"id": "my-game", "title": "My game"}  (needs UNBLOCKD_ROOT)
 GET    /api/needs                        every board's tickets that wait on a person (read-only, for the UI's Needs you panel):
                                          [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck, "title", "priority", "score", "unblocks",
-                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars)}]}], boards with items only,
+                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars), "notes" (newest 10)}]}], boards with items only,
                                          items: score desc, then oldest first
 GET    /api/chat                         {"enabled": bool, "model": ...}
 POST   /api/chat                         {"board": id, "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 Per board, under /api/b/<board>/ ; the same paths without the prefix use the default (first) board:
-GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&parent=&q=
+GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&parent=&milestone=&q=   (milestone=- : tickets with none)
 GET    next?owner=&pillar=&agent=&tag=&limit=   ready tickets ranked by priority x tickets unblocked
 GET    plan?per_agent=                   ready tickets grouped by agent profile (work_plan)
 GET    tickets/<id>
@@ -27,7 +27,7 @@ POST   tickets/<id>/claim                {"agent", "note"?, "principal"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?}
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
-POST   tickets/<id>/notes                {"by"?, "text"}  append a signed line to the body (by defaults to "human") -> the ticket
+POST   tickets/<id>/notes                {"by"?, "text"}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
@@ -35,6 +35,7 @@ POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
 GET    files                             project file paths (no .git / node_modules / tickets/, capped at 3000): what the form suggests for docs and touches
+GET    roadmap                           the milestones in order with progress counts, the next one, and the unscheduled counts
 GET    architecture                      the architecture folder: components (+ open tickets, counts), edges with their contracts, ticket_map, problems
 POST   architecture/components           {"key", "title", "summary"?, "paths"?: [globs], "by"?}  new note <folder>/<key>.md (the folder is created) -> the architecture payload
 PATCH  architecture/components/<key>     {"title"?, "summary"?, "paths"?, "by"?}  only the managed parts of the note change
@@ -82,7 +83,8 @@ def _num(q: dict, key: str, default: int) -> int:
 	return int(v)
 
 
-NEEDS_BODY = 6000  # chars of body sent per item: enough for the panel's last 3 notes
+NEEDS_BODY = 6000  # chars of body (the description) sent per item
+NEEDS_NOTES = 10  # the newest notes sent per item: the panel shows the last 3 that are not the question itself
 
 
 def _needs() -> list[dict]:
@@ -96,7 +98,7 @@ def _needs() -> list[dict]:
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), github.load(path)
+		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), github.load(s.rt)
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -117,7 +119,7 @@ def _needs() -> list[dict]:
 			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
 			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
-			              "body": (t.get("body") or "")[-NEEDS_BODY:],
+			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
 			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
 			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
@@ -265,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["files"]:
 				return self._send(200, kn.repo_files(store))
+			if method == "GET" and rest == ["roadmap"]:
+				return self._send(200, store.roadmap())
 			if method == "GET" and rest == ["architecture"]:
 				return self._send(200, kn.architecture(store))
 			if rest[:2] == ["architecture", "components"] and len(rest) <= 3 or rest == ["architecture", "edges"]:
@@ -313,7 +317,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None
 			if method == "GET" and tid is None:
-				return self._send(200, store.list(**{k: q.get(k) for k in ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent")}))
+				return self._send(200, store.list(**{k: q.get(k) for k in ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent", "milestone")}))
 			if method == "GET":
 				return self._send(200, store.get(tid))
 			if method == "POST" and tid is None:
