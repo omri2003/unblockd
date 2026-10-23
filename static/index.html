@@ -406,16 +406,21 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dprob button.bad{border-color:var(--cinnabar);color:var(--cinnabar)}
 .dprob button.zero{color:var(--muted);cursor:default;font-weight:400}
 .dprob button[aria-pressed=true]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
-.roadwrap{max-width:860px} .rm{list-style:none;margin:0;padding:0;display:grid;gap:10px}
-.rmi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:grid;gap:6px}
-.rmi.rnext{border-color:var(--jade);box-shadow:inset 3px 0 0 var(--jade)} .rmi.rclosed{opacity:.7}
-.rmh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px} .rmh .ttl{font-weight:700;font-size:1rem;background:none;border:0;padding:0;color:var(--ink);cursor:pointer;text-align:left} .rmh .ttl:hover{text-decoration:underline}
-.rmh .k{font-family:var(--mono,monospace);font-size:.78rem;color:var(--muted)} .rmh .tg{margin-left:auto;font-size:.8rem;color:var(--muted)}
-.rmb{font-size:.72rem;font-weight:700;border-radius:999px;padding:1px 8px;border:1px solid currentColor} .rmb.rnext{color:var(--jade)} .rmb.rclosed{color:var(--muted)} .rmb.rall{color:var(--amber)}
-.rmi .goal{color:var(--muted)} .rmi .prog i{width:120px} .rmc{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.84rem;color:var(--muted)} .rmc b{color:var(--ink);font-variant-numeric:tabular-nums}
-.rmi ul{margin:0;padding-left:18px;font-size:.88rem} .rmi h4{margin:4px 0 0;font-size:.74rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+.roadwrap{max-width:860px} .rm{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.rmleg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.78rem;color:var(--muted);margin:0 0 10px} .rmleg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.rmi{background:var(--surface);border:1px solid var(--line);border-radius:10px} .rmi.rnext{border-color:var(--jade);box-shadow:inset 3px 0 0 var(--jade)} .rmi.rclosed .rmrow{opacity:.7}
+.rmrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,240px) auto auto;align-items:center;gap:6px 12px;width:100%;background:none;border:0;padding:10px 14px;text-align:left;color:var(--ink);cursor:pointer;font:inherit;border-radius:10px}
+.rmrow:hover{background:var(--sunk)} .rmt{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;min-width:0} .rmt b{font-size:.98rem} .rmt .k{font-family:var(--mono);font-size:.76rem;color:var(--muted)}
+.rmb{font-size:.7rem;font-weight:700;border-radius:999px;padding:0 7px;border:1px solid currentColor} .rmb.rnext{color:var(--jade)} .rmb.rclosed{color:var(--muted)} .rmb.rall{color:var(--amber)} .tgt{font-size:.78rem;color:var(--muted)} .tgt.late{color:var(--cinnabar);font-weight:600}
+.rbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--sunk)} .rbar i{display:block;height:100%}
+.rmn{font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap} .rmrow .chev{transition:transform .15s ease-out;margin-right:2px} .rmi.open .chev{transform:translateY(.1em) rotate(-135deg)}
+.c-done{background:var(--jade)} .c-review{background:var(--plum)} .c-doing{background:var(--amber)} .c-ready{background:color-mix(in srgb,var(--muted) 45%,transparent)} .c-waiting{background:var(--slate)} .c-blocked{background:var(--cinnabar)}
+.rmx{padding:0 14px 12px;display:grid;gap:8px} .rmx .goal{color:var(--muted)} .rmc{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.84rem;color:var(--muted)} .rmc b{color:var(--ink);font-variant-numeric:tabular-nums}
+.rchips{display:flex;flex-wrap:wrap;gap:6px} .rch{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:1px solid var(--line);background:var(--paper);border-radius:6px;padding:3px 8px;font:inherit;font-size:.8rem;color:var(--ink);cursor:pointer}
+.rch:hover{border-color:var(--ink)} .rch i{width:8px;height:8px;border-radius:50%;flex:none} .rch .tid{font-size:.76rem} .rch span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.rmx h4{margin:2px 0 0;font-size:.74rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)} .rmx ul{margin:0;padding-left:18px;font-size:.88rem}
+@media (max-width:600px){.rmrow{grid-template-columns:minmax(0,1fr) auto auto} .rmrow .rbar{grid-column:1/-1;order:5}}
 .roadwrap pre{font:.82rem/1.45 var(--mono);background:var(--sunk);padding:10px 12px;border-radius:8px;overflow:auto;max-width:100%}
-.rmu{display:flex;gap:10px;align-items:center;font-size:.9rem;color:var(--muted);padding:4px 2px}
 .dtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:10px;font-size:.82rem;color:var(--muted)}
 .dtools .sw{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
 .dstage{position:relative;background:var(--sunk);border-radius:8px;padding:12px 12px}
@@ -516,7 +521,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -1544,6 +1549,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-mclear]')){mapClear();return;}
   if(g('[data-onmap]')){const id=openId;closeDrawer();showOnMap(id);return;}
   if(b=g('[data-mapcomp]')){const k=b.dataset.mapcomp;closeDrawer();showComp(k);return;}
+  if(b=g('[data-rmx]')){const k=b.dataset.rmx,li=b.closest('.rmi');RMX[k]=!li.classList.contains('open');renderRoad();$('roadWrap').querySelector(`[data-rmx="${CSS.escape(k)}"]`)?.focus();return;}
   if(b=g('[data-msgo]')){state.ms=b.dataset.msgo;store.set('ms',state.ms);if(!$('drawer').hidden)closeDrawer();setView('board');renderBar();return;}
   if(b=g('[data-showboard]')){state.comp=b.dataset.showboard;store.set('comp',state.comp);setView('board');renderBar();return;}
   if(state.view==='map'&&g('#mapWrap')&&!g('a,button,.eg,.mapmsg,#mProb,#mTools,#mNote')&&(MV.foc||MV.multi||MV.f)){mapClear();return;}
@@ -2459,24 +2465,36 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('roadWrap').hidden=v!=='roadmap';$('bar').hidden=v==='docs'||v==='map'||v==='roadmap';$('depSeg').hidden=v!=='graph';
   paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
 function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
-// ---------- Roadmap: the board's milestones (unblockd.json, in order) with progress from the tickets; same counts as GET /roadmap ----------
+// ---------- Roadmap: the board's milestones (unblockd.json, in order) as progress rows; a row expands to its tickets (chips) and exit criteria ----------
+const RMS=[['done','done'],['review','in review'],['doing','in progress'],['ready','not started'],['waiting','waiting on a person'],['blocked','blocked']]; // bar order = legend order
 const RMC=[['ready','ready'],['doing','in progress'],['review','in review'],['waiting','waiting on a person'],['blocked','blocked']];
-function rmCounts(ts){const c={total:ts.length,done:0,review:0,doing:0,ready:0,waiting:0,blocked:0};
-  for(const t of ts){const s=t.effective_status;c[s==='done'?'done':s==='review'?'review':s==='doing'?'doing':s==='todo'?'ready':t.waiting_on||t.proposed_by?'waiting':'blocked']++;} return c;}
+const rmState=t=>{const s=t.effective_status;return s==='done'?'done':s==='review'?'review':s==='doing'?'doing':s==='todo'?'ready':t.waiting_on||t.proposed_by?'waiting':'blocked';};
+function rmCounts(ts){const c={total:ts.length,done:0,review:0,doing:0,ready:0,waiting:0,blocked:0}; for(const t of ts)c[rmState(t)]++; return c;}
+const RMX={}; // key -> expanded, chosen by a click this session; the Next milestone starts open
+const CHIP_ORDER=['blocked','waiting','doing','review','ready','done'];
+function rmRow(key,title,ts,o={}){
+  const c=rmCounts(ts),open=RMX[key]??!!o.next,all=c.total&&c.done===c.total,today=new Date().toISOString().slice(0,10),late=o.target&&o.target<today&&!o.closed&&!all;
+  const words=RMS.filter(([k])=>c[k]).map(([k,l])=>`${c[k]} ${l}`).join(', ')||'no tickets yet';
+  const bar=`<span class="rbar" role="img" aria-label="${esc(words)}">${RMS.filter(([k])=>c[k]).map(([k])=>`<i class="c-${k}" style="width:${100*c[k]/c.total}%"></i>`).join('')}</span>`;
+  const badge=o.closed?'<span class="rmb rclosed">Closed</span>':o.next?'<span class="rmb rnext">Next</span>':'',ad=!o.closed&&all&&key?'<span class="rmb rall" title="Every ticket is done: check the exit criteria, then set closed: true in unblockd.json">All done: close it?</span>':'';
+  const sorted=[...ts].filter(t=>key||t.status!=='done').sort((x,y)=>CHIP_ORDER.indexOf(rmState(x))-CHIP_ORDER.indexOf(rmState(y))||x.id.localeCompare(y.id)),cap=40;
+  const chips=sorted.slice(0,cap).map(t=>{const st=rmState(t);return `<button type="button" class="rch" data-open="${esc(t.id)}" title="${esc(t.title)} (${esc(RMS.find(r=>r[0]===st)[1])})"><i class="c-${st}" aria-hidden="true"></i><b class="tid">${esc(t.id)}</b><span>${esc(t.title)}</span></button>`;}).join('');
+  return `<li class="rmi${o.next?' rnext':''}${o.closed?' rclosed':''}${open?' open':''}${key?'':' run'}" data-rk="${esc(key)}">
+    <button type="button" class="rmrow" data-rmx="${esc(key)}" aria-expanded="${open}"><span class="rmt"><b>${esc(title)}</b>${key?`<span class="k">${esc(key)}</span>`:''}${badge}${ad}${o.target?`<span class="tgt${late?' late':''}">${late?'Late · ':''}target ${esc(o.target)}</span>`:''}</span>${bar}<span class="rmn">${key?`${c.done} / ${c.total}`:`${ts.filter(t=>t.status!=='done').length} open`}</span><span class="chev" aria-hidden="true"></span></button>
+    ${open?`<div class="rmx">${o.goal?`<div class="goal">${inline(o.goal)}</div>`:''}<div class="rmc">${c.total?`<span><b>${c.done}</b> of ${c.total} done</span>`:''}${RMC.filter(([k])=>c[k]).map(([k,l])=>`<span><b>${c[k]}</b> ${l}</span>`).join('')}</div>
+      ${chips?`<div class="rchips">${chips}</div>`:'<p class="hint">No tickets in it yet: set a ticket\'s Milestone in its edit form.</p>'}${sorted.length>cap?`<p class="hint">+${sorted.length-cap} more on the board</p>`:''}
+      ${(o.exit||[]).length?`<h4>Exit criteria</h4><ul>${o.exit.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:''}
+      <div><button type="button" class="btn ghost sm" data-msgo="${key?esc(key):'NONE'}">Show on the board</button></div></div>`:''}</li>`;
+}
 function renderRoad(){
   const el=$('roadWrap'),ms=MSL();
   if(!ms.length){const h=`<p class="hint">No milestones on this board yet. A milestone is a version of the roadmap (v0.1, v0.2...): its tickets, its exit criteria, how far it is. Add them, in order, to <code>milestones</code> in <code>${esc(BOARD||'tickets')}/unblockd.json</code>, then set a ticket's Milestone in its edit form:</p><pre class="code">"milestones": [
   {"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15"},
   {"key": "v0.2", "title": "Sync"}
 ]</pre>`;if(el.innerHTML!==h)el.innerHTML=h;return;}
-  const nxt=ms.find(m=>!m.closed)?.key,un=T.filter(t=>!msOf(t)),uo=un.filter(t=>t.status!=='done').length;
-  const row=m=>{const ts=T.filter(t=>t.milestone===m.key),c=rmCounts(ts),all=c.total&&c.done===c.total,pct=c.total?Math.round(100*c.done/c.total):0;
-    const badge=m.closed?'<span class="rmb rclosed">Closed</span>':m.key===nxt?'<span class="rmb rnext">Next</span>':'',ad=!m.closed&&all?'<span class="rmb rall" title="Every ticket is done: check the exit criteria, then set closed: true in unblockd.json">All done: close it?</span>':'';
-    return `<li class="rmi${m.key===nxt?' rnext':''}${m.closed?' rclosed':''}"><div class="rmh"><button type="button" class="ttl" data-msgo="${esc(m.key)}" title="Show its tickets on the board">${esc(m.title)}</button><span class="k">${esc(m.key)}</span>${badge}${ad}${m.target?`<span class="tg">Target ${esc(m.target)}</span>`:''}</div>
-      ${m.goal?`<div class="goal">${inline(m.goal)}</div>`:''}
-      <div class="rmc"><span class="prog" title="${c.done} of ${c.total} done"><i><b style="width:${pct}%"></b></i>${c.total?`${c.done} of ${c.total} done`:'no tickets yet'}</span>${RMC.filter(([k])=>c[k]).map(([k,l])=>`<span><b>${c[k]}</b> ${l}</span>`).join('')}</div>
-      ${(m.exit_criteria||[]).length?`<h4>Exit criteria</h4><ul>${m.exit_criteria.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:''}</li>`;};
-  const h=`<ol class="rm">${ms.map(row).join('')}</ol><div class="rmu">${un.length?`<button type="button" class="btn ghost sm" data-msgo="NONE">Unscheduled: ${uo} open</button><span>tickets with no milestone</span>`:''}</div>`;
+  const nxt=ms.find(m=>!m.closed)?.key,un=T.filter(t=>!msOf(t));
+  const leg=`<div class="rmleg" aria-hidden="true">${RMS.map(([k,l])=>`<span><i class="c-${k}"></i>${l}</span>`).join('')}</div>`;
+  const h=leg+`<ol class="rm">${ms.map(m=>rmRow(m.key,m.title,T.filter(t=>t.milestone===m.key),{next:m.key===nxt,closed:!!m.closed,target:m.target,goal:m.goal,exit:m.exit_criteria})).join('')}${un.length?rmRow('','Unscheduled',un):''}</ol>`;
   if(el.innerHTML!==h) el.innerHTML=h; // the 4 s poll re-renders only when something changed
 }
 function renderAgBtn(){ // "Agents · 2 live": distinct agents holding a claim right now
