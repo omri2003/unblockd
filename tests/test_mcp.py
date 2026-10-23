@@ -49,6 +49,8 @@ class WorkLoopTest(unittest.TestCase):
 		from mcp.server.mcpserver.exceptions import ToolError
 		(Path(self.tmp.name) / "unblockd.json").write_text(json.dumps({"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
 			"agents": [{"name": "backend", "tags": ["be"]}]}), encoding="utf-8")
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()  # this test's folder, whatever test imported the module first
 		s = m.BOARDS.get(None)
 		s.create({"title": "mine", "owner": "Omri", "tags": ["be"]}, tid="B-1")
 		s.create({"title": "bots", "owner": "Claude", "tags": ["be"]}, tid="B-2")
@@ -73,8 +75,69 @@ class WorkLoopTest(unittest.TestCase):
 			m.claim_next("w-1", principal="Claude")
 		got = m.claim_next("w-1", principal="Dana")
 		self.assertEqual(got["claim"]["principal"], "Dana")
-		self.assertEqual(m.complete("B-1", "w-1", "done", principal="Dana")["result"]["principal"], "Dana")
+		self.assertEqual(m.complete("B-1", "w-1", "done", principal="Dana")["status"], "done")
+		self.assertEqual(m.get_ticket("B-1")["result"]["principal"], "Dana")
 		self.assertIn("principal", m.work_loop_text())
+
+	def test_worker_writes_answer_short(self):
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		m.BOARDS.get(None).create({"title": "a", "body": "x" * 5000}, tid="B-1")
+		m.claim_ticket("B-1", "w-1")
+		for r in (m.heartbeat("B-1", "w-1", "testing"), m.add_note("B-1", "w-1", "found it", kind="finding"),
+		          m.update_ticket("B-1", {"priority": "P1"}, "w-1"), m.complete("B-1", "w-1", "done")):
+			self.assertEqual(set(r) - {"note"}, {"ok", "id", "status", "effective_status", "rev"})
+			self.assertLess(len(json.dumps(r)), 200)
+
+	def test_board_docs_are_sent_once_per_session(self):
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		d = Path(self.tmp.name)
+		(d.parent / "POLICY.md").write_text("how we work " * 50, encoding="utf-8")
+		(d.parent / "SPEC.md").write_text("the spec", encoding="utf-8")
+		(d / "unblockd.json").write_text(json.dumps({"docs": ["POLICY.md"]}), encoding="utf-8")
+		m.BOARDS = m.bd.from_env()
+		for i in (1, 2, 3):
+			m.BOARDS.get(None).create({"title": str(i), "docs": ["SPEC.md"]}, tid=f"B-{i}")
+		m.SENT.clear()
+		m.DEDUPE = True
+		try:
+			docs = lambda r: {x["path"]: x for x in r["context"]["docs"]}
+			first = docs(m.claim_ticket("B-1", "w-1"))
+			self.assertTrue(first["POLICY.md"]["content"].startswith("how we work"))
+			m.complete("B-1", "w-1", "done")
+			second = docs(m.claim_ticket("B-2", "w-1"))
+			self.assertIsNone(second["POLICY.md"]["content"])  # board doc: already sent, unchanged
+			self.assertIn("read_doc", second["POLICY.md"]["unchanged"])
+			self.assertIn("the spec", second["SPEC.md"]["content"])  # the ticket's own doc: always sent
+			m.complete("B-2", "w-1", "done")
+			(d.parent / "POLICY.md").write_text("new rules", encoding="utf-8")
+			self.assertEqual(docs(m.claim_ticket("B-3", "w-1"))["POLICY.md"]["content"], "new rules")  # changed: sent again
+		finally:
+			m.DEDUPE = False
+
+	def test_worker_tool_set(self):
+		import asyncio
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		from mcp.server.mcpserver import MCPServer
+		m.BOARDS = m.bd.from_env()
+		real = m.mcp
+		names = lambda: {t.name for t in asyncio.run(m.mcp.list_tools())}
+		try:
+			m.mcp = MCPServer("t")  # a throwaway server with the same tools
+			for t in asyncio.run(real.list_tools()):
+				m.mcp.add_tool(real._tool_manager.get_tool(t.name).fn, name=t.name)
+			self.assertEqual(m.limit_tools("all"), [])
+			kept = m.limit_tools("worker")
+			self.assertEqual(names(), set(kept))
+			self.assertIn("claim_next", kept)
+			self.assertNotIn("delete_ticket", names())
+			with self.assertRaises(SystemExit):
+				m.limit_tools("claim_next,nope")
+		finally:
+			m.mcp = real
 
 	def test_plan_from_spec_prompt(self):
 		from unblockd import mcp_server as m

@@ -55,7 +55,9 @@ DEFAULT_CONFIG = {
 	# "open" (default): agents create ready tickets; "propose": a ticket created by an agent is a proposal (not claimable) until a human accepts it
 	"agent_tickets": "open",
 	# The roadmap: versions in order (position = order). Tickets point at one with `milestone`; progress is derived, never stored.
-	"milestones": [],  # [{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]
+	"milestones": [],
+	# MCP tools a worker's server exposes (unblockd.mcp_server --tools worker); None = WORKER_TOOLS. agents[].tools adds per profile
+	"worker_tools": None,  # [{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]
 }
 MILESTONE_KEYS = {"key", "title", "goal", "exit_criteria", "target", "closed"}
 MILESTONE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
@@ -63,7 +65,11 @@ SCHEMA_KEYS = ("prefixes", "required", "tags", "body_template")
 SCHEMA_REQUIRED = ("done_when", "priority", "touches", "docs", "pillar", "owner", "parent", "body")
 BODY_MAX = 50_000  # chars of body + every note's text
 NOTES_MAX = 500  # notes on one ticket
-NOTE_KINDS = ("note", "question", "answer", "approved", "rejected", "accepted", "released", "expired", "complete")
+NOTE_KINDS = ("note", "decision", "finding", "warning", "question", "answer", "approved", "rejected", "accepted", "released", "expired", "complete")
+NOTE_KINDS_ADD = ("note", "decision", "finding", "warning")  # what add_note takes: decision = a choice + why, finding = a cause / error / fact found, warning = don't do X (it breaks Y)
+PINNED_KINDS = ("decision", "finding", "warning", "answer", "approved", "rejected", "accepted")  # always pinned (a human's plain note is pinned too)
+NOTES_SHORT = 3000  # chars of note text a claim sends whole; past it: every pinned note + the last NOTES_TAIL others
+NOTES_TAIL = 5
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
@@ -154,7 +160,9 @@ class Conflict(TicketError):
 	"""update(expected_rev=) lost a race: the ticket was written after the caller read it (REST 409)."""
 
 
-AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp"}
+AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools"}
+WORKER_TOOLS = ("claim_next", "heartbeat", "add_note", "complete", "release", "ask_human", "read_doc", "get_ticket")
+TOOL_RE = re.compile(r"^[a-z][a-z_]{0,39}$")
 SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 
@@ -202,6 +210,9 @@ def load_config(tickets_dir: Path) -> dict:
 		raise TicketError(f"{CONFIG_FILE}: agent_tickets must be \"propose\" or \"open\"")
 	_check_schema(cfg["schema"])
 	_check_milestones(cfg["milestones"])
+	for what, names in [("worker_tools", cfg["worker_tools"])] + [(f"agent {a['name']} tools", a.get("tools")) for a in cfg["agents"]]:
+		if names is not None and not (isinstance(names, list) and all(isinstance(x, str) and TOOL_RE.match(x) for x in names)):
+			raise TicketError(f"{CONFIG_FILE}: {what} must be a list of MCP tool names like claim_next")
 	_check_caps(cfg, Path(tickets_dir))
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
@@ -329,6 +340,8 @@ class Store:
 		t.setdefault("rev", 0)
 		if "notes" not in t:  # old files: notes were appended to the body; split them out (written back on the ticket's next write)
 			t["body"], t["notes"] = split_notes(t.get("body", ""))
+		for i, n in enumerate(t["notes"], 1):  # notes written before they were numbered
+			n.setdefault("n", i)
 		return t
 
 	def _write(self, t: dict) -> None:
@@ -613,6 +626,28 @@ class Store:
 				return ag["name"]
 		return None
 
+	def is_agent(self, name: str, tid: str | None = None) -> bool:
+		"""Is this author a worker rather than a person? A name that resolves to a profile, an agent owner, the holder of
+		tid's live claim, or a service (github). Everyone else (Omri, human, anyone typing in the web board) is a person."""
+		agents = {o["name"] for o in self.config["owners"] if o.get("kind") == "agent"}
+		held = self._claims().get(tid, {}).get("agent") if tid else None
+		return bool(self.profile_of(name)) or name in agents or name == held or name == "github"
+
+	@staticmethod
+	def lean_notes(notes: list[dict]) -> tuple[list[dict], int]:
+		"""What a claim sends: every note while their text is short (NOTES_SHORT); past it every pinned note that nothing superseded
+		(decisions, findings, warnings, human notes, answers, rejections, approvals), the last NOTES_TAIL others, and the note any kept
+		note replies to or supersedes, so nothing arrives without what it refers to. In order. Returns (notes, how many were left out)."""
+		if sum(len(n.get("text", "")) for n in notes) <= NOTES_SHORT:
+			return notes, 0
+		keep = {i for i, n in enumerate(notes) if n.get("pinned") and not n.get("superseded_by")}
+		keep |= set([i for i, n in enumerate(notes) if i not in keep][-NOTES_TAIL:])
+		for i in list(keep):
+			for ref in (notes[i].get("reply_to"), notes[i].get("supersedes")):
+				if isinstance(ref, int) and 1 <= ref <= len(notes):
+					keep.add(ref - 1)
+		return [notes[i] for i in sorted(keep)], len(notes) - len(keep)
+
 	def profile_of(self, agent: str) -> str | None:
 		"""The agent profile a worker name belongs to: the profile named exactly like it, or the one it starts with (backend-1 -> backend)."""
 		return next((a["name"] for a in self.config["agents"] if agent == a["name"] or agent.startswith(a["name"] + "-")), None)
@@ -876,7 +911,7 @@ class Store:
 			if raw["proposed_by"] == by.strip():
 				raise TicketError(f"{by.strip()} proposed {tid} and can't accept it: someone else decides")
 			who, raw["proposed_by"], raw["updated"] = raw["proposed_by"], "", date.today().isoformat()
-			_append_note(raw, by.strip(), f"Accepted by {by.strip()}", kind="accepted")
+			_append_note(raw, by.strip(), f"Accepted by {by.strip()}", kind="accepted", pinned=True)
 			self._write(raw)
 			self._log("accepted", tid, by.strip(), f"proposed by {who}")
 		self._locked(run)
@@ -1109,6 +1144,9 @@ class Store:
 			return None
 		t, c = self.get(got), self._claims()[got]
 		lease = self.config["lease_minutes"]
+		t["notes"], left = self.lean_notes(t["notes"])
+		if left:
+			t["notes_omitted"] = f"{left} older notes not sent (none of them pinned): get_ticket shows every note"
 		return {**t, "lease_minutes": lease, "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
 		        "previous_attempts": self.attempts(got, 5),
 		        **({"warnings": ["no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it"]}
@@ -1238,19 +1276,35 @@ class Store:
 		self._locked(run)
 		return self.get(tid)
 
-	def add_note(self, tid: str, by: str, text: str) -> dict:
-		"""Append a signed, timestamped line to the body, under the lock: it can't clobber a concurrent complete or answer
-		(update(body=...) replaces the whole body; use this to report progress)."""
+	def add_note(self, tid: str, by: str, text: str, kind: str = "note", pin: bool = False, reply_to: int | None = None,
+	             supersedes: int | None = None) -> dict:
+		"""Append a signed, timestamped note under the lock: it can't clobber a concurrent complete or answer
+		(update(body=...) replaces the whole body; use this to report progress). Notes are numbered (`n`, from 1).
+		kind: note (progress) | decision (a choice and why) | finding (a cause, an error, a fact found) | warning (don't do X: it breaks Y).
+		Pinned = always sent to the next worker: decision / finding / warning, a note by a human, or pin=True.
+		reply_to = the `n` this note answers (it is then always sent along with it); supersedes = the `n` of a pinned note this one
+		replaces (a reversed decision): that one stays in the history but is no longer pinned."""
 		if not (isinstance(by, str) and by.strip()):
 			raise TicketError("add_note needs `by`: who is writing (your worker name, or a person's name)")
 		if not (isinstance(text, str) and text.strip()):
 			raise TicketError("add_note needs text: what to record")
+		if kind not in NOTE_KINDS_ADD:
+			raise TicketError(f"note kind must be one of {', '.join(NOTE_KINDS_ADD)} (got {kind!r})")
 		def run():
 			path = self._path(tid)
 			if not path.exists():
 				raise NotFound(f"no ticket {tid}")
 			raw = self._read(path)
-			_append_note(raw, by.strip(), text.strip())
+			notes, who = raw.get("notes", []), by.strip()
+			for ref, what in ((reply_to, "reply_to"), (supersedes, "supersedes")):
+				if ref is not None and not (isinstance(ref, int) and 1 <= ref <= len(notes)):
+					raise TicketError(f"{what} must be a note number of {tid} (1-{len(notes)}), got {ref!r}")
+			extra = {k: v for k, v in (("reply_to", reply_to), ("supersedes", supersedes)) if v is not None}
+			if kind in PINNED_KINDS or pin or not self.is_agent(who, tid):
+				extra["pinned"] = True
+			_append_note(raw, who, text.strip(), kind=kind, **extra)
+			if supersedes is not None:
+				notes[supersedes - 1]["superseded_by"] = len(notes)
 			raw["updated"] = date.today().isoformat()
 			self._write(raw)
 			self._keepalive(tid, by.strip())
@@ -1274,7 +1328,7 @@ class Store:
 				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
 			if raw.get("asked_by") == by.strip():
 				raise TicketError(f"{by.strip()} asked this question and can't answer it: someone else decides")
-			_append_note(raw, by.strip(), text.strip(), kind="answer", q=raw["waiting_on"])
+			_append_note(raw, by.strip(), text.strip(), kind="answer", q=raw["waiting_on"], pinned=True)
 			raw["waiting_on"], raw["asked_at"], raw["asked_by"], raw["updated"] = "", "", "", date.today().isoformat()
 			self._write(raw)
 			self._log("answered", tid, by, text.strip())
@@ -1298,7 +1352,7 @@ class Store:
 			res = raw.get("result")  # none = moved to review by hand: the note and the log record the approver, no result is invented
 			if res and res.get("by") == by:
 				raise TicketError(f"{by} completed {tid} and can't approve it: someone else decides")
-			_append_note(raw, by, f"Approved by {by}", kind="approved")
+			_append_note(raw, by, f"Approved by {by}", kind="approved", pinned=True)
 			if res:
 				raw["result"] = {**res, "approved_by": by, "approved_at": _now()}
 			res = res or {}
@@ -1324,7 +1378,7 @@ class Store:
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
 			if (raw.get("result") or {}).get("by") == by.strip():
 				raise TicketError(f"{by.strip()} completed {tid} and can't reject it: someone else decides")
-			_append_note(raw, by.strip(), reason.strip(), kind="rejected")
+			_append_note(raw, by.strip(), reason.strip(), kind="rejected", pinned=True)
 			raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			raw.pop("result", None)  # rejected work must not show as upstream
 			self._write(raw)
@@ -1428,7 +1482,7 @@ def _append_note(raw: dict, by: str, text: str, strict: bool = True, kind: str =
 		if strict:
 			raise TicketError(f"{raw['id']} would pass {BODY_MAX} chars or {NOTES_MAX} notes: move old detail into an attached file (attach_file) first")
 		return False
-	notes.append({"by": by, "at": _now(), "kind": kind, "text": text, **extra})
+	notes.append({"n": len(notes) + 1, "by": by, "at": _now(), "kind": kind, "text": text, **extra})
 	return True
 
 
@@ -1465,6 +1519,10 @@ def split_notes(body: str) -> tuple[str, list[dict]]:
 			notes[-1]["text"] += "\n\n" + c
 		else:
 			desc.append(c)
+	for i, n in enumerate(notes, 1):
+		n["n"] = i
+		if n["kind"] in PINNED_KINDS:
+			n["pinned"] = True
 	return "\n\n".join(desc), notes
 
 

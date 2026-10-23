@@ -1,6 +1,9 @@
 """MCP server over the same boards and Store. `python -m unblockd.mcp_server` = stdio (one process per client);
 `python -m unblockd.mcp_server --http` = Streamable HTTP at /mcp (HOST, default 127.0.0.1; MCP_PORT, default 8788;
 UNBLOCKD_TOKEN = Bearer token; MCP_ALLOWED_HOSTS = extra Host values, comma list, e.g. "myhost:*"): ONE shared server for every project.
+`--tools worker [--profile P]` (env UNBLOCKD_MCP_TOOLS / UNBLOCKD_PROFILE) = only the worker tools (store.WORKER_TOOLS, the board's
+`worker_tools`, plus profile P's `tools`); `--tools a,b` = those. Worker writes return a short ack (_ack); stdio claims skip board /
+profile docs already sent unchanged in this process (_dedupe).
 
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
@@ -11,6 +14,7 @@ Errors come back as tool errors with a plain message (bad id, bad field, unknown
 """
 from __future__ import annotations
 
+import asyncio
 import functools
 import hmac
 import json
@@ -95,6 +99,51 @@ def tool(fn):
 		except st.TicketError as e:
 			raise ToolError(str(e)) from e
 	return mcp.tool()(wrapper)
+
+
+def _ack(t: dict) -> dict:
+	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
+	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
+	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {})}
+
+
+SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: content hash}: the board / profile docs this process already sent
+DEDUPE = False  # on for stdio, where one server process = one agent session; the shared --http server can't tell sessions apart
+
+
+def _dedupe(board: str | None, agent: str, res: dict | None) -> dict | None:
+	"""Board and profile docs already sent to this worker in this session, unchanged, are not inlined again. The ticket's own docs,
+	component notes and attachments are always sent."""
+	ctx = (res or {}).get("context")
+	if not (DEDUPE and ctx):
+		return res
+	seen = SENT.setdefault((board or "", agent), {})
+	for d in ctx.get("docs", []):
+		if d.get("source") in ("board", "agent") and d.get("content") is not None:
+			h = hash(d["content"])
+			if seen.get(d["path"]) == h:
+				d["content"] = None
+				d["unchanged"] = "already sent on your earlier claim in this session, unchanged: read_doc(path) if you no longer have it"
+			else:
+				seen[d["path"]] = h
+	return res
+
+
+def limit_tools(mode: str | None, profile: str | None = None) -> list[str]:
+	"""Keep only the tools a worker needs. mode: None / "all" = every tool (humans, orchestrators); "worker" = the default board's
+	`worker_tools` (default WORKER_TOOLS) plus the profile's `tools`; or a comma list of names. Returns the kept names."""
+	if mode in (None, "", "all"):
+		return []
+	cfg = BOARDS.get(None).config if BOARDS.all() else {"worker_tools": None, "agents": []}
+	names = list(cfg.get("worker_tools") or st.WORKER_TOOLS) if mode == "worker" else [x.strip() for x in mode.split(",") if x.strip()]
+	names += next((a.get("tools") or [] for a in cfg.get("agents", []) if a["name"] == profile), [])
+	have = {t.name for t in asyncio.run(mcp.list_tools())}
+	unknown = [x for x in names if x not in have]
+	if unknown:
+		raise SystemExit(f"unknown tool(s) {', '.join(unknown)}: tools are {', '.join(sorted(have))}")
+	for name in sorted(have - set(names)):
+		mcp.remove_tool(name)
+	return names
 
 
 def _summary(t: dict) -> dict:
@@ -217,7 +266,7 @@ def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) 
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
 	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), milestone (a key of board_info's milestones, or null), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
-	return BOARDS.get(board).update(id, changes, agent=agent)
+	return _ack(BOARDS.get(board).update(id, changes, agent=agent))
 
 
 @tool
@@ -244,35 +293,39 @@ def claim_next(agent: str, profile: str | None = None, note: str = "", principal
 	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim)."""
 	store = BOARDS.get(board)
-	return kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal))
+	return _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal)))
 
 
 @tool
 def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal: see claim_next."""
 	store = BOARDS.get(board)
-	return kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal))
+	return _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal)))
 
 
 @tool
 def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
-	least every few minutes. Pass the same principal you claimed with."""
-	return BOARDS.get(board).heartbeat(id, agent, note, principal)
+	least every few minutes. Pass the same principal you claimed with. Returns {ok, id, status}."""
+	return _ack(BOARDS.get(board).heartbeat(id, agent, note, principal))
 
 
 @tool
 def ask_human(id: str, agent: str, question: str, board: str | None = None) -> dict:
 	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
 	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket."""
-	return BOARDS.get(board).ask(id, agent, question)
+	return _ack(BOARDS.get(board).ask(id, agent, question))
 
 
 @tool
-def add_note(id: str, agent: str, text: str, board: str | None = None) -> dict:
+def add_note(id: str, agent: str, text: str, kind: str = "note", reply_to: int | None = None, supersedes: int | None = None,
+             board: str | None = None) -> dict:
 	"""Record progress or a finding on a ticket: appends a signed, timestamped note to its `notes` ({by, at, kind, text}), safely (never touches
-	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not."""
-	return BOARDS.get(board).add_note(id, agent, text)
+	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not.
+	kind: note (progress) | decision (a choice and why) | finding (a cause, an error, a fact you found) | warning (don't do X: it breaks Y).
+	decision / finding / warning are PINNED: every later worker on this ticket gets them, however many notes follow. Notes are numbered
+	(`n`): reply_to = the note you answer (sent along with yours), supersedes = a pinned note yours replaces (e.g. a reversed decision)."""
+	return _ack(BOARDS.get(board).add_note(id, agent, text, kind=kind, reply_to=reply_to, supersedes=supersedes))
 
 
 @tool
@@ -297,7 +350,7 @@ def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
 @tool
 def release(id: str, agent: str, reason: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). Say why."""
-	return BOARDS.get(board).release(id, agent, reason, principal)
+	return _ack(BOARDS.get(board).release(id, agent, reason, principal))
 
 
 @tool
@@ -306,7 +359,7 @@ def complete(id: str, agent: str, summary: str, files: list[str] | None = None, 
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
 	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with."""
-	return BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal)
+	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal))
 
 
 @tool
@@ -427,7 +480,14 @@ def http_app(host: str = "127.0.0.1", token: str = ""):
 
 
 def main():
-	if "--http" not in sys.argv[1:]:
+	args = sys.argv[1:]
+	opt = lambda k, env: args[args.index(k) + 1] if k in args else os.environ.get(env)
+	kept = limit_tools(opt("--tools", "UNBLOCKD_MCP_TOOLS"), opt("--profile", "UNBLOCKD_PROFILE"))
+	if kept:
+		print(f"unblockd MCP: worker tools only: {', '.join(kept)}", file=sys.stderr, flush=True)
+	if "--http" not in args:
+		global DEDUPE
+		DEDUPE = True
 		mcp.run()
 		return
 	import uvicorn

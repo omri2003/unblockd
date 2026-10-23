@@ -27,7 +27,7 @@ POST   tickets/<id>/claim                {"agent", "note"?, "principal"?}
 POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?}
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
-POST   tickets/<id>/notes                {"by"?, "text"}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
+POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply_to"?, "supersedes"?}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
@@ -301,7 +301,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
-				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text")))
+				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text"), kind=b.get("kind") or "note", pin=bool(b.get("pin")),
+				                                        reply_to=b.get("reply_to"), supersedes=b.get("supersedes")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject", "accept", "approve"):
 				b = self._body()
 				by = str(b.get("by") or "human")

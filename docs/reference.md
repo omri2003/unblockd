@@ -248,6 +248,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `use_skills`, `use_mcp` | Registry names every ticket on the board gets (default `[]`). A profile (`agents[].skills` / `mcp`) and a ticket (`skills` / `mcp`) add more. |
 | `schema` | Optional rules for new tickets, see below. Default `null`: anything goes. |
 | `milestones` | The roadmap, in order: `[{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]`. Only `key` (letters, digits, `. _ -`) and `title` are required. See Milestones below. Default `[]`. |
+| `worker_tools`, `agents[].tools` | MCP tools a worker's server exposes with `--tools worker` (default: claim_next, heartbeat, add_note, complete, release, ask_human, read_doc, get_ticket) and what a profile adds; see Lean worker context. |
 | `agent_tickets` | `"open"` (default): agents create ready tickets. `"propose"`: a ticket an agent creates is a proposal until a human accepts it; turn it on for boards where several people or agents create work you want to vet. |
 
 ### Ticket schema and the proposal gate
@@ -303,7 +304,7 @@ Every ticket comes back with derived fields: `effective_status`,
 `missing_blockers`, `stale_days`, `agent` and `score` = priority weight
 (P0 8, P1 4, P2 2, P3 1) x (1 + `unblocks`).
 
-**Notes** are a list on the ticket, separate from `body` (the description): `"notes": [{"by": "backend-1", "at": "2026-10-20T10:00:00+00:00", "kind": "note", "text": "found the cause"}]`, oldest first. `add_note` (MCP / CLI `note` / REST `POST tickets/<id>/notes`) adds a `note`; asking, answering (`q` holds the question), approving, rejecting, accepting, releasing with a reason, an expired claim and `complete` (`status`, plus the `done_when` it was finished against) add their own kinds. They are append-only: `update` refuses `notes`, and editing the body never touches them. Tickets written before notes were a field kept them as lines in the body; they are split out when read and saved as `notes` on the ticket's next write.
+**Notes** are a list on the ticket, separate from `body` (the description): `"notes": [{"by": "backend-1", "at": "2026-10-20T10:00:00+00:00", "kind": "note", "text": "found the cause"}]`, oldest first. `add_note` (MCP / CLI `note` / REST `POST tickets/<id>/notes`) adds a note of kind `note` (progress), `decision` (a choice and why), `finding` (a cause, an error, a fact found) or `warning` (don't do X: it breaks Y); notes are numbered (`n`), `reply_to` = the note answered, `supersedes` = a pinned note it replaces (a reversed decision); asking, answering (`q` holds the question), approving, rejecting, accepting, releasing with a reason, an expired claim and `complete` (`status`, plus the `done_when` it was finished against) add their own kinds. They are append-only: `update` refuses `notes`, and editing the body never touches them. Tickets written before notes were a field kept them as lines in the body; they are split out when read and saved as `notes` on the ticket's next write.
 
 ## The board
 
@@ -344,6 +345,13 @@ Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `i` Needs you, `Shift+
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
 (Comfortable / Compact) and the "While you were away" digest, per browser. On a board with 2+ human owners it also has **I am** (one of them, or Not set): the web UI then sends that name as `by` on answer, reject, accept, notes and split, so the signed body note and the activity log say who clicked instead of `human`, and the Filters panel gets **Mine** (tickets you own, or that an agent claimed or finished for you; link param `me=1`). It is a label you pick, not a login.
 **Agents** (header button, labelled `Agents · N live` while claims are held) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.
+
+### Lean worker context (fewer tokens per claim)
+
+- **Short write replies**: the MCP `heartbeat`, `add_note`, `update_ticket`, `release`, `ask_human` and `complete` return `{ok, id, status, effective_status, rev, note}` instead of the whole ticket (REST and CLI still return the ticket).
+- **Worker tool set**: `python -m unblockd.mcp_server --tools worker [--profile gui]` (or env `UNBLOCKD_MCP_TOOLS=worker`, `UNBLOCKD_PROFILE=gui`) exposes only `claim_next, heartbeat, add_note, complete, release, ask_human, read_doc, get_ticket` (every tool description is sent on every model call, so fewer tools = fewer tokens per turn). The board's `worker_tools` replaces that list, a profile's `tools` adds to it (`"agents": [{"name": "gui", "tools": ["attach_file"]}]`), and `--tools a,b,c` names them directly. Without `--tools` (or `all`) every tool is there, for you and orchestrators. Outside tools (a browser MCP for GUI work) are declared with the `mcp` registry and loaded by the agent's harness.
+- **Docs once per session**: on the stdio server (one process = one agent session) a board or profile doc already sent to that worker, unchanged, comes back as `"content": null, "unchanged": "... read_doc(path) if you no longer have it"`. The ticket's own docs, component notes and attachments are always sent; a changed doc is sent again.
+- **Notes on claim**: every note while their text is short (3,000 chars); past that every pinned note plus the last 5 others, and any note a kept one replies to or supersedes; `notes_omitted` says how many were left out (`get_ticket` has them all). Pinned = `decision`, `finding`, `warning` notes, anything a human wrote, answers, rejections, approvals.
 
 ## Connect the MCP server
 

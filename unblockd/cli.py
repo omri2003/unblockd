@@ -86,7 +86,8 @@ class Remote:
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
-	def add_note(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text})
+	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None):
+		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes})
 	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None):
 		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
@@ -168,6 +169,10 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("id")
 	no.add_argument("text")
 	no.add_argument("--by", default="human")
+	no.add_argument("--kind", default="note", help="note | decision (a choice and why) | finding (cause, error, fact) | warning (don't do X); the last three are pinned")
+	no.add_argument("--pin", action="store_true", help="pin it: always sent to the next worker")
+	no.add_argument("--reply-to", type=int, help="the note number this answers")
+	no.add_argument("--supersedes", type=int, help="the pinned note number this one replaces")
 	for name in ("answer", "reject", "accept", "approve"):
 		x = sub.add_parser(name)
 		x.add_argument("id")
@@ -245,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
 			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent)
 		else:
-			out = s.add_note(a.id, a.by, a.text)
+			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes)
 	except (st.TicketError, json.JSONDecodeError) as e:
 		print(f"error: {e}", file=sys.stderr)
 		return 1
