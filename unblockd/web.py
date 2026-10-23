@@ -108,7 +108,7 @@ def _needs() -> list[dict]:
 				kind, at = "proposal", None
 			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
 				kind, at = "question", t.get("asked_at")
-			elif t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days) or (not t.get("claim") and t["id"] in failing):
+			elif t.get("needs") or t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days) or (not t.get("claim") and t["id"] in failing):
 				kind, at = "stuck", None
 				tries = [] if t.get("claim") else failing.get(t["id"], [])
 			else:
@@ -121,6 +121,7 @@ def _needs() -> list[dict]:
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
 			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
 			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
+			              **({"needs": t["needs"]} if stuck and t.get("needs") else {}),
 			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
 			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
@@ -295,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
 				if act == "heartbeat":
 					return self._send(200, store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal")))
 				if act == "release":
-					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal")))
+					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or "")))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
 				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal")))

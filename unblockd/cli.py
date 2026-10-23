@@ -82,7 +82,8 @@ class Remote:
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal})
 	def claim_next(self, agent, profile=None, note="", principal=None): return self.claim(agent, profile=profile, note=note, principal=principal)  # the server answers with the reason when empty
 	def heartbeat(self, tid, agent, note="", principal=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal})
-	def release(self, tid, agent, reason="", principal=None): return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal})
+	def release(self, tid, agent, reason="", principal=None, missing="", why=""):
+		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
@@ -144,6 +145,9 @@ def main(argv: list[str] | None = None) -> int:
 		x.add_argument("id")
 		x.add_argument("--agent", required=True)
 		x.add_argument(extra, required=name in ("ask", "complete"), default="")
+		if name == "release":
+			x.add_argument("--missing", default="", help="a tool you need and do not have")
+			x.add_argument("--why", default="", help="with --missing: one line on what you needed it for")
 		if name != "ask":
 			x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)")
 	cp = sub.choices["complete"]
@@ -216,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "heartbeat":
 			out = s.heartbeat(a.id, a.agent, a.note, a.principal)
 		elif a.cmd == "release":
-			out = s.release(a.id, a.agent, a.reason, a.principal)
+			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why)
 		elif a.cmd == "ask":
 			out = s.ask(a.id, a.agent, a.question)
 		elif a.cmd == "complete":

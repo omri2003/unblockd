@@ -57,7 +57,9 @@ DEFAULT_CONFIG = {
 	# The roadmap: versions in order (position = order). Tickets point at one with `milestone`; progress is derived, never stored.
 	"milestones": [],
 	# MCP tools a worker's server exposes (unblockd.mcp_server --tools worker); None = WORKER_TOOLS. agents[].tools adds per profile
-	"worker_tools": None,  # [{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]
+	"worker_tools": None,
+	"session_tickets": 5,  # claims one worker session takes before claim_next says stop (stdio MCP enforces it; None = no limit)
+	"docs_resend": {"claims": 3, "minutes": 30},  # a board / profile doc already sent is skipped only within this many claims AND minutes  # [{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]
 }
 MILESTONE_KEYS = {"key", "title", "goal", "exit_criteria", "target", "closed"}
 MILESTONE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
@@ -111,6 +113,9 @@ FIELDS = {
 	"body": ("", lambda v: isinstance(v, str) and len(v) <= BODY_MAX),
 	# what happened on the ticket, oldest first: [{by, at, kind, text, q? (answer: the question), status? (complete: done|review)}].
 	# Append-only, written only by add_note / ask / answer / approve / reject / accept / release / complete / the expiry sweep; read-only for update
+	# tools a worker reported missing (release(missing=...)): [{tool, why, profile, by, at}]. A profile listed here skips the ticket until
+	# a human clears it (update needs: []) after giving that profile the tool
+	"needs": ([], lambda v: isinstance(v, list) and len(v) <= 20 and all(isinstance(n, dict) and isinstance(n.get("tool"), str) for n in v)),
 	"notes": ([], lambda v: isinstance(v, list) and all(isinstance(n, dict) and isinstance(n.get("text"), str) for n in v)),
 	# paths/globs the work will edit; claim_next never hands out two live tickets that overlap
 	"touches": ([], lambda v: isinstance(v, list) and len(v) <= 30 and all(isinstance(x, str) and 0 < len(x) <= 200 for x in v)),
@@ -210,6 +215,11 @@ def load_config(tickets_dir: Path) -> dict:
 		raise TicketError(f"{CONFIG_FILE}: agent_tickets must be \"propose\" or \"open\"")
 	_check_schema(cfg["schema"])
 	_check_milestones(cfg["milestones"])
+	if cfg["session_tickets"] is not None and not (type(cfg["session_tickets"]) is int and cfg["session_tickets"] > 0):
+		raise TicketError(f"{CONFIG_FILE}: session_tickets must be a positive number or null")
+	dr = cfg["docs_resend"]
+	if not (isinstance(dr, dict) and set(dr) <= {"claims", "minutes"} and all(type(dr.get(k, 1)) is int and dr.get(k, 1) >= 0 for k in ("claims", "minutes"))):
+		raise TicketError(f"{CONFIG_FILE}: docs_resend must be like {{\"claims\": 3, \"minutes\": 30}} (0 = always resend)")
 	for what, names in [("worker_tools", cfg["worker_tools"])] + [(f"agent {a['name']} tools", a.get("tools")) for a in cfg["agents"]]:
 		if names is not None and not (isinstance(names, list) and all(isinstance(x, str) and TOOL_RE.match(x) for x in names)):
 			raise TicketError(f"{CONFIG_FILE}: {what} must be a list of MCP tool names like claim_next")
@@ -611,7 +621,7 @@ class Store:
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
-			            "docs": t.get("docs", []), "notes": t.get("notes", []), "files": attached.get(t["id"], []),
+			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []),
 			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None})
 		return out
 
@@ -954,6 +964,11 @@ class Store:
 			try:
 				fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
 				break
+			except PermissionError:  # Windows: the holder just deleted it and the delete is still pending; wait like for a held lock
+				if time.monotonic() > deadline:
+					raise TicketError(f"can't create {lock} (permission denied for 10 s): check the folder is writable")
+				time.sleep(0.01)
+				continue
 			except FileExistsError:
 				try:
 					if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
@@ -1059,9 +1074,9 @@ class Store:
 					self._log("dropped", tid, c["agent"], why)
 			self._locked(drop)
 
-	def _claimable(self, t: dict, live: dict, by_id: dict) -> bool:
+	def _claimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None) -> bool:
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
-		if t["effective_status"] != "todo" or t.get("owner") in humans or t["id"] in live:
+		if t["effective_status"] != "todo" or t.get("owner") in humans or t["id"] in live or self._lacks(t, profile):
 			return False
 		mine = t.get("touches", [])
 		if mine:
@@ -1070,9 +1085,16 @@ class Store:
 					return False
 		return True
 
-	def _unclaimable(self, t: dict, live: dict, by_id: dict) -> str:
+	@staticmethod
+	def _lacks(t: dict, profile: str | None) -> list[str]:
+		"""Tools this ticket needs that a worker of `profile` reported missing (none = it may take it)."""
+		return [n["tool"] for n in t.get("needs", []) if n.get("profile") == profile]
+
+	def _unclaimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None) -> str:
 		"""Why _claimable said no, in words."""
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		if (lack := self._lacks(t, profile)):
+			return f"a worker of this profile has no {', '.join(lack)} (see needs): a human gives the profile the tool, then clears needs"
 		if t.get("proposed_by"):
 			return f"it's a proposal by {t['proposed_by']} that a human has not accepted"
 		if t.get("waiting_on"):
@@ -1120,12 +1142,12 @@ class Store:
 				t = self.get(tid)
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
-				if not self._claimable(t, live, by_id):
-					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id)}")
+				if not self._claimable(t, live, by_id, profile):
+					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile)}")
 				pick = t
 			else:
 				ready = self.next_ready(limit=10_000, agent=profile)
-				pick = next((t for t in ready if self._claimable(t, live, by_id)), None)
+				pick = next((t for t in ready if self._claimable(t, live, by_id, profile)), None)
 				if pick is None:
 					return None
 			claims = self._claims()
@@ -1174,8 +1196,8 @@ class Store:
 					orphaned.append(t["id"])  # doing with no live claim: moved by hand, or the claim was lost (claims.json is not in git)
 			elif t["status"] == "review":
 				k = "in_review"
-			elif t.get("waiting_on") or t.get("proposed_by") or t.get("owner") in humans:
-				k = "waiting_on_human"
+			elif t.get("waiting_on") or t.get("proposed_by") or t.get("owner") in humans or self._lacks(t, profile):
+				k = "waiting_on_human"  # a missing tool waits on a human too
 			elif t["effective_status"] == "todo":
 				k = "ready_conflicting"
 			else:
@@ -1238,8 +1260,15 @@ class Store:
 		self._locked(beat)
 		return self.get(tid)
 
-	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None) -> dict:
-		"""Give a claimed ticket back: claim ends, ticket returns to todo."""
+	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "") -> dict:
+		"""Give a claimed ticket back: claim ends, ticket returns to todo. missing = a tool the worker needs and does not have (why = one
+		line on what it needed it for): recorded in `needs` with the worker's profile, as a pinned warning note, shown in Needs you; workers
+		of that profile skip the ticket until a human clears `needs`."""
+		missing, why = (missing or "").strip(), (why or "").strip()
+		if missing and not why:
+			raise TicketError("release(missing=...) needs `why`: one line on what you needed the tool for")
+		if len(missing) > 100 or len(why) > 300:
+			raise TicketError("missing is a tool name (<= 100 chars), why one line (<= 300)")
 		def rel():
 			c = self._holder(tid, agent, principal)
 			claims = self._claims()
@@ -1250,8 +1279,13 @@ class Store:
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			if reason.strip():
 				_append_note(raw, agent, reason.strip(), strict=False, kind="released")
+			if missing:
+				prof = c.get("profile") or self.profile_of(agent)
+				raw["needs"] = [n for n in raw.get("needs", []) if not (n["tool"] == missing and n.get("profile") == prof)] + \
+				               [{"tool": missing, "why": why, "profile": prof, "by": agent, "at": _now()}]
+				_append_note(raw, agent, f"Needs tool `{missing}`: {why}", strict=False, kind="warning", pinned=True)
 			self._write(raw)
-			self._log("release", tid, agent, reason, c.get("principal"))
+			self._log("release", tid, agent, reason + (f" (missing tool {missing})" if missing else ""), c.get("principal"))
 		self._locked(rel)
 		return self.get(tid)
 
