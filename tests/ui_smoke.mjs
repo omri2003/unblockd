@@ -446,7 +446,7 @@ try {
 		ok(await page.locator('#npanel').isHidden(), `[${tag}] Escape should close the panel`);
 		await page.keyboard.press('i');
 		await visible('#npanel .nr', 'Needs you panel via the i key');
-		ok((await page.locator('#npList .nr').count()) === 3, `[${tag}] panel should list 2 here + 1 on the other board`);
+		ok((await page.locator('#npList .nr').count()) === 2, `[${tag}] panel should list this board's 2 items only`);
 		ok((await page.locator('#npList .ng').count()) === 0 && (await page.locator(`#npList .nr[data-key="zsecond/${oid}"]`).count()) === 0, `[${tag}] only this board's items, no board groups`);
 		ok((await page.locator('#npList .nr').first().locator('.nb').innerText()) === 'Question', `[${tag}] higher score (P1, blocks a ticket) should sort first`);
 		ok(!(await page.locator('#npanel').innerText()).includes('parked by hand'), `[${tag}] hand-parked ticket must not be in the panel`);
