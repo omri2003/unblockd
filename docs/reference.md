@@ -343,7 +343,7 @@ status, ring = pillar, size = how much is waiting on it.
 - **Shift-drag A onto B** makes A block B; click a link to remove it.
 - "Chains as text" under the canvas for screen readers; pinch and wheel zoom.
 
-Keyboard: `/` search, `g` Board/Graph, `d` Docs, `n` new, `i` Needs you, `Shift+B` board switcher, `p` priority, `j`/`k` move, `Enter` open,
+Keyboard: `Ctrl/Cmd+K` command palette (jump to a ticket by id or title, new ticket, switch view or board, Needs you, and the open ticket's status and priority), `/` search, `g` Board/Graph, `d` Docs, `n` new, `i` Needs you, `Shift+B` board switcher, `p` priority, `j`/`k` move, `Enter` open,
 `t` theme, `?` shortcuts, `Esc` close. The ⚙ button sets theme (System / Light / Dark), density
 (Comfortable / Compact) and the "While you were away" digest, per browser. On a board with 2+ human owners it also has **I am** (one of them, or Not set): the web UI then sends that name as `by` on answer, reject, accept, notes and split, so the signed body note and the activity log say who clicked instead of `human`, and the Filters panel gets **Mine** (tickets you own, or that an agent claimed or finished for you; link param `me=1`). It is a label you pick, not a login.
 **Agents** (header button, labelled `Agents · N live` while claims are held) shows, per agent profile over 7 or 30 days, tickets finished, median time to finish, stuck rate (expired + released claims, flagged at 30% or more), splits and who is working now.

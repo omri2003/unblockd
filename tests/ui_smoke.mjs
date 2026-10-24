@@ -158,6 +158,20 @@ try {
 		ok(await sp.waitForSelector('#toasts .toast:has-text("nope")', { timeout: 3000 }).then(() => true, () => false), `[${tag}] an unknown board's toast should name it`);
 		await sp.close();
 		await page.keyboard.press('Escape');
+		{ // command palette (UI-44): Ctrl+K, an id, Enter opens that ticket; Esc closes the palette and nothing else
+			const tid = await page.locator('#board .card[data-open]').first().getAttribute('data-open');
+			await page.keyboard.press('Control+k'); await visible('#cmdk', 'command palette');
+			await page.keyboard.type(tid.toLowerCase());
+			ok((await page.locator('#cmdL [role=option]').first().innerText()).startsWith(tid), `[${tag}] palette: the typed id comes first`);
+			await page.keyboard.press('Enter');
+			await page.waitForFunction((i) => !document.getElementById('drawer').hidden && location.hash === '#' + i, tid);
+			ok(await page.locator('#cmdk').isHidden(), `[${tag}] palette closes after running`);
+			await page.keyboard.press('Control+k'); await visible('#cmdk', 'palette over the drawer');
+			ok((await page.locator('#cmdL').innerText()).includes(`Move ${tid} to`), `[${tag}] palette offers the open ticket's status moves`);
+			await page.keyboard.press('Escape');
+			ok(await page.locator('#cmdk').isHidden() && !(await page.locator('#drawer').isHidden()), `[${tag}] Esc closes only the palette`);
+			await page.keyboard.press('Escape');
+		}
 
 		if (w >= 1100) { // one header row: the first column starts near the top of the page
 			const top = await page.evaluate(() => document.querySelector('.col').getBoundingClientRect().top + scrollY);

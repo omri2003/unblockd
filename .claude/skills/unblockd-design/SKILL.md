@@ -48,7 +48,7 @@ Ties go to the simplest thing that works.
 
 ### 2.2 Do not re-propose what exists
 
-Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map and Roadmap views; `j`/`k` card focus; `p` then `0`-`3` priority; bulk bar; Needs you panel (`i`); digest; split; Undo toasts; settings (theme, density, digest); free pickers; Component and Milestone filters and Group by; agent stats panel. Improve them. Do not add a second one.
+Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map and Roadmap views; the `Ctrl/Cmd+K` command palette; `j`/`k` card focus; `p` then `0`-`3` priority; bulk bar; Needs you panel (`i`); digest; split; Undo toasts; settings (theme, density, digest); free pickers; Component and Milestone filters and Group by; agent stats panel. Improve them. Do not add a second one.
 
 ## 3. Hard rules (from AGENTS.md "Conventions")
 
@@ -86,7 +86,7 @@ Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map 
 
 ### 4.4 Layers and Esc
 - The Needs you panel and the drawer share `#scrim`. Opening one closes the other. Whoever closes second must not leave the scrim up or hide it from the other.
-- Esc closes the top-most layer in this order: hint (`p`), `?` sheet, menus, panel, drawer.
+- Esc closes the top-most layer in this order: hint (`p`), command palette, `?` sheet, menus, panel, drawer.
 - Closing the drawer rewrites the URL. Keep `location.search` (`?board=`).
 
 ### 4.5 Basic accessibility [GENERAL unless noted]
