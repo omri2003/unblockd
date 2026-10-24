@@ -420,6 +420,8 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .rmn{font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap} .rmrow .chev{transition:transform .15s ease-out;margin-right:2px} .rmi.open .chev{transform:translateY(.1em) rotate(-135deg)}
 .c-done{background:var(--jade)} .c-review{background:var(--plum)} .c-doing{background:var(--amber)} .c-ready{background:color-mix(in srgb,var(--muted) 45%,transparent)} .c-waiting{background:var(--slate)} .c-blocked{background:var(--cinnabar)}
 .rmx{padding:0 14px 12px;display:grid;gap:8px} .rmx .goal{color:var(--muted)} .rmc{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.84rem;color:var(--muted)} .rmc b{color:var(--ink);font-variant-numeric:tabular-nums}
+.rgrp{display:grid;gap:5px} .rgrp h5{margin:4px 0 0;display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--muted)} .rgrp h5 i{width:8px;height:8px;border-radius:50%} .rgrp h5 span{font-weight:400;font-variant-numeric:tabular-nums}
+.linkbtn{background:none;border:0;padding:0 2px;font:inherit;font-weight:600;color:var(--jade);cursor:pointer} .linkbtn:hover{text-decoration:underline}
 .rchips{display:flex;flex-wrap:wrap;gap:6px} .rch{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:1px solid var(--line);background:var(--paper);border-radius:6px;padding:3px 8px;font:inherit;font-size:.8rem;color:var(--ink);cursor:pointer}
 .rch:hover{border-color:var(--ink)} .rch i{width:8px;height:8px;border-radius:50%;flex:none} .rch .tid{font-size:.76rem} .rch span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
 .rmx h4{margin:2px 0 0;font-size:.74rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)} .rmx ul{margin:0;padding-left:18px;font-size:.88rem}
@@ -1578,6 +1580,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-mclear]')){mapClear();return;}
   if(g('[data-onmap]')){const id=openId;closeDrawer();showOnMap(id);return;}
   if(b=g('[data-mapcomp]')){const k=b.dataset.mapcomp;closeDrawer();showComp(k);return;}
+  if(b=g('[data-rmd]')){const k=b.dataset.rmd;RMD[k]=!RMD[k];renderRoad();$('roadWrap').querySelector(`[data-rmd="${CSS.escape(k)}"]`)?.focus();return;}
   if(b=g('[data-rmx]')){const k=b.dataset.rmx,li=b.closest('.rmi');RMX[k]=!li.classList.contains('open');renderRoad();$('roadWrap').querySelector(`[data-rmx="${CSS.escape(k)}"]`)?.focus();return;}
   if(b=g('[data-msgo]')){state.ms=b.dataset.msgo;store.set('ms',state.ms);if(!$('drawer').hidden)closeDrawer();setView('board');renderBar();return;}
   if(b=g('[data-showboard]')){state.comp=b.dataset.showboard;store.set('comp',state.comp);setView('board');renderBar();return;}
@@ -2499,19 +2502,21 @@ const RMS=[['done','done'],['review','in review'],['doing','in progress'],['read
 const RMC=[['ready','ready'],['doing','in progress'],['review','in review'],['waiting','waiting on a person'],['blocked','blocked']];
 const rmState=t=>{const s=t.effective_status;return s==='done'?'done':s==='review'?'review':s==='doing'?'doing':s==='todo'?'ready':t.waiting_on||t.proposed_by?'waiting':'blocked';};
 function rmCounts(ts){const c={total:ts.length,done:0,review:0,doing:0,ready:0,waiting:0,blocked:0}; for(const t of ts)c[rmState(t)]++; return c;}
-const RMX={}; // key -> expanded, chosen by a click this session; the Next milestone starts open
-const CHIP_ORDER=['blocked','waiting','doing','review','ready','done'];
+const RMX={},RMD={}; // RMX: key -> row expanded (the Next milestone starts open); RMD: key -> its Done group shown (collapsed by default)
+const RMG=[['blocked','Blocked'],['waiting','Waiting on a person'],['doing','In progress'],['review','In review'],['ready','Ready'],['done','Done']]; // group order in an expanded row: what needs attention first // key -> expanded, chosen by a click this session; the Next milestone starts open
 function rmRow(key,title,ts,o={}){
   const c=rmCounts(ts),open=RMX[key]??!!o.next,all=c.total&&c.done===c.total,today=new Date().toISOString().slice(0,10),late=o.target&&o.target<today&&!o.closed&&!all;
   const words=RMS.filter(([k])=>c[k]).map(([k,l])=>`${c[k]} ${l}`).join(', ')||'no tickets yet';
   const bar=`<span class="rbar" role="img" aria-label="${esc(words)}">${RMS.filter(([k])=>c[k]).map(([k])=>`<i class="c-${k}" style="width:${100*c[k]/c.total}%"></i>`).join('')}</span>`;
   const badge=o.closed?'<span class="rmb rclosed">Closed</span>':o.next?'<span class="rmb rnext">Next</span>':'',ad=!o.closed&&all&&key?'<span class="rmb rall" title="Every ticket is done: check the exit criteria, then set closed: true in unblockd.json">All done: close it?</span>':'';
-  const sorted=[...ts].filter(t=>key||t.status!=='done').sort((x,y)=>CHIP_ORDER.indexOf(rmState(x))-CHIP_ORDER.indexOf(rmState(y))||x.id.localeCompare(y.id)),cap=40;
-  const chips=sorted.slice(0,cap).map(t=>{const st=rmState(t);return `<button type="button" class="rch" data-open="${esc(t.id)}" title="${esc(t.title)} (${esc(RMS.find(r=>r[0]===st)[1])})"><i class="c-${st}" aria-hidden="true"></i><b class="tid">${esc(t.id)}</b><span>${esc(t.title)}</span></button>`;}).join('');
+  const cap=40,chip=t=>{const st=rmState(t);return `<button type="button" class="rch" data-open="${esc(t.id)}" title="${esc(t.title)} (${esc(RMS.find(r=>r[0]===st)[1])})"><i class="c-${st}" aria-hidden="true"></i><b class="tid">${esc(t.id)}</b><span>${esc(t.title)}</span></button>`;};
+  const groups=RMG.map(([st,label])=>{const g=ts.filter(t=>rmState(t)===st).sort((x,y)=>x.id.localeCompare(y.id));if(!g.length||(!key&&st==='done'))return '';
+    const fold=st==='done'&&!RMD[key],more=g.length>cap?`<span class="hint">+${g.length-cap} more on the board</span>`:'';
+    return `<div class="rgrp"><h5><i class="c-${st}" aria-hidden="true"></i>${label} <span>${g.length}</span>${st==='done'?`<button type="button" class="linkbtn" data-rmd="${esc(key)}" aria-expanded="${!fold}">${fold?'Show':'Hide'}</button>`:''}</h5>${fold?'':`<div class="rchips">${g.slice(0,cap).map(chip).join('')}${more}</div>`}</div>`;}).join('');
   return `<li class="rmi${o.next?' rnext':''}${o.closed?' rclosed':''}${open?' open':''}${key?'':' run'}" data-rk="${esc(key)}">
     <button type="button" class="rmrow" data-rmx="${esc(key)}" aria-expanded="${open}"><span class="rmt"><b>${esc(title)}</b>${key?`<span class="k">${esc(key)}</span>`:''}${badge}${ad}${o.target?`<span class="tgt${late?' late':''}">${late?'Late · ':''}target ${esc(o.target)}</span>`:''}</span>${bar}<span class="rmn">${key?`${c.done} / ${c.total}`:`${ts.filter(t=>t.status!=='done').length} open`}</span><span class="chev" aria-hidden="true"></span></button>
     ${open?`<div class="rmx">${o.goal?`<div class="goal">${inline(o.goal)}</div>`:''}<div class="rmc">${c.total?`<span><b>${c.done}</b> of ${c.total} done</span>`:''}${RMC.filter(([k])=>c[k]).map(([k,l])=>`<span><b>${c[k]}</b> ${l}</span>`).join('')}</div>
-      ${chips?`<div class="rchips">${chips}</div>`:'<p class="hint">No tickets in it yet: set a ticket\'s Milestone in its edit form.</p>'}${sorted.length>cap?`<p class="hint">+${sorted.length-cap} more on the board</p>`:''}
+      ${groups||'<p class="hint">No tickets in it yet: set a ticket\'s Milestone in its edit form.</p>'}
       ${(o.exit||[]).length?`<h4>Exit criteria</h4><ul>${o.exit.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:''}
       <div><button type="button" class="btn ghost sm" data-msgo="${key?esc(key):'NONE'}">Show on the board</button></div></div>`:''}</li>`;
 }

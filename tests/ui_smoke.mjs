@@ -177,9 +177,14 @@ try {
 			const first = page.locator('#roadWrap .rmi').first();
 			ok((await first.getAttribute('class')).includes('rnext') && (await first.getAttribute('class')).includes('open'), `[${tag}] roadmap: v0.1 is Next and starts expanded`);
 			ok((await first.locator('.rbar').getAttribute('aria-label')).includes('done'), `[${tag}] roadmap: the bar says its states in words`);
-			const chips = await first.locator('.rch').evaluateAll((c) => c.map((x) => x.dataset.open));
-			const v01ids = await page.evaluate(async () => (await (await fetch('/api/tickets?milestone=v0.1')).json()).map((t) => t.id));
-			ok(chips.length === v01ids.length && chips.every((id) => v01ids.includes(id)), `[${tag}] roadmap: v0.1's tickets as chips: ${chips} vs ${v01ids}`);
+			const v01s = await page.evaluate(async () => (await (await fetch('/api/tickets?milestone=v0.1')).json()).map((t) => [t.id, t.status === 'done']));
+			const ids = (done) => v01s.filter((x) => x[1] === done).map((x) => x[0]).sort().join();
+			const chipIds = async () => (await first.locator('.rch').evaluateAll((c) => c.map((x) => x.dataset.open))).sort().join();
+			ok(await chipIds() === ids(false), `[${tag}] roadmap: open tickets as chips, Done collapsed: ${await chipIds()} vs ${ids(false)}`);
+			ok((await first.locator('.rgrp h5').allInnerTexts()).some((h) => /^Done\s+\d+/.test(h)), `[${tag}] roadmap: grouped under state headings with a Done group`);
+			await first.locator('[data-rmd]').click(); // Show the Done group
+			ok(await chipIds() === v01s.map((x) => x[0]).sort().join(), `[${tag}] roadmap: Show adds the done tickets`);
+			await first.locator('[data-rmd]').click();
 			ok((await page.locator('#roadWrap .rmi.run').innerText()).includes('Unscheduled') && !(await page.locator('#roadWrap .rmi.run').getAttribute('class')).includes('open'), `[${tag}] roadmap: the unscheduled row, collapsed`);
 			await page.click('#roadWrap .rmi.run [data-rmx]'); // expand: its open tickets
 			await page.waitForFunction(() => document.querySelector('#roadWrap .rmi.run.open .rch'));
