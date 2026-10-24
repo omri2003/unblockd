@@ -283,6 +283,14 @@ aside.dropping{outline:3px dashed var(--jade);outline-offset:-8px}
 .docv{z-index:41;width:min(760px,calc(100% - 32px))}
 .docv pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.84rem;background:var(--sunk);padding:10px;border-radius:var(--r)}
 .kb{z-index:31;width:min(560px,calc(100% - 32px));padding-bottom:18px}
+.cmdk{position:fixed;z-index:31;top:12vh;left:50%;transform:translateX(-50%);width:min(620px,calc(100% - 32px));max-height:min(520px,76vh);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 40px rgba(10,16,13,.25);overflow:hidden}
+.cmdk input{border:0;border-bottom:1px solid var(--line);background:none;color:var(--ink);font:inherit;font-size:1.05rem;padding:14px 16px;outline:none}
+.cmdk ul{list-style:none;margin:0;padding:6px;overflow-y:auto;flex:1}
+.cmdk li{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--r);cursor:pointer;min-height:34px}
+.cmdk li[aria-selected="true"]{background:var(--sunk)} .cmdk li .tid{flex:none} .cmdk li .ct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmdk li .cg{flex:none;font-size:.78rem;color:var(--muted)} .cmdk .cs{font-size:.75rem;color:var(--muted);padding:8px 10px 3px;text-transform:uppercase;letter-spacing:.04em;cursor:default;min-height:0}
+.cmdhint{margin:0;padding:7px 14px;border-top:1px solid var(--line);font-size:.78rem;color:var(--muted)}
+@media (max-width:600px){.cmdk{top:8px} .cmdhint{display:none}}
 .kb h2{font-size:1.2rem;margin-bottom:10px} .kb h3{font-size:.85rem;margin:14px 0 6px;color:var(--muted)}
 .kb dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:.92rem} .kb dd{margin:0}
 kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 6px}
@@ -639,9 +647,16 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 <div class="bulk" id="bulk" hidden role="group" aria-label="Edit selected tickets"></div>
 <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <div class="kbscrim" id="kbScrim" hidden></div>
+<div class="kbscrim" id="cmdScrim" hidden></div>
+<div class="cmdk" id="cmdk" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+  <input id="cmdQ" type="text" role="combobox" aria-expanded="true" aria-controls="cmdL" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Jump to a ticket, or type a command…">
+  <ul id="cmdL" role="listbox" aria-label="Results"></ul>
+  <p class="cmdhint"><kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> run · <kbd>Esc</kbd> close</p>
+</div>
 <div class="kb" id="kb" hidden role="dialog" aria-modal="true" aria-labelledby="kbT">
   <h2 id="kbT">Keyboard shortcuts</h2>
   <dl>
+    <dt><kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>k</kbd></dt><dd>Command palette: jump to a ticket, new ticket, switch view or board, set the status or priority of the open ticket</dd>
     <dt><kbd>/</kbd></dt><dd>Search</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
@@ -1661,11 +1676,51 @@ async function setPrio(id,p){
   catch(er){ toast('Priority failed: '+er.message,{err:1}); }
 }
 let kbFocus=null;
+// ---------- command palette (Ctrl/Cmd+K, UI-44) ----------
+// One list: commands that fit what you typed, then this board's tickets by id and title. The ticket in front of you
+// (open drawer, else the focused card) gets its status and priority commands first. Every command calls the action
+// behind the button it stands for (showTicket, moveTo, setPrio, setView, editForm, openNeeds...), so refusals and Undo match.
+let CMD={items:[],i:0,ctx:null,back:null};
+function cmdOpen(){
+  const f=document.activeElement, card=f?.closest?.('#board [data-open]'); CMD.ctx=!$('drawer').hidden&&openId?openId:card?.dataset.open||null; CMD.back=f;
+  closeMenus(); $('cmdk').hidden=false; $('cmdScrim').hidden=false; $('cmdQ').value=''; cmdRender(); $('cmdQ').focus();
+}
+function cmdClose(run){ $('cmdk').hidden=true; $('cmdScrim').hidden=true; if(!run) CMD.back?.focus?.(); }
+function cmdList(q){
+  const words=q.toLowerCase().split(/\s+/).filter(Boolean),hit=s=>words.every(w=>s.toLowerCase().includes(w)),out=[];
+  const t=CMD.ctx&&BY.get(CMD.ctx);
+  if(t){ for(const [k,n] of COLS) if(k!=='pending'&&k!==t.status) out.push({g:t.id,l:`Move ${t.id} to ${n}`,k:'status '+n,run:()=>moveTo(t.id,k)});
+    for(const [v,l] of PLAB) if((v||null)!==(t.priority||null)) out.push({g:t.id,l:`Priority: ${l}`,k:'priority '+(v||'none'),run:()=>setPrio(t.id,v||null)}); }
+  out.push({g:'Create',l:'New ticket',k:'add create n',run:()=>{openId=null;editForm(null);}});
+  for(const [v,l,key] of VIEWS) if(v!==state.view) out.push({g:'View',l:`Go to ${l}`,k:'view switch '+v+(key?' '+key:''),run:()=>setView(v)});
+  out.push({g:'Panel',l:'Needs you',k:'questions reviews proposals inbox',run:openNeeds},{g:'Panel',l:'Ask Claude',k:'chat ask',run:()=>openChat()});
+  for(const b of BOARDS) if(b.id!==curBoard()) out.push({g:'Board',l:`Switch to ${b.title}`,k:'board '+b.id,run:()=>{setBoard(b.id);location.href='?board='+encodeURIComponent(b.id);}});
+  const cmds=words.length?out.filter(c=>hit(c.l+' '+c.k)):out.filter(c=>c.g===CMD.ctx||c.g==='Create'||c.g==='View');
+  const id=q.trim().toUpperCase(),score=x=>x.id===id?-1:(x.id.startsWith(id)?0:2)+(x.status==='done'?1:0); // the exact id first, then open before done
+  const ts=words.length?T.filter(x=>hit(x.id+' '+x.title)).sort((a,b)=>score(a)-score(b)||cmp(a,b)).slice(0,30):[];
+  const tix=ts.map(x=>({g:'Ticket',tid:x.id,l:x.title,st:NAME[x.effective_status],run:()=>{if(state.view!=='board')setView('board');showTicket(x.id);}}));
+  return /^[A-Z][A-Z0-9]*-\d+$/.test(id)&&tix.length?[...tix,...cmds]:[...cmds,...tix]; // an exact-looking id: tickets first
+}
+function cmdRender(){
+  CMD.items=cmdList($('cmdQ').value); CMD.i=0; let last='';
+  $('cmdL').innerHTML=CMD.items.length?CMD.items.map((c,i)=>{const h=c.g!==last?`<li class="cs" role="presentation">${esc(c.g===CMD.ctx?'This ticket':c.g)}</li>`:''; last=c.g;
+    return h+`<li role="option" id="cmd${i}" data-ci="${i}" aria-selected="${i===0}">${c.tid?`<span class="tid">${esc(c.tid)}</span>`:''}<span class="ct">${c.tid?inline(c.l):esc(c.l)}</span>${c.st?`<span class="cg">${esc(c.st)}</span>`:''}</li>`;}).join('')
+    :`<li class="cs" role="presentation">Nothing matches. Try a ticket id, words from a title, or “new”, “graph”, “board”.</li>`;
+  $('cmdQ').setAttribute('aria-activedescendant',CMD.items.length?'cmd0':'');
+}
+function cmdMark(i){ if(!CMD.items.length) return; CMD.i=(i+CMD.items.length)%CMD.items.length; $('cmdL').querySelectorAll('[role=option]').forEach(o=>o.setAttribute('aria-selected',+o.dataset.ci===CMD.i)); $('cmd'+CMD.i)?.scrollIntoView({block:'nearest'}); $('cmdQ').setAttribute('aria-activedescendant','cmd'+CMD.i); }
+function cmdRun(i){ const c=CMD.items[i]; if(!c) return; cmdClose(true); c.run(); }
+$('cmdQ').addEventListener('input',cmdRender);
+$('cmdQ').addEventListener('keydown',e=>{ if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();cmdMark(CMD.i+(e.key==='ArrowDown'?1:-1));} else if(e.key==='Enter'){e.preventDefault();cmdRun(CMD.i);} });
+$('cmdL').addEventListener('mousedown',e=>{ const o=e.target.closest('[data-ci]'); if(o){e.preventDefault();cmdRun(+o.dataset.ci);} });
+$('cmdL').addEventListener('mousemove',e=>{ const o=e.target.closest('[data-ci]'); if(o&&+o.dataset.ci!==CMD.i) cmdMark(+o.dataset.ci); });
+$('cmdScrim').addEventListener('click',()=>cmdClose());
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
 const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card')].filter(c=>c.offsetParent!==null);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(PK.el) endP();
+    else if(!$('cmdk').hidden) cmdClose();
     else if(!$('kb').hidden) toggleKb(false);
     else if(menuBusy()) closeMenus();
     else if(!$('npanel').hidden) closeNeeds();
@@ -1679,6 +1734,8 @@ document.addEventListener('keydown',e=>{
     else if(G.focus) setFocus(null);
     return;
   }
+  if((e.ctrlKey||e.metaKey)&&!e.altKey&&e.key.toLowerCase()==='k'){ e.preventDefault(); $('cmdk').hidden?cmdOpen():cmdClose(); return; } // from inside a field too, like other apps
+  if(!$('cmdk').hidden) return; // the palette's own input handles its keys
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   const tg=e.target; if(editing||tg.closest?.('input,textarea,select')||tg.isContentEditable) return;
   if(PK.el){ const k=e.key; endP(); if(/^[0-3]$/.test(k)||k==='-'){ e.preventDefault(); setPrio(PK.id,k==='-'?null:'P'+k); return; } }
