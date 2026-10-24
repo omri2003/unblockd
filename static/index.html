@@ -163,6 +163,15 @@ a.btn{display:inline-block;text-decoration:none}
 .nx.p0 .tid{color:var(--cinnabar)}
 .nxh{display:flex;align-items:center;justify-content:space-between;gap:8px}
 
+.board.list{display:block} .tabs.lst{display:none!important}
+.lsec{margin-bottom:16px} .lsec .lane{margin:0 0 4px;padding:0 4px} .lsec .props{margin:4px 0 6px}
+.lrow{--pc:var(--p-other);display:grid;grid-template-columns:5.2rem 2.4rem minmax(0,1fr) minmax(0,15rem) minmax(0,7.5rem) 2.6rem;align-items:center;gap:10px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--pc);border-top-width:0;padding:6px 10px;cursor:pointer;font:inherit;color:inherit;min-width:0}
+.lsec .lane+.lrow,.lsec .props+.lrow{border-top-width:1px;border-top-left-radius:var(--r);border-top-right-radius:var(--r)} .lrow:last-child{border-bottom-left-radius:var(--r);border-bottom-right-radius:var(--r)}
+.lrow:has(.status){grid-template-columns:6.4rem 5.2rem 2.4rem minmax(0,1fr) minmax(0,13rem) minmax(0,7.5rem) 2.6rem}
+.lrow:hover{background:var(--sunk)} .lrow.sel{outline:2px solid var(--jade);outline-offset:-2px} .lrow.p0 .tid{color:var(--cinnabar)} .lrow.claimed{box-shadow:inset 3px 0 0 var(--amber)}
+.lrow .lt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600} .lrow .lw{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.84rem}
+.lrow .lo{overflow:hidden;white-space:nowrap} .lrow .age{font-size:.8rem;color:var(--muted);text-align:right} .lrow .status,.lrow .seal{justify-self:start}
+@media (max-width:760px){.lrow,.lrow:has(.status){grid-template-columns:4.6rem 2.2rem minmax(0,1fr) 2.4rem} .lrow .lw,.lrow .lo,.lrow .status{display:none}}
 .board{display:grid;grid-template-columns:var(--tpl,repeat(var(--cols,4),minmax(0,1fr)));gap:14px;align-items:start}
 @media (min-width:1101px){.col.thin{padding-inline:4px;align-self:stretch;min-height:240px} .col.thin .colhead{writing-mode:vertical-rl;flex-direction:row;justify-content:flex-start;gap:10px;border:0;margin:0 auto;padding:4px 0} .col.thin .colhead h2{font-size:.9rem;white-space:nowrap} .col.thin .cards,.col.thin .more{display:none}}
 .col{--c:var(--muted);background:color-mix(in srgb,var(--c) 6%,var(--sunk));border-radius:8px;padding:10px;min-width:0}
@@ -570,6 +579,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
         <div class="seg" id="showSeg" data-l="Show" role="group" aria-label="Show" title="Only: just the matches. Paths: matches plus everything upstream and downstream of them. Dim: everything, matches highlighted."></div>
       </div></details>
     <div class="seg" id="pills"></div>
+    <div class="vico-g" id="layoutSeg" role="group" aria-label="Layout"></div>
     <button type="button" class="btn ghost nexttog" id="nextBtn" data-nexttoggle aria-controls="nextUp" aria-expanded="false" hidden>Next up <span class="n"></span><span class="m"></span><i class="chev" aria-hidden="true"></i></button>
     <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
   </div>
@@ -662,6 +672,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   <dl>
     <dt><kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>k</kbd></dt><dd>Command palette: jump to a ticket, new ticket, switch view or board, set the status or priority of the open ticket</dd>
     <dt><kbd>/</kbd></dt><dd>Search</dd>
+    <dt><kbd>l</kbd></dt><dd>Board as columns or as a list (one line per ticket)</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
     <dt><kbd>m</kbd></dt><dd>Switch between Board and Map (how components connect, and where the work is)</dd>
@@ -746,7 +757,8 @@ const PW={P0:8,P1:4,P2:2,P3:1}, PRIOS=Object.keys(PW);
 const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal',P2:'should happen',P3:'nice to have','':'no priority (counts like P3)'}; // shown in every priority picker + the ? sheet
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','milestone','parent','agent'];
-const state={dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
+const LAYOUTS=['cols','list']; // the Board as columns or as a dense list (UI-49)
+const state={layout:pickOf(store.get('layout','cols'),LAYOUTS,'cols'),dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
   showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
 const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
 const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
@@ -920,12 +932,14 @@ function renderBar(){
   $('msSeg').hidden=!ms.length; if(ms.length) chips($('msSeg'),[['ALL','Any'],...ms.map(m=>[esc(m.key),esc(m.title)]),['NONE','Unscheduled']],state.ms,'ms');
   chips($('groupSeg'),GROUPS.filter(g=>(g!=='milestone'||ms.length)&&(g!=='component'||(CFG.architecture&&(COMPS().length||!MV.data)))).map(g=>[g,g[0].toUpperCase()+g.slice(1)]),state.group,'group');
   // Free = open, nothing open blocks it, not waiting on a person. Blocked = an open ticket blocks it.
-  $('depSeg').hidden=state.view!=='graph';
+  $('depSeg').hidden=state.view!=='graph'; $('layoutSeg').hidden=state.view!=='board';
   const open=T.filter(t=>t.status!=='done'),nb=open.filter(isBlocked).length,nf=open.filter(isFree).length;
   const di=d=>`<svg class="vi" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${d}</svg>`,
     LK='<rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/>';
   $('depSeg').innerHTML=[['ALL','Any','',di('<circle cx="8" cy="8" r="2.5"/>')],['FREE','Free',nf,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 4.8-1"/>')],['BLOCKED','Blocked',nb,di(LK+'<path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>')]]
     .map(([v,l,n,ic])=>`<button type="button" class="vico lbl" data-dep="${v}" aria-pressed="${state.dep===v}">${ic}${l}${n===''?'':` <span class="n">${n}</span>`}</button>`).join('');slidePill($('depSeg'));
+  $('layoutSeg').innerHTML=[['cols','Columns',di('<rect x="2" y="2.5" width="3.5" height="11" rx="1"/><rect x="6.25" y="2.5" width="3.5" height="11" rx="1"/><rect x="10.5" y="2.5" width="3.5" height="11" rx="1"/>')],['list','List',di('<path d="M2.5 4h11M2.5 8h11M2.5 12h11"/>')]]
+    .map(([v,l,ic])=>`<button type="button" class="vico" data-layout="${v}" aria-pressed="${state.layout===v}" aria-label="${l}" title="${l} (l)">${ic}</button>`).join('');slidePill($('layoutSeg'));
   chips($('prioSeg'),PRIOS.map(p=>[p,p]),state.prio,'prio');
   renderShow();
 }
@@ -996,13 +1010,13 @@ const VIEWK=['board','graph','docs','map','roadmap'], DEPS=['ALL','FREE','BLOCKE
 function urlWrite(){ // the view lives in the address bar (non-default values only): a link reproduces it. replaceState, so no history spam; ?board= and #ID stay
   const g=state.view==='graph',u=new URLSearchParams(location.search),sk=g?'showGraph':'showBoard';
   const v={view:state.view==='board'?'':state.view,q:state.q,pillar:state.pillar==='ALL'?'':state.pillar,owner:state.owner==='ALL'?'':state.owner,me:mineOn()?'1':'',agent:state.agent==='ALL'?'':state.agent,parent:state.parent==='ALL'?'':state.parent,comp:state.comp==='ALL'?'':state.comp,milestone:state.ms==='ALL'?'':state.ms==='NONE'?'-':state.ms,
-    priority:state.prio.join(','),show:state[sk]===(g?'dim':'only')?'':state[sk],group:state.group==='none'?'':state.group,dep:g&&state.dep!=='ALL'?state.dep:''};
+    priority:state.prio.join(','),show:state[sk]===(g?'dim':'only')?'':state[sk],group:state.group==='none'?'':state.group,layout:state.view==='board'&&state.layout==='list'?'list':'',dep:g&&state.dep!=='ALL'?state.dep:''};
   for(const k in v)v[k]?u.set(k,v[k]):u.delete(k);
   const qs=u+'',now=location.search.slice(1);
   if(qs!==now.replace(/\+/g,'%20'))history.replaceState(null,'',location.pathname+(qs?'?'+qs:'')+location.hash);
 }
 function urlRead(){ // after applyConfig. Any of our params present = the link defines the whole view (the rest back to defaults); bad values are ignored
-  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','me','agent','parent','comp','milestone','priority','show','group','dep'];
+  const u=new URLSearchParams(location.search),K=['view','q','pillar','owner','me','agent','parent','comp','milestone','priority','show','group','layout','dep'];
   if(!K.some(k=>u.has(k)))return;
   const g=k=>u.get(k)||'';
   state.view=pickOf(g('view'),VIEWK,'board');
@@ -1016,6 +1030,7 @@ function urlRead(){ // after applyConfig. Any of our params present = the link d
   state.prio=g('priority').split(',').filter(p=>PRIOS.includes(p));
   state.group=pickOf(g('group'),GROUPS,'none');
   state.dep=pickOf(g('dep'),DEPS,'ALL');
+  state.layout=pickOf(g('layout'),LAYOUTS,'cols');
   state[state.view==='graph'?'showGraph':'showBoard']=pickOf(g('show'),SHOWS,state.view==='graph'?'dim':'only');
   setQ(g('q'));
 }
@@ -1331,15 +1346,39 @@ function clearFilters(){
 }
 const WSEC=[['On you','an agent asked you a question'],['On other work','waiting for another ticket to finish'],['Parked','set aside by hand, with a note']]; // Waiting column sections, same order of reasons as the card's reason line
 const wsec=t=>t.proposed_by?0:t.open_blockers.length||(t.missing_blockers||[]).length?1:t.waiting_on&&t.asked_by?0:2;
+const grpOf=()=>state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group;
+const gKeys=(g,t)=>g==='component'?(tcomps(t).length?tcomps(t):['']):[(g==='pillar'?t.pillar:g==='milestone'?msOf(t):g==='parent'?t.parent:t.agent)||''];
+const gName=(g,k)=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),component:'No component',milestone:'Unscheduled',parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='component'?ctitle(k):g==='milestone'?mtitle(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
+const gSort=g=>(a,b)=>!a[0]-!b[0]||(g==='milestone'?MSL().findIndex(x=>x.key===a[0])-MSL().findIndex(x=>x.key===b[0]):0); // no key last; milestones in roadmap order
 function lanes(ts,col){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
-  const g=state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group; if(g==='none'&&col==='pending') return WSEC.map(([n,tip],i)=>{const a=ts.filter(t=>wsec(t)===i);return a.length?`<h3 class="lane" title="${tip}"><span>${n}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`:'';}).join('');
+  const g=grpOf(); if(g==='none'&&col==='pending') return WSEC.map(([n,tip],i)=>{const a=ts.filter(t=>wsec(t)===i);return a.length?`<h3 class="lane" title="${tip}"><span>${n}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`:'';}).join('');
   if(g==='none') return ts.map(card).join('');
-  const keys=t=>g==='component'?(tcomps(t).length?tcomps(t):['']):[(g==='pillar'?t.pillar:g==='milestone'?msOf(t):g==='parent'?t.parent:t.agent)||''],m=new Map();
-  for(const t of ts)for(const k of keys(t))(m.get(k)||m.set(k,[]).get(k)).push(t);
-  const name=k=>!k?{pillar:'No '+CFG.pillar_label.toLowerCase(),component:'No component',milestone:'Unscheduled',parent:'No parent',agent:'Unrouted'}[g]:g==='pillar'?pname(k):g==='component'?ctitle(k):g==='milestone'?mtitle(k):g==='parent'?k+(BY.get(k)?' '+BY.get(k).title:''):k;
-  const mo=k=>MSL().findIndex(x=>x.key===k); // milestone lanes follow the roadmap order
-  return [...m].sort((a,b)=>!a[0]-!b[0]||(g==='milestone'?mo(a[0])-mo(b[0]):0)).map(([k,a])=>`<h3 class="lane" title="${esc(name(k))}"><span>${esc(name(k))}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`).join('');
+  const m=new Map(),name=k=>gName(g,k);
+  for(const t of ts)for(const k of gKeys(g,t))(m.get(k)||m.set(k,[]).get(k)).push(t);
+  return [...m].sort(gSort(g)).map(([k,a])=>`<h3 class="lane" title="${esc(name(k))}"><span>${esc(name(k))}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`).join('');
 }
+// ---------- list layout (UI-49): one line per ticket, sections by status, or by the Group by key ----------
+function lwhy(t){ // the card's reason line, as plain words
+  const s=t.effective_status;
+  if(s==='pending') return t.proposed_by?'Proposal by '+t.proposed_by:t.open_blockers.length?'Blocked by '+t.open_blockers.join(', '):t.waiting_on?(t.asked_by?'Question from '+t.asked_by:'Parked: '+t.waiting_on):'';
+  if(t.claim) return t.claim.agent+(t.claim.principal?' for '+t.claim.principal:'');
+  return s!=='done'&&t.unblocks?'Unblocks '+t.unblocks:'';
+}
+function lrow(t,st){
+  const s=t.effective_status,pc=PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:'',w=lwhy(t);
+  return `<button type="button" class="lrow${SEL.has(t.id)?' sel':''}${t.priority==='P0'&&s!=='done'?' p0':''}${t.claim?' claimed':''}" data-open="${esc(t.id)}"${pc}>${st?`<span class="status ${s}">${NAME[s]}</span>`:''}<span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="lt" title="${esc(t.title)}">${inline(t.title)}</span><span class="lw" title="${esc(w)}">${esc(w)}</span><span class="lo">${ownHtml(t.owner)}</span><span class="age" data-up="${esc(t.updated)}" data-st="${s}"></span></button>`;
+}
+function listHtml(vis){
+  const at=t=>Date.parse(t.done_at||t.updated),open=vis.filter(t=>t.effective_status!=='done'),dn=vis.filter(t=>t.effective_status==='done').sort((a,b)=>at(b)-at(a));
+  const recent=state.allDone||state.q?dn:dn.filter(t=>at(t)>=Date.now()-DAYS*864e5),cut=recent.length>DONE_CAP&&!state.allDone&&!state.q;
+  const done=cut?recent.slice(0,DONE_CAP):recent,more=cut?`<button type="button" class="btn ghost more" data-alldone>+${recent.length-DONE_CAP} more done → view all</button>`:state.allDone?'<button type="button" class="btn ghost more" data-recentdone>Show recent done only</button>':'';
+  const g=grpOf(),sec=(name,ts,st,extra='')=>ts.length||extra?`<section class="lsec"><h3 class="lane"><span>${esc(name)}</span><span class="n">${ts.length}</span></h3>${extra}${ts.map(t=>lrow(t,st)).join('')}</section>`:'';
+  if(g==='none') return COLS.map(([k,n])=>{const ts=k==='done'?done:open.filter(t=>t.effective_status===k).sort(cmp);
+    return sec(k==='done'&&!state.allDone&&!state.q?`${n} · last ${DAYS===1?'day':DAYS+' days'}`:n,ts,false,k==='pending'&&LPROPS?LPROPS:'');}).join('')+more;
+  const m=new Map(); for(const t of [...open.sort((a,b)=>COLS.findIndex(c=>c[0]===a.effective_status)-COLS.findIndex(c=>c[0]===b.effective_status)||cmp(a,b)),...done]) for(const k of gKeys(g,t))(m.get(k)||m.set(k,[]).get(k)).push(t);
+  return [...m].sort(gSort(g)).map(([k,ts])=>sec(gName(g,k),ts,true)).join('')+more;
+}
+let LPROPS='';
 const cardRects=()=>new Map([...document.querySelectorAll('#board .card[data-open]')].map(c=>[c.dataset.open,c.getBoundingClientRect()]));
 function playFlip(prev){ // FLIP: cards that moved glide from their old spot, new ones fade in. More than 60 moved = just jump.
 	const mv=[],nw=[];
@@ -1361,6 +1400,8 @@ function renderBoard(){
   document.body.dataset.tab=TAB;
   $('tabs').innerHTML=all.length?COLS.map(([k,name])=>`<button type="button" role="tab" class="tab ${k}${k===TAB?' on':''}" data-tab="${k}" aria-selected="${k===TAB}">${name}<span class="n">${vis.filter(t=>t.effective_status===k).length}</span></button>`).join(''):'';
   if(!all.length){ $('board').innerHTML=emptyState(); return; }
+  $('board').classList.toggle('list',state.layout==='list'); $('tabs').classList.toggle('lst',state.layout==='list');
+  if(state.layout==='list'){ LPROPS=pline; $('board').innerHTML=listHtml(vis); return; } // one list, no columns: no tabs on a phone, no FLIP
   $('board').style.setProperty('--cols',COLS.length);
   const thin=k=>k!=='todo'&&!state.q&&!vis.some(t=>t.effective_status===k)&&!(k==='pending'&&props.length); // an empty column is a strip (UI-47); still a drop target
   $('board').style.setProperty('--tpl',COLS.map(([k])=>thin(k)?'52px':'minmax(0,1fr)').join(' '));
@@ -1560,7 +1601,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-aprange]')){AP.days=+b.dataset.aprange;store.set('agentDays',AP.days);loadAgents();return;}
   if(b=g('[data-pref]')){const j=b.dataset.pref.indexOf(':');setPref(b.dataset.pref.slice(0,j),b.dataset.pref.slice(j+1));return;}
   if(b=g('[data-mine]')){state.mine=b.dataset.mine==='1';store.set('mine',state.mine);renderBar();render();return;}
-  for(const k of['pillar','comp','ms','dep','owner','agent','parent','group']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
+  for(const k of['pillar','comp','ms','dep','owner','agent','parent','group','layout']) if(b=g(`[data-${k}]`)){state[k]=b.dataset[k];if(k!=='agent')store.set(k,state[k]);renderBar();render();return;} // agent isn't remembered
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
@@ -1615,7 +1656,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-msgo]')){state.ms=b.dataset.msgo;store.set('ms',state.ms);if(!$('drawer').hidden)closeDrawer();setView('board');renderBar();return;}
   if(b=g('[data-showboard]')){state.comp=b.dataset.showboard;store.set('comp',state.comp);setView('board');renderBar();return;}
   if(state.view==='map'&&g('#mapWrap')&&!g('a,button,.eg,.mapmsg,#mProb,#mTools,#mNote')&&(MV.foc||MV.multi||MV.f)){mapClear();return;}
-  if((e.shiftKey||e.ctrlKey||e.metaKey)&&(b=g('.card[data-open]'))){e.preventDefault();const id=b.dataset.open;SEL.has(id)?SEL.delete(id):SEL.add(id);renderBulk();renderBoard();return;}
+  if((e.shiftKey||e.ctrlKey||e.metaKey)&&(b=g('.card[data-open],.lrow[data-open]'))){e.preventDefault();const id=b.dataset.open;SEL.has(id)?SEL.delete(id):SEL.add(id);renderBulk();renderBoard();return;}
   if(g('[data-bulkclear]')){SEL.clear();renderBulk();renderBoard();return;}
   if(b=g('[data-open]')){showTicket(b.dataset.open);return;}
   if(b=g('[data-view]')){viewTo(b.dataset.view);return;}
@@ -1699,6 +1740,7 @@ function cmdList(q){
     for(const [v,l] of PLAB) if((v||null)!==(t.priority||null)) out.push({g:t.id,l:`Priority: ${l}`,k:'priority '+(v||'none'),run:()=>setPrio(t.id,v||null)}); }
   out.push({g:'Create',l:'New ticket',k:'add create n',run:()=>{openId=null;editForm(null);}});
   for(const [v,l,key] of VIEWS) if(v!==state.view) out.push({g:'View',l:`Go to ${l}`,k:'view switch '+v+(key?' '+key:''),run:()=>setView(v)});
+  if(state.view==='board') out.push({g:'View',l:state.layout==='list'?'Show as columns':'Show as list',k:'layout list columns rows table l',run:()=>setBoardLayout(state.layout==='list'?'cols':'list')});
   out.push({g:'Panel',l:'Needs you',k:'questions reviews proposals inbox',run:openNeeds},{g:'Panel',l:'Ask Claude',k:'chat ask',run:()=>openChat()});
   for(const b of BOARDS) if(b.id!==curBoard()) out.push({g:'Board',l:`Switch to ${b.title}`,k:'board '+b.id,run:()=>{setBoard(b.id);location.href='?board='+encodeURIComponent(b.id);}});
   const cmds=words.length?out.filter(c=>hit(c.l+' '+c.k)):out.filter(c=>c.g===CMD.ctx||c.g==='Create'||c.g==='View');
@@ -1722,7 +1764,7 @@ $('cmdL').addEventListener('mousedown',e=>{ const o=e.target.closest('[data-ci]'
 $('cmdL').addEventListener('mousemove',e=>{ const o=e.target.closest('[data-ci]'); if(o&&+o.dataset.ci!==CMD.i) cmdMark(+o.dataset.ci); });
 $('cmdScrim').addEventListener('click',()=>cmdClose());
 function toggleKb(force){const show=force??$('kb').hidden; if(show===!$('kb').hidden) return; if(show) kbFocus=document.activeElement; $('kb').hidden=!show;$('kbScrim').hidden=!show; if(show)$('kb').querySelector('[data-kbclose]').focus(); else kbFocus?.focus?.();}
-const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card')].filter(c=>c.offsetParent!==null);
+const visibleCards=()=>[...document.querySelectorAll('#nextUp .nx, #board .card, #board .lrow')].filter(c=>c.offsetParent!==null);
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(PK.el) endP();
@@ -1757,6 +1799,7 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='m') viewTo(state.view==='map'?'board':'map');
   else if(e.key==='r') viewTo(state.view==='roadmap'?'board':'roadmap');
   else if(e.key==='i') $('npanel').hidden?openNeeds():closeNeeds();
+  else if(e.key==='l'&&state.view==='board'){ setBoardLayout(state.layout==='list'?'cols':'list'); }
   else if(e.key==='B'){ e.preventDefault(); if(!$('bsum').inert){ $('bpanel').open=true; } }
   else if(e.key==='n'){ e.preventDefault(); openId=null; editForm(null); }
   else if(e.key==='c'){ e.preventDefault(); $('chat').hidden?openChat():$('cin').focus(); }
@@ -2118,6 +2161,7 @@ for(const id of['gLinked','gDone','gMentions','gCrit'])$(id).addEventListener('c
 for(const id of['gLinked','gDone','gMentions','gCrit','gIsolate']){const v=store.get(id,null);if(v!=null)$(id).checked=v;}
 $('gIsolate').addEventListener('change',()=>{store.set('gIsolate',$('gIsolate').checked);if(!$('gIsolate').checked)leaveIsolate();});
 function renderLayoutSeg(){chips($('gLayoutSeg'),[['flow','Flow'],['free','Free']],G.layout,'glayout');}
+function setBoardLayout(v){if(v===state.layout)return;state.layout=v;store.set('layout',v);renderBar();render();} // the Board's Columns | List (UI-49); setLayout below is the Graph's Flow | Free
 function setLayout(v){if(v===G.layout)return;G.layout=v;store.set('gLayout',v);renderLayoutSeg();syncGraph();}
 renderLayoutSeg();
 $('gFit').addEventListener('click',fit);
@@ -2566,7 +2610,7 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	if(!document.startViewTransition||reduce.matches) return setView(v);
 	document.startViewTransition(()=>setView(v));
 }
-function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('roadWrap').hidden=v!=='roadmap';$('bar').hidden=v==='docs'||v==='map'||v==='roadmap';$('depSeg').hidden=v!=='graph';
+function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('roadWrap').hidden=v!=='roadmap';$('bar').hidden=v==='docs'||v==='map'||v==='roadmap';$('depSeg').hidden=v!=='graph';$('layoutSeg').hidden=v!=='board';
   paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
 function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
 // ---------- Roadmap: the board's milestones (unblockd.json, in order) as progress rows; a row expands to its tickets (chips) and exit criteria ----------

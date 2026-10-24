@@ -172,6 +172,16 @@ try {
 			ok(await page.locator('#cmdk').isHidden() && !(await page.locator('#drawer').isHidden()), `[${tag}] Esc closes only the palette`);
 			await page.keyboard.press('Escape');
 		}
+		{ // list layout (UI-49): l switches, a row opens its ticket, the URL keeps it, l switches back
+			await page.keyboard.press('l'); await page.waitForSelector('#board.list .lrow');
+			ok(/layout=list/.test(page.url()), `[${tag}] list layout should be in the URL`);
+			const rid = await page.locator('#board .lrow').first().getAttribute('data-open');
+			await page.click(`#board .lrow[data-open="${rid}"]`);
+			await page.waitForFunction((i) => !document.getElementById('drawer').hidden && location.hash === '#' + i, rid);
+			await page.keyboard.press('Escape');
+			await page.keyboard.press('l'); await page.waitForSelector('#board:not(.list) .card');
+			ok(!/layout=list/.test(page.url()), `[${tag}] columns again, the URL drops layout`);
+		}
 		if (w > 1100) { // an empty column (not To do) is a thin strip, still a drop target (UI-47)
 			const thin = await page.evaluate(() => [...document.querySelectorAll('#board .col')].map((c) => [c.dataset.col, c.querySelectorAll('.card').length, Math.round(c.getBoundingClientRect().width)]));
 			ok(thin.every(([k, n, wd]) => k === 'todo' || n > 0 || wd <= 60), `[${tag}] empty columns should be strips: ${JSON.stringify(thin)}`);
