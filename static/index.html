@@ -54,6 +54,7 @@ h1{font-size:clamp(1.4rem,3.2vw,1.8rem);line-height:1.1}
 
 .bar{position:sticky;top:0;z-index:5;background:var(--paper);border-block:1px solid var(--line);padding:9px 0;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin-bottom:14px}
 .bar input[type=search]{flex:1 1 240px;min-width:0;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:7px 10px}
+@media (max-width:600px){.bar input[type=search]{flex-basis:120px}} /* search, Filters and Next up share one row on a phone (UI-47) */
 .seg{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 /* filter panel: a native <details>; the bar keeps search, the button, the active pills and Free/Blocked */
 :is(.fpanel,.mv,.ovf,.spanel) summary{list-style:none} :is(.fpanel,.mv,.ovf,.spanel) summary::-webkit-details-marker{display:none}
@@ -144,13 +145,14 @@ a.btn{display:inline-block;text-decoration:none}
 .wk{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.78rem;color:var(--amber);font-weight:700;overflow-wrap:anywhere}
 .acts{list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.85rem}
 .acts li{display:grid;grid-template-columns:auto 1fr;gap:8px} .acts time{color:var(--muted);white-space:nowrap}
-.next{background:var(--sunk);border-radius:8px;padding:8px 10px 10px;margin-bottom:14px}
+.next{background:var(--sunk);border-radius:8px;padding:4px 10px 8px;margin-bottom:14px;transition:padding .2s ease-out,margin .2s ease-out}
+.next.m-c{padding-block:0;margin-bottom:0} /* collapsed = no row at all: the toggle is in the bar (UI-47) */
+.nexttog.m-c .chev{transform:translateY(0) rotate(-45deg)} .nexttog.m-all .chev{transform:translateY(.1em) rotate(-135deg)}
 .next h2{font-size:.95rem;margin:0}
-.nexttog{display:flex;align-items:center;gap:8px;background:none;border:0;padding:2px 4px;cursor:pointer;font-family:var(--display);font-weight:700;font-size:.95rem}
+.nexttog{display:inline-flex;align-items:center;gap:6px} /* a .btn.ghost in the bar, like Filters (UI-47) */
 .nexttog .n{font-family:var(--body);font-size:.85rem;color:var(--muted);font-weight:700}
 .nexttog .chev{transition:transform .2s ease-out}
 .nexttog .m{font-family:var(--body);font-size:.8rem;color:var(--muted);font-weight:600}
-.next.m-c .nexttog .chev{transform:translateY(0) rotate(-45deg)} .next.m-all .nexttog .chev{transform:translateY(.1em) rotate(-135deg)}
 .nx-body,.nx-more{display:grid;grid-template-rows:1fr;transition:grid-template-rows .2s ease-out,visibility .2s} .nx-body>div,.nx-more>div{min-height:0;overflow:hidden}
 .next.m-c .nx-body,.next:not(.m-all) .nx-more{grid-template-rows:0fr;visibility:hidden}
 .nxl2{margin-top:0 !important}
@@ -161,7 +163,8 @@ a.btn{display:inline-block;text-decoration:none}
 .nx.p0 .tid{color:var(--cinnabar)}
 .nxh{display:flex;align-items:center;justify-content:space-between;gap:8px}
 
-.board{display:grid;grid-template-columns:repeat(var(--cols,4),minmax(0,1fr));gap:14px;align-items:start}
+.board{display:grid;grid-template-columns:var(--tpl,repeat(var(--cols,4),minmax(0,1fr)));gap:14px;align-items:start}
+@media (min-width:1101px){.col.thin{padding-inline:4px;align-self:stretch;min-height:240px} .col.thin .colhead{writing-mode:vertical-rl;flex-direction:row;justify-content:flex-start;gap:10px;border:0;margin:0 auto;padding:4px 0} .col.thin .colhead h2{font-size:.9rem;white-space:nowrap} .col.thin .cards,.col.thin .more{display:none}}
 .col{--c:var(--muted);background:color-mix(in srgb,var(--c) 6%,var(--sunk));border-radius:8px;padding:10px;min-width:0}
 .colhead{display:flex;align-items:baseline;padding:2px 4px 8px;border-bottom:3px solid var(--c);margin-bottom:10px}
 .colhead h2{font-size:.95rem}
@@ -567,6 +570,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
         <div class="seg" id="showSeg" data-l="Show" role="group" aria-label="Show" title="Only: just the matches. Paths: matches plus everything upstream and downstream of them. Dim: everything, matches highlighted."></div>
       </div></details>
     <div class="seg" id="pills"></div>
+    <button type="button" class="btn ghost nexttog" id="nextBtn" data-nexttoggle aria-controls="nextUp" aria-expanded="false" hidden>Next up <span class="n"></span><span class="m"></span><i class="chev" aria-hidden="true"></i></button>
     <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
   </div>
 
@@ -1282,8 +1286,8 @@ setInterval(tickAges,15000);
 const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
 let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
 function nextMode(){const m=store.get(NKEY(),null);return NMODES.includes(m)?m:'c';} // no stored choice: collapsed on every width
-function nextPaint(){ // classes + labels only, so the grid-rows transition runs on the live DOM
-	const el=$('nextUp'),m=nextMode(),b=el.querySelector('.nexttog'); if(!b) return;
+function nextPaint(){ // classes + labels only, so the grid-rows transition runs on the live DOM. The toggle is #nextBtn in the bar (UI-47)
+	const el=$('nextUp'),m=nextMode(),b=$('nextBtn'); if(!el.firstChild) return; b.classList.toggle('m-c',m==='c');b.classList.toggle('m-all',m==='all');
 	el.classList.toggle('m-c',m==='c');el.classList.toggle('m-all',m==='all');
 	const nx=m==='top'&&NEXTN>3?`show all ${NEXTN}`:m==='c'?'expand':'collapse';
 	b.setAttribute('aria-expanded',m!=='c');b.title=`Click to ${nx}`;b.querySelector('.m').textContent=m==='c'?'':m==='all'||NEXTN<=3?'':'top 3';}
@@ -1291,10 +1295,10 @@ function nextCycle(){const m=nextMode();store.set(NKEY(),m==='top'?(NEXTN>3?'all
 function renderNext(){ // compact ranked strip of the best ready tickets
   const el=$('nextUp');
   const ts=T.filter(t=>t.effective_status==='todo'&&onBoard(t)).sort((a,b)=>(BV.M.has(b.id)-BV.M.has(a.id))||(b.score||0)-(a.score||0)||prioIdx(a.priority)-prioIdx(b.priority)||a.id.localeCompare(b.id)).slice(0,6);
-  el.hidden=!ts.length||state.view!=='board'; if(el.hidden) return;
-  NEXTN=ts.length;
+  el.hidden=$('nextBtn').hidden=!ts.length||state.view!=='board'; if(el.hidden) return;
+  NEXTN=ts.length; $('nextBtn').querySelector('.n').textContent=ts.length;
   const li=(t,i)=>`<li><button type="button" class="nx${t.priority==='P0'?' p0':''}" data-open="${esc(t.id)}" title="Score ${t.score} (priority x tickets unblocked)"><span class="rk">${i+1}</span><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="nt">${inline(t.title)}</span></button></li>`;
-  el.innerHTML=`<div class="nxh"><h2><button type="button" class="nexttog" data-nexttoggle aria-expanded="true">Next up <span class="n">${ts.length}</span><span class="m"></span><i class="chev" aria-hidden="true"></i></button></h2></div><div class="nx-body"><div><ol class="nxl">${ts.slice(0,3).map(li).join('')}</ol>${ts.length>3?`<div class="nx-more"><div><ol class="nxl nxl2">${ts.slice(3).map((t,i)=>li(t,i+3)).join('')}</ol></div></div>`:''}</div></div>`;
+  el.innerHTML=`<div class="nx-body"><div><ol class="nxl">${ts.slice(0,3).map(li).join('')}</ol>${ts.length>3?`<div class="nx-more"><div><ol class="nxl nxl2">${ts.slice(3).map((t,i)=>li(t,i+3)).join('')}</ol></div></div>`:''}</div></div>`;
   nextPaint();
 }
 const qaKey=()=>'qaPrefix.'+(BOARD||'default');
@@ -1358,6 +1362,8 @@ function renderBoard(){
   $('tabs').innerHTML=all.length?COLS.map(([k,name])=>`<button type="button" role="tab" class="tab ${k}${k===TAB?' on':''}" data-tab="${k}" aria-selected="${k===TAB}">${name}<span class="n">${vis.filter(t=>t.effective_status===k).length}</span></button>`).join(''):'';
   if(!all.length){ $('board').innerHTML=emptyState(); return; }
   $('board').style.setProperty('--cols',COLS.length);
+  const thin=k=>k!=='todo'&&!state.q&&!vis.some(t=>t.effective_status===k)&&!(k==='pending'&&props.length); // an empty column is a strip (UI-47); still a drop target
+  $('board').style.setProperty('--tpl',COLS.map(([k])=>thin(k)?'52px':'minmax(0,1fr)').join(' '));
   $('board').innerHTML=COLS.map(([k,name])=>{
     let ts=vis.filter(t=>t.effective_status===k),head=`<h2>${name}</h2>`,more='';
     if(k==='done'){ // recent only (config done_window_days, newest first, DONE_CAP cards); a search or "view all" shows every done ticket
@@ -1367,7 +1373,7 @@ function renderBoard(){
         if(n>DONE_CAP){ts=ts.slice(0,DONE_CAP);more=`<button type="button" class="btn ghost more" data-alldone>+${n-DONE_CAP} more → view all</button>`;} }
     } else ts.sort(cmp);
     const total=ts.length;
-    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}</span>`}</div>${k==='todo'?qaForm():''}${k==='pending'?pline:''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
+    return `<section class="col ${k}${k===TAB?' active':''}${thin(k)?' thin':''}" data-col="${k}" aria-label="${name}"${thin(k)?` title="${name}: none"`:''}><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}</span>`}</div>${k==='todo'?qaForm():''}${k==='pending'?pline:''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
   }).join('');
   if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
   if(flip?.size) playFlip(flip);
