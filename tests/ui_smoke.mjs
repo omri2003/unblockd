@@ -172,6 +172,18 @@ try {
 			ok(await page.locator('#cmdk').isHidden() && !(await page.locator('#drawer').isHidden()), `[${tag}] Esc closes only the palette`);
 			await page.keyboard.press('Escape');
 		}
+		{ // peek (UI-51): a ticket drawer has no scrim, j steps to the next ticket, the edit form is still modal
+			const ids = await page.evaluate(() => [...new Set([...document.querySelectorAll('#board .card[data-open]')].filter((c) => c.offsetParent).map((c) => c.dataset.open))]);
+			if (ids.length > 1) {
+				await page.click(`#board .card[data-open="${ids[0]}"]`); await page.waitForFunction((i) => location.hash === '#' + i, ids[0]);
+				ok(await page.locator('#scrim').isHidden(), `[${tag}] a ticket drawer is a peek: no scrim`);
+				ok(await page.locator('#dTitle').count() === 1 && (await page.locator('.props dt').count()) >= 1, `[${tag}] Details are label / value rows`);
+				await page.evaluate(() => document.activeElement.blur()); await page.keyboard.press('j');
+				await page.waitForFunction((i) => location.hash === '#' + i, ids[1]);
+				await page.click('[data-edit]'); ok(!(await page.locator('#scrim').isHidden()), `[${tag}] the edit form stays modal`);
+				await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+			}
+		}
 		{ // list layout (UI-49): l switches, a row opens its ticket, the URL keeps it, l switches back
 			await page.keyboard.press('l'); await page.waitForSelector('#board.list .lrow');
 			ok(/layout=list/.test(page.url()), `[${tag}] list layout should be in the URL`);
@@ -325,7 +337,7 @@ try {
 			ok((await page.locator(`${parts} li`).count()) === 2 && await page.locator('#drawer h3 .prog').count(), `[${tag}] parent drawer should list 2 parts and a progress bar`);
 			const ptitle = await page.locator('#drawer #dTitle').innerText();
 			await page.click(`${parts} li button`); await page.waitForFunction((t) => document.querySelector('#drawer #dTitle')?.textContent !== t, ptitle);
-			await page.click('#drawer .dmeta [data-open="DOC-1"]'); await page.waitForFunction((t) => document.querySelector('#drawer #dTitle')?.textContent === t, ptitle);
+			await page.click('#drawer .props [data-open="DOC-1"]'); await page.waitForFunction((t) => document.querySelector('#drawer #dTitle')?.textContent === t, ptitle);
 			await noOverflow('drawer with parts');
 			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/parts-drawer-${w}-${theme}.png` });
 			await page.click('#drawer [data-close]');
@@ -374,7 +386,7 @@ try {
 			ok(JSON.parse(cli('get', 'UI-2')).components.join() === 'api', `[${tag}] the picker should set components`);
 			const u2 = JSON.parse(cli('get', 'UI-2'));
 			ok(u2.skills.join() === 'agent-policy' && u2.mcp.join() === 'browser', `[${tag}] the pickers should set skills and mcp`);
-			await visible('#drawer .tag:has-text("skill: agent-policy")', 'skill chip in the drawer');
+			await visible('#drawer .props .tag:has-text("agent-policy")', 'skill chip in the drawer (under Skills)');
 			cli('update', 'UI-2', '--json', '{"skills":[],"mcp":[]}');
 			await visible('#drawer [data-mapcomp="api"]:not(.der)', 'explicit chip after save');
 			cli('update', 'UI-2', '--json', '{"components":[]}');
