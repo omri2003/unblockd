@@ -209,6 +209,7 @@ a.btn{display:inline-block;text-decoration:none}
 .cw.dn:hover .age,.cw.dn:focus-within .age,.cw.dn:has(.mv[open]) .age{visibility:hidden}
 @media (hover:none){.cw.dn .card{padding:4px 84px 4px 9px}}
 .more{margin-top:8px;width:100%}
+.props{width:100%;margin:0 0 8px;text-align:left}
 /* drag and drop */
 .card[draggable="true"]{cursor:grab}
 .card.dragging{opacity:.45}
@@ -1305,7 +1306,7 @@ function clearFilters(){
   for(const k of['pillar','comp','ms','owner','parent'])store.set(k,'ALL'); store.set('mine',false);
   if(state.view==='graph'){state.dep='ALL';store.set('dep','ALL');} store.set('prio',[]); setQ(''); renderBar(); render();
 }
-const WSEC=[['On you','a question for you or a proposal to accept'],['On other work','waiting for another ticket to finish'],['Parked','set aside by hand, with a note']]; // Waiting column sections, same order of reasons as the card's reason line
+const WSEC=[['On you','an agent asked you a question'],['On other work','waiting for another ticket to finish'],['Parked','set aside by hand, with a note']]; // Waiting column sections, same order of reasons as the card's reason line
 const wsec=t=>t.proposed_by?0:t.open_blockers.length||(t.missing_blockers||[]).length?1:t.waiting_on&&t.asked_by?0:2;
 function lanes(ts,col){ // Group by: a small heading per pillar / component / parent / agent inside the column; cards keep their order within a lane, no key = last. A ticket on 2 components is in both lanes (its blast radius)
   const g=state.group==='component'&&!(CFG.architecture&&(COMPS().length||!MV.data))?'none':state.group; if(g==='none'&&col==='pending') return WSEC.map(([n,tip],i)=>{const a=ts.filter(t=>wsec(t)===i);return a.length?`<h3 class="lane" title="${tip}"><span>${n}</span><span class="n">${a.length}</span></h3>${a.map(card).join('')}`:'';}).join('');
@@ -1331,10 +1332,12 @@ function playFlip(prev){ // FLIP: cards that moved glide from their old spot, ne
 	for(const w of nw) w.animate([{opacity:0,transform:'scale(.96)'},{opacity:1,transform:'none'}],{duration:160,easing:'ease-out'});
 }
 function renderBoard(){
-  const flip=DATA&&state.view==='board'&&!reduce.matches?cardRects():null, vis=T.filter(onBoard),qa=document.querySelector('.qa-t'),keep=qa&&{v:qa.value,p:document.querySelector('.qa-p').value,f:document.activeElement===qa,s:qa.selectionStart}; // a re-render must not eat a half-typed ticket
+  const flip=DATA&&state.view==='board'&&!reduce.matches?cardRects():null, all=T.filter(onBoard),qa=document.querySelector('.qa-t'),keep=qa&&{v:qa.value,p:document.querySelector('.qa-p').value,f:document.activeElement===qa,s:qa.selectionStart}; // a re-render must not eat a half-typed ticket
+  const props=state.q?[]:all.filter(t=>t.proposed_by&&t.effective_status==='pending'),vis=props.length?all.filter(t=>!props.includes(t)):all; // proposals wait in Needs you, not in Waiting (UI-45); a search still finds them
+  const pline=props.length?`<button type="button" class="btn ghost props" data-needsopen title="Accept or reject them in Needs you (i)">${props.length} proposal${props.length>1?'s':''} to review →</button>`:'';
   document.body.dataset.tab=TAB;
-  $('tabs').innerHTML=vis.length?COLS.map(([k,name])=>`<button type="button" role="tab" class="tab ${k}${k===TAB?' on':''}" data-tab="${k}" aria-selected="${k===TAB}">${name}<span class="n">${vis.filter(t=>t.effective_status===k).length}</span></button>`).join(''):'';
-  if(!vis.length){ $('board').innerHTML=emptyState(); return; }
+  $('tabs').innerHTML=all.length?COLS.map(([k,name])=>`<button type="button" role="tab" class="tab ${k}${k===TAB?' on':''}" data-tab="${k}" aria-selected="${k===TAB}">${name}<span class="n">${vis.filter(t=>t.effective_status===k).length}</span></button>`).join(''):'';
+  if(!all.length){ $('board').innerHTML=emptyState(); return; }
   $('board').style.setProperty('--cols',COLS.length);
   $('board').innerHTML=COLS.map(([k,name])=>{
     let ts=vis.filter(t=>t.effective_status===k),head=`<h2>${name}</h2>`,more='';
@@ -1345,7 +1348,7 @@ function renderBoard(){
         if(n>DONE_CAP){ts=ts.slice(0,DONE_CAP);more=`<button type="button" class="btn ghost more" data-alldone>+${n-DONE_CAP} more → view all</button>`;} }
     } else ts.sort(cmp);
     const total=ts.length;
-    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}</span>`}</div>${k==='todo'?qaForm():''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
+    return `<section class="col ${k}${k===TAB?' active':''}" data-col="${k}" aria-label="${name}"><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}</span>`}</div>${k==='todo'?qaForm():''}${k==='pending'?pline:''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
   }).join('');
   if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
   if(flip?.size) playFlip(flip);
@@ -1535,6 +1538,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-show]')){const k=state.view==='graph'?'showGraph':'showBoard';state[k]=b.dataset.show;store.set(k==='showGraph'?'showModeGraph':'showModeBoard',b.dataset.show);renderShow();render();return;}
   if(b=g('[data-chainonly]')){setQ('/^'+b.dataset.chainonly.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$/');state.showGraph='paths';store.set('showModeGraph','paths');renderShow();render();return;}
   if(b=g('[data-prio]')){const p=b.dataset.prio;state.prio=state.prio.includes(p)?state.prio.filter(x=>x!==p):[...state.prio,p];store.set('prio',state.prio);renderBar();render();return;}
+  if(g('[data-needsopen]')){openNeeds();return;}
   if(g('[data-alldone]')){state.allDone=true;render();return;}
   if(g('[data-recentdone]')){state.allDone=false;render();return;}
   if(b=g('[data-moveto]')){b.closest('.mv').open=false;moveTo(b.dataset.id,b.dataset.moveto);return;}
