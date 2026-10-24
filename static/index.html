@@ -868,8 +868,9 @@ function slidePill(el,instant){
 	const b=on[0],key=(el.id||el.getAttribute('aria-label'))+(el.dataset.pk||''),k=b.dataset[Object.keys(b.dataset)[0]]??'',prev=PL.get(key),track=el.dataset.track!=null,
 		meas=()=>({x:b.offsetLeft,y:b.offsetTop,w:b.offsetWidth,h:b.offsetHeight}),put=r=>{ind.style.transform=`translate(${r.x}px,${r.y}px)`;ind.style.width=r.w+'px';ind.style.height=r.h+'px';},
 		go=!instant&&!track&&!reduce.matches&&prev&&prev.k!==k, cs=getComputedStyle(b);
+	el.classList.add('sl'); // first: .sl makes el the indicator's frame, so offsetLeft/Top are measured from el, not from the drawer (else a new indicator slid in from far away, UI-37)
 	if(!ind){ind=el.appendChild(document.createElement('i'));ind.className='ind';ind.setAttribute('aria-hidden','true');put(go?prev.r:meas());void ind.offsetWidth;}
-	el.classList.add('sl');ind.hidden=false;ind.classList.toggle('go',go);
+	ind.hidden=false;ind.classList.toggle('go',go);
 	ind.style.background=cs.getPropertyValue('--ind'); // the token text, light-dark() included: it resolves on the indicator
 	ind.style.borderRadius=cs.borderRadius;
 	cancelAnimationFrame(el._raf);
