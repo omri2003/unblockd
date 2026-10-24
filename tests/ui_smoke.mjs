@@ -618,9 +618,15 @@ try {
 		const pid = JSON.parse(cliB('create', '--prefix', 'ZP', '--title', 'agent idea', '--agent', 'backend-1', '--json', '{"priority":"P2","done_when":["it works"],"body":"## Why\\nbecause"}')).id;
 		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' }); // a proposal shows on its own board
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
-		await page.keyboard.press('i');
+		ok((await page.locator(`#board .card[data-open="${pid}"]`).count()) === 0, `[${tag}] a proposal is not a Waiting card (UI-45)`);
+		ok(/^1 proposal to review/.test(await page.locator('[data-col=pending] [data-needsopen]').innerText()), `[${tag}] Waiting links to the proposal in Needs you`);
+		if (w <= 600) await page.click('#tabs [data-tab=pending]'); // phone: one column at a time
+		await page.click('[data-col=pending] [data-needsopen]'); // opens the panel, like i
 		const prow = `#npList .nr[data-key="zsecond/${pid}"]`;
 		await visible(prow, 'proposal row');
+		ok(!(await page.locator(prow).innerText()).includes('it works'), `[${tag}] a collapsed proposal row hides Done when (UI-48)`);
+		await page.click(`${prow} [data-ntoggle]`); // expanded: Done when and the details
+		await page.waitForSelector(`${prow}.open`);
 		const ptxt = await page.locator(prow).innerText();
 		ok(ptxt.includes('Proposed by backend-1') && ptxt.includes('it works'), `[${tag}] proposal row should name the agent and show done_when: ${ptxt}`);
 		await page.click(`${prow} [data-accept]`);
