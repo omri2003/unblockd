@@ -335,6 +335,7 @@ status, ring = pillar, size = how much is waiting on it.
 
 - **Flow** layout (default): columns = chain depth, rows = pillar lanes,
   crossings reduced by barycenter sweeps. **Free**: force layout.
+- Done tickets are hidden until you tick **Show done**; **More** holds Mentions in details, Critical path and Isolate on click. On a big board (over 80 tickets drawn) the links stay faint until you click a ticket.
 - Hover = direct links; click = the whole chain and the longest open chain
   to it; **Critical path** toggle; double-click opens the ticket.
 - In Only / Paths the graph drops hidden tickets and re-lays out what's left; in Paths, chain-only tickets are drawn faded. Click a ticket, then **Show only this chain** to search its id and switch to Paths. Clear the search to go back.

@@ -296,7 +296,7 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 .ovf{position:relative}
 .ovm{position:absolute;right:0;top:calc(100% + 4px);z-index:3;display:grid;min-width:160px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden} .ovm .dz{color:var(--cinnabar)}
 .spanel{position:relative} .spanel summary{user-select:none}
-.spanel .sbody{z-index:8;left:auto;right:0;width:min(330px,calc(100vw - 32px))} .sbody .hint{margin:0}
+.spanel .sbody{z-index:8;left:auto;right:0;width:min(330px,calc(100vw - 32px))} #gmore .sbody{left:0;right:auto;width:min(240px,calc(100vw - 32px))} .sbody .hint{margin:0}
 #apanel .sbody{width:min(660px,calc(100vw - 32px));gap:8px} .astat{width:100%;border-collapse:collapse;font-size:.88rem;font-variant-numeric:tabular-nums}
 .astat th{font-size:.74rem;color:var(--muted);font-weight:700;text-align:right;padding:0 6px 5px;vertical-align:bottom} .astat td{text-align:right;padding:6px;border-top:1px solid var(--line);vertical-align:top}
 .astat th:first-child,.astat td:first-child{text-align:left;padding-left:0} .astat td:first-child b{display:block} .astat .nm{display:block;font-size:.76rem;color:var(--muted);font-weight:400;overflow-wrap:anywhere}
@@ -527,6 +527,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .ind.go{transition:transform .2s ease-out,width .2s ease-out,height .2s ease-out,background .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
+@media (min-width:601px){.vl{grid-template-columns:1fr;margin-left:6px;opacity:1}} /* every view is labelled where there is room (UI-52); a phone keeps the active one only */
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
 @media (prefers-reduced-motion:reduce){.rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
@@ -535,10 +536,11 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 <div class="wrap">
   <header>
     <div class="trow"><div class="logo"><i class="mark" aria-hidden="true"></i>unblockd</div><details class="spanel" id="bpanel"><summary id="bsum" title="Switch board (B)"><h1 id="appTitle">Tickets</h1><i class="chev" aria-hidden="true"></i></summary><div class="fbody sbody" id="bbody"></div></details><div class="vico-g" id="viewSeg" role="group" aria-label="View"></div><button type="button" class="nbadge" id="needsBadge" hidden title="Needs you (i)" aria-label="Needs you"></button></div>
-    <div class="hdr"><button class="btn ghost" id="chatBtn" type="button" title="Ask about this board (c)">Ask</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" id="agBtn" title="Agent stats: per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
+    <div class="hdr"><button class="btn ghost" id="chatBtn" type="button" title="Chat with Claude about this board (c)">Ask Claude</button><button class="btn" id="newBtn" type="button" title="New ticket (n)">New ticket</button><details class="spanel" id="apanel"><summary class="btn ghost" id="agBtn" title="Agent stats: per-profile cycle times from the activity log">Agents</summary><div class="fbody sbody" id="abody"></div></details><details class="spanel" id="spanel"><summary class="btn ghost q" aria-label="Settings" title="Settings (this browser). t cycles the theme">⚙</summary><div class="fbody sbody" id="sbody">
       <div class="seg" id="setTheme" data-l="Theme" role="group" aria-label="Theme"></div>
       <div class="seg" id="setDensity" data-l="Density" role="group" aria-label="Density"></div>
       <div class="seg" id="setDigest" data-l="Digest" role="group" aria-label="While you were away digest"></div>
+      <div class="seg" id="setTags" data-l="Tags" role="group" aria-label="Tags and agent on cards" title="Show each card's tags and agent profile. The ticket's drawer always shows them."></div>
       <div class="seg" id="setMe" data-l="I am" role="group" aria-label="I am" title="Signs your answers, approvals and notes with this name. Only the board's human owners." hidden></div>
       <p class="hint">Saved in this browser only.</p></div></details><button class="btn ghost q" id="kbBtn" type="button" aria-label="Keyboard shortcuts" title="Shortcuts (?)">?</button></div>
   </header>
@@ -594,10 +596,12 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
     <div class="gtools">
       <span class="seg" id="gLayoutSeg" role="group" aria-label="Layout"></span>
       <label class="tog"><input type="checkbox" id="gLinked" checked> Linked tickets only</label>
-      <label class="tog"><input type="checkbox" id="gDone" checked> Show done</label>
-      <label class="tog"><input type="checkbox" id="gMentions"> Mentions in details</label>
-      <label class="tog"><input type="checkbox" id="gCrit"> Critical path</label>
-      <label class="tog" title="Click a ticket to draw only its whole chain, ignoring the filters. Esc goes back."><input type="checkbox" id="gIsolate" checked> Isolate on click</label>
+      <label class="tog"><input type="checkbox" id="gDone"> Show done</label>
+      <details class="spanel" id="gmore"><summary class="btn ghost sm">More</summary><div class="fbody sbody">
+        <label class="tog"><input type="checkbox" id="gMentions"> Mentions in details</label>
+        <label class="tog"><input type="checkbox" id="gCrit"> Critical path</label>
+        <label class="tog" title="Click a ticket to draw only its whole chain, ignoring the filters. Esc goes back."><input type="checkbox" id="gIsolate" checked> Isolate on click</label>
+      </div></details>
       <button type="button" class="btn ghost sm" id="gFit">Fit to view</button>
       <span class="msg" id="gIso" role="status" hidden></span>
     </div>
@@ -841,7 +845,7 @@ async function load(force){
 }
 let paint=null; // the deferred render, if any
 let DATA=false, live=false, DROP=null; // DATA: true only while paint() renders fresh ticket data (not the first paint: `live`). Only those renders animate (cards slide, Needs rows fade); a filter, search, group, view or board change just redraws. DROP: where the last drag ended, so that card slides from the pointer
-const MENUS='.mv[open],.ovf[open],#fpanel[open],#spanel[open],#apanel[open],#bpanel[open]'; // the popovers: at most one is open at a time
+const MENUS='.mv[open],.ovf[open],#fpanel[open],#spanel[open],#apanel[open],#bpanel[open],#gmore[open]'; // the popovers: at most one is open at a time
 const menuBusy=()=>!!document.querySelector(MENUS);
 const closeMenus=keep=>document.querySelectorAll(MENUS).forEach(d=>d.contains(keep)||(d.open=false)); // all of them, except the one holding `keep`
 const flushPaint=()=>setTimeout(()=>{ if(paint&&!menuBusy()) paint(); });
@@ -1016,8 +1020,8 @@ function card(t){
   const meta=[t.pillar?`<span>${esc(pname(t.pillar))}${t.pillar_step?` step ${t.pillar_step}`:''}</span>`:'',openBlocks&&s!=='done'?`<span>Unblocks ${openBlocks}</span>`:'',
     t.parent?`<span title="Part of ${esc(t.parent)}">↑ ${esc(t.parent)}</span>`:'',
     t.progress?.total?`<span class="prog" title="${t.progress.done} of ${t.progress.total} parts done"><i><b style="width:${100*t.progress.done/t.progress.total}%"></b></i>${t.progress.done}/${t.progress.total}</span>`:'',
-    t.agent&&s!=='done'?`<span class="ag" title="Agent profile that should work this">→ ${esc(t.agent)}</span>`:'',
-    ...(t.tags||[]).filter(x=>!x.startsWith('agent:')).slice(0,3).map(x=>`<span class="tag">#${esc(x)}</span>`)].filter(Boolean);
+    SET.tags==='on'&&t.agent&&s!=='done'?`<span class="ag" title="Agent profile that should work this">→ ${esc(t.agent)}</span>`:'', // tags and the agent hint: Settings > Tags (UI-46: off by default, the drawer shows them)
+    ...(SET.tags==='on'?t.tags||[]:[]).filter(x=>!x.startsWith('agent:')).slice(0,3).map(x=>`<span class="tag">#${esc(x)}</span>`)].filter(Boolean);
   if(s==='done') meta.length=0; // done cards show no meta line, except the age and the path hint
   meta.push(`<span class="age" data-up="${esc(t.updated)}" data-st="${s}" title="Updated ${esc(t.updated)}"></span>`); // text filled by tickAges, never in the JSON
   if(onp) meta.push('<span class="onp" title="Doesn\'t match the filters; shown because it is on a chain through a match">on path</span>');
@@ -1128,7 +1132,7 @@ function needsRow(g,i){
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
   const notes=(i.notes||[]).filter(n=>!(i.kind==='question'&&isAsk(n,i.waiting_on))).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
-  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(noteLine(n).length>900?noteLine(n).slice(0,900)+'…':noteLine(n))}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
+  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`${dw}<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(noteLine(n).length>900?noteLine(n).slice(0,900)+'…':noteLine(n))}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
   const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
   const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
     !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
@@ -1142,13 +1146,13 @@ function needsRow(g,i){
     :reviewForm('r:'+k,B,open?'textarea':'input');
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
     +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
-    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='proposal'?`<p class="nd-q">Proposed by ${esc(i.proposed_by)}</p>${open?'':dw}`:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
+    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='proposal'?`<p class="nd-q">Proposed by ${esc(i.proposed_by)}</p>` /* Done when shows when expanded (UI-48): collapsed rows stay one line each */:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
 }
 function renderNeedsPanel(){
   const cur=curBoard(),gs=NEEDS.filter(g=>g.id===cur),all=gs.flatMap(g=>g.items),multi=false; // this board only
   if(NX&&!gs.some(g=>g.items.some(i=>nkey(g,i)===NX))) NX=null;
   const c=k=>all.filter(i=>i.kind===k).length;
-  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&l==='question'?'s':''}`).join(', '):'';
+  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&(l==='question'||l==='proposal')?'s':''}`).join(', '):'';
   $('npEmpty').hidden=!!all.length;
   const sig=JSON.stringify([NX,cur,multi,gs]); if(sig===npSig){tickAges();return;} npSig=sig;
   const ul=$('npList'),old=npShown?[...ul.children]:[];
@@ -1258,7 +1262,8 @@ function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const 
     e.textContent=(q?'quiet · ':'live · ')+short(ms);l.classList.toggle('quiet',q);l.title=q?'No heartbeat for a while. The claim expires if it stays quiet.':'Heard from recently';
     if(lb?.classList.contains('lbar')){lb.firstChild.style.width=pct+'%';lb.title=tip;lb.setAttribute('aria-label',tip);}});
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
-    e.textContent=d<1?'today':d+'d';if(done)e.title='Closed '+(d<1?'today':d+' days ago');e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
+    e.hidden=!done&&d<STALE; // an open card shows its age only once it is stale (UI-46): "today" on every card said nothing
+    e.textContent=d<1?'today':d+'d';e.title=done?'Closed '+(d<1?'today':d+' days ago'):'No update for '+d+' days';e.classList.toggle('late',e.dataset.st==='doing'&&d>=STALE);});}
 setInterval(tickAges,15000);
 const NMODES=['top','all','c']; // Next up: ONE header button cycles top 3 -> all -> collapsed (with <= 3 tickets: top -> collapsed)
 let NEXTN=0; const NKEY=()=>'nextMode.'+(BOARD||'default'); // per board
@@ -1506,14 +1511,15 @@ async function submitForm(f){
 }
 
 // ---------- settings (gear): per browser, localStorage ----------
-const SET={theme:pickOf(store.get('theme','system'),['system','light','dark'],'system'),density:pickOf(store.get('density','comfortable'),['comfortable','compact'],'comfortable'),digest:pickOf(store.get('digest','on'),['on','off'],'on'),me:store.get('me','')};
-const SETS=[['theme','setTheme',[['system','System'],['light','Light'],['dark','Dark']]],['density','setDensity',[['comfortable','Comfortable'],['compact','Compact']]],['digest','setDigest',[['on','On'],['off','Off']]],['me','setMe',()=>[['','Not set'],...[...HUMAN].map(n=>[n,n])]]];
+const SET={theme:pickOf(store.get('theme','system'),['system','light','dark'],'system'),density:pickOf(store.get('density','comfortable'),['comfortable','compact'],'comfortable'),digest:pickOf(store.get('digest','on'),['on','off'],'on'),tags:pickOf(store.get('tags','off'),['on','off'],'off'),me:store.get('me','')};
+const SETS=[['theme','setTheme',[['system','System'],['light','Light'],['dark','Dark']]],['density','setDensity',[['comfortable','Comfortable'],['compact','Compact']]],['digest','setDigest',[['on','On'],['off','Off']]],['tags','setTags',[['off','Hidden'],['on','Shown']]],['me','setMe',()=>[['','Not set'],...[...HUMAN].map(n=>[n,n])]]];
 function renderSettings(){for(const[k,id,items]of SETS){const it=typeof items==='function'?items():items; if(k==='me'){$(id).hidden=HUMAN.size<2; if(HUMAN.size<2)continue;} chips($(id),it.map(([v,l])=>[esc(k+':'+v),esc(l)]),esc(k+':'+(k==='me'?me():SET[k])),'pref');}}
 function setPref(k,v){
   SET[k]=v; store.set(k,v); const r=document.documentElement;
   if(k==='theme'){if(v==='system')delete r.dataset.theme;else r.dataset.theme=v;readColors();kick();} // canvas colours are read from the resolved theme
   if(k==='density')r.classList.toggle('compact',v==='compact');
   if(k==='digest')renderDigest();
+  if(k==='tags')render();
   if(k==='me'){renderBar();render();}
   renderSettings();
 }
@@ -1909,9 +1915,9 @@ function draw(now=performance.now()){
   ctx.setLineDash([3/k,4/k]);ctx.lineWidth=1.2/k;
   for(const e of G.ments){ctx.globalAlpha=on(e.a)&&on(e.b)?.5:.06;ctx.strokeStyle=c.jade;ctx.beginPath();ctx.moveTo(e.a.x,e.a.y);ctx.lineTo(e.b.x,e.b.y);ctx.stroke();}
   ctx.setLineDash([]);
-  const sel=G.selEdge,ah=8/k;
+  const sel=G.selEdge,ah=8/k,calm=G.nodes.size>80; // a big board draws its links faint until a ticket is picked (UI-50)
   for(const e of G.edges){
-    const ep=edgePts(e,flow?20:1),hot=L&&L.has(e.a.id)&&L.has(e.b.id),base=L?(hot?.95:.06):(e.open?.6:.3),fp=fade.get(e.a.id);
+    const ep=edgePts(e,flow?20:1),hot=L&&L.has(e.a.id)&&L.has(e.b.id),base=L?(hot?.95:.06):calm?(e.open?.3:.12):(e.open?.6:.3),fp=fade.get(e.a.id);
     ctx.fillStyle=ctx.strokeStyle=e.open?c.ink:c.muted;
     if(e.open||fp!=null){ctx.globalAlpha=base*(fp!=null?1-fp:1)*(L?1:e.open?1:2);ctx.setLineDash([]);taper(ep.pts,3/k,1.2/k);} // brush-stroke: wide at the blocker, thin at the arrow
     if(!e.open){ctx.globalAlpha=base*(fp!=null?fp:1);ctx.setLineDash([4/k,4/k]);ctx.lineWidth=1.3/k;strokePts(ep.pts);ctx.setLineDash([]);}
