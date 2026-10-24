@@ -111,6 +111,7 @@ Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map 
 
 ### 5.2 Drawer
 - Order: title, status/owner, details, blockers, then a collapsed Knowledge and activity `<details>`. Ask / Show in graph / Delete live in `.ovf`.
+- A ticket's drawer is a peek (no scrim, the board stays usable, `j`/`k` step through tickets); the edit form stays modal. Details are label / value rows (`.props`), not a run-on line.
 - In review, the drawer leads with the result and Done when, and opens Knowledge and activity without touching the remembered `knOpen`.
 - A ticket with `waiting_on` has an Answer box. Every ticket has an Add note box.
 - The 4 s refresh must not re-animate or reset the drawer.
