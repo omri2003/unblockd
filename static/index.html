@@ -527,7 +527,6 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .ind.go{transition:transform .2s ease-out,width .2s ease-out,height .2s ease-out,background .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
-@media (min-width:601px){.vl{grid-template-columns:1fr;margin-left:6px;opacity:1}} /* every view is labelled where there is room (UI-52); a phone keeps the active one only */
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
 @media (prefers-reduced-motion:reduce){.rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc{transition:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
