@@ -270,7 +270,7 @@ Every key is optional. `prefixes` maps a prefix to a one-line meaning (80 chars)
 - **Not checked**: split children (they reuse the parent's prefix) and tickets that already exist.
 - No prefix and no id: a schema with exactly one prefix uses it; with several, the error lists them.
 
-**Proposal gate** (opt-in, `agent_tickets: "propose"`): a ticket created with an agent name gets `proposed_by`, is pending and cannot be claimed. It appears in **Needs you** as a *Proposal* (who proposed it, Done when, body on expand) with **Accept** (`accept_ticket`, `accept ID`, `POST tickets/<id>/accept`) and **Reject** (deletes it; an optional reason is logged). Tickets created by humans (UI, chat Create button, CLI without `--agent`) and split children are never proposals. The webhook reports `proposed` and `accepted`.
+**Proposal gate** (opt-in, `agent_tickets: "propose"`): a ticket created with an agent name gets `proposed_by`, is pending and cannot be claimed. It appears in **Needs you** as a *Proposal* (who proposed it, Done when, body on expand) with **Accept** (`accept_ticket`, `accept ID`, `POST tickets/<id>/accept`) and **Reject** (deletes it; an optional reason is logged). Tickets created by humans (UI, chat Create button, CLI without `--agent`, or any front door with the name of a `kind: human` owner as the agent) and split children are never proposals. The webhook reports `proposed` and `accepted`.
 
 ### Milestones (the roadmap)
 

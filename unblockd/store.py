@@ -801,8 +801,11 @@ class Store:
 		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number (a board whose schema lists exactly
 		one prefix needs neither). `agent` = the worker creating it (None = a human). The board's schema is enforced here, not in
 		_create, so split children and existing tickets are exempt: an agent breaking it is refused with every problem listed,
-		a human gets the ticket plus `warnings`. On a board with agent_tickets "propose" an agent's ticket is a proposal until accept()."""
+		a human gets the ticket plus `warnings`. On a board with agent_tickets "propose" an agent's ticket is a proposal until accept().
+		An `agent` naming a `kind: human` owner is that person (MCP create_ticket requires a name, so their own Claude sends theirs):
+		no proposal (they could never accept their own) and no strict schema; the `created` event still names them."""
 		agent = agent or None
+		human = agent in {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		def run():
 			pf = (self.config["schema"] or {}).get("prefixes") or {}
 			pre = prefix
@@ -810,12 +813,13 @@ class Store:
 				if len(pf) != 1:
 					raise TicketError(f"give a prefix or an id: this board's prefixes are {', '.join(pf)} (board_info says what each means)")
 				pre = next(iter(pf))
-			problems = self._schema_problems(data, tid.split("-")[0] if tid else pre, agent is not None)
-			if problems and agent is not None:
+			strict = agent is not None and not human
+			problems = self._schema_problems(data, tid.split("-")[0] if tid else pre, strict)
+			if problems and strict:
 				msg = "ticket refused by the board schema: " + "; ".join(problems)
 				raise TicketError(msg[:400] + ("…" if len(msg) > 400 else "")
 				                  + (" (meanings: board_info; if none fits, ask_human, do not guess a near prefix)" if any(x.startswith("prefix") for x in problems) else ""))
-			t = self._create(data, tid, pre, proposed_by=agent if agent and self.config["agent_tickets"] == "propose" else "", agent=agent)
+			t = self._create(data, tid, pre, proposed_by=agent if strict and self.config["agent_tickets"] == "propose" else "", agent=agent)
 			return {**t, "warnings": problems} if problems else t
 		return self._locked(run)
 

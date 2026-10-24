@@ -61,6 +61,7 @@ class SchemaTest(unittest.TestCase):
 		self.assertEqual(t["id"], "NOPE-1")
 		self.assertEqual(len(t["warnings"]), 3)
 		self.assertNotIn("warnings", s.get("NOPE-1"))  # not stored
+		self.assertEqual(len(s.create({"title": "mine"}, prefix="NOPE", agent="Me")["warnings"]), 3)  # a human owner via MCP: warned, not refused
 
 	def test_explicit_id_prefix_is_checked_but_split_is_exempt(self):
 		s = store(self.tmp.name, schema=SCHEMA, agent_tickets="open")
@@ -173,6 +174,8 @@ class ProposalTest(unittest.TestCase):
 	def test_open_mode_human_and_split_are_exempt(self):
 		self.assertEqual(self.s.create({"title": "h"}, prefix="BUG")["proposed_by"], "")  # a human
 		self.assertEqual(self.s.create({"title": "h"}, prefix="BUG", agent="")["proposed_by"], "")  # empty agent = human
+		self.assertEqual(self.s.create({"title": "h"}, prefix="BUG", agent="Me")["proposed_by"], "")  # a human owner's name = that human
+		self.assertEqual(self.s.activity("BUG-3")[0]["agent"], "Me")
 		self.s.update("BUG-1", {"status": "doing"})
 		kids = self.s.split("BUG-1", ["a", "b"], by="bot-1")["children"]
 		self.assertEqual([k["proposed_by"] for k in kids], ["", ""])
