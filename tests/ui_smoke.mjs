@@ -374,6 +374,18 @@ try {
 		await toggle('#apanel', 'Agents panel');
 		await page.click('#apanel > summary'); await visible('#apanel .fbody', 'Agents panel');
 		ok(!/\bother\b/i.test(await page.locator('#apanel .fbody').innerText()), `[${tag}] Agents panel should not have an "other" row`);
+		{ // Profiles and tools: off for every worker, back on for one profile; Undo changes drops the draft (nothing saved: the board is shared by later steps)
+			await page.click('#apanel [data-aptab="tools"]'); await visible('#apanel .tlbox', 'tools tab');
+			const pr = await page.locator('#apanel [data-tp]').first().getAttribute('data-tp');
+			await page.click('#apanel [data-tb][data-t="read_doc"]');
+			ok((await page.locator(`#apanel [data-tp="${pr}"][data-t="read_doc"]`).getAttribute('aria-pressed')) === 'false', `[${tag}] tools: off for every worker is off for ${pr} too`);
+			await page.click(`#apanel [data-tp="${pr}"][data-t="read_doc"]`);
+			ok((await page.locator(`#apanel [data-tp="${pr}"][data-t="read_doc"]`).getAttribute('aria-pressed')) === 'true', `[${tag}] tools: ${pr} switches it back on`);
+			await noOverflow('tools tab');
+			await page.click('#apanel [data-treset]');
+			ok((await page.locator('#apanel [data-tb][data-t="read_doc"]').getAttribute('aria-pressed')) === 'true', `[${tag}] tools: Undo changes`);
+			await page.click('#apanel [data-aptab="stats"]');
+		}
 		await page.click('#apanel > summary');
 
 		await page.locator('.card >> visible=true').nth(0).click({ modifiers: ['Shift'] }); // bulk edit: select 2, set priority, Undo
