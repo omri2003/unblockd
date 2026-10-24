@@ -56,7 +56,7 @@ DEFAULT_CONFIG = {
 	"agent_tickets": "open",
 	# The roadmap: versions in order (position = order). Tickets point at one with `milestone`; progress is derived, never stored.
 	"milestones": [],
-	# MCP tools a worker's server exposes (unblockd.mcp_server --tools worker); None = WORKER_TOOLS. agents[].tools adds per profile
+	# MCP tools a worker's server exposes (unblockd.mcp_server --tools worker); None = WORKER_TOOLS. agents[].tools adds, agents[].tools_off removes, per profile
 	"worker_tools": None,
 	"session_tickets": 5,  # claims one worker session takes before claim_next says stop (stdio MCP enforces it; None = no limit)
 	"docs_resend": {"claims": 3, "minutes": 30},  # a board / profile doc already sent is skipped only within this many claims AND minutes  # [{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]
@@ -165,9 +165,15 @@ class Conflict(TicketError):
 	"""update(expected_rev=) lost a race: the ticket was written after the caller read it (REST 409)."""
 
 
-AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools"}
+AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools", "tools_off"}
 WORKER_TOOLS = ("claim_next", "heartbeat", "add_note", "complete", "release", "ask_human", "read_doc", "get_ticket")
 TOOL_RE = re.compile(r"^[a-z][a-z_]{0,39}$")
+# every tool the MCP server has (test_mcp checks this matches it): what the Agents panel offers and set_tools accepts
+MCP_TOOLS = ("accept_ticket", "add_note", "agents_now", "answer", "approve_ticket", "arch_add_component", "arch_delete_component",
+             "arch_remove_edge", "arch_set_edge", "arch_update_component", "architecture_map", "ask_human", "attach_file", "board_info",
+             "claim_next", "claim_ticket", "complete", "create_board", "create_ticket", "delete_ticket", "detach_file", "get_context",
+             "get_ticket", "heartbeat", "knowledge_graph", "list_boards", "list_tickets", "next_ready", "read_doc", "reject", "release",
+             "roadmap", "split_ticket", "update_ticket", "work_plan")
 SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 
@@ -220,7 +226,7 @@ def load_config(tickets_dir: Path) -> dict:
 	dr = cfg["docs_resend"]
 	if not (isinstance(dr, dict) and set(dr) <= {"claims", "minutes"} and all(type(dr.get(k, 1)) is int and dr.get(k, 1) >= 0 for k in ("claims", "minutes"))):
 		raise TicketError(f"{CONFIG_FILE}: docs_resend must be like {{\"claims\": 3, \"minutes\": 30}} (0 = always resend)")
-	for what, names in [("worker_tools", cfg["worker_tools"])] + [(f"agent {a['name']} tools", a.get("tools")) for a in cfg["agents"]]:
+	for what, names in [("worker_tools", cfg["worker_tools"])] + [(f"agent {a['name']} {k}", a.get(k)) for a in cfg["agents"] for k in ("tools", "tools_off")]:
 		if names is not None and not (isinstance(names, list) and all(isinstance(x, str) and TOOL_RE.match(x) for x in names)):
 			raise TicketError(f"{CONFIG_FILE}: {what} must be a list of MCP tool names like claim_next")
 	_check_caps(cfg, Path(tickets_dir))
@@ -500,6 +506,67 @@ class Store:
 			raise TicketError(f"milestone {new}: this board has no milestones. Add them to \"milestones\" in {CONFIG_FILE} "
 			                  "(in roadmap order: [{\"key\": \"v0.1\", \"title\": \"...\"}]), or leave milestone empty")
 		raise TicketError(f"unknown milestone {new}: this board's milestones are {', '.join(keys)} (milestones in {CONFIG_FILE})")
+
+	def worker_tools(self, profile: str | None = None) -> list[str]:
+		"""The MCP tools a worker of `profile` gets: the board's base set (`worker_tools`, default WORKER_TOOLS), minus the profile's
+		`tools_off`, plus its `tools`. Order: base order, then the additions."""
+		base = list(self.config.get("worker_tools") or WORKER_TOOLS)
+		ag = next((a for a in self.config["agents"] if a["name"] == profile), {})
+		off = set(ag.get("tools_off") or [])
+		return [t for t in base if t not in off] + [t for t in ag.get("tools") or [] if t not in base]
+
+	def tools_view(self) -> dict:
+		"""What the Agents panel shows: every tool, the default and current base set, and per profile its additions, removals and result."""
+		base = list(self.config.get("worker_tools") or WORKER_TOOLS)
+		return {"all": list(MCP_TOOLS), "default": list(WORKER_TOOLS), "base": base,
+		        "profiles": [{"name": a["name"], "tools": a.get("tools") or [], "tools_off": a.get("tools_off") or [],
+		                      "effective": self.worker_tools(a["name"])} for a in self.config["agents"]]}
+
+	def set_tools(self, base: list[str], profiles: dict, by: str = "human") -> dict:
+		"""Save the worker tool sets to unblockd.json: `base` = every worker's set, `profiles` = {name: {tools: [...], tools_off: [...]}}
+		(only the differences from base are stored). Only these keys are rewritten; the rest of the file stays as it is (re-indented)."""
+		def check(names, what):
+			if not (isinstance(names, list) and all(isinstance(x, str) for x in names)):
+				raise TicketError(f"{what} must be a list of tool names")
+			bad = [x for x in names if x not in MCP_TOOLS]
+			if bad:
+				raise TicketError(f"{what}: unknown tool(s) {', '.join(bad)}. Tools: {', '.join(MCP_TOOLS)}")
+			return list(dict.fromkeys(names))
+		base = check(base, "base")
+		if not base:
+			raise TicketError("every worker needs at least one tool (claim_next, to take work)")
+		if not isinstance(profiles, dict):
+			raise TicketError("profiles must map a profile name to {tools, tools_off}")
+		names = [a["name"] for a in self.config["agents"]]
+		unknown = [p for p in profiles if p not in names]
+		if unknown:
+			raise TicketError(f"unknown profile(s) {', '.join(unknown)}: profiles are {', '.join(names) or 'none'}")
+		def run():
+			p = self.dir / CONFIG_FILE
+			raw = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+			if base == list(WORKER_TOOLS):
+				raw.pop("worker_tools", None)
+			else:
+				raw["worker_tools"] = base
+			for ag in raw.get("agents", []):
+				if ag.get("name") not in profiles:
+					continue
+				ch = profiles[ag["name"]] or {}
+				add = [t for t in check(ch.get("tools", []), f"{ag['name']} tools") if t not in base]
+				off = [t for t in check(ch.get("tools_off", []), f"{ag['name']} tools_off") if t in base]
+				for k, v in (("tools", add), ("tools_off", off)):
+					if v:
+						ag[k] = v
+					else:
+						ag.pop(k, None)
+			tmp = p.with_suffix(".tmp")
+			tmp.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+			os.replace(tmp, p)
+			self.config = load_config(self.dir)
+			self._cfg_sig = json.dumps(self.config, sort_keys=True)
+			self._log("config", None, by, "worker tools")
+		self._locked(run)
+		return self.tools_view()
 
 	def next_milestone(self) -> str | None:
 		"""The current roadmap step: the first milestone not closed."""

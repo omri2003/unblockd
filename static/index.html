@@ -300,6 +300,10 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 .astat th{font-size:.74rem;color:var(--muted);font-weight:700;text-align:right;padding:0 6px 5px;vertical-align:bottom} .astat td{text-align:right;padding:6px;border-top:1px solid var(--line);vertical-align:top}
 .astat th:first-child,.astat td:first-child{text-align:left;padding-left:0} .astat td:first-child b{display:block} .astat .nm{display:block;font-size:.76rem;color:var(--muted);font-weight:400;overflow-wrap:anywhere}
 .astat td.warn{color:var(--amber);background:var(--amber-soft);font-weight:700} .astat .sub2{display:block;font-size:.72rem;color:var(--muted);font-weight:400}
+.aptabs{margin:0 0 4px} .tlbox{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:grid;gap:6px} .tlbox h4{margin:0;display:flex;justify-content:space-between;align-items:baseline;font-size:.9rem} .tlbox h4 span{font-size:.76rem;color:var(--muted);font-weight:400}
+.tls{display:flex;flex-wrap:wrap;gap:5px} .tl{font:inherit;font-family:var(--mono);font-size:.76rem;border:1px solid var(--line);border-radius:6px;padding:2px 8px;background:var(--paper);color:var(--muted);cursor:pointer}
+.tl[aria-pressed="true"]{background:var(--jade-soft);border-color:var(--jade);color:var(--ink)} .tl.inh[aria-pressed="true"]{background:none;border-color:var(--jade);border-style:dashed} .tl.off{text-decoration:line-through}
+.tlact{display:flex;flex-wrap:wrap;gap:8px;align-items:center} #apanel .sbody{grid-template-columns:minmax(0,1fr)} #apanel .sbody>*,.tlbox{min-width:0} #apanel .hint code{overflow-wrap:anywhere} .astat .nm{display:block}
 @media(max-width:600px){.astat{font-size:.8rem}.astat th,.astat td{padding-inline:3px}}
 .splitf{display:grid;gap:8px;margin:14px 0 4px;padding:12px;border:1px solid var(--jade);border-radius:var(--r);background:var(--jade-soft)}
 .splitf h3{margin:0;border:0;padding:0} .splitf label{font-size:.85rem;font-weight:600} .splitf .chk{display:flex;gap:6px;align-items:center}
@@ -1196,7 +1200,7 @@ const whoLine=(r,done)=>{ // "Done by backend-1 for Omri · approved by Dana"; m
 };
 const resultHtml=(r,done)=>!r?'':`<div class="rbox">${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<h5>Files changed</h5><ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<h5>References</h5><ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<h5>Handoff</h5><p>${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 // Agent stats (#apanel): fetched when the panel opens or the range changes, never on the 4 s poll. One row per profile.
-let AP={days:store.get('agentDays',7),ev:null,err:''}, apTok=0;
+let AP={days:store.get('agentDays',7),ev:null,err:'',tab:pickOf(store.get('agentTab','stats'),['stats','tools'],'stats'),tl:null,draft:null,terr:'',more:false}, apTok=0;
 const profOf=a=>(CFG.agents||[]).map(p=>p.name).filter(p=>a===p||a.startsWith(p+'-')).sort((x,y)=>y.length-x.length)[0]||'Not in a profile';
 const median=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length?s.length%2?s[m]:(s[m-1]+s[m])/2:null;}; // check: median([3,1,2])===2, median([1,2,3,10])===2.5, median([])===null
 const dur=ms=>ms==null?'–':ms<6e4?'<1 min':ms<36e5?`${Math.round(ms/6e4)} min`:ms<1728e5?`${(ms/36e5).toFixed(1)} h`:`${(ms/864e5).toFixed(1)} d`; // check: dur(42*6e4)==='42 min', dur(3.1*36e5)==='3.1 h'
@@ -1222,8 +1226,26 @@ function renderAgents(){
   const body=AP.err?`<p class="hint">Could not load activity: ${esc(AP.err)}</p>`:!AP.ev?'<p class="hint">Loading…</p>':!rows.length?`<p class="hint">No agent activity in the last ${AP.days} days. Claims, completions and splits by agents show up here once they happen.</p>`
     :`<table class="astat"><thead><tr><th>Profile</th><th>Finished</th><th title="Claim to complete, same ticket and agent">Median to finish</th><th title="(expired + released) / claims. 30% or more: tickets too big or instructions weak">Stuck rate</th><th>Splits</th><th>Working now</th></tr></thead><tbody>${rows.map(([p,r])=>{
       const rate=r.claims?r.stuck/r.claims:null, bad=rate!=null&&rate>=.3;
-      return `<tr><td><b>${esc(p)}</b><span class="nm">${esc([...r.names].sort().join(', '))}</span></td><td>${r.fin}</td><td>${dur(median(r.d))}</td><td${bad?' class="warn" title="30% or more of claims ended stuck: split the tickets or tighten the instructions"':''}>${rate==null?'–':(bad?'⚠ ':'')+Math.round(rate*100)+'%'}<span class="sub2">${r.stuck} of ${r.claims}</span></td><td>${r.split}</td><td>${r.now}</td></tr>`;}).join('')}</tbody></table>`;
-  $('abody').innerHTML=seg+body;slideAll($('abody'));
+      return `<tr><td><b>${esc(p)}</b><span class="nm" title="${esc([...r.names].sort().join(', '))}">${r.names.size} ${r.names.size===1?'worker':'workers'}</span></td><td>${r.fin}</td><td>${dur(median(r.d))}</td><td${bad?' class="warn" title="30% or more of claims ended stuck: split the tickets or tighten the instructions"':''}>${rate==null?'–':(bad?'⚠ ':'')+Math.round(rate*100)+'%'}<span class="sub2">${r.stuck} of ${r.claims}</span></td><td>${r.split}</td><td>${r.now}</td></tr>`;}).join('')}</tbody></table>`;
+  const tabs=`<div class="seg aptabs" id="apTab" role="group" aria-label="Agents panel">${chipsHtml([['stats','Activity'],['tools','Profiles and tools']],AP.tab,'aptab')}</div>`;
+  $('abody').innerHTML=tabs+(AP.tab==='tools'?toolsHtml():seg+body);slideAll($('abody'));
+}
+// Profiles and tools: the MCP tools a worker gets (`--tools worker`): every worker's base set, and per profile what it adds or switches off. Saved to unblockd.json (PUT /tools)
+async function loadTools(){ try{AP.tl=await jf(API+'/tools');AP.draft=null;AP.terr='';}catch(er){AP.terr=String(er.message||er);} renderAgents(); }
+const tdraft=()=>AP.draft??={base:[...AP.tl.base],profiles:Object.fromEntries(AP.tl.profiles.map(p=>[p.name,{tools:[...p.tools],tools_off:[...p.tools_off]}]))};
+function toolsHtml(){
+  if(AP.terr) return `<p class="hint">Could not load the tools: ${esc(AP.terr)}</p>`;
+  if(!AP.tl) return '<p class="hint">Loading…</p>';
+  const d=tdraft(),all=AP.tl.all,shown=AP.more?all:[...new Set([...AP.tl.default,...d.base,...Object.values(d.profiles).flatMap(p=>[...p.tools])])];
+  const btn=(attr,t,on,cls='')=>`<button type="button" class="tl${cls}" ${attr} data-t="${esc(t)}" aria-pressed="${on}">${on?'✓ ':''}${esc(t)}</button>`;
+  const baseBox=`<div class="tlbox"><h4>Every worker <span>${d.base.length} tools</span></h4><div class="tls">${shown.map(t=>btn('data-tb',t,d.base.includes(t))).join('')}</div></div>`;
+  const prof=AP.tl.profiles.map(p=>{const c=d.profiles[p.name],eff=[...d.base.filter(t=>!c.tools_off.includes(t)),...c.tools.filter(t=>!d.base.includes(t))];
+    return `<div class="tlbox"><h4>${esc(p.name)} <span>${eff.length} tools${c.tools.length||c.tools_off.length?` · ${[c.tools.length&&'+'+c.tools.length,c.tools_off.length&&'−'+c.tools_off.length].filter(Boolean).join(' ')} vs every worker`:''}</span></h4><div class="tls">${shown.map(t=>{const inh=d.base.includes(t),on=inh?!c.tools_off.includes(t):c.tools.includes(t);
+      return btn(`data-tp="${esc(p.name)}"`,t,on,(inh?' inh':'')+(inh&&!on?' off':''));}).join('')}</div></div>`;}).join('');
+  const dirty=JSON.stringify(d)!==JSON.stringify({base:AP.tl.base,profiles:Object.fromEntries(AP.tl.profiles.map(p=>[p.name,{tools:p.tools,tools_off:p.tools_off}]))});
+  return `<p class="hint">The tools a worker's MCP connection gets (<code>unblockd.mcp_server --tools worker --profile &lt;name&gt;</code>). Fewer tools = fewer tokens on every turn. Dashed = from Every worker; click to switch it off for that profile only. Workers pick changes up when they next start.</p>
+    ${baseBox}${prof||'<p class="hint">No agent profiles on this board yet (agents in unblockd.json): every worker gets the set above.</p>'}
+    <div class="tlact"><button type="button" class="btn sm" data-tsave${dirty?'':' disabled'}>Save to unblockd.json</button>${dirty?'<button type="button" class="btn ghost sm" data-treset>Undo changes</button>':''}<button type="button" class="btn ghost sm" data-tmore>${AP.more?'Fewer tools':'All '+all.length+' tools'}</button></div>`;
 }
 // heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
 function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const d=e.dataset.since,n=Math.floor((Date.now()-Date.parse(d))/864e5);e.textContent=d.includes('T00:00:00')?(n<1?'today':n+'d'):ago(d);e.title=e.dataset.since;});
@@ -1497,6 +1519,12 @@ let armedDelete=false;
 document.addEventListener('click',async e=>{
   const g=s=>e.target.closest(s); let b;
   closeMenus(e.target);
+  if(b=g('[data-aptab]')){AP.tab=b.dataset.aptab;store.set('agentTab',AP.tab);if(AP.tab==='tools'&&!AP.tl)loadTools();renderAgents();return;}
+  if(b=g('[data-tb]')){const d=tdraft(),t=b.dataset.t;d.base=d.base.includes(t)?d.base.filter(x=>x!==t):[...d.base,t];for(const c of Object.values(d.profiles)){c.tools=c.tools.filter(x=>!d.base.includes(x));c.tools_off=c.tools_off.filter(x=>d.base.includes(x));}renderAgents();return;}
+  if(b=g('[data-tp]')){const c=tdraft().profiles[b.dataset.tp],t=b.dataset.t,inBase=AP.draft.base.includes(t);if(inBase)c.tools_off=c.tools_off.includes(t)?c.tools_off.filter(x=>x!==t):[...c.tools_off,t];else c.tools=c.tools.includes(t)?c.tools.filter(x=>x!==t):[...c.tools,t];renderAgents();return;}
+  if(g('[data-tmore]')){AP.more=!AP.more;renderAgents();return;}
+  if(g('[data-treset]')){AP.draft=null;renderAgents();return;}
+  if(g('[data-tsave]')){(async()=>{try{AP.tl=await jf(API+'/tools','PUT',{base:AP.draft.base,profiles:AP.draft.profiles,...by()});AP.draft=null;toast('Worker tools saved to unblockd.json');}catch(er){toast(er.message,{err:1});}renderAgents();})();return;}
   if(b=g('[data-aprange]')){AP.days=+b.dataset.aprange;store.set('agentDays',AP.days);loadAgents();return;}
   if(b=g('[data-pref]')){const j=b.dataset.pref.indexOf(':');setPref(b.dataset.pref.slice(0,j),b.dataset.pref.slice(j+1));return;}
   if(b=g('[data-mine]')){state.mine=b.dataset.mine==='1';store.set('mine',state.mine);renderBar();render();return;}
@@ -1586,7 +1614,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches?.(
 document.addEventListener('toggle',e=>{ // toggle doesn't bubble: capture. Remember the knowledge fold; keep the panels inside the viewport; flush a deferred paint
   const d=e.target;
   if(d.id==='kn'&&BY.get(openId)?.status!=='review') store.set('knOpen',d.open);
-  if(d.id==='apanel'&&d.open) loadAgents();
+  if(d.id==='apanel'&&d.open){ loadAgents(); if(AP.tab==='tools') loadTools(); }
   if(d.id==='bpanel'&&d.open) $('bbody').querySelector('[aria-current=true]')?.focus();
   if(d.matches('.fpanel,.spanel')){const b=d.querySelector('.fbody');b.style.translate='';if(d.open){const r=b.getBoundingClientRect();b.style.translate=(r.left<16?16-r.left:Math.min(0,innerWidth-16-r.right))+'px';}}
   flushPaint();

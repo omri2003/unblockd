@@ -35,6 +35,8 @@ POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}
 GET    tickets/<id>/context              docs + attached files to read before working it
 GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
 GET    files                             project file paths (no .git / node_modules / tickets/, capped at 3000): what the form suggests for docs and touches
+GET    tools                             worker tool sets: {all, default, base, profiles: [{name, tools, tools_off, effective}]}
+PUT    tools                             {"base": [...], "profiles": {name: {"tools", "tools_off"}}, "by"?}  save them to unblockd.json -> the same
 GET    roadmap                           the milestones in order with progress counts, the next one, and the unscheduled counts
 GET    architecture                      the architecture folder: components (+ open tickets, counts), edges with their contracts, ticket_map, problems
 POST   architecture/components           {"key", "title", "summary"?, "paths"?: [globs], "by"?}  new note <folder>/<key>.md (the folder is created) -> the architecture payload
@@ -268,6 +270,11 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["files"]:
 				return self._send(200, kn.repo_files(store))
+			if method == "GET" and rest == ["tools"]:
+				return self._send(200, store.tools_view())
+			if method == "PUT" and rest == ["tools"]:
+				b = self._body()
+				return self._send(200, store.set_tools(b.get("base"), b.get("profiles") or {}, str(b.get("by") or "human")))
 			if method == "GET" and rest == ["roadmap"]:
 				return self._send(200, store.roadmap())
 			if method == "GET" and rest == ["architecture"]:

@@ -152,8 +152,11 @@ def limit_tools(mode: str | None, profile: str | None = None) -> list[str]:
 	if mode in (None, "", "all"):
 		return []
 	cfg = BOARDS.get(None).config if BOARDS.all() else {"worker_tools": None, "agents": []}
-	names = list(cfg.get("worker_tools") or st.WORKER_TOOLS) if mode == "worker" else [x.strip() for x in mode.split(",") if x.strip()]
-	names += next((a.get("tools") or [] for a in cfg.get("agents", []) if a["name"] == profile), [])
+	if mode == "worker":
+		names = BOARDS.get(None).worker_tools(profile) if BOARDS.all() else list(st.WORKER_TOOLS)  # base - profile tools_off + profile tools
+	else:
+		names = [x.strip() for x in mode.split(",") if x.strip()]
+		names += next((a.get("tools") or [] for a in cfg.get("agents", []) if a["name"] == profile), [])
 	have = {t.name for t in asyncio.run(mcp.list_tools())}
 	unknown = [x for x in names if x not in have]
 	if unknown:
