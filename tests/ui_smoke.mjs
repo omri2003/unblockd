@@ -172,6 +172,10 @@ try {
 			ok(await page.locator('#cmdk').isHidden() && !(await page.locator('#drawer').isHidden()), `[${tag}] Esc closes only the palette`);
 			await page.keyboard.press('Escape');
 		}
+		if (w > 1100) { // an empty column (not To do) is a thin strip, still a drop target (UI-47)
+			const thin = await page.evaluate(() => [...document.querySelectorAll('#board .col')].map((c) => [c.dataset.col, c.querySelectorAll('.card').length, Math.round(c.getBoundingClientRect().width)]));
+			ok(thin.every(([k, n, wd]) => k === 'todo' || n > 0 || wd <= 60), `[${tag}] empty columns should be strips: ${JSON.stringify(thin)}`);
+		}
 
 		if (w >= 1100) { // one header row: the first column starts near the top of the page
 			const top = await page.evaluate(() => document.querySelector('.col').getBoundingClientRect().top + scrollY);
@@ -708,16 +712,16 @@ try {
 		const ok0 = (c, msg) => { if (!c) throw new Error('mobile: ' + msg); };
 		const heights = (page) => page.evaluate(() => ['.btn', '.chip', '#bsum', '.vico', '.tab'].flatMap((s) => [...document.querySelectorAll(s)].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [s, Math.round(r.width), Math.round(r.height)]; })));
 		const D = await browser.newContext({ viewport: { width: 1400, height: 900 } }), dp = await D.newPage(); dp.setDefaultTimeout(5000);
-		await dp.goto(base); await dp.waitForSelector('#nextUp:not([hidden])');
+		await dp.goto(base); await dp.waitForSelector('#nextBtn:not([hidden])');
 		ok0(await dp.evaluate(() => document.getElementById('nextUp').classList.contains('m-c')), 'desktop Next up should also start collapsed with empty storage');
 		const dh = await heights(dp); ok0(dh.some(([s, , h]) => s === '.btn' && h < 44), 'desktop .btn grew to 44px');
 		await D.close();
 		const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), page = await ctx.newPage(); page.setDefaultTimeout(5000);
 		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
-		await page.goto(base); await page.waitForSelector('#nextUp:not([hidden])');
+		await page.goto(base); await page.waitForSelector('#nextBtn:not([hidden])');
 		ok0(await page.evaluate(() => document.getElementById('nextUp').classList.contains('m-c')), 'Next up should start collapsed at 390 with empty storage');
-		await page.click('#nextUp .nexttog'); // a stored choice wins on reload
-		await page.reload(); await page.waitForSelector('#nextUp:not([hidden])');
+		await page.click('#nextBtn'); // the toggle sits in the bar (UI-47); a stored choice wins on reload
+		await page.reload(); await page.waitForSelector('#nextBtn:not([hidden])');
 		ok0(await page.evaluate(() => !document.getElementById('nextUp').classList.contains('m-c')), 'stored choice (top) should beat the collapsed default');
 		const small = (await heights(page)).filter(([, w, h]) => h < 44 || w < 44);
 		ok0(!small.length, 'targets under 44px on touch: ' + JSON.stringify(small.slice(0, 5)));
