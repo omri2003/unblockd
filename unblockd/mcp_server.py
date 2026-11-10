@@ -190,9 +190,11 @@ def create_board(id: str, title: str = "", root: str | None = None) -> dict:
 def board_info(board: str | None = None) -> dict:
 	"""A board's settings: title, owners, pillars, agent profiles (name, tags, pillars, model,
 	instructions), stale_days, the ticket rules: `schema` (prefixes with meanings, required fields, tags, body template) and `agent_tickets`,
-	`components` [{key, title}] when it has an architecture (the keys `components` on tickets take), and the `skills` / `mcp` registries (names `skills` / `mcp` on tickets take)."""
+	`components` [{key, title}] when it has an architecture (the keys `components` on tickets take), the `skills` / `mcp` registries (names `skills` / `mcp` on tickets take),
+	and `limits`: per field {items, chars} plus the note / question / summary / handoff caps, so you can check before writing."""
 	store = BOARDS.get(board)
-	info = dict(store.config)
+	info = {**store.config, "limits": {"fields": st.LIMITS, "note_kinds": list(st.NOTE_KINDS_ADD), "question_chars": st.QUESTION_MAX,
+	                                    "summary_chars": st.SUMMARY_MAX, "handoff_chars": 2000, "notes_per_ticket": st.NOTES_MAX}}
 	comps = kn.components(store)["components"]
 	if comps:
 		info["components"] = [{"key": c["key"], "title": c["title"]} for c in comps]
@@ -241,8 +243,12 @@ def list_tickets(board: str | None = None, status: str | None = None, pillar: st
 
 @tool
 def get_ticket(id: str, board: str | None = None) -> dict:
-	"""One ticket with everything: body, tags, agent, blocked_by, open_blockers, blocks, dates."""
-	return BOARDS.get(board).get(id)
+	"""One ticket with everything: body, tags, agent, blocked_by, open_blockers, blocks, dates, notes, and `blockers`: each blocked_by id
+	with its effective_status (done / todo / doing / pending / review, or missing) and title. `needs` = tools a worker reported missing
+	with release(missing=..., why=...) ({tool, why, profile}): workers of that profile skip the ticket until a human gives them the tool
+	and clears needs."""
+	s = BOARDS.get(board)
+	return s.with_blockers(s.get(id))
 
 
 @tool
@@ -253,7 +259,8 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
                   done_when: list[str] | None = None, components: list[str] | None = None,
                   skills: list[str] | None = None, mcp: list[str] | None = None, milestone: str | None = None) -> dict:
-	"""Create a ticket (owner defaults to the board's agent owner). agent = your worker name. Pass prefix (e.g. "BUG") to get
+	"""Create a ticket (owner defaults to the board's agent owner). agent (REQUIRED) = your worker name, or your human's name when you
+	create for them. Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
 	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each),
 	components = keys of the architecture components (board_info / architecture_map) the work changes: set them, they link the ticket to its notes and the Map (refused when the board has no architecture or the key is unknown).
@@ -287,7 +294,8 @@ def accept_ticket(id: str, by: str, board: str | None = None) -> dict:
 def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) -> dict:
 	"""Change fields of a ticket. agent = your worker name: you can't change a
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
-	changes is an object of field -> new value, e.g. {"body": "..."}. Fields: title, status, priority, owner, pillar,
+	The argument is `changes` (there is no `fields`): an object of field -> new value, e.g. {"priority": "P1", "done_when": ["..."]}.
+	Every refused field is listed in ONE error with its rule; the numbers are in board_info's `limits`. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), milestone (a key of board_info's milestones, or null), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
 	return _ack(BOARDS.get(board).update(id, changes, agent=agent))
 
@@ -347,7 +355,7 @@ def add_note(id: str, agent: str, text: str, kind: str = "note", reply_to: int |
              board: str | None = None) -> dict:
 	"""Record progress or a finding on a ticket: appends a signed, timestamped note to its `notes` ({by, at, kind, text}), safely (never touches
 	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not.
-	kind: note (progress) | decision (a choice and why) | finding (a cause, an error, a fact you found) | warning (don't do X: it breaks Y).
+	kind: note (progress; "progress" is taken as note) | decision (a choice and why) | finding (a cause, an error, a fact you found) | warning (don't do X: it breaks Y).
 	decision / finding / warning are PINNED: every later worker on this ticket gets them, however many notes follow. Notes are numbered
 	(`n`): reply_to = the note you answer (sent along with yours), supersedes = a pinned note yours replaces (e.g. a reversed decision)."""
 	return _ack(BOARDS.get(board).add_note(id, agent, text, kind=kind, reply_to=reply_to, supersedes=supersedes))

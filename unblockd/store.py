@@ -137,6 +137,59 @@ FIELDS = {
 
 RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at"}
 
+# The limits of the FIELDS validators above, in numbers: what an error names and what board_info returns as `limits`, so an agent can
+# check before it writes. Keep them equal to the validators (tests/test_tool_docs.py checks each one at its edge).
+LIMITS = {"title": {"chars": 200}, "section": {"chars": 80}, "owner": {"chars": 40}, "pillar": {"chars": 40},
+          "waiting_on": {"chars": QUESTION_MAX}, "body": {"chars": BODY_MAX, "with_notes": True},
+          "done_when": {"items": 20, "chars": 200}, "touches": {"items": 30, "chars": 200}, "docs": {"items": 30, "chars": 200},
+          "tags": {"items": 20, "chars": 40}, "components": {"items": 20, "chars": 100}, "skills": {"items": 20, "chars": 100},
+          "mcp": {"items": 20, "chars": 100}, "blocked_by": {"items": None}, "needs": {"items": 20}}
+
+
+def _field_problem(k: str, v) -> str:
+	"""Why FIELDS[k] refused v, as `invalid <field>[<i>]: <rule>`, without echoing v (a whole echoed input buried the reason)."""
+	kind, lim = type(v).__name__, LIMITS.get(k, {})
+	if k == "status":
+		return f"invalid status: one of {', '.join(x for x in STATUSES if x != 'pending')}"
+	if k == "priority":
+		return "invalid priority: one of P0, P1, P2, P3 or null"
+	if k == "pillar_step":
+		return "invalid pillar_step: a whole number > 0, or null"
+	if k == "parent":
+		return "invalid parent: a ticket id like BUG-12, or null"
+	if k == "milestone":
+		return "invalid milestone: a key of the board's milestones (letters, digits . _ -, max 40), or null"
+	if "items" in lim:
+		if not isinstance(v, list):
+			return f"invalid {k}: a list" + (" of strings, e.g. [\"...\"]" if isinstance(v, str) else f" (got {kind})")
+		if lim["items"] is not None and len(v) > lim["items"]:
+			return f"invalid {k}: {len(v)} items, max {lim['items']}"
+		out = []
+		for i, x in enumerate(v):
+			if k == "needs":
+				if not (isinstance(x, dict) and isinstance(x.get("tool"), str)):
+					out.append(f"invalid needs[{i}]: an object with a `tool` name")
+			elif not isinstance(x, str):
+				out.append(f"invalid {k}[{i}]: text (got {type(x).__name__})")
+			elif not x.strip():
+				out.append(f"invalid {k}[{i}]: empty")
+			elif lim.get("chars") and len(x) > lim["chars"]:
+				out.append(f"invalid {k}[{i}]: {len(x)} chars, max {lim['chars']}")
+			elif k == "blocked_by" and not ID_RE.match(x):
+				out.append(f"invalid blocked_by[{i}]: a ticket id like BUG-12")
+			elif k == "tags" and not TAG_RE.match(x):
+				out.append(f"invalid tags[{i}]: lowercase a-z 0-9 : . _ -, starting with a letter or digit")
+			elif k == "docs" and ".." in x:
+				out.append(f"invalid docs[{i}]: a repo path without ..")
+		return "; ".join(out) or f"invalid {k}"
+	if "chars" in lim:
+		if not isinstance(v, str):
+			return f"invalid {k}: text (got {kind})"
+		if k == "title" and not v.strip():
+			return "invalid title: empty"
+		return f"invalid {k}: {len(v)} chars, max {lim['chars']}" + (" (with every note's text)" if lim.get("with_notes") else "")
+	return f"invalid {k} ({kind})"
+
 
 OUTCOMES = {"expired": "expired", "release": "released", "rejected": "rejected"}  # activity events that end an attempt badly
 
@@ -413,7 +466,7 @@ class Store:
 		unknown = set(data) - set(FIELDS) - {"id", "created", "updated"}
 		if unknown:
 			raise TicketError(f"unknown field(s): {', '.join(sorted(unknown))}. Known: {', '.join(FIELDS)}")
-		out = {}
+		out, problems = {}, []
 		for k, v in data.items():
 			if k in ("id", "created", "updated"):
 				continue
@@ -438,20 +491,23 @@ class Store:
 			if k == "status" and v == "pending":
 				raise TicketError("status can't be set to pending: it is derived. A todo with an open blocker (blocked_by) or a waiting_on shows as pending; "
 				                  "agents use ask_human(id, agent, question), humans set waiting_on or blocked_by")
-			if not FIELDS[k][1](v):
-				raise TicketError(f"invalid {k}: {v!r}" + (" (tags: lowercase a-z 0-9 : . _ -, max 40 chars, max 20)" if k == "tags" else ""))
+			if not FIELDS[k][1](v):  # every problem is collected, so one call reports them all
+				problems.append(_field_problem(k, v))
+				continue
 			if k == "tags" and self.config["agents"]:
 				names = [a["name"] for a in self.config["agents"]]
 				bad = [x for x in v if x.startswith("agent:") and x[6:] not in names]
 				if bad:
-					raise TicketError(f"unknown agent in {', '.join(bad)}: agents are {', '.join(names)} (agents in {CONFIG_FILE})")
+					problems.append(f"unknown agent in {', '.join(bad)}: agents are {', '.join(names)} (agents in {CONFIG_FILE})")
 			if k == "owner" and v not in (names := [o["name"] for o in self.config["owners"]]):
-				raise TicketError(f"invalid owner {v!r}: one of {', '.join(names)} (owners in {CONFIG_FILE})")
+				problems.append(f"invalid owner: one of {', '.join(names)} (owners in {CONFIG_FILE})")
 			if k == "pillar" and v is not None and self.config["pillars"] and v not in (keys := [p["key"] for p in self.config["pillars"]]):
-				raise TicketError(f"invalid pillar {v!r}: one of {', '.join(keys)} or null (pillars in {CONFIG_FILE})")
+				problems.append(f"invalid pillar: one of {', '.join(keys)} or null (pillars in {CONFIG_FILE})")
 			out[k] = v
-		if not partial and "title" not in out:
-			raise TicketError("title is required")
+		if not partial and "title" not in out and "title" not in data:
+			problems.append("title is required")
+		if problems:
+			raise TicketError(problems[0] if len(problems) == 1 else f"{len(problems)} problems: " + "; ".join(problems) + " (limits: board_info)")
 		return out
 
 	def _check_loop(self, tid: str, blocked_by: list[str]) -> None:
@@ -787,6 +843,13 @@ class Store:
 		if t is None:
 			raise NotFound(f"no ticket {tid}")
 		return _copy(t)
+
+	def with_blockers(self, t: dict) -> dict:
+		"""t plus `blockers`: every blocked_by id with its effective_status and title (missing = no such ticket), for a reader that
+		wants to know which blockers are done without fetching each one (get_ticket, REST GET tickets/<id>, CLI get)."""
+		board = self._board()
+		return {**t, "blockers": [{"id": b, "effective_status": board[b]["effective_status"], "title": board[b].get("title", "")} if b in board
+		                          else {"id": b, "effective_status": "missing", "title": ""} for b in t.get("blocked_by", [])]}
 
 	def next_id(self, prefix: str) -> str:
 		if not PREFIX_RE.match(prefix or ""):
@@ -1463,8 +1526,10 @@ class Store:
 			raise TicketError("add_note needs `by`: who is writing (your worker name, or a person's name)")
 		if not (isinstance(text, str) and text.strip()):
 			raise TicketError("add_note needs text: what to record")
+		if kind == "progress":  # the protocol says "report progress with add_note": take the word agents reach for
+			kind = "note"
 		if kind not in NOTE_KINDS_ADD:
-			raise TicketError(f"note kind must be one of {', '.join(NOTE_KINDS_ADD)} (got {kind!r})")
+			raise TicketError(f"note kind must be one of {', '.join(NOTE_KINDS_ADD)} (progress = note)")
 		def run():
 			path = self._path(tid)
 			if not path.exists():
