@@ -16,6 +16,7 @@
     python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
     python -m unblockd.cli create --prefix BUG --title "..." [--component KEY]... [--skill NAME]... [--mcp NAME]... [--json '{"priority": "P1", ...}'] [--agent A]   # --agent: strict schema, may park as a proposal
+    python -m unblockd.cli create-many --file plan.json|- [--agent A]   # a JSON array, all or nothing; blocked_by / parent may say "#N" = the Nth item
     python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
     python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
     python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
@@ -93,6 +94,7 @@ class Remote:
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
 	def create(self, data, tid=None, prefix=None, agent=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {})})
+	def create_many(self, items, agent=None): return self._call("POST", "/tickets/batch", {"tickets": items, **({"agent": agent} if agent else {})})
 	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
 	def approve(self, tid, by): return self._call("POST", f"/tickets/{tid}/approve", {"by": by})
 	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
@@ -155,6 +157,9 @@ def main(argv: list[str] | None = None) -> int:
 	cr.add_argument("--milestone", help="the roadmap milestone key (milestones in unblockd.json)")
 	cr.add_argument("--skill", action="append", help="a skill name from the board's registry (repeatable)")
 	cr.add_argument("--mcp", action="append", help="an MCP server name from the board's registry (repeatable)")
+	cm = sub.add_parser("create-many", help='several tickets in one all-or-nothing step: a JSON array of ticket objects (prefix or id + fields); blocked_by / parent may say "#N" = the Nth item')
+	cm.add_argument("--file", required=True, help="path to the JSON array, or - for stdin")
+	cm.add_argument("--agent", help="the worker creating them (strict schema, proposal gate), as for create")
 	up = sub.add_parser("update")
 	up.add_argument("id")
 	up.add_argument("--json", default="{}")
@@ -285,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.get(a.id) if url else s.with_blockers(s.get(a.id))  # remote: GET tickets/<id> already adds them
 		elif a.cmd == "create":
 			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent)
+		elif a.cmd == "create-many":
+			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
 			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent)
