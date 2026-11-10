@@ -329,7 +329,15 @@ class ApiTest(unittest.TestCase):
 		self.assertIn("no ticket NOPE-1", msg)
 		code, msg = self.cli("list", UNBLOCKD_URL="http://127.0.0.1:1")
 		self.assertEqual(code, 1)
-		self.assertIn("can't reach", msg)
+		self.assertIn("unblockd server down: nothing answers at http://127.0.0.1:1", msg)
+		self.assertIn("docker compose up -d", msg)
+
+	def test_cli_health(self):
+		code, d = self.cli("health")
+		self.assertEqual((code, d["status"], d["url"]), (0, "ok", self.base))
+		code, msg = self.cli("health", UNBLOCKD_URL="http://127.0.0.1:1")
+		self.assertEqual(code, 1)
+		self.assertIn("server down", msg)
 
 	def test_healthz_needs_no_auth(self):
 		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):

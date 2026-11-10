@@ -46,8 +46,26 @@ from . import store as st
 class Remote:
 	"""The Store calls this CLI makes, sent to a running unblockd.web instead (UNBLOCKD_URL)."""
 	def __init__(self, url: str, token: str | None = None, board: str | None = None):
-		self.base = url.rstrip("/") + "/api" + (f"/b/{urllib.parse.quote(board)}" if board else "")
+		self.origin = url.rstrip("/")
+		self.base = self.origin + "/api" + (f"/b/{urllib.parse.quote(board)}" if board else "")
 		self.token = token
+
+	def down(self, why) -> st.TicketError:
+		"""The one "server down" message: say it plainly and what to do, so an agent stops and tells its human instead of retrying blind."""
+		return st.TicketError(f"unblockd server down: nothing answers at {self.origin} ({why}). The host may be asleep or the server stopped: "
+		                      "ask your human to start it (docker compose up -d). Nothing you sent was saved; run `health` until it says ok, then retry")
+
+	def health(self) -> dict:
+		"""GET /healthz (no auth): {"status": "ok", "url"} or the server-down error."""
+		try:
+			with urllib.request.urlopen(self.origin + "/healthz", timeout=10) as r:
+				return {**json.loads(r.read()), "url": self.origin}
+		except urllib.error.HTTPError as e:
+			raise st.TicketError(f"{self.origin}/healthz answered HTTP {e.code}: is UNBLOCKD_URL the unblockd web server (not the MCP port)?")
+		except urllib.error.URLError as e:
+			raise self.down(e.reason)
+		except (TimeoutError, OSError) as e:
+			raise self.down(e)
 
 	def _call(self, method: str, path: str, body=None, **q):
 		q = {k: v for k, v in q.items() if v is not None}
@@ -64,7 +82,9 @@ class Remote:
 				msg = None
 			raise st.TicketError(msg or f"{self.base}: HTTP {e.code}")
 		except urllib.error.URLError as e:
-			raise st.TicketError(f"can't reach {self.base}: {e.reason} (UNBLOCKD_URL)")
+			raise self.down(e.reason)
+		except (TimeoutError, ConnectionError) as e:  # the server went away mid-reply, or hangs
+			raise self.down(e)
 
 	def list(self, **f): return self._call("GET", "/tickets", **f)
 	def next_ready(self, **f): return self._call("GET", "/next", **f)
@@ -121,6 +141,7 @@ def main(argv: list[str] | None = None) -> int:
 	nx.add_argument("--limit", type=int, default=5)
 	sub.add_parser("plan").add_argument("--per-agent", type=int, default=3)
 	sub.add_parser("roadmap")
+	sub.add_parser("health", help="is the board reachable? local: the folder exists; remote (UNBLOCKD_URL): GET /healthz. Exit 1 when down")
 	mm = sub.add_parser("migrate-milestones", help="move tickets from a version epic (parent) to a milestone: REL-1=v0.1 REL-2=v0.2 ...")
 	mm.add_argument("pairs", nargs="+", metavar="PARENT=KEY")
 	sub.add_parser("get").add_argument("id")
@@ -210,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
 			       for t in s.next_ready(owner=a.owner, pillar=a.pillar, agent=a.agent, tag=a.tag, limit=a.limit)]
 		elif a.cmd == "roadmap":
 			out = s.roadmap()
+		elif a.cmd == "health":
+			out = s.health() if url else {"status": "ok", "dir": Path(a.dir).resolve().as_posix(), "tickets": len(s.list())}
 		elif a.cmd == "migrate-milestones":
 			pairs = [p.split("=", 1) for p in a.pairs]
 			if not all(len(p) == 2 and p[0] and p[1] for p in pairs):
