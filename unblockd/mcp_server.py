@@ -339,8 +339,13 @@ def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = No
 @tool
 def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
 	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
-	least every few minutes. Pass the same principal you claimed with. Returns {ok, id, status}."""
-	return _ack(BOARDS.get(board).heartbeat(id, agent, note, principal))
+	least every few minutes. Pass the same principal you claimed with. Returns {ok, id, status} plus `inbox` {count, notes: [{ticket, n,
+	by, kind, text: first line}]} when someone left notes on a ticket you hold since your last heartbeat: read them (get_ticket) and act
+	on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold)."""
+	s = BOARDS.get(board)
+	box = s.inbox(agent, mark=True)
+	r = _ack(s.heartbeat(id, agent, note, principal))
+	return {**r, "inbox": box} if box else r
 
 
 @tool

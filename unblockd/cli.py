@@ -250,7 +250,10 @@ def main(argv: list[str] | None = None) -> int:
 			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal) if a.id else s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal)
 			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
+			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
 			out = s.heartbeat(a.id, a.agent, a.note, a.principal)
+			if box:
+				out = {**out, "inbox": box}
 		elif a.cmd == "release":
 			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why)
 		elif a.cmd == "ask":
