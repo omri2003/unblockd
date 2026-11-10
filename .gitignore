@@ -9,3 +9,6 @@ __pycache__/
 # Local Claude Code MCP config (may hold a token) and local compose overrides
 .mcp.json
 compose.override.yaml
+
+# Smoke failure screenshots (DEBUG=<dir>)
+fail.png
