@@ -94,8 +94,8 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .chip .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-0.5px;background:var(--dc);box-shadow:0 0 0 1.5px var(--surface)}
 .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px var(--paper)}
 /* dismissible bars: digest, drawer lists */
-.dg-l button,.dlist button:not(.kdoc){background:none;border:0;padding:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
-.dg-l button:hover .tid,.dlist button:not(.kdoc):hover .tid{text-decoration:underline}
+.dlist button:not(.kdoc){background:none;border:0;padding:0;cursor:pointer;font:inherit;text-align:left;color:var(--ink)}
+.dlist button:not(.kdoc):hover .tid{text-decoration:underline}
 /* digest: what happened since you last looked */
 .digest{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--slate);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .dg-bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:.9rem}
@@ -141,10 +141,32 @@ a.btn{display:inline-block;text-decoration:none}
 .nr.open .nd-f textarea{flex-basis:100%;order:-1;background:var(--surface)}
 .prb{display:inline-block;margin:6px 0;padding:1px 8px;border:1px solid var(--line);border-radius:10px;font-size:12px} .prb.bad{color:var(--cinnabar);border-color:var(--cinnabar)}
 .rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere} .rbox a{color:var(--jade)} .rbox h5{margin:4px 0 2px;font-size:.75rem;font-weight:600;color:var(--muted)}
-.dg-g{margin:10px 0 0;font-size:.82rem;font-weight:800;color:var(--muted)}
-.dg-l{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px;max-height:40vh;overflow:auto}
-.dg-l li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;font-size:.9rem}
-.dg-l .wn{color:var(--muted);overflow-wrap:anywhere} .dg-l time{color:var(--muted);font-size:.8rem;margin-left:auto}
+/* digest rows (UI-55, design C "Outcome rows"): every row is a flattened ticket. ONE grid for the whole list (subgrid), so
+   tile / id + seal / title + outcome / who / time line up down every section. Tile = the section's icon on its soft status token. */
+.dg-grid{display:grid;grid-template-columns:max-content max-content minmax(0,1fr) fit-content(11rem) max-content;column-gap:12px;max-height:52vh;overflow:auto;margin-top:6px;padding:2px}
+.dg-g{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:.84rem;font-weight:700;color:var(--ink)}
+.dg-g:first-child{margin-top:4px} .dg-g .n{color:var(--muted);font-weight:600}
+.dg-tile{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;flex:none;font-size:.74rem;font-weight:800;font-style:normal;line-height:1}
+.dg-tile.rev{background:var(--plum-soft);color:var(--plum)} .dg-tile.stk{background:color-mix(in srgb,var(--cinnabar) 14%,var(--surface));color:var(--cinnabar)}
+.dg-tile.fin{background:var(--jade-soft);color:var(--jade)} .dg-tile.sta{background:var(--amber-soft);color:var(--amber)} .dg-tile.new{background:var(--slate-soft);color:var(--slate)}
+.dg-l{grid-column:1/-1;display:grid;grid-template-columns:subgrid;list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);overflow:hidden}
+.dg-l li{grid-column:1/-1;display:grid;grid-template-columns:subgrid} .dg-l li+li{border-top:1px solid var(--line)}
+.dg-r{--pc:var(--p-other);position:relative;grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:start;width:100%;padding:8px 12px 8px 16px;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;min-width:0}
+.dg-r::before{content:'';position:absolute;left:5px;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--pc);pointer-events:none}
+.dg-r:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))} .dg-r:hover .dt{text-decoration:underline;text-underline-offset:2px}
+.dg-r.p0{background:color-mix(in srgb,var(--cinnabar) 8%,var(--surface))} .dg-r.p0 .tid{color:var(--cinnabar)}
+.dg-r .dg-tile{margin-top:1px}
+.dg-r .idc{display:flex;gap:6px;align-items:center;padding-top:3px;white-space:nowrap}
+.dg-r .tid{font-size:.74rem;font-weight:600;color:var(--muted)}
+.dg-r .m{min-width:0;display:grid;gap:1px}
+.dg-r .dt{font-weight:600;font-size:.92rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dg-r .o{font-size:.82rem;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dg-r .o.bad{color:var(--cinnabar);font-weight:600}
+.dg-r .w{padding-top:3px;min-width:0;display:flex} .dg-r .w2{display:none}
+.dg-r .own{background:none;padding:0;border-radius:0;color:var(--muted);font-weight:600;font-size:.76rem;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dg-r .own.human{color:var(--ink);font-weight:700} .dg-r .own .gl{opacity:.85;flex:none} .dg-r .own.hand{font-style:italic;font-weight:500}
+.dg-r time{padding-top:4px;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.dg-more{grid-column:1/-1;justify-self:start;margin:4px 0 0;padding:3px 0;border:0;background:none;font:inherit;font-size:.84rem;color:var(--jade);cursor:pointer}
+.dg-more:hover{text-decoration:underline}
 .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none;align-self:center;animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.25}}
 .wk{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:.78rem;color:var(--amber);font-weight:700;overflow-wrap:anywhere}
@@ -261,6 +283,10 @@ a.btn{display:inline-block;text-decoration:none}
   .tab.on{color:var(--ink)} .tab.todo.on{border-color:var(--muted)} .tab.doing.on{border-color:var(--amber)} .tab.pending.on{border-color:var(--slate)} .tab.review.on{border-color:var(--plum)} .tab.done.on{border-color:var(--jade)}
   .col{display:none} .col.active{display:block}
   /* tabs right under the filters; Next up only on To do */
+  /* digest rows on a phone: tile | title (2 lines) + outcome (1 line) + id, seal and who as a byline | time */
+  .dg-grid{grid-template-columns:max-content minmax(0,1fr) max-content;column-gap:10px} .dg-r{padding:9px 10px 9px 14px}
+  .dg-r .idc,.dg-r .w{display:none} .dg-r .w2{display:flex;gap:6px;align-items:center;min-width:0;margin-top:2px}
+  .dg-r .dt{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
   .wrap{display:flex;flex-direction:column} header{order:0} .bar{order:2} .tabs{order:3} #digest{order:2} #nextUp{order:5} #board{order:6} #graphWrap{order:7}
   body:not([data-tab="todo"]) #nextUp{display:none}
   /* less chrome above the first card */
@@ -1198,24 +1224,44 @@ async function loadDigest(){
   try{DG={since,ev:(await jf(API+'/activity?limit=2000&since='+encodeURIComponent(since))).reverse()};}catch{return;}
   renderDigest();
 }
+// ONE row per ticket: its latest event decides the section (a ticket claimed then finished is Finished, never also Started).
+// Sections in the order a person acts on them: review (waits on you), stuck, finished, in progress, new.
+// Each row reads as a ticket (UI-55, design C): status tile, pillar spine, seal, id, title, byline, and ONE outcome line under the title.
+const DGS=[['rev','●','Ready for review'],['stk','⚠','Stuck'],['fin','✓','Finished'],['sta','▶','In progress'],['new','＋','New']];
+const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
+const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
 function digestGroups(){
-  const ok=DG.ev.filter(e=>BY.has(e.ticket)), by=(...k)=>ok.filter(e=>k.includes(e.event)), first=n=>(n||'').split('\n')[0].slice(0,140);
-  const rv=e=>BY.get(e.ticket).status==='review'; // a `complete` on a review board is not finished: a human still has to look
-  return [['fin','✓','Finished',by('complete','done').filter(e=>!rv(e)).map(e=>[e,e.agent||'by hand',first(e.note)])],
-    ['rev','●','Ready for review',by('complete').filter(rv).map(e=>[e,e.agent,first(e.note)])],
-    ['sta','▶','Started',by('claim').map(e=>[e,e.agent,''])],
-    ['stk','⚠','Stuck',by('expired','release').map(e=>[e,e.agent,e.event==='expired'?'claim expired, back to To do':'released'+(e.note?': '+first(e.note):'')])],
-    ['new','＋','New',by('created').map(e=>[e,'',''])]].filter(g=>g[3].length);
+  const last=new Map();
+  for(const e of DG.ev) if(BY.has(e.ticket)&&['complete','done','claim','expired','release','created'].includes(e.event)) last.set(e.ticket,e); // oldest first: the latest wins
+  const rows={rev:[],stk:[],fin:[],sta:[],new:[]};
+  for(const e of last.values()){
+    const t=BY.get(e.ticket), k=e.event==='created'?'new':e.event==='claim'?'sta':['expired','release'].includes(e.event)?'stk':t.status==='review'?'rev':'fin'; // a complete still in review waits on a human
+    const who=e.agent||'', out=k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
+      :k==='new'?'':k==='sta'?(t.claim?.note?`“${dgFirst(t.claim.note)}”`:''):e.note?dgFirst(e.note):e.event==='done'?'Moved to Done by hand':'';
+    rows[k].push({e,t,who,out,full:(e.note||'').trim()});
+  }
+  return DGS.map(([c,i,n])=>[c,i,n,rows[c].reverse()]).filter(g=>g[3].length); // newest first inside a section
+}
+const dgTime=ts=>{const d=new Date(ts); return d.toDateString()===new Date().toDateString()?hm(d):d.toLocaleDateString([],{weekday:'short'})+' '+hm(d);}; // a list that spans days says which day
+const dgBy=n=>n?`<span class="own ${HUMAN.has(n)||n==='human'?'human':'agent'}">${glyph(HUMAN.has(n)||n==='human'?'human':'agent')}${esc(n)}</span>`:'<span class="own hand">by hand</span>'; // ownHtml's byline, for who acted (not the owner)
+function dgRow(c,i,n,{e,t,who,out,full}){
+  const seal=t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'', by=c==='new'&&!who?'':dgBy(who), p0=t.priority==='P0'&&t.status!=='done';
+  const tip=`${t.id} ${t.title}\n${n} ${dgTime(e.ts)}${who?' by '+who:''}`+(full&&full!==out?'\n\n'+full:out?'\n\n'+out:'');
+  return `<li><button type="button" class="dg-r${p0?' p0':''}"${PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:''} data-open="${esc(t.id)}" title="${esc(tip)}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i><span class="idc"><span class="tid">${esc(t.id)}</span>${seal}</span><span class="m"><span class="dt">${inline(t.title)}</span>${out?`<span class="o${c==='stk'?' bad':''}">${esc(out)}</span>`:''}<span class="w2"><span class="tid">${esc(t.id)}</span>${seal}${by}</span></span><span class="w">${by}</span><time datetime="${esc(e.ts)}">${esc(dgTime(e.ts))}</time></button></li>`;
 }
 function renderDigest(){
-  const el=$('digest'); if(!DG||SET.digest==='off'||state.view!=='board'){el.hidden=true;return;}
-  const gs=digestGroups(), was=el.hidden; el.hidden=!gs.length; if(el.hidden) return;
+  const el=$('digest'); if(!DG||SET.digest==='off'||state.view!=='board'){el.hidden=true;dgHtml='';return;}
+  const gs=digestGroups(), was=el.hidden; el.hidden=!gs.length; if(el.hidden){dgHtml='';return;}
   if(was&&!reduce.matches) el.animate([{opacity:0,transform:'translateY(-6px)'},{opacity:1,transform:'none'}],{duration:200,easing:'ease-out'}); // first appearance only: later renders keep the same element state
   el.classList.toggle('open',dgOpen); // the body is always in the DOM; the class runs the grid-rows transition (nextPaint's trick)
   const d=new Date(DG.since), sameDay=d.toDateString()===new Date().toDateString();
   const since=sameDay?hm(d):d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm(d);
-  el.innerHTML=`<div class="dg-bar"><h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}"><span>${dgOpen?'Collapse':'Expand'}</span> <i class="chev" aria-hidden="true"></i></button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`
-   +`<div class="dg-body"><div>`+(gs.map(([c,i,n,r])=>`<h3 class="dg-g">${n}</h3><ul class="dg-l">${r.map(([e,who,why])=>`<li><button type="button" data-open="${esc(e.ticket)}"><span class="tid">${esc(e.ticket)}</span> ${inline(BY.get(e.ticket).title)}</button>${who?`<b>${esc(who)}</b>`:''}${why?`<span class="wn">${esc(why)}</span>`:''}<time datetime="${esc(e.ts)}">${esc(hm(new Date(e.ts)))}</time></li>`).join('')}</ul>`).join(''))+`</div></div>`;
+  const head=`<h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}`;
+  const body=`<div class="dg-body"><div><div class="dg-grid">`+gs.map(([c,i,n,r])=>{const all=dgMore.has(c)||r.length<=DG_CAP+1, shown=all?r:r.slice(0,DG_CAP);
+     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
+  if(head+body===dgHtml) return; dgHtml=head+body; // same items, statuses, titles and times: keep the DOM (no hover or focus flicker on the 4 s poll); the toggle edits its own button, so it is not in the key
+  const sc=el.querySelector('.dg-grid')?.scrollTop||0;
+  el.innerHTML=`<div class="dg-bar">${head}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}"><span>${dgOpen?'Collapse':'Expand'}</span> <i class="chev" aria-hidden="true"></i></button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`+body; const g=el.querySelector('.dg-grid'); if(g) g.scrollTop=sc;
 }
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
@@ -1736,6 +1782,7 @@ document.addEventListener('click',async e=>{
   if(b=g('button[data-tab]')){setTab(b.dataset.tab);return;}
   if(g('[data-clear]')){clearFilters();return;}
   if(g('[data-new]')){openId=null;editForm(null);return;}
+  if(b=g('[data-dgmore]')){dgMore.add(b.dataset.dgmore);renderDigest();return;}
   if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
   if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());const el=$('digest'),done=()=>{DG=null;renderDigest();};
     if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
