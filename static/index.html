@@ -14,23 +14,23 @@
 :root{
   /* one block: light-dark(light, dark). Settings (gear) set data-theme to light / dark; unset = follow the OS */
   color-scheme:light dark;
-  --paper:light-dark(#F3F5F7,#0F1214); --surface:light-dark(#FFFFFF,#181C20); --sunk:light-dark(#E8ECF0,#0A0C0E);
-  --ink:light-dark(#161D24,#E5E9ED); --muted:light-dark(#5A6573,#98A2AE); --line:light-dark(#DCE1E7,#2A3137);
+  --paper:light-dark(#F3F5F7,#0F1214); --surface:light-dark(#FFFFFF,#1C2125); --sunk:light-dark(#E8ECF0,#0A0C0E);
+  --ink:light-dark(#161D24,#E5E9ED); --muted:light-dark(#5A6573,#98A2AE); --line:light-dark(#DCE1E7,#323A41); --hl:light-dark(transparent,rgba(255,255,255,.06)); /* dark: a top-edge highlight, since shadows vanish on near-black */
   --jade:light-dark(#2A7864,#64B79E); --jade-soft:light-dark(#D2E5DC,#1D372F); --cinnabar:light-dark(#B1402E,#E27A66);
   --amber:light-dark(#8F6410,#D8A645); --amber-soft:light-dark(#F1E5C8,#352B17);
   --slate:light-dark(#4F5F7A,#9DB0D3); --slate-soft:light-dark(#DDE3EE,#232C3B);
   --plum:light-dark(#7B4A8C,#C39AD3); --plum-soft:light-dark(#E8DCEE,#2D2037); /* Review column (boards with review=true) */
   /* pillar colours (--p-<key>) are generated from the config in applyConfig(); --p-other = no pillar */
   --p-other:var(--line);
-  --display:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --display:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Display","Segoe UI Variable","Segoe UI",system-ui,Roboto,"Helvetica Neue",sans-serif;
   --mono:ui-monospace,"Cascadia Mono","SF Mono",Consolas,monospace;
-  --body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI Variable","Segoe UI",system-ui,Roboto,"Helvetica Neue",sans-serif;
   --r:8px; --rc:12px; /* controls / cards and panels */
   /* elevation: soft layered shadows (dev/premium-look trial); colours via light-dark so dark mode gets deeper, not lighter, shadows */
   --shc:light-dark(rgba(16,24,40,.07),rgba(0,0,0,.45)); --shc2:light-dark(rgba(16,24,40,.12),rgba(0,0,0,.6));
-  --sh1:0 1px 2px var(--shc),0 1px 3px var(--shc);
-  --sh2:0 8px 18px -6px var(--shc2),0 2px 6px -2px var(--shc);
-  --sh3:0 18px 44px -10px var(--shc2),0 4px 12px -4px var(--shc);
+  --sh1:inset 0 1px 0 var(--hl),0 1px 2px var(--shc),0 1px 3px var(--shc);
+  --sh2:inset 0 1px 0 var(--hl),0 8px 18px -6px var(--shc2),0 2px 6px -2px var(--shc);
+  --sh3:inset 0 1px 0 var(--hl),0 18px 44px -10px var(--shc2),0 4px 12px -4px var(--shc);
 }
 :root[data-theme=light]{color-scheme:light} :root[data-theme=dark]{color-scheme:dark}
 /* Density (settings): one class on <html> */
@@ -314,15 +314,17 @@ kbd{font-family:var(--mono);font-size:.82rem;background:var(--sunk);border:1px s
 .btn.q{padding:7px 11px}
 /* drawer: status as a segmented control, overflow menu for the quiet actions, knowledge collapsed */
 .srow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:8px} .srow .own{margin:0}
-.segc{display:flex;flex-wrap:wrap;gap:4px}
-.segc [data-setstatus="todo"][aria-pressed="true"]{--ind:var(--muted);background:var(--ind);border-color:var(--ind);color:var(--surface)} .segc [data-setstatus="doing"][aria-pressed="true"]{--ind:var(--amber);background:var(--ind);border-color:var(--ind);color:var(--surface)}
-.segc [data-setstatus="pending"][aria-pressed="true"]{--ind:var(--slate);background:var(--ind);border-color:var(--ind);color:var(--surface)} .segc [data-setstatus="review"][aria-pressed="true"]{--ind:var(--plum);background:var(--ind);border-color:var(--ind);color:var(--surface)} .segc [data-setstatus="done"][aria-pressed="true"]{--ind:var(--jade);background:var(--ind);border-color:var(--ind);color:var(--surface)}
+.segc{display:inline-flex;flex-wrap:wrap;gap:0;background:var(--sunk);padding:3px;border-radius:10px}
+.segc .chip{border-color:transparent;background:transparent;border-radius:7px;padding:4px 12px;color:var(--muted)} .segc .chip:hover{color:var(--ink)}
+.segc [data-setstatus][aria-pressed="true"]{--ind:var(--surface);color:var(--ink);font-weight:600} .segc .ind{box-shadow:var(--sh1)}
+.segc [data-setstatus]::before{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sc,var(--muted));margin-right:6px;vertical-align:1px}
+[data-setstatus=doing]{--sc:var(--amber)} [data-setstatus=pending]{--sc:var(--slate)} [data-setstatus=review]{--sc:var(--plum)} [data-setstatus=done]{--sc:var(--jade)}
 
 .props{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:5px 14px;margin:4px 0 8px;font-size:.88rem;align-items:baseline}
 .props dt{color:var(--muted)} .props dd{margin:0;display:flex;flex-wrap:wrap;gap:4px 6px;align-items:baseline;min-width:0;overflow-wrap:anywhere}
 .pstep{display:flex;gap:2px} .pstep .btn{padding-inline:9px}
 .card.cur,.lrow.cur{outline:2px solid var(--ink);outline-offset:1px}
-@media (min-width:1280px){body.peek .wrap{margin-right:min(560px,40vw);transition:margin-right .2s ease-out} body.peek aside#drawer{box-shadow:none}}
+@media (min-width:1600px){body.peek .wrap{margin-right:min(560px,40vw);transition:margin-right .2s ease-out} body.peek aside#drawer{box-shadow:none}}
 @media (max-width:600px){.pstep{display:none}}
 .ovf{position:relative}
 .ovm{position:absolute;right:0;top:calc(100% + 4px);z-index:3;display:grid;min-width:160px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden} .ovm .dz{color:var(--cinnabar)}
@@ -567,11 +569,13 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .col{background:color-mix(in srgb,var(--sunk) 55%,var(--paper));border-radius:14px;padding:10px}
 .colhead{border-bottom:0;padding:4px 6px 10px;margin-bottom:2px;align-items:center;gap:8px}
 .colhead h2::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c);margin-right:8px;vertical-align:1px}
-.colhead .n{color:var(--muted);background:var(--surface);border-radius:99px;padding:0 8px;font-size:.8rem;box-shadow:var(--sh1)}
+.colhead .n{color:var(--muted);font-weight:600;font-size:.84rem;font-variant-numeric:tabular-nums}
+.colhead h2{font-size:.92rem;font-weight:700;letter-spacing:-.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.colhead h2 small{font-weight:500;font-size:.78rem;color:var(--muted);margin-inline-start:7px}
 .cards{gap:10px}
-.card{border-color:var(--line);border-left-color:var(--pc);border-left-width:3px;border-radius:var(--rc);padding:10px 12px 10px 11px;box-shadow:var(--sh1);transition:box-shadow .15s ease-out,transform .15s ease-out}
-.card:hover{transform:translateY(-1px);box-shadow:var(--sh2);border-color:color-mix(in srgb,var(--ink) 18%,var(--line));border-left-color:var(--pc)}
-.card.dn{border-radius:10px;padding:5px 12px 5px 11px}
+.card{position:relative;border-color:var(--line);border-radius:var(--rc);padding:10px 12px 10px 15px;box-shadow:var(--sh1);transition:box-shadow .15s ease-out,transform .15s ease-out}
+.card:hover{transform:translateY(-1px);box-shadow:var(--sh2);border-color:color-mix(in srgb,var(--ink) 18%,var(--line))}
+.card.dn{border-radius:10px;padding:5px 12px 5px 15px}
 .card.dragging{transform:none}
 .seal{border-radius:5px}
 .qa input{border-radius:10px;padding:7px 10px;box-shadow:var(--sh1)}
@@ -587,6 +591,59 @@ aside{border-left-color:var(--line);box-shadow:var(--sh3)}
 .graphwrap,.mapstage{border-radius:14px}
 .mc{border-radius:var(--rc);box-shadow:var(--sh1)} .mc:not(.on):hover{box-shadow:var(--sh2)}
 .toast{border-radius:10px}
+/* Design pass 2 (the top 10 of a 9-agent design debate, 2026-11-10) */
+/* 1 title first: quiet ID, one P0 signal, no duplicate staleness */
+.card .top{align-items:center;gap:6px;margin-bottom:4px;flex-wrap:nowrap;min-width:0} .card .top .tid,.card .top .seal{flex:none}
+.card .tid{font-size:.74rem;font-weight:600;color:var(--muted);letter-spacing:.01em}
+.card.p0 .tid{font-size:.74rem;font-weight:700;color:var(--cinnabar)}
+.card .ttl{font-size:.94rem;font-weight:600;line-height:1.32;letter-spacing:-.006em}
+.compact .card .ttl{font-size:.9rem}
+.card.p0{border-color:color-mix(in srgb,var(--cinnabar) 22%,var(--line))}
+.card:has(.wl.stale) .meta .age{display:none}
+.meta,.age{font-variant-numeric:tabular-nums}
+body{font-optical-sizing:auto} h1{letter-spacing:-.02em} .logo{font-weight:700}
+/* 4 pillar spine: a floating capsule, not a border bent by the radius */
+.card::before{content:'';position:absolute;left:5px;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--pc);pointer-events:none}
+.card.dn::before{top:6px;bottom:6px}
+.col.done .card,.col.done .card:hover{border-left-color:var(--line)} .col.done .card::before{opacity:.45} .col.done .card:hover::before{opacity:1}
+.compact .card{padding-left:12px} .compact .card::before{left:4px;top:6px;bottom:6px}
+@media (hover:none){.cw.dn .card{padding-left:15px}}
+/* 5 owner as a byline; 7b the card head never wraps */
+.card .own{background:none;padding:0;border-radius:0;color:var(--muted);font-weight:600;font-size:.76rem;gap:4px;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .own.human{color:var(--ink);font-weight:700} .card .own .gl{opacity:.85;flex:none}
+/* 8 material discipline: only objects float */
+.hdr .btn.ghost{background:transparent;border-color:transparent;box-shadow:none;font-weight:500}
+.hdr .btn.ghost:hover,.hdr .spanel[open]>summary.btn.ghost{background:var(--sunk);border-color:transparent;box-shadow:none}
+.hdr .btn.q{color:var(--muted)} .hdr .btn.q:hover{color:var(--ink)}
+.qa input{background:transparent;border:1px dashed color-mix(in srgb,var(--ink) 30%,var(--line));box-shadow:none;transition:background-color .15s ease-out,box-shadow .15s ease-out}
+.qa input:hover{border-style:solid}
+.qa input:focus,.qa-t:not(:placeholder-shown){background:var(--surface);border-style:solid;border-color:var(--line);box-shadow:var(--sh2)}
+.mv summary{box-shadow:none}
+.card.blocked{box-shadow:none} .card.blocked:hover{transform:none;box-shadow:var(--sh1)}
+.card.cur,.lrow.cur{outline:2px solid color-mix(in srgb,var(--ink) 55%,transparent);outline-offset:2px} .card.cur{box-shadow:var(--sh2)}
+/* 9 tactile press + panels that arrive from where they live */
+.btn,.nbadge,.vico,.links button{transition:transform .15s ease-out,box-shadow .15s ease-out,background-color .15s ease-out}
+.btn:active,.nbadge:active,.vico:active,.links button:active{transform:scale(.97);box-shadow:none;transition-duration:.08s}
+.card:active:not(.dragging){transform:scale(.985);box-shadow:var(--sh1);transition-duration:.08s}
+.rmi:active{transform:scale(.995);box-shadow:var(--sh1)}
+.mc:active:not(.drag){box-shadow:var(--sh1)}
+.lrow:active{background:color-mix(in srgb,var(--ink) 6%,var(--sunk))}
+aside:not([hidden]){animation:arrive-side .2s ease-out}
+@keyframes arrive-side{from{translate:16px 0;opacity:0}}
+:is(.fpanel,.spanel)[open]>.fbody{animation:arrive-drop .15s ease-out} /* no scale: the open handler measures it to keep it on screen */
+.ovf[open]>.ovm,.cmdk:not([hidden]){animation:arrive-pop .15s ease-out}
+@keyframes arrive-drop{from{opacity:0;margin-top:-4px}}
+.mv[open]>.mvm{animation:arrive-up .15s ease-out;transform-origin:bottom right}
+.ovm{transform-origin:top right} .cmdk{transform-origin:top center}
+@keyframes arrive-pop{from{opacity:0;scale:.97;translate:0 -4px}}
+@keyframes arrive-up{from{opacity:0;scale:.97;translate:0 4px}}
+/* 10 agent liveness: a slow ripple from a solid dot instead of a blink */
+.liv .pulse{position:relative;animation:none}
+.liv:not(.quiet) .pulse::after{content:'';position:absolute;inset:0;border-radius:50%;background:var(--amber);animation:ripple 2.4s ease-out infinite}
+@keyframes ripple{from{transform:scale(1);opacity:.5}to{transform:scale(2.6);opacity:0}}
+.card.claimed{outline-width:1.5px;outline-offset:-1.5px;background-image:linear-gradient(to bottom,color-mix(in srgb,var(--amber) 6%,transparent),transparent 55%)}
+/* 7d phone: search gets row 1, the rest share row 2 */
+@media (max-width:600px){.bar input[type=search]{flex:1 1 100%} .bar>#nextBtn{margin-left:auto} header .hdr>.btn:not(.q),header .hdr>#apanel{flex:1 1 0}}
 /* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
 .sl{position:relative}
 .sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
@@ -596,7 +653,7 @@ aside{border-left-color:var(--line);box-shadow:var(--sh3)}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi{transition:none} .card:hover{transform:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -1451,18 +1508,19 @@ function renderBoard(){
   $('board').classList.toggle('list',state.layout==='list'); $('tabs').classList.toggle('lst',state.layout==='list');
   if(state.layout==='list'){ LPROPS=pline; $('board').innerHTML=listHtml(vis); markCur(); return; } // one list, no columns: no tabs on a phone, no FLIP
   $('board').style.setProperty('--cols',COLS.length);
-  const thin=k=>k!=='todo'&&!state.q&&!vis.some(t=>t.effective_status===k)&&!(k==='pending'&&props.length); // an empty column is a strip (UI-47); still a drop target
+  const recentN=vis.filter(t=>t.effective_status==='done'&&Date.parse(t.done_at||t.updated)>=Date.now()-DAYS*864e5).length; // old done tickets are hidden, so they do not keep Done wide
+  const thin=k=>k!=='todo'&&!state.q&&(k==='done'&&!state.allDone?!recentN:!vis.some(t=>t.effective_status===k))&&!(k==='pending'&&props.length); // an empty column is a strip (UI-47); still a drop target
   $('board').style.setProperty('--tpl',COLS.map(([k])=>thin(k)?'52px':'minmax(0,1fr)').join(' '));
   $('board').innerHTML=COLS.map(([k,name])=>{
-    let ts=vis.filter(t=>t.effective_status===k),head=`<h2>${name}</h2>`,more='';
+    let ts=vis.filter(t=>t.effective_status===k),head=`<h2>${name}</h2>`,more='',cnt=null;
     if(k==='done'){ // recent only (config done_window_days, newest first, DONE_CAP cards); a search or "view all" shows every done ticket
       const at=t=>Date.parse(t.done_at||t.updated); ts.sort((a,b)=>at(b)-at(a));
-      if(state.allDone||state.q){ head=`<h2>${name} (${ts.length})</h2>`; more=state.allDone?'<button type="button" class="btn ghost more" data-recentdone>Show recent only</button>':''; }
-      else{ ts=ts.filter(t=>at(t)>=Date.now()-DAYS*864e5); const n=ts.length; head=`<h2>${name} · last ${DAYS===1?'day':DAYS+' days'} (${n})</h2>`;
+      if(state.allDone||state.q){ cnt=ts.length; more=state.allDone?'<button type="button" class="btn ghost more" data-recentdone>Show recent only</button>':''; }
+      else{ ts=ts.filter(t=>at(t)>=Date.now()-DAYS*864e5); const n=ts.length; cnt=n; head=`<h2>${name}<small>last ${DAYS===1?'day':DAYS+' days'}</small></h2>`;
         if(n>DONE_CAP){ts=ts.slice(0,DONE_CAP);more=`<button type="button" class="btn ghost more" data-alldone>+${n-DONE_CAP} more → view all</button>`;} }
     } else ts.sort(cmp);
-    const total=ts.length;
-    return `<section class="col ${k}${k===TAB?' active':''}${thin(k)?' thin':''}" data-col="${k}" aria-label="${name}"${thin(k)?` title="${name}: none"`:''}><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}${k==='done'?'':`<span class="n">${total}</span>`}</div>${k==='todo'?qaForm():''}${k==='pending'?pline:''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
+    const total=cnt??ts.length;
+    return `<section class="col ${k}${k===TAB?' active':''}${thin(k)?' thin':''}" data-col="${k}" aria-label="${name}"${thin(k)?` title="${k==='done'?`${name}: none in the last ${DAYS===1?'day':DAYS+' days'}`:`${name}: none`}"`:''}><div class="colhead">${head}${k==='doing'&&WIP&&total>WIP?`<span class="wip" title="More than ${WIP} tickets in progress at once">WIP ${total}/${WIP}</span>`:''}<span class="n">${total}</span></div>${k==='todo'?qaForm():''}${k==='pending'?pline:''}<div class="cards">${lanes(ts,k)||(k==='done'?`<p class="emptycol">Nothing done in the last ${DAYS===1?'day':DAYS+' days'}</p>`:'<p class="emptycol">None</p>')}</div>${more}</section>`;
   }).join('');
   if(keep){const n=document.querySelector('.qa-t');if(n){n.value=keep.v;document.querySelector('.qa-p').value=keep.p;if(keep.f){n.focus();n.setSelectionRange(keep.s,keep.s);}}}
   if(flip?.size) playFlip(flip);
