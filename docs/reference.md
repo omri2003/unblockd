@@ -441,7 +441,16 @@ python -m unblockd.cli --dir <repo>/tickets note BUG-10 "a signed, dated finding
 python -m unblockd.cli --dir <repo>/tickets roadmap                          # milestones in order with progress
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --milestone v0.2   # - clears it
 python -m unblockd.cli --dir <repo>/tickets migrate-milestones REL-1=v0.1 REL-2=v0.2   # version epics -> milestones
+python -m unblockd.cli health                                               # remote: GET /healthz; local: the folder; exit 1 when down
 ```
+
+**Agents without MCP, and sub-agents** (a supported interface, not a workaround): MCP tools are configured per client, so a
+sub-agent or a cloud session often has none. Set `UNBLOCKD_URL` (+ `UNBLOCKD_TOKEN`, `UNBLOCKD_BOARD`) and every CLI command
+above goes to the shared server over REST (`cli.Remote`, the same operations and errors), or call the REST API below directly.
+When nothing answers, every remote command fails with one message that starts `unblockd server down: nothing answers at <url>`
+and says what to do (exit 1); `health` checks first. The server runs where you started it: a laptop that sleeps or shuts
+down takes the board with it (the containers restart with Docker, `restart: unless-stopped`, but not while the machine is off),
+so keep the host awake while agents work, or run it on a machine that stays on.
 
 ## API
 
