@@ -128,6 +128,14 @@ try {
 		await visible('#digest [data-dgtoggle]', 'digest bar');
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]')?.getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
+		{ // UI-55: each row reads as a ticket (tile, id, title) and lists its ticket once; a render that changes nothing keeps the digest DOM
+			const rows = await page.$$eval('#digest .dg-r', (rs) => rs.map((r) => [r.dataset.open, !!r.querySelector('.dg-tile'), !!r.querySelector('.idc .tid'), !!r.querySelector('.dt')]));
+			ok(rows.length > 0 && rows.every((r) => r[1] && r[2] && r[3]), `[${tag}] digest rows need a tile, an id and a title: ${JSON.stringify(rows.slice(0, 3))}`);
+			ok(new Set(rows.map((r) => r[0])).size === rows.length, `[${tag}] digest lists a ticket twice`);
+			await page.evaluate(() => { document.querySelector('#digest .dg-r').dataset.keep = '1'; });
+			await page.fill('#q', 'zz'); await page.fill('#q', ''); await refresh();
+			ok(await page.evaluate(() => document.querySelector('#digest .dg-r')?.dataset.keep === '1'), `[${tag}] a render with no digest change rebuilt the digest rows`);
+		}
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
 		await page.click('#digest [data-dgdismiss]'); await page.waitForSelector('#digest', { state: 'hidden' });
