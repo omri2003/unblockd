@@ -221,7 +221,10 @@ class Conflict(TicketError):
 
 
 AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools", "tools_off"}
-WORKER_TOOLS = ("claim_next", "heartbeat", "add_note", "complete", "release", "ask_human", "read_doc", "get_ticket")
+# what a `--tools worker` server keeps: every tool WORK_LOOP.md tells a worker to call (tests/test_tools.py checks it, AI-41)
+WORKER_TOOLS = ("claim_next", "claim_ticket", "heartbeat", "add_note", "complete", "release", "ask_human", "read_doc", "get_ticket",
+                "create_ticket", "create_tickets", "split_ticket", "update_ticket", "arch_set_edge", "arch_remove_edge", "agents_now")
+HUMAN_TOOLS = ("answer", "reject", "accept_ticket", "approve_ticket")  # WORK_LOOP names them only to say a worker can't use them
 TOOL_RE = re.compile(r"^[a-z][a-z_]{0,39}$")
 # every tool the MCP server has (test_mcp checks this matches it): what the Agents panel offers and set_tools accepts
 MCP_TOOLS = ("accept_ticket", "add_note", "agents_now", "answer", "approve_ticket", "arch_add_component", "arch_delete_component",
@@ -573,6 +576,15 @@ class Store:
 			raise TicketError(f"milestone {new}: this board has no milestones. Add them to \"milestones\" in {CONFIG_FILE} "
 			                  "(in roadmap order: [{\"key\": \"v0.1\", \"title\": \"...\"}]), or leave milestone empty")
 		raise TicketError(f"unknown milestone {new}: this board's milestones are {', '.join(keys)} (milestones in {CONFIG_FILE})")
+
+	def rules(self) -> dict:
+		"""The board's ticket rules a worker needs before it writes: schema, agent_tickets, review, the human owners and the
+		field / note limits. board_info returns the same, and claim context carries it (`context.rules`), so a worker needs no extra call."""
+		c = self.config
+		return {"schema": c.get("schema"), "agent_tickets": c.get("agent_tickets", "open"), "review": bool(c.get("review")),
+		        "humans": [o["name"] for o in c["owners"] if o.get("kind") == "human"],
+		        "limits": {"fields": LIMITS, "note_kinds": list(NOTE_KINDS_ADD), "question_chars": QUESTION_MAX,
+		                   "summary_chars": SUMMARY_MAX, "handoff_chars": 2000, "notes_per_ticket": NOTES_MAX}}
 
 	def worker_tools(self, profile: str | None = None) -> list[str]:
 		"""The MCP tools a worker of `profile` gets: the board's base set (`worker_tools`, default WORKER_TOOLS), minus the profile's

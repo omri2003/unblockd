@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Agents
+- A `--tools worker` MCP server now has every tool the work loop tells a worker to call (create_ticket, create_tickets, split_ticket, update_ticket, arch_set_edge, arch_remove_edge, claim_ticket, agents_now); before, workers hit "unknown tool" and parked tickets.
+- The claim's `context.rules` carries the board's schema, agent_tickets, review, human owners, limits and component keys: no `board_info` call before creating a ticket.
+
 ## v0.1.0 (2026-10-11)
 
 First public release. One ticket = one JSON file in `<project>/tickets/`, committed with the code.

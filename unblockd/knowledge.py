@@ -311,6 +311,10 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 	out = {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "protocol": PROTOCOL, "rule": RULE, "inlined_chars": budget - left,
 	       "note": "Read these before working the ticket. Items without content: read_doc(path)."
 	               + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
+	rules = store.rules()  # committed config: trusted; so a worker needs no board_info call before it creates or splits (AI-41)
+	if arch["components"]:
+		rules["components"] = [{"key": c["key"], "title": c["title"]} for c in arch["components"]]
+	out["rules"] = {**rules, "trust": "trusted"}
 	if (prof := next((a for a in store.config["agents"] if a["name"] == t.get("agent")), None)):  # committed config: trusted
 		out["profile"] = {"name": prof["name"], "instructions": prof.get("instructions", ""), "model": prof.get("model"), "trust": "trusted"}
 	if (caps := capabilities(store, t)):

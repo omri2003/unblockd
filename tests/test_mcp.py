@@ -34,7 +34,8 @@ class WorkLoopTest(unittest.TestCase):
 		text = m.work_loop_text("game", "backend")
 		for word in ("claim_next(agent=<your name>, profile=backend, board=game)", "backend-1", "heartbeat", "ask_human", "release", "complete", "done_when", "conflict", "waiting", "dry", "`answer`", "`rejected`", "worktree", "Fresh context"):
 			self.assertIn(word, text)
-		self.assertIn("board_info", m.work_loop_text())
+		self.assertNotIn("board_info", m.work_loop_text())  # the rules come with the claim (context.rules, AI-41)
+		self.assertIn("context.rules", text)
 		self.assertIn("Never go silent", text)
 		self.assertIn("Your board's policy", text)
 		self.assertIn("Never go silent", m.WORK_LOOP.read_text(encoding="utf-8"))  # the text comes from the file
