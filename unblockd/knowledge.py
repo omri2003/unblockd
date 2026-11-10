@@ -185,9 +185,11 @@ def read_doc(store, path: str) -> dict:
 
 
 def sources(store, t: dict, comps: list[tuple[str, str]] = ()) -> list[tuple[str, str]]:
-	"""(docs entry, where it came from) for a ticket: board, its agent profile, its component notes
-	(`comps` = [(path, key)], context() only), the ticket."""
+	"""(docs entry, where it came from) for a ticket: board, the board's docs for each of its tags (`docs_by_tag`, in tag order),
+	its agent profile, its component notes (`comps` = [(path, key)], context() only), the ticket."""
 	out = [(e, "board") for e in store.config.get("docs", [])]
+	by_tag = store.config.get("docs_by_tag") or {}
+	out += [(e, f"tag:{tag}") for tag in t.get("tags", []) if tag in by_tag for e in by_tag[tag]]
 	prof = next((a for a in store.config["agents"] if a["name"] == t.get("agent")), None)
 	if prof:
 		out += [(e, f"agent:{prof['name']}") for e in prof.get("docs", [])]
@@ -243,7 +245,7 @@ def with_context(store, t: dict | None) -> dict | None:
 	return {**t, "context": context(store, t["id"])} if t and "id" in t else t
 
 
-SPEND = {"component": 0, "ticket": 1, "attached": 2, "agent": 3, "board": 4}  # who gets the budget first (output order is different)
+SPEND = {"component": 0, "ticket": 1, "attached": 2, "agent": 3, "tag": 4, "board": 5}  # who gets the budget first (output order is different)
 
 
 def context(store, tid: str, budget: int | None = None, inline: bool = True) -> dict:
@@ -761,8 +763,8 @@ HUBS = 5  # how many hub docs graph() lists
 def graph(store) -> dict:
 	"""Who reads what, without inlining anything: every open ticket -> the docs context() would give it.
 	{tickets, docs, reads: [{ticket, doc, via}], links: [{from, to}], no_docs, broken, hubs, orphans}.
-	- `via` = board | profile | ticket | file (first source wins per ticket, like context()'s dedupe).
-	- doc `kind` = the broadest way anyone reads it (board > profile > ticket > file), or `linked` when
+	- `via` = board | tag | profile | ticket | file (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag).
+	- doc `kind` = the broadest way anyone reads it (board > tag > profile > ticket > file), or `linked` when
 	  no ticket reads it: such a doc is `linked_only` (an orphan) and is only reached through another doc's link.
 	- `links` = doc -> doc, one hop from the docs tickets read (links_of(): only targets that exist, as text).
 	- `no_docs` = open tickets with no readable doc from their profile, themselves or attachments: only
@@ -770,7 +772,7 @@ def graph(store) -> dict:
 	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big.
 	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design)."""
 	base, cache, finfo = root(store), {}, {}
-	rank = {"board": 0, "profile": 1, "ticket": 2, "file": 3}
+	rank = {"board": 0, "tag": 1, "profile": 2, "ticket": 3, "file": 4}
 	tickets, docs, reads, links, readers = [], {}, [], [], {}
 
 	def info(rel, p):  # size + outgoing links, once per file

@@ -125,6 +125,7 @@ them when it claims a ticket:
 | Where | `docs` applies to |
 |---|---|
 | `unblockd.json` → `"docs"` | every ticket on the board (e.g. `AGENTS.md`, `docs/HANDOFF.md`) |
+| `unblockd.json` → `"docs_by_tag"` | only tickets with that tag: `{"map": ["docs/MAP_BRIEF.md"]}` (a shared brief that should not cost every ticket's budget) |
 | an agent profile → `"docs"` | every ticket that profile works (e.g. `docs/MECHANICS.md`) |
 | a ticket → `docs` (Edit) | that ticket (e.g. `docs/notes/combat/`) |
 | **Attach files** in the drawer | that ticket: stored in `tickets/files/<ID>/`, committed with it |
@@ -249,6 +250,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `id` | Board id (default: the project folder's name). |
 | `agents` | Agent profiles, see below (each may have its own `docs`). |
 | `docs` | Knowledge every ticket on the board comes with, see Knowledge. |
+| `docs_by_tag` | `{tag: [repo paths]}`: knowledge only tickets with that tag get, after the board docs and before the profile's; trusted like board docs; shown as "by tag" in the Docs view. |
 | `architecture` | Repo folder of component notes (default `docs/arch`, on when the folder exists; `null` = off), see Architecture. |
 | `context_budget` | Characters of docs inlined per ticket context (default 60000); the rest is listed. |
 | `skills`, `mcp` | Registries of the skills and MCP servers your agent harness provides, see Skills and MCP servers. Default `{}`. |
