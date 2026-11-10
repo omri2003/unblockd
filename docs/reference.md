@@ -83,6 +83,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
   (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
+- **Lease left, and a lapsed claim taken back** (AI-35): the claim result and every write reply to the holder (`heartbeat`, `add_note`,
+  `update_ticket` with `agent`, MCP short replies too) carry `lease_left_s`, plus a `warnings` line when less than 3 min is left.
+  A worker whose claim expired gets `warnings: ["you no longer hold X ..."]` on `add_note` (the note is kept). `heartbeat` and
+  `complete` take the claim back for that same worker when the activity log shows its claim expired and nothing happened since
+  (no other claim, release, complete, question) and the ticket is still claimable: a 20-minute test run then completing works.
+  Otherwise they refuse with `you no longer hold X ... and it can't be taken back: <why>`.
 - **Workers are told what failed before**: a claim result (`claim_next`, `claim_ticket`, CLI `claim`, `POST claim`) also has
   `lease_minutes`, `expires_at` and `previous_attempts`: up to 5 `{agent, outcome: expired|released|rejected, at, note}`, newest first, read from the activity log.
 - Moving a claimed ticket off *doing* by hand ends the claim.
@@ -353,7 +359,7 @@ Keyboard: `Ctrl/Cmd+K` command palette (jump to a ticket by id or title, new tic
 
 ### Lean worker context (fewer tokens per claim)
 
-- **Short write replies**: the MCP `heartbeat`, `add_note`, `update_ticket`, `release`, `ask_human` and `complete` return `{ok, id, status, effective_status, rev, note}` instead of the whole ticket (REST and CLI still return the ticket).
+- **Short write replies**: the MCP `heartbeat`, `add_note`, `update_ticket`, `release`, `ask_human` and `complete` return `{ok, id, status, effective_status, rev, note, lease_left_s?, warnings?}` instead of the whole ticket (REST and CLI still return the ticket).
 - **Worker tool set**: `python -m unblockd.mcp_server --tools worker [--profile gui]` (or env `UNBLOCKD_MCP_TOOLS=worker`, `UNBLOCKD_PROFILE=gui`) exposes only `claim_next, heartbeat, add_note, complete, release, ask_human, read_doc, get_ticket` (every tool description is sent on every model call, so fewer tools = fewer tokens per turn). The board's `worker_tools` replaces that list, a profile's `tools` adds to it and its `tools_off` removes from it (`"agents": [{"name": "gui", "tools": ["attach_file"], "tools_off": ["read_doc"]}]`), and `--tools a,b,c` names them directly. **In the web board:** Agents → Profiles and tools: one box for every worker and one per profile; click a tool to switch it (dashed = inherited from every worker; switching it off in a profile affects that profile only), then Save to unblockd.json. Workers pick it up when they next start. REST: `GET tools`, `PUT tools`. Without `--tools` (or `all`) every tool is there, for you and orchestrators. Outside tools (a browser MCP for GUI work) are declared with the `mcp` registry and loaded by the agent's harness.
 - **Docs once per session**: on the stdio server (one process = one agent session) a board or profile doc already sent to that worker within `docs_resend` (default `{"claims": 3, "minutes": 30}`: both must hold), unchanged, comes back as `"content": null, "unchanged": "... read_doc(path) if you no longer have it"`. The ticket's own docs, component notes and attachments are always sent; a changed doc, or one sent longer ago than the window, is sent again; `claim_next(fresh=true)` sends everything (after the agent's context was compacted).
 - **Missing tools**: a worker without a tool it needs calls `release(id, agent, reason, missing="browser", why="must click the login button")` (CLI `release --missing --why`, REST body keys). The ticket gets `needs: [{tool, why, profile, by, at}]` and a pinned warning note, Needs you shows it as stuck ("Needs tool browser (profile gui doesn't have it): ... Give that profile the tool, then Clear."), and workers of that profile skip the ticket (`claim_next` counts it as waiting on a human, so they don't retry) until someone clears `needs` (the Clear button, or `update needs: []`).
