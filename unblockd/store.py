@@ -41,6 +41,7 @@ DEFAULT_CONFIG = {
 	"agents": [],  # [{"name": "backend", "tags": ["gdscript"], "pillars": ["COMBAT"], "model": "sonnet", "instructions": "...", "docs": [...]}]
 	# Knowledge every ticket on this board comes with: repo paths, folders or globs (see knowledge.py).
 	"docs": [],  # ["AGENTS.md", "docs/HANDOFF.md"]
+	"docs_by_tag": {},  # {"map": ["docs/MAP_BRIEF.md"]}: read only by tickets with that tag (trusted like board docs)
 	"architecture": "docs/arch",  # repo-relative folder of component notes (one .md per component, see knowledge.components); on when the folder exists, None = off
 	# Capabilities the agent harness provides. unblockd only DECLARES them (never starts a server, never stores a secret): the registry is the allow-list,
 	# agents[].skills/mcp, use_skills/use_mcp (every ticket on the board) and a ticket's skills/mcp field select from it by name.
@@ -217,6 +218,14 @@ def load_config(tickets_dir: Path) -> dict:
 			raise TicketError(f"{CONFIG_FILE}: owner {o['name']}: kind must be \"human\" or \"agent\" (got {o.get('kind')!r})")
 	if not (isinstance(cfg["docs"], list) and all(isinstance(x, str) for x in cfg["docs"])):
 		raise TicketError(f"{CONFIG_FILE}: docs is a list of repo paths")
+	dbt = cfg["docs_by_tag"]
+	if not isinstance(dbt, dict):
+		raise TicketError(f"{CONFIG_FILE}: docs_by_tag is an object of tag -> list of repo paths, e.g. {{\"map\": [\"docs/MAP_BRIEF.md\"]}}")
+	for tag, paths in dbt.items():
+		if not TAG_RE.match(tag):
+			raise TicketError(f"{CONFIG_FILE}: docs_by_tag key {tag!r} is not a tag (lowercase a-z 0-9 : . _ -, max 40)")
+		if not (isinstance(paths, list) and paths and all(isinstance(x, str) and 0 < len(x) <= 200 and ".." not in x for x in paths)):
+			raise TicketError(f"{CONFIG_FILE}: docs_by_tag {tag}: a non-empty list of repo paths (no ..)")
 	if cfg["agent_tickets"] not in ("propose", "open"):
 		raise TicketError(f"{CONFIG_FILE}: agent_tickets must be \"propose\" or \"open\"")
 	_check_schema(cfg["schema"])

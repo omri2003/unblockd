@@ -2309,7 +2309,7 @@ async function loadDocs(){
   DV.busy=false;if(state.view==='docs')renderDocs();
 }
 const dBase=p=>p.split('/').pop(),dDir=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')+1):'';
-const dKind={board:'board',builtin:'built-in',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
+const dKind={board:'board',builtin:'built-in',tag:'by tag',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
 function dSets(f){ // the nodes a problem filter points at: {t:Set of tickets, d:Set of docs}
   const g=DV.data,t=new Set(),d=new Set();if(!f)return null;
   if(f==='nodocs')g.no_docs.forEach(x=>t.add(x));

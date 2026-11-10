@@ -75,6 +75,26 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(agents["links"], ["docs/HANDOFF.md", "docs/MECHANICS.md"])  # md link + @import; web link ignored
 		self.assertIn("Start here", agents["content"])
 
+	def test_docs_by_tag(self):
+		cfg = json.loads((self.s.dir / "unblockd.json").read_text(encoding="utf-8"))
+		(self.repo / "docs" / "MAP.md").write_text("Map brief.", encoding="utf-8")
+		cfg["docs_by_tag"] = {"map": ["docs/MAP.md", "AGENTS.md"]}
+		(self.s.dir / "unblockd.json").write_text(json.dumps(cfg), encoding="utf-8")
+		s = Store(self.s.dir)
+		s.create({"title": "map work", "pillar": "COMBAT", "tags": ["map"]}, tid="CMB-5")
+		got = [(d["path"], d["source"], d["trust"]) for d in kn.context(s, "CMB-5")["docs"]][:3]
+		self.assertEqual(got, [("AGENTS.md", "board", "trusted"), ("docs/MAP.md", "tag:map", "trusted"),  # AGENTS.md: board wins the dedupe
+		                       ("docs/MECHANICS.md", "agent:backend", "trusted")])
+		self.assertNotIn("docs/MAP.md", [d["path"] for d in kn.context(s, "CMB-1")["docs"]])  # no tag, no brief
+		g = kn.graph(s)
+		self.assertEqual(next(d for d in g["docs"] if d["path"] == "docs/MAP.md")["kind"], "tag")
+		self.assertIn({"ticket": "CMB-5", "doc": "docs/MAP.md", "via": "tag"}, g["reads"])
+		for bad, msg in (({"Map": ["x.md"]}, "is not a tag"), ({"map": []}, "non-empty list"), ({"map": ["../x.md"]}, "no \.\."), (["x"], "object of tag")):
+			cfg["docs_by_tag"] = bad
+			(self.s.dir / "unblockd.json").write_text(json.dumps(cfg), encoding="utf-8")
+			with self.assertRaisesRegex(TicketError, msg):
+				Store(self.s.dir).config
+
 	def test_complete_stores_a_result_and_dependents_get_it_as_upstream(self):
 		self.s.create({"title": "riposte", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-2")
 		self.s.create({"title": "unrelated", "pillar": "COMBAT", "blocked_by": ["CMB-1"]}, tid="CMB-3")
