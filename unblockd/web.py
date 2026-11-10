@@ -301,7 +301,9 @@ class Handler(BaseHTTPRequestHandler):
 				if act == "claim":
 					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal")))
 				if act == "heartbeat":
-					return self._send(200, store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal")))
+					box = store.inbox(agent, mark=True)
+					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"))
+					return self._send(200, {**t, **({"inbox": box} if box else {})})
 				if act == "release":
 					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or "")))
 				if act == "ask":

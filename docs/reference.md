@@ -86,6 +86,9 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Workers are told what failed before**: a claim result (`claim_next`, `claim_ticket`, CLI `claim`, `POST claim`) also has
   `lease_minutes`, `expires_at` and `previous_attempts`: up to 5 `{agent, outcome: expired|released|rejected, at, note}`, newest first, read from the activity log.
 - Moving a claimed ticket off *doing* by hand ends the claim.
+- **Notes reach the holder**: a `heartbeat` reply (MCP, REST, CLI) carries `inbox` {count, notes: [{ticket, n, by, kind, at, text}]} when
+  someone else added notes to a ticket the worker holds since it was last shown them (first line each; `get_ticket` has the rest). To ask
+  another worker for a change in a file its ticket touches, `add_note` on THAT ticket: its holder sees it within one heartbeat.
 - **Too big? Split it** instead of half-doing it: `split_ticket(id, titles, sequential?)`
   (REST `POST tickets/<id>/split`, CLI `split`, drawer menu *Split…*) makes one child per
   title with the parent's pillar, owner, priority, tags, touches, docs and components, and the parent

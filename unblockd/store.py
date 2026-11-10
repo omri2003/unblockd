@@ -1224,6 +1224,7 @@ class Store:
 			claims = self._claims()
 			now = _now()
 			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300],
+			                      "seen": len(pick.get("notes", [])),  # inbox(): notes before the claim came with it, they are not news
 				                      **({"principal": principal} if principal else {})}
 			self._save_claims(claims)
 			raw = self._read(self._path(pick["id"]))
@@ -1277,6 +1278,34 @@ class Store:
 		counts = {k: len(v) for k, v in ids.items()}
 		reason = "conflict" if counts["ready_conflicting"] else "waiting" if any(counts.values()) else "dry"
 		return {"ticket": None, "reason": reason, "counts": counts, "ids": ids, "orphaned": orphaned}
+
+	def inbox(self, agent: str, mark: bool = False) -> dict | None:
+		"""Notes others left on the tickets `agent` holds that it has not been shown yet: {count, notes: [{ticket, n, by, kind, at,
+		text: first line}]} (oldest first, the last 10), or None. A note on a ticket you hold used to wait until you re-read the ticket,
+		so a "please add these 3 lines to your file" request took a human 3 hops. Seen = the claim's `seen` (note count when last shown;
+		a claim older than that field: notes newer than claimed_at). mark=True (the heartbeat front doors) records what was shown, so each note comes
+		once. Its own mark, not heartbeat_at: the worker's own add_note renews the lease but has not read anyone's note."""
+		mine = {tid: c for tid, c in self._live_claims().items() if c["agent"] == agent}
+		out, seen = [], {}
+		for tid, c in mine.items():
+			notes = self.get(tid).get("notes", [])
+			seen[tid] = len(notes)
+			first = c.get("seen")
+			for i, n in enumerate(notes):
+				new = i >= first if isinstance(first, int) else _ts(n.get("at") or "1970-01-01T00:00:00+00:00") > _ts(c["claimed_at"])
+				if new and n.get("by") != agent:
+					text = (n.get("text") or "").strip()
+					out.append({"ticket": tid, "n": n.get("n"), "by": n.get("by"), "kind": n.get("kind"), "at": n.get("at"),
+					            "text": text.splitlines()[0][:200] if text else ""})
+		if mark and mine:
+			def save():
+				claims = self._claims()
+				for tid, k in seen.items():
+					if tid in claims and claims[tid]["agent"] == agent:
+						claims[tid]["seen"] = k
+				self._save_claims(claims)
+			self._locked(save)
+		return {"count": len(out), "notes": out[-10:]} if out else None
 
 	def attempts(self, tid: str, limit: int | None = None) -> list[dict]:
 		"""Failed claims on a ticket, newest first, from the activity log: [{agent, outcome: expired|released|rejected, at, note}]."""
