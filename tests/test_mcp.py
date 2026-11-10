@@ -87,7 +87,7 @@ class WorkLoopTest(unittest.TestCase):
 		m.claim_ticket("B-1", "w-1")
 		for r in (m.heartbeat("B-1", "w-1", "testing"), m.add_note("B-1", "w-1", "found it", kind="finding"),
 		          m.update_ticket("B-1", {"priority": "P1"}, "w-1"), m.complete("B-1", "w-1", "done")):
-			self.assertEqual(set(r) - {"note"}, {"ok", "id", "status", "effective_status", "rev"})
+			self.assertEqual(set(r) - {"note", "lease_left_s", "warnings"}, {"ok", "id", "status", "effective_status", "rev"})
 			self.assertLess(len(json.dumps(r)), 200)
 
 	def test_board_docs_are_sent_once_per_session(self):

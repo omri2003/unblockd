@@ -73,6 +73,7 @@ PINNED_KINDS = ("decision", "finding", "warning", "answer", "approved", "rejecte
 NOTES_SHORT = 3000  # chars of note text a claim sends whole; past it: every pinned note + the last NOTES_TAIL others
 NOTES_TAIL = 5
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
+LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is left
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
@@ -874,7 +875,7 @@ class Store:
 	def update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
 		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI).
 		`expected_rev` = the rev the caller last saw: if the ticket was written since, raise Conflict instead of overwriting."""
-		return self._locked(lambda: self._update(tid, changes, agent, expected_rev))
+		return self._with_lease(self._locked(lambda: self._update(tid, changes, agent, expected_rev)), agent)
 
 	def _update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
 		path = self._path(tid)
@@ -1240,7 +1241,7 @@ class Store:
 		t["notes"], left = self.lean_notes(t["notes"])
 		if left:
 			t["notes_omitted"] = f"{left} older notes not sent (none of them pinned): get_ticket shows every note"
-		return {**t, "lease_minutes": lease, "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
+		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
 		        "previous_attempts": self.attempts(got, 5),
 		        **({"warnings": ["no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it"]}
 		           if not principal and len(humans) > 1 else {})}
@@ -1308,9 +1309,71 @@ class Store:
 			claims[tid]["heartbeat_at"] = _now()
 			self._save_claims(claims)
 
-	def _holder(self, tid: str, agent: str, principal: str | None = None) -> dict:
+	def _lapsed(self, tid: str, agent: str) -> dict | None:
+		"""The `claim` event of `agent`'s last claim on tid when that claim EXPIRED and nothing ended or re-took it since
+		(no other claim, release, complete, question, drop); else None. Read from the activity log, newest first."""
+		expired = False
+		for e in self.activity(tid, limit=1_000_000):
+			ev = e["event"]
+			if ev == "expired":
+				if e["agent"] != agent or expired:
+					return None
+				expired = True
+			elif ev == "claim":
+				return e if expired and e["agent"] == agent else None
+			elif ev in ("release", "complete", "question", "dropped", "rejected", "approved", "done", "deleted", "split"):
+				return None
+		return None
+
+	def lease_status(self, tid: str, agent: str | None) -> dict:
+		"""What a reply to `agent` about tid adds: {lease_left_s} while it holds the live claim (plus a warning under LEASE_WARN_S),
+		a warning when its claim lapsed or someone else holds it, nothing for a caller with no claim history (a human)."""
+		if not agent:
+			return {}
 		c = self._live_claims().get(tid)
+		if c and c["agent"] == agent:
+			left = max(0, int(float(self.config["lease_minutes"]) * 60 - c["quiet_s"]))
+			warn = [f"your lease on {tid} ends in {left} s: call heartbeat now, or the ticket goes back to todo"] if left < LEASE_WARN_S else []
+			return {"lease_left_s": left, **({"warnings": warn} if warn else {})}
+		if c:
+			return {"warnings": [f"you don't hold {tid}: {c['agent']} does"]}
+		if self._lapsed(tid, agent):
+			return {"warnings": [f"you no longer hold {tid}: your claim expired (no heartbeat for {self.config['lease_minutes']} min). "
+			                     "heartbeat or complete takes it back while nobody else has claimed it"]}
+		return {}
+
+	def _retake(self, tid: str, agent: str, principal: str | None) -> dict | None:
+		"""Give `agent` back the claim it lost to the lease when nobody claimed tid since and it is still claimable. Caller holds the lock.
+		Returns the new claim, or None."""
+		ev = self._lapsed(tid, agent)
+		if not ev:
+			return None
+		live = self._live_claims()
+		profile = self.profile_of(agent)
+		t = self.get(tid)
+		if not self._claimable(t, live, {x["id"]: x for x in self._all_raw()}, profile):
+			return None
+		principal = principal or ev.get("principal")
+		claims, now = self._claims(), _now()
+		claims[tid] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": "taken back after the lease lapsed",
+		               **({"principal": principal} if principal else {})}
+		self._save_claims(claims)
+		raw = self._read(self._path(tid))
+		raw["status"], raw["updated"] = "doing", date.today().isoformat()
+		self._write(raw)
+		self._log("claim", tid, agent, "taken back after the lease lapsed (nobody claimed it since)", principal)
+		return {**claims[tid], "retaken": True}
+
+	def _holder(self, tid: str, agent: str, principal: str | None = None, retake: bool = False) -> dict:
+		c = self._live_claims().get(tid)
+		if not c and retake:
+			c = self._retake(tid, agent, principal)
 		if not c:
+			if self._lapsed(tid, agent):
+				t = self.get(tid)
+				why = self._unclaimable(t, self._live_claims(), {x["id"]: x for x in self._all_raw()}, self.profile_of(agent))
+				raise TicketError(f"you no longer hold {tid}: your claim expired (no heartbeat for {self.config['lease_minutes']} min) "
+				                  f"and it can't be taken back: {why}")
 			raise TicketError(f"{tid} isn't claimed (or the claim expired): claim it again")
 		if c["agent"] != agent:
 			raise TicketError(f"{tid} is claimed by {c['agent']}, not {agent}")
@@ -1321,15 +1384,22 @@ class Store:
 	def heartbeat(self, tid: str, agent: str, note: str = "", principal: str | None = None) -> dict:
 		"""Keep a claim alive and say what you're doing now (shown live on the board)."""
 		def beat():
-			self._holder(tid, agent, principal)
+			c = self._holder(tid, agent, principal, retake=True)
 			claims = self._claims()
 			claims[tid]["heartbeat_at"] = _now()
 			if note:
 				claims[tid]["note"] = note[:300]
 			self._save_claims(claims)
 			self._log("heartbeat", tid, agent, note)
-		self._locked(beat)
-		return self.get(tid)
+			return c.get("retaken")
+		retaken = self._locked(beat)
+		return self._with_lease(self.get(tid), agent, retaken)
+
+	def _with_lease(self, t: dict, agent: str | None, retaken: bool = False) -> dict:
+		"""t plus lease_status(t, agent), and a warning when the claim was just taken back."""
+		info = self.lease_status(t["id"], agent)
+		warn = ([f"your claim on {t['id']} had expired; nobody claimed it since, so it is yours again. Heartbeat more often"] if retaken else []) + info.pop("warnings", [])
+		return {**t, **info, **({"warnings": t.get("warnings", []) + warn} if warn else {})}
 
 	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "") -> dict:
 		"""Give a claimed ticket back: claim ends, ticket returns to todo. missing = a tool the worker needs and does not have (why = one
@@ -1415,7 +1485,7 @@ class Store:
 			self._keepalive(tid, by.strip())
 			self._log("note", tid, by.strip(), text.strip())
 		self._locked(run)
-		return self.get(tid)
+		return self._with_lease(self.get(tid), by.strip())
 
 	def answer(self, tid: str, by: str, text: str) -> dict:
 		"""A human answers an ask(): appends "Answer to: <question> — <text>" as a note, clears waiting_on (the ticket is ready again), logs `answered`."""
@@ -1508,7 +1578,7 @@ class Store:
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
-			c = self._holder(tid, agent, principal)
+			c = self._holder(tid, agent, principal, retake=True)
 			if c.get("principal"):
 				result["principal"] = c["principal"]
 			raw = self._read(self._path(tid))
@@ -1522,8 +1592,9 @@ class Store:
 			raw["done_at"] = _now() if status == "done" else ""
 			self._write(raw)
 			self._log("complete", tid, agent, summary, c.get("principal"))
-		self._locked(done)
-		return self.get(tid)
+			return c.get("retaken")
+		retaken = self._locked(done)
+		return self._with_lease(self.get(tid), None, retaken)
 
 	def activity(self, tid: str | None = None, limit: int = 50, since: str | None = None) -> list[dict]:
 		"""Newest first. `since` (ISO timestamp, naive = UTC) keeps only events at or after it."""

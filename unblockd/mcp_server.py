@@ -105,7 +105,8 @@ def tool(fn):
 def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
-	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {})}
+	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
+	        **{k: t[k] for k in ("lease_left_s", "warnings") if k in t}}  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
