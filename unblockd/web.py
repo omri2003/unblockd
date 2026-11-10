@@ -1,7 +1,7 @@
 """Board UI + REST API. Stdlib only: `python -m unblockd.web`.
 
 GET    /api/boards                       every board: id, title, ticket counts
-POST   /api/boards                       {"id": "my-game", "title": "My game"}  (needs UNBLOCKD_ROOT)
+POST   /api/boards                       {"id": "my-game", "title": "My game", "root"?}  (needs UNBLOCKD_ROOT)
 GET    /api/needs                        every board's tickets that wait on a person (read-only, for the UI's Needs you panel):
                                          [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck, "title", "priority", "score", "unblocks",
                                          "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars), "notes" (newest 10)}]}], boards with items only,
@@ -235,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, BOARDS.summary())
 				if method == "POST":
 					b = self._body()
-					return self._send(201, BOARDS.create(str(b.get("id", "")), str(b.get("title", ""))))
+					return self._send(201, BOARDS.create(str(b.get("id", "")), str(b.get("title", "")), b.get("root") or None))
 				return self._send(405, {"error": "method not allowed"})
 			if parts == ["api", "needs"]:
 				return self._send(200, _needs()) if method == "GET" else self._send(405, {"error": "method not allowed"})

@@ -455,7 +455,8 @@ GET    /api/needs                     every board's tickets waiting on a person,
                                       Stuck = a missing blocker, a doing ticket with an open blocker (immediately), or a doing ticket stale for stale_days
 GET    /api/chat                      {"enabled", "model"}
 POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
-POST   /api/boards                    {"id": "my-game", "title": "My game"}
+POST   /api/boards                    {"id": "my-game", "title": "My game", "root"?: one of UNBLOCKD_ROOT}  -> the board + "path" (+ "host_path" in Docker);
+                                      in a container a root that is not a mounted volume is refused (the board would vanish with the container)
 # per board under /api/b/<board>/ ; without the prefix = the default board
 GET    meta                           statuses, priorities, fields, config
 GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
