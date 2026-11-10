@@ -352,6 +352,16 @@ class CliTest(unittest.TestCase):
 			with contextlib.redirect_stderr(io.StringIO()):
 				self.assertEqual(call("update", "BUG-1", "--json", '{"status": "maybe"}')[0], 1)
 
+	def test_piped_output_is_utf8(self):
+		# Windows pipes default to cp1252: printing a ticket with "→" used to crash AFTER the command ran (a claim was taken, the output lost)
+		import os, subprocess, sys
+		with tempfile.TemporaryDirectory() as d:
+			env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+			r = subprocess.run([sys.executable, "-m", "unblockd.cli", "--dir", d, "create", "--prefix", "BUG", "--title", "Slash 1 → Slash 2"],
+			                   capture_output=True, env=env, cwd=Path(__file__).resolve().parents[1])
+			self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+			self.assertEqual(json.loads(r.stdout.decode("utf-8"))["title"], "Slash 1 → Slash 2")
+
 	def test_skill_and_mcp_flags(self):
 		import io, contextlib
 		from unblockd import cli
