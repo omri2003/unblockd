@@ -69,6 +69,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from . import boards as bd
 from . import chat
+from . import connectors
 from . import github
 from . import knowledge as kn
 from . import notify
@@ -97,11 +98,11 @@ def _needs() -> list[dict]:
 	out = []
 	for bid, path in BOARDS.all().items():
 		try:
-			s = st.Store(path, BOARDS.legacy)
+			s = BOARDS.open(path)
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), github.load(s.rt)
+		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), s.backend.get_doc("prs")
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -369,7 +370,7 @@ def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
 	st.refuse_open_bind(host, os.environ.get("UNBLOCKD_TOKEN"))
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
-	      + (", ".join(f"{k} ({v})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
+	      + (", ".join(f"{k} ({connectors.describe(str(v))})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	if notify.start(BOARDS):
 		print("notifications: webhook on", flush=True)
 	if github.start(BOARDS):

@@ -1,8 +1,9 @@
 # Pinned to Debian release + Python minor (a floating tag changes under you); pin a @sha256 digest for fully reproducible builds.
 FROM python:3.12-slim-bookworm
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements-db.txt ./
+# The database drivers are in the image (owner decision CORE-27 #13: one image, every connector works)
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-db.txt
 COPY unblockd ./unblockd
 COPY static ./static
 # OpenShift pattern: runs as 1001, or any random UID it assigns (always in group 0), so group perms = owner perms.

@@ -20,7 +20,7 @@ FAILED = {"failure", "cancelled", "timed_out", "action_required", "startup_failu
 
 
 def load(rt) -> dict:
-	"""prs.json from a board's runtime folder (Store.rt)."""
+	"""prs.json from a files board's runtime folder (Store.rt); boards read theirs with store.backend.get_doc("prs")."""
 	try:
 		return json.loads((rt / "prs.json").read_text(encoding="utf-8"))
 	except (OSError, ValueError):
@@ -49,7 +49,7 @@ class Syncer:
 
 	def _board(self, bid: str, tdir) -> None:
 		store = self.boards.get(bid)
-		old, new = load(store.rt), {}
+		old, new = store.backend.get_doc("prs"), {}
 		for t in store.list():
 			if t["status"] != "review":
 				continue
@@ -74,9 +74,7 @@ class Syncer:
 				e["noted"] = True
 			new[t["id"]] = e
 		if new != old:
-			d = store.rt
-			d.mkdir(parents=True, exist_ok=True)
-			(d / "prs.json").write_text(json.dumps(new, indent=1), encoding="utf-8")
+			store.backend.put_doc("prs", new)
 
 	def _check(self, m, prev: dict) -> dict:
 		o, r, n = m.groups()
