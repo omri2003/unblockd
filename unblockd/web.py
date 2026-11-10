@@ -14,6 +14,7 @@ GET    next?owner=&pillar=&agent=&tag=&limit=   ready tickets ranked by priority
 GET    plan?per_agent=                   ready tickets grouped by agent profile (work_plan)
 GET    tickets/<id>
 POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id": "BUG-13", ...}; "agent"? = the creating worker (strict schema, proposal gate); a human's ticket may come back with "warnings"
+POST   tickets/batch                     {"tickets": [{prefix|id, ...fields}, ...], "agent"?}  up to 50, all or nothing; blocked_by / parent may say "#N" (the Nth item) -> {"tickets", "ids": {"#1": id}, "warnings"?}
 POST   tickets/<id>/accept               {"by"?}  accept an agent's proposal (400 unless proposed_by is set)
 POST   tickets/<id>/approve              {"by"?}  review -> done, recording result.approved_by / approved_at (400 unless status is review; not the completer, not a worker)
 PATCH  tickets/<id>                      {...fields to change}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it
@@ -324,6 +325,9 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
+			if method == "POST" and rest == ["tickets", "batch"]:
+				b = self._body()
+				return self._send(201, store.create_many(b.get("tickets"), agent=b.get("agent")))
 			if rest[:1] != ["tickets"] or len(rest) > 2:
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None

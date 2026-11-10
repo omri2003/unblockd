@@ -8,7 +8,7 @@ profile docs already sent unchanged in this process (_dedupe).
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, accept_ticket, approve_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+create_ticket, create_tickets, accept_ticket, approve_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, roadmap, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
@@ -274,6 +274,17 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
 	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or [], "skills": skills or [], "mcp": mcp or [], "milestone": milestone}
 	return store.create(data, tid=id, prefix=prefix, agent=agent)
+
+
+@tool
+def create_tickets(tickets: list[dict], agent: str, board: str | None = None) -> dict:
+	"""Create several tickets in ONE call (a plan; at most 50), all or nothing: any problem refuses the whole batch with every
+	problem listed by item ("#2: ..."), nothing created. Each item = the create_ticket fields (title required; prefix or id).
+	blocked_by and parent may name existing ids or "#N" = the Nth ticket of this list (1-based), so new tickets can wait on each
+	other: [{"prefix": "API", "title": "Add the endpoint"}, {"prefix": "UI", "title": "Use it", "blocked_by": ["#1"]}].
+	agent = your worker name. The board schema and the proposal gate apply to each ticket as in create_ticket.
+	Returns {tickets, ids: {"#1": "API-7", ...}, warnings?}."""
+	return BOARDS.get(board).create_many(tickets, agent=agent)
 
 
 @tool

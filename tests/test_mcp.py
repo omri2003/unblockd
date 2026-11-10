@@ -143,8 +143,22 @@ class WorkLoopTest(unittest.TestCase):
 		from unblockd import mcp_server as m
 		self.assertIn("plan_from_spec", [p.name for p in asyncio.run(m.mcp.list_prompts())])
 		text = str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "game", "path": "docs/spec.md"})))
-		for word in ("docs/spec.md", "board=", "AT MOST 10", "done_when", "STOP", "before that", "dependency order", "DATA"):
+		for word in ("docs/spec.md", "board=", "AT MOST 10", "done_when", "STOP", "before that", "ONE `create_tickets", "#N", "all or nothing", "DATA"):
 			self.assertIn(word, text)
+
+	def test_create_tickets_one_call_with_temp_refs(self):
+		from unblockd import mcp_server as m
+		from mcp.server.mcpserver.exceptions import ToolError
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		tool = {t.name: t for t in asyncio.run(m.mcp.list_tools())}["create_tickets"]
+		self.assertEqual(set(tool.input_schema["required"]), {"tickets", "agent"})
+		out = m.create_tickets([{"prefix": "A", "title": "a"}, {"prefix": "A", "title": "b", "blocked_by": ["#1"]}], agent="planner")
+		self.assertEqual(out["ids"], {"#1": "A-1", "#2": "A-2"})
+		self.assertEqual(m.BOARDS.get(None).get("A-2")["blocked_by"], ["A-1"])
+		with self.assertRaisesRegex(ToolError, "#2: title is required"):
+			m.create_tickets([{"prefix": "A", "title": "c"}, {"prefix": "A"}], agent="planner")
+		self.assertEqual(len(m.BOARDS.get(None).list()), 2)
 
 
 @unittest.skipIf(mcp is None, "mcp not installed")
@@ -193,7 +207,7 @@ class HttpServerTest(unittest.TestCase):
 	def test_tools_and_architecture_over_http(self):
 		url, demo = self.serve()
 		tools = {t.name: t for t in self.call(url, None, None).tools}
-		for n in ("arch_set_edge", "arch_add_component", "architecture_map", "claim_next", "board_info", "accept_ticket", "approve_ticket"):
+		for n in ("arch_set_edge", "arch_add_component", "architecture_map", "claim_next", "board_info", "accept_ticket", "approve_ticket", "create_tickets"):
 			self.assertIn(n, tools)
 		self.assertIn("components", tools["create_ticket"].input_schema["properties"])
 		self.assertIn("agent", tools["create_ticket"].input_schema["required"])  # the proposal gate's identity, same tool as over stdio

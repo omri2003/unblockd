@@ -218,8 +218,8 @@ uses its real id.
 **MCP prompt `plan_from_spec(board, path)`**: turns a spec / PRD in the project repo into
 tickets. The agent reads it with `read_doc`, checks `list_tickets` for overlap, proposes at
 most 10 tickets (concrete title, 1-4 `done_when`, `touches`, real `blocked_by`, `parent` for
-a group), shows the plan and waits for the human's approval before `create_ticket`, then
-creates in dependency order. The spec is treated as data. Text: `unblockd/PLAN_FROM_SPEC.md`.
+a group), shows the plan and waits for the human's approval before `create_tickets`, then
+creates the whole plan in ONE `create_tickets` call (tickets of the plan refer to each other as `#N`). The spec is treated as data. Text: `unblockd/PLAN_FROM_SPEC.md`.
 
 ## Configure: `tickets/unblockd.json`
 
@@ -316,6 +316,8 @@ Every ticket comes back with derived fields: `effective_status`,
 `open_blockers`, `blocks`, `unblocks` (open tickets downstream, transitive),
 `missing_blockers`, `stale_days`, `agent` and `score` = priority weight
 (P0 8, P1 4, P2 2, P3 1) x (1 + `unblocks`).
+
+**Batch create** (a plan in one step): `create_tickets(tickets, agent)` (MCP), `create-many --file PATH|-` (CLI, a JSON array), `POST tickets/batch` (REST, `Remote.create_many`). Each item is what `create_ticket` takes (prefix or id, title, fields). In `blocked_by` and `parent` an item may name an existing id or `"#N"` = the Nth item of the same list (1-based), so the tickets of a plan can wait on each other before they have ids; forward refs are fine, loops are refused and spelled out. It runs under one lock and is all or nothing: one bad item refuses the whole batch with every problem named by item (`#2: title is required | #4: no ticket NOPE-1 on this board`) and nothing is written. The schema and the proposal gate apply to each item exactly as for `create_ticket`. At most 50 per call. The reply: `tickets`, `ids` (`{"#1": "API-7", ...}`) and, for a human whose items break the schema, `warnings` by item. One `created` event per ticket (plus `proposed` on a gated board).
 
 **Notes** are a list on the ticket, separate from `body` (the description): `"notes": [{"by": "backend-1", "at": "2026-10-20T10:00:00+00:00", "kind": "note", "text": "found the cause"}]`, oldest first. `add_note` (MCP / CLI `note` / REST `POST tickets/<id>/notes`) adds a note of kind `note` (progress), `decision` (a choice and why), `finding` (a cause, an error, a fact found) or `warning` (don't do X: it breaks Y); notes are numbered (`n`), `reply_to` = the note answered, `supersedes` = a pinned note it replaces (a reversed decision); asking, answering (`q` holds the question), approving, rejecting, accepting, releasing with a reason, an expired claim and `complete` (`status`, plus the `done_when` it was finished against) add their own kinds. They are append-only: `update` refuses `notes`, and editing the body never touches them. Tickets written before notes were a field kept them as lines in the body; they are split out when read and saved as `notes` on the ticket's next write.
 
@@ -416,7 +418,7 @@ Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the packag
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
-start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `accept_ticket`, `approve_ticket` (the human side of review: done + who approved),
+start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `create_tickets` (a plan in one call, see Tickets), `accept_ticket`, `approve_ticket` (the human side of review: done + who approved),
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
 `knowledge_graph`, `architecture_map`, `read_doc`, `attach_file`, `detach_file`; to edit the architecture `arch_add_component`, `arch_update_component`, `arch_delete_component`, `arch_set_edge`, `arch_remove_edge` (each takes `agent`; they rewrite only the managed parts of the notes, see Architecture; there is no CLI command for them). Every tool takes `board=`
@@ -453,6 +455,7 @@ python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store --skill pytest-runner --mcp postgres   # names from the board's registry
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent backend-1   # as a worker: strict schema, may park as a proposal
+python -m unblockd.cli --dir <repo>/tickets create-many --file plan.json --agent planner   # a JSON array, all or nothing; "#N" = the Nth item (--file - reads stdin)
 python -m unblockd.cli --dir <repo>/tickets accept BUG-11 --by omri
 python -m unblockd.cli --dir <repo>/tickets split BUG-10 --title "part one" --title "part two" --sequential
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --json '{"status":"done"}'
@@ -507,6 +510,7 @@ GET    doc?path=                      a text file from the project repo, with it
 POST   tickets/<id>/files             {"name", "content"}     GET / DELETE tickets/<id>/files/<name>
 GET    tickets/<id>
 POST   tickets                        {"prefix": "BUG", "title": "...", "agent"?: worker name, ...}  (a human's ticket may return "warnings")
+POST   tickets/batch                  {"tickets": [{"prefix"|"id", "title", ..., "blocked_by": ["#1"]}], "agent"?}  <= 50, all or nothing -> 201 {"tickets", "ids": {"#1": id}, "warnings"?: {"#N": [...]}}
 POST   tickets/<id>/accept            {"by"?}  accept an agent's proposal
 PATCH  tickets/<id>                   {"status": "done"}   (If-Match: <rev> optional: 409 if the ticket changed since you read it)
 DELETE tickets/<id>                   ?agent=, ?reason= (rejecting a proposal; logged)

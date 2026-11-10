@@ -226,9 +226,10 @@ TOOL_RE = re.compile(r"^[a-z][a-z_]{0,39}$")
 # every tool the MCP server has (test_mcp checks this matches it): what the Agents panel offers and set_tools accepts
 MCP_TOOLS = ("accept_ticket", "add_note", "agents_now", "answer", "approve_ticket", "arch_add_component", "arch_delete_component",
              "arch_remove_edge", "arch_set_edge", "arch_update_component", "architecture_map", "ask_human", "attach_file", "board_info",
-             "claim_next", "claim_ticket", "complete", "create_board", "create_ticket", "delete_ticket", "detach_file", "get_context",
+             "claim_next", "claim_ticket", "complete", "create_board", "create_ticket", "create_tickets", "delete_ticket", "detach_file", "get_context",
              "get_ticket", "heartbeat", "knowledge_graph", "list_boards", "list_tickets", "next_ready", "read_doc", "reject", "release",
              "roadmap", "split_ticket", "update_ticket", "work_plan")
+BATCH_MAX = 50  # tickets per create_many
 SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 
@@ -519,11 +520,11 @@ class Store:
 			raise TicketError(problems[0] if len(problems) == 1 else f"{len(problems)} problems: " + "; ".join(problems) + " (limits: board_info)")
 		return out
 
-	def _check_loop(self, tid: str, blocked_by: list[str]) -> None:
-		"""Refuse blocked_by that makes a ticket wait on itself, directly or down a chain."""
+	def _check_loop(self, tid: str, blocked_by: list[str], extra: dict = {}) -> None:
+		"""Refuse blocked_by that makes a ticket wait on itself, directly or down a chain. extra = more edges (a create_many batch)."""
 		if tid in blocked_by:
 			raise TicketError(f"{tid} can't be blocked by itself")
-		graph = {t["id"]: t.get("blocked_by", []) for t in self._all_raw()}
+		graph = {t["id"]: t.get("blocked_by", []) for t in self._all_raw()} | extra
 		graph[tid] = blocked_by
 		parent: dict[str, str] = {}
 		stack = [(b, tid) for b in blocked_by]
@@ -667,13 +668,13 @@ class Store:
 			if bad:
 				raise TicketError(f"unknown {k} {', '.join(bad)}: this board's {k} are {', '.join(self.config[k]) or 'none (register them in ' + CONFIG_FILE + ')'}")
 
-	def _check_parent(self, tid: str, parent: str | None) -> None:
-		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor."""
+	def _check_parent(self, tid: str, parent: str | None, extra: dict = {}) -> None:
+		"""Refuse a parent that doesn't exist or that would make a ticket its own ancestor. extra = more {id: parent} (a create_many batch)."""
 		if parent is None:
 			return
 		if parent == tid:
 			raise TicketError(f"{tid} can't be its own parent")
-		up = {t["id"]: t.get("parent") for t in self._all_raw()}
+		up = {t["id"]: t.get("parent") for t in self._all_raw()} | extra
 		if parent not in up:
 			raise TicketError(f"parent {parent} doesn't exist: create it first or set parent to null")
 		chain, x = [tid, parent], up[parent]
@@ -877,24 +878,151 @@ class Store:
 		a human gets the ticket plus `warnings`. On a board with agent_tickets "propose" an agent's ticket is a proposal until accept().
 		An `agent` naming a `kind: human` owner is that person (MCP create_ticket requires a name, so their own Claude sends theirs):
 		no proposal (they could never accept their own) and no strict schema; the `created` event still names them."""
-		agent = agent or None
-		human = agent in {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		agent, strict = self._creator(agent)
 		def run():
-			pf = (self.config["schema"] or {}).get("prefixes") or {}
-			pre = prefix
-			if tid is None and not pre and pf:
-				if len(pf) != 1:
-					raise TicketError(f"give a prefix or an id: this board's prefixes are {', '.join(pf)} (board_info says what each means)")
-				pre = next(iter(pf))
-			strict = agent is not None and not human
+			pre = self._pick_prefix(tid, prefix)
 			problems = self._schema_problems(data, tid.split("-")[0] if tid else pre, strict)
 			if problems and strict:
-				msg = "ticket refused by the board schema: " + "; ".join(problems)
-				raise TicketError(msg[:400] + ("…" if len(msg) > 400 else "")
-				                  + (" (meanings: board_info; if none fits, ask_human, do not guess a near prefix)" if any(x.startswith("prefix") for x in problems) else ""))
+				raise TicketError(self._schema_refusal(problems))
 			t = self._create(data, tid, pre, proposed_by=agent if strict and self.config["agent_tickets"] == "propose" else "", agent=agent)
 			return {**t, "warnings": problems} if problems else t
 		return self._locked(run)
+
+	def _creator(self, agent: str | None) -> tuple[str | None, bool]:
+		"""(agent or None, strict): strict = an agent that is not a `kind: human` owner (schema refuses, proposal gate applies)."""
+		agent = agent or None
+		human = agent in {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		return agent, agent is not None and not human
+
+	def _pick_prefix(self, tid: str | None, prefix: str | None) -> str | None:
+		"""No prefix and no id: a schema with exactly one prefix uses it; several = refused listing them."""
+		pf = (self.config["schema"] or {}).get("prefixes") or {}
+		if tid is None and not prefix and pf:
+			if len(pf) != 1:
+				raise TicketError(f"give a prefix or an id: this board's prefixes are {', '.join(pf)} (board_info says what each means)")
+			return next(iter(pf))
+		return prefix
+
+	@staticmethod
+	def _schema_refusal(problems: list[str]) -> str:
+		msg = "ticket refused by the board schema: " + "; ".join(problems)
+		return (msg[:400] + ("…" if len(msg) > 400 else "")
+		        + (" (meanings: board_info; if none fits, ask_human, do not guess a near prefix)" if any(x.startswith("prefix") for x in problems) else ""))
+
+	def create_many(self, items: list, agent: str | None = None) -> dict:
+		"""Create up to BATCH_MAX tickets in ONE locked, all-or-nothing step. Each item = what create() takes as data, plus optional
+		`prefix` / `id`. `blocked_by` and `parent` may name existing ids or "#N" = the Nth item of this batch (1-based), so a plan's
+		tickets can wait on each other before they have ids. Schema and proposal gate apply per item exactly as in create().
+		Everything is validated before anything is written: any problem = one TicketError naming every one by item ("#2: ...").
+		Returns {tickets, ids: {"#1": "ART-60", ...}, warnings?: {"#N": [...]}} (warnings: a human's schema breaks, as in create())."""
+		agent, strict = self._creator(agent)
+		if not isinstance(items, list) or not items:
+			raise TicketError("tickets must be a non-empty list of ticket objects")
+		if len(items) > BATCH_MAX:
+			raise TicketError(f"{len(items)} tickets in one batch: at most {BATCH_MAX}; create the rest in another call (refer to these by their new ids)")
+		def run():
+			errs: list[str] = []
+			def bad(i, e):
+				msg = f"#{i}: {e}"
+				if msg not in errs:
+					errs.append(msg)
+			# 1) ids: explicit ones first, then the next free numbers per prefix, skipping ids taken in this batch
+			tids: list[str | None] = [None] * len(items)
+			pres: list[str | None] = [None] * len(items)
+			for i, it in enumerate(items):
+				if not isinstance(it, dict):
+					bad(i + 1, "ticket data must be an object")
+					continue
+				try:
+					tid = it.get("id")
+					if tid is not None:
+						if not isinstance(tid, str):
+							raise TicketError(f"invalid id {tid!r}")
+						if self._path(tid).exists():
+							raise TicketError(f"{tid} already exists")
+						if tid in tids:
+							raise TicketError(f"{tid} is given twice in this batch")
+						tids[i] = tid
+					else:
+						pres[i] = self._pick_prefix(None, it.get("prefix"))
+						if not pres[i]:
+							raise TicketError("give an id or a prefix (e.g. BUG)")
+				except TicketError as e:
+					bad(i + 1, e)
+			nxt: dict[str, int] = {}
+			for i, pre in enumerate(pres):
+				if pre is None or tids[i]:
+					continue
+				try:
+					n = nxt.get(pre) or int(self.next_id(pre).rsplit("-", 1)[1])
+				except TicketError as e:
+					bad(i + 1, e)
+					continue
+				while f"{pre}-{n}" in tids:
+					n += 1
+				tids[i], nxt[pre] = f"{pre}-{n}", n + 1
+			# 2) resolve "#N", clean and check each item against the board plus the rest of the batch
+			def ref(x):
+				if isinstance(x, str) and x.startswith("#"):
+					k = int(x[1:]) if x[1:].isdigit() else 0
+					if not 1 <= k <= len(items):
+						raise TicketError(f"{x} is not an item of this batch (#1 to #{len(items)})")
+					if not tids[k - 1]:
+						raise TicketError(f"{x} has no id (see its own problem)")
+					return tids[k - 1]
+				return x
+			datas: list[dict] = []
+			for i, it in enumerate(items):
+				d = {k: v for k, v in it.items() if k not in ("id", "prefix")} if isinstance(it, dict) else {}
+				try:
+					if isinstance(d.get("blocked_by"), list):
+						d["blocked_by"] = [ref(x) for x in d["blocked_by"]]
+					if "parent" in d:
+						d["parent"] = ref(d["parent"])
+				except TicketError as e:
+					bad(i + 1, e)
+				datas.append(d)
+			known = {x for x in tids if x}
+			graph = {tids[i]: d["blocked_by"] for i, d in enumerate(datas) if tids[i] and isinstance(d.get("blocked_by"), list)}
+			ups = {tids[i]: d.get("parent") for i, d in enumerate(datas) if tids[i]}
+			built, warns = [], {}
+			proposed = agent if strict and self.config["agent_tickets"] == "propose" else ""
+			for i, d in enumerate(datas):
+				if not tids[i]:
+					continue  # already reported
+				problems = self._schema_problems(d, tids[i].split("-")[0], strict)
+				if problems and strict:
+					bad(i + 1, self._schema_refusal(problems))
+				elif problems:
+					warns[f"#{i + 1}"] = problems
+				try:
+					built.append(self._prepare(d, tids[i], proposed_by=proposed, batch=(known, graph, ups)))
+				except TicketError as e:
+					bad(i + 1, e)
+			if errs:
+				raise TicketError(self._batch_refusal(errs))
+			# 3) write them all (undone if a write fails), then log
+			done = []
+			try:
+				for t in built:
+					self._write(t)
+					done.append(t["id"])
+			except OSError as e:
+				for x in done:
+					self._path(x).unlink(missing_ok=True)
+				raise TicketError(f"could not write the batch ({e}): nothing was created")
+			for t in built:
+				self._log("created", t["id"], agent, t["title"])
+				if proposed:
+					self._log("proposed", t["id"], proposed, t["title"])
+			out = {"tickets": [self.get(x) for x in done], "ids": {f"#{i + 1}": x for i, x in enumerate(done)}}
+			return {**out, "warnings": warns} if warns else out
+		return self._locked(run)
+
+	@staticmethod
+	def _batch_refusal(errs: list[str]) -> str:
+		msg = f"batch refused, nothing was created ({len(errs)} problem{'s' if len(errs) > 1 else ''}): " + " | ".join(errs)
+		return msg[:2000] + ("…" if len(msg) > 2000 else "")
 
 	def _schema_problems(self, data: dict, prefix: str | None, strict: bool) -> list[str]:
 		sc = self.config["schema"]
@@ -913,16 +1041,27 @@ class Store:
 		return out
 
 	def _create(self, data: dict, tid: str | None = None, prefix: str | None = None, inherited: list[str] = (), inherited_caps: dict = {}, inherited_components: list[str] = (), proposed_by: str = "", agent: str | None = None) -> dict:
-		clean = self._clean(data, partial=False)
 		if tid is None:
 			if not prefix:
 				raise TicketError("give an id or a prefix (e.g. BUG)")
 			tid = self.next_id(prefix)
 		if self._path(tid).exists():
 			raise TicketError(f"{tid} already exists")
-		self._check_blockers(clean.get("blocked_by", []), inherited)
-		self._check_loop(tid, clean.get("blocked_by", []))
-		self._check_parent(tid, clean.get("parent"))
+		t = self._prepare(data, tid, inherited, inherited_caps, inherited_components, proposed_by)
+		self._write(t)
+		self._log("created", tid, agent, t["title"])
+		if proposed_by:
+			self._log("proposed", tid, proposed_by, t["title"])
+		return self.get(tid)
+
+	def _prepare(self, data: dict, tid: str, inherited: list[str] = (), inherited_caps: dict = {}, inherited_components: list[str] = (), proposed_by: str = "", batch: tuple = None) -> dict:
+		"""Validate `data` as new ticket `tid` and return the ticket dict, unwritten. batch = (ids, blocked_by graph, parents) of the
+		new tickets of a create_many: they count as existing for blocked_by / parent and their edges join the loop checks."""
+		clean = self._clean(data, partial=False)
+		known, graph, ups = batch or ((), {}, {})
+		self._check_blockers(clean.get("blocked_by", []), list(inherited) + list(known))
+		self._check_loop(tid, clean.get("blocked_by", []), graph)
+		self._check_parent(tid, clean.get("parent"), ups)
 		self._check_milestone(clean.get("milestone"), None)
 		self._check_components(clean.get("components", []), inherited_components)
 		self._check_caps(clean, inherited_caps)
@@ -938,11 +1077,7 @@ class Store:
 		if t["waiting_on"]:
 			t["asked_at"] = _now()
 		t["proposed_by"] = proposed_by
-		self._write(t)
-		self._log("created", tid, agent, t["title"])
-		if proposed_by:
-			self._log("proposed", tid, proposed_by, t["title"])
-		return self.get(tid)
+		return t
 
 	def update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
 		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI).
