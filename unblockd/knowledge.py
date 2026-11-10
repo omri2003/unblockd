@@ -64,6 +64,18 @@ def _is_text(p: Path) -> bool:
 	return p.suffix.lower() in TEXT_EXT and p.is_file()
 
 
+def _decode(p: Path) -> tuple[str, str | None]:
+	"""A doc's text and, when it is not valid UTF-8, a warning naming the problem. Bad bytes become U+FFFD, so a reply is
+	always valid UTF-8 (a Windows-1252 dash, byte 0x97, once broke an agent's JSON parser); the warning says which file to fix."""
+	raw = p.read_bytes()
+	try:
+		return raw.decode("utf-8"), None
+	except UnicodeDecodeError as e:
+		text = raw.decode("utf-8", errors="replace")
+		return text, (f"not valid UTF-8 (first bad byte 0x{raw[e.start]:02x} at offset {e.start}, {text.count(chr(0xFFFD))} replaced with U+FFFD; "
+		              "probably saved as Windows-1252): re-save the file as UTF-8")
+
+
 def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
 	"""One docs entry -> [(display path, file or None, error or None)]."""
 	base = root(store)
@@ -168,8 +180,8 @@ def read_doc(store, path: str) -> dict:
 		raise TicketError(f"{path} is not a text file")
 	if p.stat().st_size > MAX_FILE:
 		raise TicketError(f"{path} is too big to read here ({p.stat().st_size} bytes)")
-	text = p.read_text(encoding="utf-8", errors="replace")
-	return {"path": p.relative_to(base).as_posix(), "content": text, "links": links_of(text, p, base)}
+	text, bad = _decode(p)
+	return {"path": p.relative_to(base).as_posix(), "content": text, "links": links_of(text, p, base), **({"warning": bad} if bad else {})}
 
 
 def sources(store, t: dict, comps: list[tuple[str, str]] = ()) -> list[tuple[str, str]]:
@@ -263,13 +275,21 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 				if size > MAX_FILE:
 					item["error"] = "too big to inline; read it in parts in the repo"
 				else:
-					text = p.read_text(encoding="utf-8", errors="replace")
+					text, bad = _decode(p)
 					item["links"] = links_of(text, p, base)
+					if bad:
+						item["warning"] = bad
 			docs.append(item)
 			texts.append(text)
 	for f in list_files(store, tid):
-		docs.append({"path": f"tickets/files/{tid}/{f['name']}", "file": f["name"], "source": "attached", "trust": "untrusted", "chars": f["bytes"]})
-		texts.append(read_file(store, tid, f["name"]) if inline and f["bytes"] <= budget else None)
+		item = {"path": f"tickets/files/{tid}/{f['name']}", "file": f["name"], "source": "attached", "trust": "untrusted", "chars": f["bytes"]}
+		text = None
+		if inline and f["bytes"] <= budget:
+			text, bad = _decode(files_dir(store, tid) / f["name"])
+			if bad:
+				item["warning"] = bad
+		docs.append(item)
+		texts.append(text)
 	for i in sorted(range(len(docs)), key=lambda i: (SPEND[docs[i]["source"].split(":")[0]], i)):
 		d = docs[i]
 		if inline and texts[i] is not None and len(texts[i]) <= left:

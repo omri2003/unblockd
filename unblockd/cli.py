@@ -96,7 +96,16 @@ class Remote:
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
 
 
+def _utf8_out() -> None:
+	# Piped output on Windows defaults to the ANSI code page (cp1252), which cannot encode "→" and friends:
+	# the command had already run (a claim was taken) and then printing it crashed. JSON readers expect UTF-8 anyway.
+	for f in (sys.stdout, sys.stderr):
+		if (getattr(f, "encoding", None) or "").lower().replace("-", "") != "utf8" and hasattr(f, "reconfigure"):
+			f.reconfigure(encoding="utf-8")
+
+
 def main(argv: list[str] | None = None) -> int:
+	_utf8_out()
 	ap = argparse.ArgumentParser(prog="unblockd.cli")
 	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
 	sub = ap.add_subparsers(dest="cmd", required=True)

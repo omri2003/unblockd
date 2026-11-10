@@ -48,6 +48,20 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertIn("<untrusted", n["content"])
 		self.assertEqual(by["docs/HANDOFF.md"]["trust"], "trusted")  # profile-level wins the dedupe
 
+	def test_cp1252_doc_is_replaced_and_named(self):
+		(self.repo / "docs" / "HANDOFF.md").write_bytes("Next: BUG-10 — then ship.".encode("cp1252"))  # 0x97 dash
+		kn.attach(self.s, "CMB-1", "log.txt", "ok")
+		(kn.files_dir(self.s, "CMB-1") / "log.txt").write_bytes(b"run \x97 done")
+		ctx = kn.context(self.s, "CMB-1")
+		json.dumps(ctx, ensure_ascii=False).encode("utf-8")  # the whole reply is valid UTF-8
+		by = {d["path"]: d for d in ctx["docs"]}
+		for path in ("docs/HANDOFF.md", "tickets/files/CMB-1/log.txt"):
+			self.assertIn("�", by[path]["content"])
+			self.assertIn("not valid UTF-8 (first bad byte 0x97", by[path]["warning"])
+		self.assertNotIn("warning", by["AGENTS.md"])
+		self.assertIn("0x97", kn.read_doc(self.s, "docs/HANDOFF.md")["warning"])
+		self.assertNotIn("warning", kn.read_doc(self.s, "AGENTS.md"))
+
 	def test_upstream_untrusted(self):
 		self.s.create({"title": "dep"}, tid="CMB-0")
 		self.s.update("CMB-1", {"blocked_by": ["CMB-0"]})
