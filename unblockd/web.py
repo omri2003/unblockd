@@ -328,7 +328,7 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and tid is None:
 				return self._send(200, store.list(**{k: q.get(k) for k in ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent", "milestone")}))
 			if method == "GET":
-				return self._send(200, store.get(tid))
+				return self._send(200, store.with_blockers(store.get(tid)))
 			if method == "POST" and tid is None:
 				b = self._body()
 				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None)))  # agent: the creating worker (cli.Remote); none = a human

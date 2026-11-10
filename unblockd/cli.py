@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "delete":
 			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":
-			out = s.get(a.id)
+			out = s.get(a.id) if url else s.with_blockers(s.get(a.id))  # remote: GET tickets/<id> already adds them
 		elif a.cmd == "create":
 			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent)
 		elif a.cmd == "update":

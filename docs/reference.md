@@ -410,6 +410,13 @@ start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket
 `knowledge_graph`, `architecture_map`, `read_doc`, `attach_file`, `detach_file`; to edit the architecture `arch_add_component`, `arch_update_component`, `arch_delete_component`, `arch_set_edge`, `arch_remove_edge` (each takes `agent`; they rewrite only the managed parts of the notes, see Architecture; there is no CLI command for them). Every tool takes `board=`
 (default: the first board).
 
+**Errors and limits.** A write that breaks field rules is refused with ONE error listing every problem and its rule, e.g.
+`2 problems: invalid done_when[1]: 251 chars, max 200; invalid priority: one of P0, P1, P2, P3 or null (limits: board_info)`; the input
+is never echoed back. `board_info` returns those numbers as `limits` (`fields`: {items, chars} per field, plus `note_kinds`,
+`question_chars`, `summary_chars`, `handoff_chars`, `notes_per_ticket`). `update_ticket`'s argument is `changes` (an object);
+`create_ticket` requires `agent`; `add_note` takes `kind="progress"` as a plain note. `get_ticket` (and REST `GET tickets/<id>`,
+CLI `get`) adds `blockers`: each `blocked_by` id with its `effective_status` (`missing` = no such ticket) and title.
+
 ### Checking a real client
 
 Verified with Claude Code 2.1 (`claude -p`) against `python -m unblockd.mcp_server --http`: `work_loop` / `plan_from_spec` prompts, `claim_next` (lease, trust labels), `add_note`, `complete`, Bearer auth. Repeat it on any board:
