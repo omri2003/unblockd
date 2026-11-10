@@ -98,6 +98,27 @@ class BoardsTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "bad board id"):
 			self.b.create("Bad Name")
 
+	def test_create_board_in_a_container_needs_a_mounted_root(self):
+		from unblockd import boards as bd
+		other = tempfile.TemporaryDirectory()
+		self.addCleanup(other.cleanup)
+		ephemeral = Path(other.name)  # not under self.root, which is the mounted one
+		b = Boards([str(ephemeral), str(self.root)])
+		mi = ephemeral / "mountinfo"
+		vol = self.root.absolute().as_posix()
+		mi.write_text(f"20 1 0:40 / / rw,relatime - overlay overlay rw\n"
+		              f"30 20 8:1 /home/omri/my\\040projects {vol} rw,relatime - ext4 /dev/sda1 rw\n", encoding="utf-8")
+		with mock.patch.object(bd, "MOUNTINFO", mi), mock.patch.dict(os.environ, {"container": "docker"}):
+			with self.assertRaisesRegex(TicketError, f"vanishes when the container is recreated. Pass root= one of the mounted roots: {vol}"):
+				b.create("lost")
+			self.assertFalse((ephemeral / "lost").exists())
+			made = b.create("kept", root=str(self.root))
+			self.assertEqual(made["path"], (self.root / "kept" / "tickets").as_posix())
+			self.assertEqual(made["host_path"], "/home/omri/my projects/kept/tickets")
+			with self.assertRaisesRegex(TicketError, "not one of the server's UNBLOCKD_ROOT"):
+				b.create("x", root="/elsewhere")
+		self.assertNotIn("host_path", Boards([str(ephemeral)]).create("local"))  # not in a container: no check, no host path
+
 
 class ApiTest(unittest.TestCase):
 	def setUp(self):

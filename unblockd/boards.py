@@ -18,6 +18,30 @@ from pathlib import Path
 from . import store as st
 
 
+MOUNTINFO = Path("/proc/self/mountinfo")  # module attributes so tests can point them at fakes
+DOCKERENV = Path("/.dockerenv")
+
+
+def _mounts() -> list[tuple[str, str]] | None:
+	"""[(mount point, root inside its source)] of this process, or None when not in a container (or not Linux).
+	Only inside a container does "/" mean a filesystem that vanishes when the container is recreated."""
+	if not (DOCKERENV.exists() or os.environ.get("container")):
+		return None
+	try:
+		lines = MOUNTINFO.read_text(encoding="utf-8").splitlines()
+	except OSError:
+		return None
+	esc = lambda s: re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), s)  # mountinfo writes a space as \040 
+	return [(esc(f[4]), esc(f[3])) for f in (line.split(" - ")[0].split() for line in lines) if len(f) >= 5]
+
+
+def volume_of(p: Path, mounts: list[tuple[str, str]]) -> tuple[str, str] | None:
+	"""The mount (point, source root) that holds p, i.e. the longest mount point above it; None = only the container's own "/"."""
+	s = p.as_posix()
+	best = max((m for m in mounts if m[0] != "/" and (s == m[0] or s.startswith(m[0].rstrip("/") + "/"))), key=lambda m: len(m[0]), default=None)
+	return best
+
+
 def _slug(s: str) -> str:
 	s = re.sub(r"[^a-z0-9_-]+", "-", s.lower()).strip("-")
 	return s[:40] or "board"
@@ -85,21 +109,43 @@ class Boards:
 				out.append({"id": bid, "title": bid, "path": str(p), "error": str(e)})
 		return out
 
-	def create(self, board_id: str, title: str = "") -> dict:
-		"""New board under the first root: <root>/<id>/tickets/unblockd.json."""
+	def create(self, board_id: str, title: str = "", root: str | None = None) -> dict:
+		"""New board under a root (default the first): <root>/<id>/tickets/unblockd.json. In a container, a root that is not on a mounted
+		volume is refused: the board would live in the container's own filesystem and vanish when it is recreated. The reply adds
+		`path` and, in a container, `host_path` (the folder on the mounted source, best effort)."""
 		if not self.roots:
 			raise st.TicketError("creating boards needs UNBLOCKD_ROOT (a folder the new board goes into)")
 		if not st.NAME_RE.match(board_id or ""):
 			raise st.TicketError(f"bad board id {board_id!r}: lowercase a-z, 0-9, - _ (max 40)")
+		if root:
+			hits = [r for r in self.roots if r.as_posix().rstrip("/") == str(root).replace("\\", "/").rstrip("/")]
+			if not hits:
+				raise st.TicketError(f"root {root!r} is not one of the server's UNBLOCKD_ROOT folders: {', '.join(r.as_posix() for r in self.roots)}")
+			base = hits[0]
+		else:
+			base = self.roots[0]
+		mounts = _mounts()
+		vol = None
+		if mounts is not None:
+			vol = volume_of(base.absolute(), mounts)
+			if vol is None:
+				ok = [r.as_posix() for r in self.roots if volume_of(r.absolute(), mounts)]
+				raise st.TicketError(f"{base.as_posix()} is inside the container, not on a mounted volume: a board created there vanishes when "
+				                     "the container is recreated. " + (f"Pass root= one of the mounted roots: {', '.join(ok)}" if ok else
+				                     "Mount a host folder (compose `volumes: - <host folder>:/projects`) and set UNBLOCKD_ROOT to it"))
 		if board_id in self.all():
 			raise st.TicketError(f"board {board_id} already exists")
-		d = self.roots[0] / board_id / "tickets"
+		d = base / board_id / "tickets"
 		if (d / st.CONFIG_FILE).exists():
 			raise st.TicketError(f"{d / st.CONFIG_FILE} already exists")
 		d.mkdir(parents=True, exist_ok=True)
 		cfg = {"id": board_id, "title": (title or board_id).strip()[:80]}
 		(d / st.CONFIG_FILE).write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8", newline="\n")
-		return next(b for b in self.summary() if b["id"] == board_id)
+		out = {**next(b for b in self.summary() if b["id"] == board_id), "path": d.as_posix()}
+		if vol:
+			rel = d.absolute().as_posix()[len(vol[0].rstrip("/")):]
+			out["host_path"] = vol[1].rstrip("/") + rel  # where the mount's source has it (on Docker Desktop a /run/desktop/... style path)
+		return out
 
 
 def from_env() -> Boards:
