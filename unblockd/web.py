@@ -33,8 +33,8 @@ POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
-GET    tickets/<id>/context              docs + attached files to read before working it
-GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
+GET    tickets/<id>/context              docs + attached files to read before working it (?content=0: each doc's `sent` without its text)
+GET    knowledge                         who reads what: tickets, docs, ticket->doc (with the tag / profile it came from) and doc->doc edges, the rules that send docs, plus no_docs / broken / hubs / orphans
 GET    files                             project file paths (no .git / node_modules / tickets/, capped at 3000): what the form suggests for docs and touches
 GET    tools                             worker tool sets: {all, default, base, profiles: [{name, tools, tools_off, effective}]}
 PUT    tools                             {"base": [...], "profiles": {name: {"tools", "tools_off"}}, "by"?}  save them to unblockd.json -> the same
@@ -285,7 +285,11 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":
-				return self._send(200, kn.context(store, rest[1], inline=q.get("inline") != "0"))
+				c = kn.context(store, rest[1], inline=q.get("inline") != "0")
+				if q.get("content") == "0":  # what would be sent, without the text (the Docs view's preview)
+					for d in c["docs"]:
+						d.pop("content", None)
+				return self._send(200, c)
 			if rest[:1] == ["tickets"] and len(rest) in (3, 4) and rest[2] == "files":
 				tid = rest[1]
 				if method == "POST" and len(rest) == 3:

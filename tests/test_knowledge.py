@@ -102,7 +102,7 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertNotIn("docs/MAP.md", [d["path"] for d in kn.context(s, "CMB-1")["docs"]])  # no tag, no brief
 		g = kn.graph(s)
 		self.assertEqual(next(d for d in g["docs"] if d["path"] == "docs/MAP.md")["kind"], "tag")
-		self.assertIn({"ticket": "CMB-5", "doc": "docs/MAP.md", "via": "tag"}, g["reads"])
+		self.assertIn({"ticket": "CMB-5", "doc": "docs/MAP.md", "via": "tag", "from": "map"}, g["reads"])
 		for bad, msg in (({"Map": ["x.md"]}, "is not a tag"), ({"map": []}, "non-empty list"), ({"map": ["../x.md"]}, "no \.\."), (["x"], "object of tag")):
 			cfg["docs_by_tag"] = bad
 			(self.s.dir / "unblockd.json").write_text(json.dumps(cfg), encoding="utf-8")
@@ -207,6 +207,36 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(g["broken"], [{"path": "nope.md", "error": "missing", "via": "ticket", "tickets": ["CMB-1"]}])
 		self.assertEqual(g["no_docs"], ["CMB-3"])  # CMB-1/2 have profile docs, CMB-4 an attachment
 		self.assertEqual(g["hubs"][0], {"path": "docs/HANDOFF.md", "readers": 2})  # AGENTS.md (board) is not a hub
+
+	def test_graph_rules_and_from(self):
+		"""Docs view (UI-59): each read says which tag / profile sent it; each rule lists all it sends, from the config, not the reads."""
+		(self.repo / "docs" / "SEC.md").write_text("security", encoding="utf-8")
+		(self.repo / "docs" / "IDLE.md").write_text("no open reader", encoding="utf-8")
+		self.s.config["docs_by_tag"] = {"api": ["docs/SEC.md"], "sec": ["docs/SEC.md"], "idle": ["docs/IDLE.md"]}
+		self.s.create({"title": "two tags", "tags": ["api", "sec"]}, tid="CMB-2")
+		self.s.create({"title": "one tag", "tags": ["sec"]}, tid="CMB-3")
+		g = kn.graph(self.s)
+		reads = {(r["ticket"], r["doc"]): (r["via"], r["from"]) for r in g["reads"]}
+		self.assertEqual(reads[("CMB-2", "docs/SEC.md")], ("tag", "api"))  # first rule wins per ticket, as in context()
+		self.assertEqual(reads[("CMB-3", "docs/SEC.md")], ("tag", "sec"))
+		self.assertEqual(reads[("CMB-1", "docs/MECHANICS.md")], ("profile", "backend"))
+		self.assertEqual(reads[("CMB-1", "AGENTS.md")], ("board", None))
+		rules = {(r["via"], r["from"]): r for r in g["rules"]}
+		self.assertEqual(rules[("tag", "sec")], {"via": "tag", "from": "sec", "docs": ["docs/SEC.md"], "tickets": ["CMB-2", "CMB-3"]})
+		self.assertEqual(rules[("tag", "api")]["tickets"], ["CMB-2"])
+		self.assertEqual(rules[("board", None)]["docs"], ["AGENTS.md", "unblockd://work-loop"])
+		self.assertEqual(rules[("profile", "backend")]["docs"], ["docs/MECHANICS.md", "docs/HANDOFF.md"])
+		self.assertEqual((rules[("tag", "idle")]["tickets"], {d["path"]: d for d in g["docs"]}["docs/IDLE.md"]["readers"]), ([], 0))  # shown, read by nobody yet
+		self.assertEqual(g["budget"], 60000)
+
+	def test_context_says_what_is_sent(self):
+		(self.repo / "docs" / "BIG.md").write_text("x" * 900, encoding="utf-8")
+		(self.repo / "docs" / "MID.md").write_text("y" * 300, encoding="utf-8")
+		(self.repo / "AGENTS.md").write_text("z" * 300, encoding="utf-8")  # the ticket's MID.md is paid for first: 200 left
+		self.s.create({"title": "t", "docs": ["docs/BIG.md", "docs/MID.md", "nope.md"]}, tid="CMB-2")
+		sent = {d["path"]: d["sent"] for d in kn.context(self.s, "CMB-2", budget=500)["docs"]}
+		self.assertEqual(sent, {"AGENTS.md": "budget", "docs/BIG.md": "too_big", "docs/MID.md": "full", "nope.md": "error"})
+		self.assertNotIn("sent", kn.context(self.s, "CMB-2", inline=False)["docs"][0])
 
 	def test_graph_flags_paths_outside_the_project(self):
 		self.s.config["docs"].append("../secret.md")  # can't be written through the API, but a hand-edited config can

@@ -297,6 +297,10 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 		if inline and texts[i] is not None and len(texts[i]) <= left:
 			d["content"] = texts[i] if d["trust"] == "trusted" else wrap(texts[i], f"ticket {tid} " + (f"attachment {d['file']}" if "file" in d else f"doc {d['path']}"))
 			left -= len(texts[i])
+	if inline:  # why a doc came without its text: the Docs view's "what an agent gets" reads this
+		for d, text in zip(docs, texts):
+			n = len(text) if text is not None else d.get("chars")
+			d["sent"] = "full" if "content" in d else "too_big" if n is not None and n > budget else "error" if "error" in d else "budget"
 	up = []
 	for b in t.get("blocked_by", []):  # what the tickets this one waited on produced (complete()'s result)
 		try:
@@ -762,8 +766,11 @@ HUBS = 5  # how many hub docs graph() lists
 
 def graph(store) -> dict:
 	"""Who reads what, without inlining anything: every open ticket -> the docs context() would give it.
-	{tickets, docs, reads: [{ticket, doc, via}], links: [{from, to}], no_docs, broken, hubs, orphans}.
-	- `via` = board | tag | profile | ticket | file (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag).
+	{tickets, docs, reads: [{ticket, doc, via, from}], links: [{from, to}], rules, budget, no_docs, broken, hubs, orphans}.
+	- `via` = board | tag | profile | ticket | file (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag);
+	  `from` = which tag or profile (null for the others).
+	- `rules` = [{via: board|tag|profile, from, docs, tickets}]: each rule in unblockd.json that sends docs, everything it sends (expanded,
+	  the protocol last on the board rule) and the open tickets it reaches. `budget` = the board's context_budget.
 	- doc `kind` = the broadest way anyone reads it (board > tag > profile > ticket > file), or `linked` when
 	  no ticket reads it: such a doc is `linked_only` (an orphan) and is only reached through another doc's link.
 	- `links` = doc -> doc, one hop from the docs tickets read (links_of(): only targets that exist, as text).
@@ -782,7 +789,7 @@ def graph(store) -> dict:
 			finfo[rel] = (size, None if text is None else links_of(text, p, base))
 		return finfo[rel]
 
-	def add(t, rel, p, err, via):
+	def note(rel, p, err, via):  # one doc's node: size, error, the broadest way it is read
 		d = docs.setdefault(rel, {"path": rel, "kind": via})
 		if rank[via] < rank[d["kind"]]:
 			d["kind"] = via
@@ -792,26 +799,50 @@ def graph(store) -> dict:
 			d["size"], lk = info(rel, p)
 			if lk is None:
 				d["error"] = "too big to inline; read it in parts in the repo"
-		if t["id"] not in readers.setdefault(rel, set()):
+		readers.setdefault(rel, set())
+
+	def add(t, rel, p, err, via, frm=None):
+		note(rel, p, err, via)
+		if t["id"] not in readers[rel]:
 			readers[rel].add(t["id"])
-			reads.append({"ticket": t["id"], "doc": rel, "via": via})
+			reads.append({"ticket": t["id"], "doc": rel, "via": via, "from": frm})
+
+	def exp(entry):
+		if entry not in cache:
+			cache[entry] = expand(store, entry)
+		return cache[entry]
 
 	for t in store.list():
 		if t["status"] == "done":
 			continue
 		tickets.append({k: t.get(k) for k in ("id", "title", "pillar", "agent", "priority")} | {"status": t["effective_status"]})
 		for entry, src in sources(store, t):
-			if entry not in cache:
-				cache[entry] = expand(store, entry)
-			for rel, p, err in cache[entry]:
-				add(t, rel, p, err, src.split(":")[0].replace("agent", "profile"))
+			kind, _, frm = src.partition(":")
+			for rel, p, err in exp(entry):
+				add(t, rel, p, err, kind.replace("agent", "profile"), frm or None)
 		for f in list_files(store, t["id"]):
 			rel = f"tickets/files/{t['id']}/{f['name']}"
 			add(t, rel, files_dir(store, t["id"]) / f["name"], None, "file")
 	if tickets:  # the protocol is every ticket's doc; kind stays "board" so it is never a hub or a gap in no_docs
 		docs[PROTOCOL] = {"path": PROTOCOL, "kind": "board", "builtin": True, "size": PROTOCOL_FILE.stat().st_size}
 		readers[PROTOCOL] = {t["id"] for t in tickets}
-		reads += [{"ticket": t["id"], "doc": PROTOCOL, "via": "board"} for t in tickets]
+		reads += [{"ticket": t["id"], "doc": PROTOCOL, "via": "board", "from": None} for t in tickets]
+	# the rules in unblockd.json that send docs, with everything each one sends (a doc no open ticket reads yet still shows, readers 0)
+	# and the open tickets it reaches: a rule's list is the config, not the reads, where a doc two rules send is recorded once per ticket
+	cfg, opn = store.config, [t for t in store.list() if t["status"] != "done"]
+	rules = []
+	for via, frm, entries, who in ([("board", None, cfg.get("docs", []), opn)]
+	                               + [("tag", g, e, [t for t in opn if g in t.get("tags", [])]) for g, e in (cfg.get("docs_by_tag") or {}).items()]
+	                               + [("profile", a["name"], a.get("docs", []), [t for t in opn if t.get("agent") == a["name"]]) for a in cfg["agents"] if a.get("docs")]):
+		paths = []
+		for entry in entries:
+			for rel, p, err in exp(entry):
+				note(rel, p, err, via)
+				if rel not in paths:
+					paths.append(rel)
+		if via == "board" and tickets:
+			paths.append(PROTOCOL)
+		rules.append({"via": via, "from": frm, "docs": paths, "tickets": [t["id"] for t in who]})
 	for rel in list(docs):
 		d = docs[rel]
 		d["readers"] = len(readers[rel])
@@ -827,7 +858,8 @@ def graph(store) -> dict:
 	good = {r["ticket"] for r in reads if r["via"] != "board" and "error" not in docs[r["doc"]]}
 	broken = [{"path": r, "error": d["error"], "via": d["kind"], "tickets": sorted(readers[r])} for r, d in docs.items() if d.get("error")]
 	hubs = sorted((d for d in docs.values() if d["kind"] != "board" and d["readers"] >= 2), key=lambda d: (-d["readers"], d["path"]))[:HUBS]
-	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links,
+	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links, "rules": rules,
+	        "budget": int(cfg.get("context_budget") or BUDGET),
 	        "no_docs": [t["id"] for t in tickets if t["id"] not in good], "broken": broken,
 	        "hubs": [{"path": d["path"], "readers": d["readers"]} for d in hubs],
 	        "orphans": sorted(r for r, d in docs.items() if d.get("linked_only"))}

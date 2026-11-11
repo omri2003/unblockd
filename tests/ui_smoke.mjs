@@ -34,6 +34,14 @@ try {
 		const p = join(root, b, 'tickets', f);
 		await writeFile(p, JSON.stringify({ ...JSON.parse(await readFile(p, 'utf8')), created: today, updated: today }, null, 2));
 	}
+	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also here" row; a small budget makes big.md "too big"
+		const ep = join(root, 'example/tickets/unblockd.json'), ec = JSON.parse(await readFile(ep, 'utf8'));
+		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md'] } }, null, 2));
+		await writeFile(join(root, 'example/docs/big.md'), '# Big' + 'x'.repeat(3000));
+		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
+		const tp = join(root, 'example/tickets/UI-2.json');
+		await writeFile(tp, JSON.stringify({ ...JSON.parse(await readFile(tp, 'utf8')), tags: ['api', 'sec'] }, null, 2));
+	}
 	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
 	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board', agent_tickets: 'propose', schema: { prefixes: { ZQ: 'questions', ZP: 'proposed work' }, required: ['done_when', 'priority'], tags: ['bug', 'chore'], body_template: '## Why\n' } }));
 	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
@@ -218,6 +226,20 @@ try {
 		await visible('#dStage .dn', 'docs strip node'); // #dSvg (edges) is display:none on mobile by design
 		if (w > 600) await visible('#dSvg', 'docs strip svg');
 		await noOverflow('docs');
+		{ // Docs view bands: one band per rule, the doc a second tag sends is an "also here" row, a ticket shows its tags and what its agent gets
+			await visible('#dD .dband[data-band="tag:api"]', 'tag band');
+			ok(await page.locator('#dD .dband[data-band="tag:sec"] .ghost').count() === 1, `[${tag}] docs: the sec band should list sec.md as "also here"`);
+			ok(await page.locator('[data-dsel="t:UI-2"] .dtg').count() === 2, `[${tag}] docs: UI-2 should show its two tags`);
+			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
+			await page.click('[data-dsel="t:UI-2"]');
+			await page.waitForSelector('#dT .dctx h3');
+			const ctx = await page.locator('#dT .dctx').innerText();
+			ok(ctx.includes('What an agent gets for UI-2') && ctx.includes('path only: too big') && ctx.includes('sent in full'), `[${tag}] docs: UI-2's preview should say what is sent and what is not: ${ctx.slice(0, 200)}`);
+			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
+			await noOverflow('docs with a preview');
+			await page.keyboard.press('Escape');
+			await page.waitForFunction(() => !document.querySelector('#dT .dctx'));
+		}
 		{ // Roadmap view: example has 2 milestones (v0.1 is next) and one unscheduled ticket; a milestone opens the board filtered to it
 			await page.click('[data-view="roadmap"]');
 			await page.waitForFunction(() => document.querySelectorAll('#roadWrap .rmi:not(.run)').length === 2);
