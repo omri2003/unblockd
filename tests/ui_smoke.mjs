@@ -246,6 +246,29 @@ try {
 			await page.unroute('**/knowledge');
 			await page.click('[data-drefresh]');
 			await visible('#dD .dband[data-band="tag:api"]', 'tag band after a restart');
+			// collapse + search: a collapsed band keeps its header (lines end there), a search opens a collapsed group holding a match, Esc clears it
+			await page.click('[data-dshut="a:tag:api"]');
+			await page.waitForFunction(() => document.querySelector('#dD .dband[data-band="tag:api"]')?.classList.contains('shut'));
+			ok(await page.locator('#dD .dband[data-band="tag:api"] ol').count() === 0, `[${tag}] docs: a collapsed band hides its rows`);
+			if (w > 600) ok(await page.locator('#dSvg path').count() > 0, `[${tag}] docs: lines still reach a collapsed band's header`);
+			await page.click('[data-dshut^="p:"]');
+			await page.waitForFunction(() => document.querySelectorAll('#dT .dgrp.shut').length === 1);
+			await page.click('[data-drefresh]');
+			await page.waitForFunction(() => document.querySelectorAll('#dT .dgrp.shut').length === 1 && document.querySelector('#dD .dband.shut'));
+			await page.click('#dShutAll'); // some open -> collapse all
+			await page.waitForFunction(() => !document.querySelector('#dStage [data-dshut][aria-expanded="true"]') && document.querySelector('#dShutAll').textContent === 'Expand all');
+			await page.locator('#dQ').blur();
+			await page.keyboard.press('/');
+			ok(await page.evaluate(() => document.activeElement?.id === 'dQ'), `[${tag}] docs: / focuses the Docs search`);
+			await page.keyboard.type('sec.md');
+			await page.waitForFunction(() => !document.querySelector('#dD .dband[data-band="tag:api"]').classList.contains('shut'));
+			ok((await page.locator('#dQn').innerText()).includes('1 doc'), `[${tag}] docs: the search counts its matches`);
+			ok(!(await page.locator('#dD [data-n="d:docs/sec.md"]').getAttribute('class')).includes('fade') && (await page.locator('#dD [data-n="d:docs/big.md"]').getAttribute('class')).includes('fade'), `[${tag}] docs: a match stays bright, the rest fades`);
+			await noOverflow('docs search');
+			await page.keyboard.press('Escape');
+			await page.waitForFunction(() => document.querySelector('#dQ').value === '' && document.querySelector('#dD .dband[data-band="tag:api"]').classList.contains('shut'));
+			await page.click('#dShutAll'); // all shut -> expand all, so the next pass starts open
+			await page.waitForFunction(() => !document.querySelector('#dStage .shut'));
 		}
 		{ // Roadmap view: example has 2 milestones (v0.1 is next) and one unscheduled ticket; a milestone opens the board filtered to it
 			await page.click('[data-view="roadmap"]');

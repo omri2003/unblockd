@@ -519,6 +519,10 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dband{display:block;background:var(--paper);border-radius:10px;padding:6px 8px 8px;margin-bottom:8px;transition:opacity .15s ease-out}
 .dband.board{background:repeating-linear-gradient(135deg,var(--paper) 0 8px,var(--sunk) 8px 9px)} .dband.fade{opacity:.35}
 .dband h3{margin:0 0 5px}
+.dchev{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;padding:0;border:0;border-radius:6px;background:none;cursor:pointer} .dchev:hover{background:var(--sunk)}
+.dchev .chev{transition:transform .15s ease-out} .dchev[aria-expanded=false] .chev{transform:translateY(0) rotate(-45deg)} .dband h3 .dbh{flex:1}
+.dgrp.shut h3,.dband.shut h3{margin-bottom:0} .dhit{font-style:normal;font-weight:700;color:var(--jade)} .dgh .dhit{margin-left:auto;font-size:.74rem}
+.dq{flex:1 1 220px;max-width:340px;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);font:inherit;box-shadow:var(--sh1)} .dqn{font-variant-numeric:tabular-nums;min-width:0}
 .dbh{position:relative;display:flex;align-items:center;gap:7px;width:100%;min-height:26px;padding:2px 4px;border:0;border-radius:6px;background:none;color:var(--ink);font:inherit;font-size:.84rem;font-weight:700;text-align:left;cursor:pointer;min-width:0}
 .dbh:hover,.dbh.on{background:var(--surface)} .dbh.sel{box-shadow:0 0 0 1.5px var(--ink)}
 .dbh em{font-style:normal;font-weight:400;color:var(--muted);font-size:.78rem;white-space:nowrap} .dbh .bn{white-space:nowrap}
@@ -610,7 +614,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
 }
 /* touch: 44px targets (UX-5); desktop and the compact density keep their sizes */
-@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
+@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip,.dchev{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
 /* Elevated surfaces (dev/premium-look trial): white raised cards and controls on a quiet page, hairline borders, soft shadows,
    rounder corners; segmented controls are a grey track with a raised white pill. Overrides only, so the trial reverts as one block. */
 .bar{border-block:0;padding:10px 0;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px)}
@@ -712,7 +716,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -755,7 +759,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   <section class="roadwrap" id="roadWrap" hidden aria-label="Roadmap"></section>
   <section class="docswrap" id="docsWrap" hidden aria-label="What agents read">
     <div class="dprob" id="dProb" role="group" aria-label="Problems"></div>
-    <div class="dtools"><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
+    <div class="dtools"><input type="search" id="dQ" class="dq" placeholder="Search tickets and docs (/)" aria-label="Search tickets and docs" autocomplete="off"><span class="dqn" id="dQn" aria-live="polite"></span><button type="button" class="btn ghost sm" id="dShutAll" data-dshutall>Collapse all</button><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
       <span><i class="sw" style="border:2px solid var(--ink);border-radius:50%"></i>A band is one rule in unblockd.json: one line per ticket it reaches (two tags, two lines)</span>
       <span><i class="sw" style="border:1px dashed var(--muted);border-radius:3px"></i>Also in this band, listed above</span>
       <span><i class="sw" style="background:var(--jade);border-radius:3px"></i>Hub</span>
@@ -834,7 +838,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   <h2 id="kbT">Keyboard shortcuts</h2>
   <dl>
     <dt><kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>k</kbd></dt><dd>Command palette: jump to a ticket, new ticket, switch view or board, set the status or priority of the open ticket</dd>
-    <dt><kbd>/</kbd></dt><dd>Search</dd>
+    <dt><kbd>/</kbd></dt><dd>Search (in the Docs view: its tickets and docs)</dd>
     <dt><kbd>l</kbd></dt><dd>Board as columns or as a list (one line per ticket)</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
@@ -1839,6 +1843,8 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
   if(g('[data-drefresh]')){loadDocs();return;}
+  if(b=g('[data-dshut]')){dShut(b.dataset.dshut);document.querySelector(`#dStage [data-dshut="${CSS.escape(b.dataset.dshut)}"]`)?.focus();return;}
+  if(g('[data-dshutall]')){dShutAll();return;}
   if(g('[data-anew]')){mapNew();return;}
   if(g('[data-aedit]')){const c=MV.data.components.find(x=>x.key===MV.foc);MV.ui=ui0();MV.ui.mode='edit';DRAFTS[`ae:${c.key}:title`]=c.title;DRAFTS[`ae:${c.key}:summary`]=c.summary;DRAFTS[`ae:${c.key}:paths`]=c.paths.join('\n');openMapPanel(true);$('drawer').querySelector('[data-draft$=":title"]')?.focus();return;}
   if(b=g('[data-acancel]')){mapUiCancel(b.dataset.acancel);return;}
@@ -1977,7 +1983,7 @@ document.addEventListener('keydown',e=>{
     else if(menuBusy()) closeMenus();
     else if(!$('npanel').hidden) closeNeeds();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
-    else if(state.view==='docs'&&(DV.f||DV.sel)){DV.f=DV.sel=null;renderDocs();}
+    else if(state.view==='docs'&&(DV.f||DV.sel||DV.q)){DV.f=DV.sel=null;DV.q=$('dQ').value='';renderDocs();}
     else if(state.view==='map'&&(MV.foc||MV.multi||MV.f)) mapClear();
     else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
     else if(cancelGraphGesture()){}
@@ -1998,7 +2004,7 @@ document.addEventListener('keydown',e=>{
   if(state.view==='map'&&'+=-0'.includes(e.key)&&$('mapStage').offsetParent&&$('kb').hidden&&$('npanel').hidden){ e.preventDefault(); e.key==='0'?mapFit(1):mapZoom(e.key==='-'?1/1.25:1.25,1); return; } // zoom the Map (the panel may be open)
   if(!$('drawer').hidden&&openId&&!editing&&$('kb').hidden&&(e.key==='j'||e.key==='k')){ e.preventDefault(); peekStep(e.key==='j'?1:-1); return; }
   if(!$('drawer').hidden||!$('kb').hidden) return;
-  if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
+  if(e.key==='/'){ e.preventDefault(); if(state.view==='docs'){$('dQ').focus();return;} if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
   else if(e.key==='d') viewTo(state.view==='docs'?'board':'docs');
   else if(e.key==='m') viewTo(state.view==='map'?'board':'map');
@@ -2381,7 +2387,7 @@ readColors();
 // everything its rule sends (graph()'s `rules`, from the config): a doc an earlier band already lists is a dashed "also here" row, never drawn twice.
 // Clicking a ticket shows what its agent gets (GET tickets/<id>/context?content=0: each doc's `sent`, against the budget). DOM + SVG on purpose:
 // rows are real buttons (keyboard, a11y, the <=700px list), tokens resolve in CSS.
-const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:''};
+const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null};
 const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_docs,'bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
   ['broken',['broken reference','broken references'],g=>g.broken,'bad','A docs entry that is missing, outside the project, not text, or too big.'],
   ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
@@ -2389,6 +2395,7 @@ const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_do
   ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.']];
 const dBig=g=>g.docs.filter(d=>!d.builtin&&d.size>g.budget).map(d=>d.path);
 async function loadDocs(){
+  if(!DV.shut)DV.shut=new Set(store.get('docsShut.'+curBoard(),[]));
   if(DV.busy)return;DV.busy=true;DV.err='';
   try{DV.data=await jf(API+'/knowledge');DV.ctx={};if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));}
   catch(e){DV.err=e.message||'Could not load';}
@@ -2454,6 +2461,16 @@ async function dLoadCtx(id){
 }
 function dSelect(n){DV.sel=DV.sel===n?null:n;if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));renderDocs();
   document.querySelector(`#dStage [data-n="${CSS.escape(n)}"]`)?.focus({preventScroll:true});}
+// Collapse + search (UI-60): a profile group ("p:<profile|->") or a band ("a:<key>") can be collapsed (DV.shut, per board in the browser:
+// store `docsShut.<board>`); a collapsed group keeps its header and counts, and the lines of its rows end at that header. The search box (#dQ,
+// `/` in this view) lights tickets (id + title) and docs (path) that match and fades the rest; a collapsed group holding a match opens while
+// the search lasts, so a search never hides a result. Collapse all / Expand all = every group at once.
+const dShutSave=()=>store.set('docsShut.'+curBoard(),[...DV.shut]);
+function dShut(k){DV.shut.has(k)?DV.shut.delete(k):DV.shut.add(k);dShutSave();renderDocs();}
+function dShutAll(){const ks=[...document.querySelectorAll('#dStage [data-dshut]')].map(b=>b.dataset.dshut),open=ks.filter(k=>!DV.shut.has(k));
+  DV.shut=new Set(open.length?ks:[]);dShutSave();renderDocs();}
+const dQm=()=>{const q=DV.q.trim().toLowerCase();return {q,tm:t=>!!q&&(t.id+' '+t.title).toLowerCase().includes(q),dm:p=>!!q&&p.toLowerCase().includes(q)};};
+const dChev=(k,open,name)=>`<button type="button" class="dchev" data-dshut="${esc(k)}" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(name)}" title="${open?'Collapse':'Expand'}"><i class="chev" aria-hidden="true"></i></button>`;
 function renderDocs(){
   const g=DV.data,P=$('dProb'),T_=$('dT'),D_=$('dD');
   if(!g){P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
@@ -2466,40 +2483,53 @@ function renderDocs(){
     return `<button type="button" class="${bad&&n?'bad':''}${n?'':' zero'}" data-dprob="${k}" aria-pressed="${DV.f===k}" ${n?'':'disabled'} title="${esc(tip)}">${bad&&n?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('')
     +`<span class="dbud">Context budget <b>${dKb(g.budget)}</b> per ticket</span>`;
   const hubs=new Set(g.hubs.map(h=>h.path)),bad=new Set(g.broken.map(b=>b.path)),nod=new Set(g.no_docs),B=g.budget,byP=new Map(g.docs.map(d=>[d.path,d]));
-  const bands=dBands(g),tagRules=g.rules.filter(r=>r.via==='tag');
+  const bands=dBands(g),tagRules=g.rules.filter(r=>r.via==='tag'),{q,tm,dm}=dQm();
+  DV.home=new Map();bands.forEach(b=>b.docs.forEach(p=>DV.home.set(p,b.key)));
   const bandsOf=id=>g.rules.filter(r=>r.via!=='board'&&r.tickets.includes(id)).map(dK).join(',');
   const own=id=>g.reads.filter(r=>r.ticket===id&&r.via!=='board'&&(byP.get(r.doc)||{}).size>B).length;
   const groups=[...new Set(g.tickets.map(t=>t.agent||''))].sort((a,b)=>!a-!b||a.localeCompare(b));
   T_.innerHTML=g.tickets.length?groups.map(p=>{const ts=g.tickets.filter(t=>(t.agent||'')===p).sort((a,b)=>bandsOf(a.id).localeCompare(bandsOf(b.id))||a.id.localeCompare(b.id,undefined,{numeric:true}));
-    return `<li class="dgrp"><h3>${p?dIc('profile')+'Profile '+esc(p):'No profile'} · ${ts.length}</h3><ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id);
+    const key='p:'+(p||'-'),name=p?'Profile '+p:'No profile',hit=ts.filter(tm).length,open=!DV.shut.has(key)||hit>0||ts.some(t=>DV.sel==='t:'+t.id);
+    return `<li class="dgrp${open?'':' shut'}"><h3 class="dgh" data-n="${esc(key)}">${dChev(key,open,name)}${p?dIc('profile'):''}<span>${esc(name)} · ${ts.length}</span>${q&&hit?`<em class="dhit">${hit} match${hit>1?'es':''}</em>`:''}</h3>${open?`<ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id);
       const tg=tagRules.filter(r=>r.tickets.includes(t.id)).map(r=>r.from);
-      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${c?`<span class="tag warn" title="${c} doc${c>1?'s':''} its own rules send ${c>1?'are':'is'} too big: the agent gets the path only">${c} cut</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol></li>`;}).join('')
+      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${c?`<span class="tag warn" title="${c} doc${c>1?'s':''} its own rules send ${c>1?'are':'is'} too big: the agent gets the path only">${c} cut</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
     :'<li class="dempty">No open tickets.</li>';
   const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
   const gRow=(p,b)=>{const h=bands.find(x=>x.docs.includes(p));return `<li><button type="button" class="dn dk ghost" data-dnode="${esc(p)}" data-n="g:${esc(b.key)}|${esc(p)}">${dPath(p)}<span class="tag">also here · listed under ${esc(h?bandShort(h):'')} ↑</span></button></li>`;};
   D_.innerHTML=bands.length?bands.map(b=>{const n=b.via==='board'?g.tickets.length:b.tickets.length,m=b.docs.length+b.also.length,an='a:'+b.key,port=b.via==='tag'||b.via==='profile';
-    return `<li class="dband ${b.via}" data-band="${esc(b.key)}"><h3><button type="button" class="dbh${DV.sel===an?' sel':''}" data-dsel="${esc(an)}" data-n="${esc(an)}" aria-pressed="${DV.sel===an}">${port?'<i class="port"></i>':''}${dIc(b.via)}<span class="bn">${bandName(b)}</span><em>${b.via==='board'?`all ${n} tickets, lines on hover`:b.via==='linked'?'no ticket reads it':`${n} ticket${n===1?'':'s'} · ${m} doc${m===1?'':'s'}`}</em>${bandRule(b)?`<span class="rule">${esc(bandRule(b))}</span>`:''}</button></h3>
-      <ol>${b.docs.map(p=>dRow(p,b)).join('')}${b.also.map(p=>gRow(p,b)).join('')}</ol></li>`;}).join('')
+    const hit=[...b.docs,...b.also].filter(dm).length,open=!DV.shut.has(an)||hit>0,name=bandName(b).replace(/<[^>]+>/g,'');
+    return `<li class="dband ${b.via}${open?'':' shut'}" data-band="${esc(b.key)}"><h3><button type="button" class="dbh${DV.sel===an?' sel':''}" data-dsel="${esc(an)}" data-n="${esc(an)}" aria-pressed="${DV.sel===an}">${port?'<i class="port"></i>':''}${dIc(b.via)}<span class="bn">${bandName(b)}</span><em>${b.via==='board'?`all ${n} tickets, lines on hover`:b.via==='linked'?'no ticket reads it':`${n} ticket${n===1?'':'s'} · ${m} doc${m===1?'':'s'}`}${q&&hit?` · <b class="dhit">${hit} match${hit>1?'es':''}</b>`:''}</em>${bandRule(b)?`<span class="rule">${esc(bandRule(b))}</span>`:''}</button>${dChev(an,open,name)}</h3>
+      ${open?`<ol>${b.docs.map(p=>dRow(p,b)).join('')}${b.also.map(p=>gRow(p,b)).join('')}</ol>`:''}</li>`;}).join('')
     :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board, a tag (<code>docs_by_tag</code>) or an agent profile in unblockd.json, or to a ticket.</li>`;
+  const nt=q?g.tickets.filter(tm).length:0,nd=q?g.docs.filter(d=>dm(d.path)).length:0;
+  $('dQn').textContent=q?(nt||nd?`${nt} ticket${nt===1?'':'s'}, ${nd} doc${nd===1?'':'s'}`:'No match'):'';
+  const anyOpen=[...document.querySelectorAll('#dStage [data-dshut]')].some(b=>b.getAttribute('aria-expanded')==='true');
+  $('dShutAll').textContent=anyOpen?'Collapse all':'Expand all';
   markDocs();
 }
 function markDocs(){ // classes + lines only; cheap, runs on hover
-  const g=DV.data;if(!g)return;
-  const hv=DV.hl&&DV.hl.startsWith('g:')?'d:'+DV.hl.split('|')[1]:DV.hl,sel=dSets(hv||DV.sel||DV.f);
+  const g=DV.data;if(!g||!Array.isArray(g.rules))return;
+  const hv=DV.hl&&DV.hl.startsWith('g:')?'d:'+DV.hl.split('|')[1]:DV.hl&&DV.hl.startsWith('p:')?null:DV.hl;
+  let sel=dSets(hv||DV.sel||DV.f);
+  if(!sel&&DV.q.trim()){const {tm,dm}=dQm(),t=new Set(g.tickets.filter(tm).map(x=>x.id)),d=new Set(g.docs.filter(x=>dm(x.path)).map(x=>x.path)),a=new Set();
+    d.forEach(p=>{if(DV.home&&DV.home.has(p))a.add(DV.home.get(p));});sel={t,d,a,k:'q'};}
   for(const b of document.querySelectorAll('#dStage .dn')){const n=b.dataset.n,id=n.slice(2);
     b.classList.toggle('fade',!!sel&&!(n[0]==='t'?sel.t.has(id):sel.d.has(n[0]==='g'?id.split('|')[1]:id)));b.classList.toggle('on',DV.hl===n);}
   for(const b of document.querySelectorAll('#dStage .dband'))b.classList.toggle('fade',!!sel&&!sel.a.has(b.dataset.band)&&![...b.querySelectorAll('[data-dnode]')].some(x=>sel.d.has(x.dataset.dnode)));
   const svg=$('dSvg'),st=$('dStage').getBoundingClientRect(),pos=new Map();
   if(getComputedStyle(svg).display==='none'){svg.innerHTML='';return;}
-  for(const b of document.querySelectorAll('#dStage .dn,#dStage .dbh')){const m=(b.querySelector('.port,.mk')||b).getBoundingClientRect();pos.set(b.dataset.n,[m.left+m.width/2-st.left,m.top+m.height/2-st.top,b.getBoundingClientRect().right-st.left]);}
+  for(const b of document.querySelectorAll('#dStage .dn,#dStage .dbh,#dStage .dgh')){const m=(b.querySelector('.port,.mk,.dchev')||b).getBoundingClientRect(),r=b.getBoundingClientRect();
+    pos.set(b.dataset.n,[b.classList.contains('dgh')?r.right-st.left-6:b.classList.contains('dbh')&&!b.querySelector('.port')?r.left-st.left:m.left+m.width/2-st.left,m.top+m.height/2-st.top,r.right-st.left]);}
+  const grp=new Map(g.tickets.map(t=>['t:'+t.id,'p:'+(t.agent||'-')]));
+  const at=(...ks)=>{for(const k of ks)if(k&&pos.has(k))return [k,pos.get(k)];return [null,null];}; // a row, else its collapsed group's header
   const C=(A,B)=>{const mx=(A[0]+B[0])/2;return `M${A[0]},${A[1]}C${mx},${A[1]} ${mx},${B[1]} ${B[0]},${B[1]}`;};
   const bad=new Set(g.broken.map(b=>b.path)),done=new Set();let out='';
-  for(const r of g.reads){const A=pos.get('t:'+r.ticket);if(!A)continue;const k=dK(r);
-    const s=!!sel&&(sel.k==='d:'?r.doc===sel.id:sel.k==='t:'?r.ticket===sel.id:sel.k==='a:'?k===sel.id:sel.t.has(r.ticket)&&sel.d.has(r.doc));
+  for(const r of g.reads){const [ak,A]=at('t:'+r.ticket,grp.get('t:'+r.ticket));if(!A)continue;const k=dK(r);
+    const s=!!sel&&(sel.k==='d:'?r.doc===sel.id:sel.k==='t:'?r.ticket===sel.id:sel.k==='a:'?k===sel.id:sel.k==='q'?sel.t.has(r.ticket)||sel.d.has(r.doc):sel.t.has(r.ticket)&&sel.d.has(r.doc));
     if(r.via==='board'&&!s)continue; // everyone reads these: lines only on demand
     const toDoc=r.via==='board'||r.via==='ticket'||r.via==='file'||(s&&sel.k==='d:');
-    const key=r.ticket+'>'+(toDoc?r.doc:k);if(done.has(key))continue;done.add(key);
-    const B_=pos.get(toDoc?'d:'+r.doc:'a:'+k);if(!B_)continue;
+    const [bk,B_]=toDoc?at('d:'+r.doc,'a:'+(DV.home&&DV.home.get(r.doc))):at('a:'+k);if(!B_)continue;
+    const key=ak+'>'+bk;if(done.has(key))continue;done.add(key);
     out+=`<path class="${s?'s':''}${bad.has(r.doc)?' x':''}" d="${C(A,B_)}"/>`;}
   for(const l of g.links){const A=pos.get('d:'+l.from),B_=pos.get('d:'+l.to);if(!A||!B_)continue;
     const s=!!sel&&(sel.k==='d:'?[l.from,l.to].includes(sel.id):sel.d.has(l.from)&&sel.d.has(l.to));
@@ -2518,6 +2548,7 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
     ${rd.length?`<ul class="dlist">${rd.map(r=>{const t=g.tickets.find(x=>x.id===r.ticket);return `<li><button type="button" data-open="${esc(r.ticket)}"><span class="tid">${esc(r.ticket)}</span> ${inline(t?t.title:'')}</button><span class="ksrc">${esc(r.via==='tag'?'tag #'+r.from:r.via==='profile'?'profile '+r.from:dKind[r.via]||r.via)}</span></li>`;}).join('')}</ul>`:'<p class="hint">No open ticket.</p>'}
     <h3 class="dh3">Links to</h3>${dl(to)}<h3 class="dh3">Linked from</h3>${dl(from)}`);
 }
+$('dQ').addEventListener('input',e=>{DV.q=e.target.value;if(DV.data)renderDocs();});
 {const st=$('dStage');
  st.addEventListener('pointerover',e=>{const b=e.target.closest('.dn,.dbh');const n=b?b.dataset.n:null;if(n!==DV.hl){DV.hl=n;markDocs();}});
  st.addEventListener('pointerleave',()=>{if(DV.hl){DV.hl=null;markDocs();}});
