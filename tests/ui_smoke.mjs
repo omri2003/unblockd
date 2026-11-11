@@ -239,6 +239,13 @@ try {
 			await noOverflow('docs with a preview');
 			await page.keyboard.press('Escape');
 			await page.waitForFunction(() => !document.querySelector('#dT .dctx'));
+			// a server started before this page (no `rules` / `budget` in /knowledge) says "restart it" instead of hanging on "Reading docs"
+			await page.route('**/knowledge', async (r) => { const res = await r.fetch(); const j = await res.json(); delete j.rules; delete j.budget; await r.fulfill({ response: res, json: j }); });
+			await page.click('[data-drefresh]');
+			await page.waitForFunction(() => (document.querySelector('#dT')?.textContent || '').includes('older than this page'));
+			await page.unroute('**/knowledge');
+			await page.click('[data-drefresh]');
+			await visible('#dD .dband[data-band="tag:api"]', 'tag band after a restart');
 		}
 		{ // Roadmap view: example has 2 milestones (v0.1 is next) and one unscheduled ticket; a milestone opens the board filtered to it
 			await page.click('[data-view="roadmap"]');

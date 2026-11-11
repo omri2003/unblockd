@@ -2458,6 +2458,9 @@ function renderDocs(){
   const g=DV.data,P=$('dProb'),T_=$('dT'),D_=$('dD');
   if(!g){P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
     T_.innerHTML=`<li class="dempty">${DV.err?`<span class="msg err">${esc(DV.err)}</span>`:'Reading docs<span class="dots"></span>'}</li>`;return;}
+  if(!Array.isArray(g.rules)||typeof g.budget!=='number'){ // a server started before this page's code (the page is served live, Python loads once): say so, never hang
+    P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
+    T_.innerHTML=`<li class="dempty"><span class="msg err">This server is older than this page, so it cannot group the docs. Restart the server (<code>docker compose restart</code>), then reload the page.</span></li>`;return;}
   if(DV.sel&&DV.sel.startsWith('t:')&&!g.tickets.some(t=>t.id===DV.sel.slice(2)))DV.sel=null;
   P.innerHTML=DPROB.map(([k,l,get,bad,tip])=>{const n=get(g).length;
     return `<button type="button" class="${bad&&n?'bad':''}${n?'':' zero'}" data-dprob="${k}" aria-pressed="${DV.f===k}" ${n?'':'disabled'} title="${esc(tip)}">${bad&&n?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('')
