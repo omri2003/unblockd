@@ -231,6 +231,8 @@ try {
 			ok(await page.locator('#dD .dband[data-band="tag:sec"] .ghost').count() === 1, `[${tag}] docs: the sec band should list sec.md as "also here"`);
 			ok(await page.locator('[data-dsel="t:UI-2"] .dtg').count() === 2, `[${tag}] docs: UI-2 should show its two tags`);
 			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
+			ok((await page.locator('#dProb .dbud').innerText()).includes('≈500 tokens') && (await page.getAttribute('#dProb .dbud', 'title')).includes('2,000 characters'), `[${tag}] docs: the budget reads as estimated tokens, exact characters in the tooltip`);
+			ok(await page.evaluate(() => [...document.querySelectorAll('#dD .dband[data-band="ticket"] .bn')].every((b) => b.textContent === 'Picked per ticket')), `[${tag}] docs: the ticket band reads Picked per ticket`);
 			await page.click('[data-dsel="t:UI-2"]');
 			await page.waitForSelector('#dT .dctx h3');
 			const ctx = await page.locator('#dT .dctx').innerText();
