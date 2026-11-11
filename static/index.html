@@ -554,7 +554,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dlist li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
-  .dbh{flex-wrap:wrap} .dbh .port{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0} .dctx .v,.dctx .z{display:none} .dbud{margin-left:0}
+  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0} .dctx .v,.dctx .z{display:none} .dbud{margin-left:0}
 }
 /* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
 .mapstage{position:relative;overflow:hidden;height:calc(100dvh - 360px);min-height:340px;background:var(--sunk);border-radius:8px;touch-action:none;user-select:none;cursor:grab}
@@ -765,7 +765,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
       <span><i class="sw" style="background:var(--jade);border-radius:3px"></i>Hub</span>
       <span><i class="sw" style="background:var(--cinnabar);border-radius:3px"></i>Broken</span>
       <span><i class="sw" style="border:2px dashed var(--muted);border-radius:3px"></i>Only linked from another doc</span>
-      <span class="hint">Size bar: the tick is the context budget; red hatching = too big to send. Click a ticket to see what its agent gets.</span></div>
+      <span class="hint">Sizes are estimated tokens (characters ÷ 4). Size bar: the tick is the context budget; red hatching = too big to send. Click a ticket to see what its agent gets.</span></div>
     <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets, by profile</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs, grouped by the rule that sends them</h2><ol id="dD"></ol></div></div></div>
   </section>
   <section class="mapwrap" id="mapWrap" hidden aria-label="Component map">
@@ -2404,7 +2404,8 @@ async function loadDocs(){
 const dBase=p=>p.split('/').pop(),dDir=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')+1):'';
 const dKind={board:'board',builtin:'built-in',tag:'by tag',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
 const dK=x=>x.via==='tag'||x.via==='profile'?x.via+':'+x.from:x.via; // a read's / rule's band key
-const dKb=n=>Math.max(1,Math.round(n/1000))+'k';
+const dTk=n=>{const t=n/4;return '≈'+(t<1000?Math.max(10,Math.round(t/10)*10):t<9950?(Math.round(t/100)/10)+'k':Math.round(t/1000)+'k');}; // characters -> estimated tokens (chars / 4); the budget itself is counted in characters
+const dCh=n=>Number(n).toLocaleString('en-US')+' characters';
 const DIC={board:'<rect x="2" y="2" width="12" height="12" rx="2"/><rect x="5.5" y="5.5" width="5" height="5" rx="1" class="f"/>',
   tag:'<path d="M6 2.5 4.5 13.5M11.5 2.5 10 13.5M2.5 6h11M2 10.5h11"/>',profile:'<rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 2.5V5"/><circle cx="6" cy="9" r=".9" class="f"/><circle cx="10" cy="9" r=".9" class="f"/>',
   ticket:'<path d="M3 3h10v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z"/>',file:'<path d="M10.5 5 6 9.5a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4-4"/>',
@@ -2436,10 +2437,10 @@ function dSets(f){ // what a problem filter, a selected ticket / band or a hover
 function dMeter(d,B){ // size bar: the tick is the context budget; too big = hatched cinnabar plus the words
   if(d.error)return `<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`;if(d.size==null)return '';
   const big=!d.builtin&&d.size>B,w=Math.min(100,d.size/B*50);
-  return `<span class="szw${big?' big':''}" title="${dKb(d.size)} of a ${dKb(B)} budget${big?': too big to send, agents get the path only':''}"><span class="szm"><i style="width:${w}%"></i><b></b></span><span class="szt">${dKb(d.size)}${big?' · too big':''}</span></span>`;}
+  return `<span class="szw${big?' big':''}" title="${dCh(d.size)} (${dTk(d.size)} tokens) of a ${dCh(B)} budget${big?': too big to send, agents get the path only':''}"><span class="szm"><i style="width:${w}%"></i><b></b></span><span class="szt">${dTk(d.size)}<span class="u"> tokens</span>${big?' · too big':''}</span></span>`;}
 const dPath=p=>`<span class="pth" title="${esc(p)}"><i>${esc(dDir(p))}</i>${esc(dBase(p))}</span>`;
-const bandName=b=>b.via==='tag'?`Tag <code>${esc(b.from)}</code>`:b.via==='profile'?`Profile <code>${esc(b.from)}</code>`:{board:'Every open ticket',ticket:'On the ticket itself',file:'Attached to a ticket',linked:'Linked from a doc only'}[b.via];
-const bandShort=b=>b.via==='tag'?'#'+b.from:b.via==='profile'?b.from:{board:'every ticket',ticket:'on the ticket',file:'attached',linked:'linked only'}[b.via];
+const bandName=b=>b.via==='tag'?`Tag <code>${esc(b.from)}</code>`:b.via==='profile'?`Profile <code>${esc(b.from)}</code>`:{board:'Every open ticket',ticket:'Picked per ticket',file:'Attached to a ticket',linked:'Linked from a doc only'}[b.via];
+const bandShort=b=>b.via==='tag'?'#'+b.from:b.via==='profile'?b.from:{board:'every ticket',ticket:'picked per ticket',file:'attached',linked:'linked only'}[b.via];
 const bandRule=b=>b.via==='tag'?'docs_by_tag.'+b.from:b.via==='profile'?`agents[${b.from}].docs`:{board:'docs in unblockd.json',ticket:"the ticket's docs field",file:'tickets/files/<ID>/',linked:''}[b.via];
 function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s own budget pass
   const c=DV.ctx[id],g=DV.data;
@@ -2448,10 +2449,10 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
   const B=g.budget,lab=s=>s.startsWith('tag:')?'#'+s.slice(4):s.startsWith('agent:')?s.slice(6):s.startsWith('component:')?'component':s;
   const SW={full:['in','sent in full'],too_big:['out','path only: too big'],budget:['out','path only: budget spent']};
   const cut=c.docs.filter(d=>d.sent!=='full').length,used=c.inlined_chars||0;
-  const seg=c.docs.filter(d=>d.sent==='full').map(d=>{const s=d.source.split(':')[0];return `<i class="${s==='board'?'b':s==='tag'?'g':s==='agent'?'p':'t'}" style="width:${Math.max(.4,(d.chars||0)/B*100)}%" title="${esc(d.path)} ${dKb(d.chars||1)}"></i>`;}).join('');
-  return `<div class="dctx"><h3>What an agent gets for ${esc(id)}<span>${dKb(used)} of ${dKb(B)} sent${cut?` · <b>${cut} not sent</b>`:''}</span></h3>
-    <div class="cbar" role="img" aria-label="${dKb(used)} of the ${dKb(B)} budget used">${seg}</div>
-    <ol>${c.docs.map(d=>{const [k,w]=SW[d.sent]||['out','not sent: '+(d.error||'broken')];return `<li><span class="v">${esc(lab(d.source))}</span>${dPath(d.path)}<span class="z">${d.chars!=null?dKb(d.chars):''}</span><span class="s ${k}">${esc(w)}</span></li>`;}).join('')}
+  const seg=c.docs.filter(d=>d.sent==='full').map(d=>{const s=d.source.split(':')[0];return `<i class="${s==='board'?'b':s==='tag'?'g':s==='agent'?'p':'t'}" style="width:${Math.max(.4,(d.chars||0)/B*100)}%" title="${esc(d.path)} ${dTk(d.chars||1)} tokens (${dCh(d.chars||0)})"></i>`;}).join('');
+  return `<div class="dctx"><h3>What an agent gets for ${esc(id)}<span title="${dCh(used)} of ${dCh(B)}">${dTk(used)} of ${dTk(B)} tokens sent${cut?` · <b>${cut} not sent</b>`:''}</span></h3>
+    <div class="cbar" role="img" aria-label="About ${dTk(used).slice(1)} of the ${dTk(B).slice(1)} token budget used">${seg}</div>
+    <ol>${c.docs.map(d=>{const [k,w]=SW[d.sent]||['out','not sent: '+(d.error||'broken')];return `<li><span class="v">${esc(lab(d.source))}</span>${dPath(d.path)}<span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span></li>`;}).join('')}
       <li><span class="v">board</span>${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">sent by the MCP prompt</span></li></ol>
     <p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
 async function dLoadCtx(id){
@@ -2481,7 +2482,7 @@ function renderDocs(){
   if(DV.sel&&DV.sel.startsWith('t:')&&!g.tickets.some(t=>t.id===DV.sel.slice(2)))DV.sel=null;
   P.innerHTML=DPROB.map(([k,l,get,bad,tip])=>{const n=get(g).length;
     return `<button type="button" class="${bad&&n?'bad':''}${n?'':' zero'}" data-dprob="${k}" aria-pressed="${DV.f===k}" ${n?'':'disabled'} title="${esc(tip)}">${bad&&n?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('')
-    +`<span class="dbud">Context budget <b>${dKb(g.budget)}</b> per ticket</span>`;
+    +`<span class="dbud" title="${dCh(g.budget)} (context_budget in unblockd.json). Tokens are estimated as characters ÷ 4.">Context budget <b>${dTk(g.budget)} tokens</b> per ticket</span>`;
   const hubs=new Set(g.hubs.map(h=>h.path)),bad=new Set(g.broken.map(b=>b.path)),nod=new Set(g.no_docs),B=g.budget,byP=new Map(g.docs.map(d=>[d.path,d]));
   const bands=dBands(g),tagRules=g.rules.filter(r=>r.via==='tag'),{q,tm,dm}=dQm();
   DV.home=new Map();bands.forEach(b=>b.docs.forEach(p=>DV.home.set(p,b.key)));
