@@ -31,11 +31,17 @@ PROTOCOL = "unblockd://work-loop"  # its name in graph() / read_doc / context()
 LINK_RE = re.compile(r"\]\(([^)\s#]+)(?:#[^)]*)?\)|^@(\S+)", re.M)
 
 
-def root(store) -> Path:
-	return store.dir.resolve().parent
+NO_REPO = "this board has no repo linked, so repo paths can't be read (attach the file to the ticket instead)"
 
 
-def _inside(base: Path, rel: str) -> Path:
+def root(store) -> Path | None:
+	"""The project folder repo paths are read from; None for a board with no repo (a database board, until CORE-36)."""
+	return store.backend.project_root()
+
+
+def _inside(base: Path | None, rel: str) -> Path:
+	if base is None:
+		raise TicketError(NO_REPO)
 	if not isinstance(rel, str) or not rel.strip() or "\x00" in rel:
 		raise TicketError(f"bad path {rel!r}")
 	p = (base / rel.strip().replace("\\", "/").lstrip("/")).resolve()
@@ -51,6 +57,8 @@ LIST_MAX = 3000  # repo_files cap
 def repo_files(store) -> dict:
 	"""{files: [project-relative paths], truncated}: what the ticket form suggests for `docs` / `touches`.
 	Never leaves the project root (symlinks are not followed or listed); skips dot-folders, node_modules and the tickets folder."""
+	if root(store) is None:
+		return {"files": [], "truncated": False}
 	base, tdir, out = root(store), store.dir.resolve(), []
 	for d, dirs, names in os.walk(base):
 		dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS and (Path(d) / x).resolve() != tdir and not (Path(d) / x).is_symlink())
@@ -64,10 +72,10 @@ def _is_text(p: Path) -> bool:
 	return p.suffix.lower() in TEXT_EXT and p.is_file()
 
 
-def _decode(p: Path) -> tuple[str, str | None]:
-	"""A doc's text and, when it is not valid UTF-8, a warning naming the problem. Bad bytes become U+FFFD, so a reply is
+def _decode(p: Path | bytes) -> tuple[str, str | None]:
+	"""A doc's text (a path, or an attachment's bytes from the connector) and, when it is not valid UTF-8, a warning naming the problem. Bad bytes become U+FFFD, so a reply is
 	always valid UTF-8 (a Windows-1252 dash, byte 0x97, once broke an agent's JSON parser); the warning says which file to fix."""
-	raw = p.read_bytes()
+	raw = p if isinstance(p, bytes) else p.read_bytes()
 	try:
 		return raw.decode("utf-8"), None
 	except UnicodeDecodeError as e:
@@ -118,16 +126,12 @@ def links_of(text: str, here: Path, base: Path) -> list[str]:
 	return out
 
 
-def files_dir(store, tid: str) -> Path:
-	store._path(tid)  # validates the id
-	return store.dir / "files" / tid
+def files_dir(store, tid: str) -> Path:  # files boards: where a ticket's attachments live (graph() names them by path)
+	return store.dir / "files" / store._valid(tid)
 
 
 def list_files(store, tid: str) -> list[dict]:
-	d = store.dir / "files" / tid
-	if not d.is_dir():
-		return []
-	return [{"name": p.name, "bytes": p.stat().st_size} for p in sorted(d.iterdir()) if p.is_file()]
+	return store.backend.list_attachments(store._valid(tid))
 
 
 def attach(store, tid: str, name: str, content: str) -> dict:
@@ -141,9 +145,7 @@ def attach(store, tid: str, name: str, content: str) -> dict:
 	if len(data) > MAX_FILE:
 		raise TicketError(f"{name} is {len(data)} bytes; the limit is {MAX_FILE}. Link it with docs instead.")
 	store.get(tid)  # must exist
-	d = files_dir(store, tid)
-	d.mkdir(parents=True, exist_ok=True)
-	(d / name).write_bytes(data)
+	store.backend.put_attachment(tid, name, data)
 	store._log("attach", tid, None, name)
 	return {"name": name, "bytes": len(data)}
 
@@ -151,10 +153,8 @@ def attach(store, tid: str, name: str, content: str) -> dict:
 def detach(store, tid: str, name: str) -> dict:
 	if not NAME_RE.match(name or ""):
 		raise TicketError(f"bad file name {name!r}")
-	p = files_dir(store, tid) / name
-	if not p.is_file():
+	if not store.backend.delete_attachment(store._valid(tid), name):
 		raise TicketError(f"{tid} has no file {name}")
-	p.unlink()
 	store._log("detach", tid, None, name)
 	return {"name": name, "removed": True}
 
@@ -162,10 +162,10 @@ def detach(store, tid: str, name: str) -> dict:
 def read_file(store, tid: str, name: str) -> str:
 	if not NAME_RE.match(name or ""):
 		raise TicketError(f"bad file name {name!r}")
-	p = files_dir(store, tid) / name
-	if not p.is_file():
+	data = store.backend.get_attachment(store._valid(tid), name)
+	if data is None:
 		raise TicketError(f"{tid} has no file {name}")
-	return p.read_text(encoding="utf-8", errors="replace")
+	return data.decode("utf-8", errors="replace")
 
 
 def read_doc(store, path: str) -> dict:
@@ -287,7 +287,7 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 		item = {"path": f"tickets/files/{tid}/{f['name']}", "file": f["name"], "source": "attached", "trust": "untrusted", "chars": f["bytes"]}
 		text = None
 		if inline and f["bytes"] <= budget:
-			text, bad = _decode(files_dir(store, tid) / f["name"])
+			text, bad = _decode(store.backend.get_attachment(tid, f["name"]) or b"")  # any connector, not only a folder
 			if bad:
 				item["warning"] = bad
 		docs.append(item)
@@ -426,6 +426,8 @@ def components(store) -> dict:
 	edges: [{from, to, text}], broken_links: [{from, target}], error?}. folder None = feature off; a folder that does not exist yet = no
 	components, no error (the first add_component creates it). Format: docs/reference.md."""
 	folder = store.config.get("architecture") or None
+	if root(store) is None:  # no repo, so no notes to read: the feature is off (architecture in the database: CORE-36)
+		folder = None
 	out = {"folder": folder, "components": [], "edges": [], "broken_links": []}
 	if not folder:
 		return out
@@ -822,7 +824,12 @@ def graph(store) -> dict:
 				add(t, rel, p, err, kind.replace("agent", "profile"), frm or None)
 		for f in list_files(store, t["id"]):
 			rel = f"tickets/files/{t['id']}/{f['name']}"
-			add(t, rel, files_dir(store, t["id"]) / f["name"], None, "file")
+			if store.dir is not None:
+				add(t, rel, files_dir(store, t["id"]) / f["name"], None, "file")
+			else:  # stored in the database: no path; size from the listing, links not followed
+				finfo[rel] = (f["bytes"], [])
+				add(t, rel, None, None, "file")
+				docs[rel]["size"] = f["bytes"]
 	if tickets:  # the protocol is every ticket's doc; kind stays "board" so it is never a hub or a gap in no_docs
 		docs[PROTOCOL] = {"path": PROTOCOL, "kind": "board", "builtin": True, "size": PROTOCOL_FILE.stat().st_size}
 		readers[PROTOCOL] = {t["id"] for t in tickets}

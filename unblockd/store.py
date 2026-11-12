@@ -1,8 +1,8 @@
-"""Tickets as JSON files: one file per ticket in TICKETS_DIR.
+"""The rules of a board: validation, routing, claims, derived fields. Every front door (web, MCP, CLI, chat) calls Store,
+so they can never disagree.
 
-This is the only module that touches the files. The web API (web.py) and
-the MCP server (mcp_server.py) both call it, so they can never disagree.
-Stdlib only.
+Storage is a connector (files.FileBackend by default: one JSON file per ticket in TICKETS_DIR). Store never touches
+storage itself: it calls the connector's methods (see files.FileBackend for the list). Stdlib only.
 """
 from __future__ import annotations
 
@@ -10,20 +10,21 @@ import fnmatch
 import json
 import os
 import re
-import shutil
-import tempfile
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from . import connectors
+from .errors import Conflict, NotFound, TicketError
+from .files import (CONFIG_FILE, ID_RE, _LOG, _RAW, FileBackend, _jline, _stamp,  # noqa: F401 (re-exported)
+                    linked_worktree, steal_stale)
+
 STATUSES = ("todo", "doing", "pending", "review", "done")
 PRIORITIES = ("P0", "P1", "P2", "P3")
-ID_RE = re.compile(r"^[A-Z0-9]+-\d+[a-z]?$")  # also the filename: blocks path traversal
 PREFIX_RE = re.compile(r"^[A-Z0-9]+$")
 TAG_RE = re.compile(r"^[a-z0-9][a-z0-9:._-]{0,39}$")  # lowercase; "agent:<name>" routes a ticket to that agent
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")  # agent profile and board ids
 STALE_DAYS = 7  # default; a doing ticket untouched this long is flagged (config: stale_days)
-CONFIG_FILE = "unblockd.json"  # optional, next to the tickets
 DEFAULT_CONFIG = {
 	"title": "Tickets",
 	"owners": [{"name": "Me", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
@@ -76,15 +77,13 @@ NOTES_TAIL = 5
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is left
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
-ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
+ACTIVITY_MAX = 5_000_000  # bytes; past this the activity log rotates (files: activity.jsonl -> activity.1.jsonl, one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 
-# Per-process caches, keyed by folder / file path, so every Store on the same folder (the web server builds one per request)
-# shares them. Files stay the only truth: every read re-stats the folder and re-parses only files whose (inode, mtime, size)
-# changed, so another process's write, a git pull or a hand edit is seen on the next call. Never written back.
-_RAW: dict[str, dict] = {}  # tickets folder -> {stem: (stamp, parsed ticket)}
-_DEC: dict[str, tuple] = {}  # tickets folder -> (signature, {id: decorated ticket})
-_LOG: dict[str, tuple] = {}  # activity file -> (inode, bytes parsed, [events oldest first])
+# The derived board per connector (its key), shared by every Store on it (the web server builds one per request). Re-derived
+# only when the connector's version (tickets, claims, attachments), the date or the config changed. Never written back.
+# The connectors keep their own caches of what they read (files: _RAW, _LOG in files.py).
+_DEC: dict[str, tuple] = {}  # board key -> (signature, {id: decorated ticket})
 
 # Field -> (default, validator). Add a field here and the API + MCP accept it.
 FIELDS = {
@@ -199,10 +198,6 @@ def _short_list(v) -> bool:
 	return isinstance(v, list) and len(v) <= 50 and all(isinstance(x, str) and 0 < len(x.strip()) <= 300 for x in v)
 
 
-class TicketError(ValueError):
-	"""Bad input from a caller (maps to HTTP 400 / an MCP tool error)."""
-
-
 def refuse_open_bind(host: str, token: str | None) -> None:
 	"""Exit at startup when the server listens beyond loopback with no token: anyone (or any web page, via a rebound name)
 	that reaches the port could edit tickets. UNBLOCKD_ALLOW_OPEN=1 opts out (the compose file does: it publishes loopback only)."""
@@ -210,14 +205,6 @@ def refuse_open_bind(host: str, token: str | None) -> None:
 		return
 	raise SystemExit(f"refusing to start: bound to {host} with no auth. Set UNBLOCKD_TOKEN, or bind HOST=127.0.0.1, "
 	                 "or set UNBLOCKD_ALLOW_OPEN=1 if the port is only reachable by you (e.g. published on 127.0.0.1 by Docker).")
-
-
-class NotFound(TicketError):
-	pass
-
-
-class Conflict(TicketError):
-	"""update(expected_rev=) lost a race: the ticket was written after the caller read it (REST 409)."""
 
 
 AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools", "tools_off"}
@@ -235,18 +222,19 @@ SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 def load_config(tickets_dir: Path) -> dict:
 	"""DEFAULT_CONFIG overlaid with <tickets_dir>/unblockd.json when it exists."""
+	return config_from(*FileBackend(tickets_dir).read_config(), Path(tickets_dir))
+
+
+def config_from(user: dict | None, where: str, tickets_dir: Path | None) -> dict:
+	"""DEFAULT_CONFIG overlaid with a board's own settings (`user`, None = none), validated. `where` names them in errors;
+	tickets_dir = a files board's folder (skill / mcp doc paths are checked inside its project), None for other connectors."""
 	cfg = json.loads(json.dumps(DEFAULT_CONFIG))
-	path = Path(tickets_dir) / CONFIG_FILE
-	if path.exists():
-		try:
-			user = json.loads(path.read_text(encoding="utf-8"))
-		except json.JSONDecodeError as e:
-			raise TicketError(f"{path} is not valid JSON: {e}")
+	if user is not None:
 		if not isinstance(user, dict):
-			raise TicketError(f"{path} must be a JSON object")
+			raise TicketError(f"{where} must be a JSON object")
 		unknown = set(user) - set(DEFAULT_CONFIG)
 		if unknown:
-			raise TicketError(f"{path}: unknown key(s) {', '.join(sorted(unknown))}. Known: {', '.join(DEFAULT_CONFIG)}")
+			raise TicketError(f"{where}: unknown key(s) {', '.join(sorted(unknown))}. Known: {', '.join(DEFAULT_CONFIG)}")
 		cfg.update(user)
 	if not isinstance(cfg["review"], bool):
 		raise TicketError(f"{CONFIG_FILE}: review must be true or false")
@@ -293,20 +281,22 @@ def load_config(tickets_dir: Path) -> dict:
 	for what, names in [("worker_tools", cfg["worker_tools"])] + [(f"agent {a['name']} {k}", a.get(k)) for a in cfg["agents"] for k in ("tools", "tools_off")]:
 		if names is not None and not (isinstance(names, list) and all(isinstance(x, str) and TOOL_RE.match(x) for x in names)):
 			raise TicketError(f"{CONFIG_FILE}: {what} must be a list of MCP tool names like claim_next")
-	_check_caps(cfg, Path(tickets_dir))
+	_check_caps(cfg, tickets_dir)
 	if not cfg["default_owner"]:
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
 		cfg["default_owner"] = (agents or [cfg["owners"][0]["name"]])[0]
 	return cfg
 
 
-def _check_caps(cfg: dict, tickets_dir: Path) -> None:
+def _check_caps(cfg: dict, tickets_dir: Path | None) -> None:
 	"""The skills / mcp registries and every list that selects from them (use_*, agents[].skills / mcp)."""
 	from .knowledge import _inside, _is_text  # lazy: knowledge imports this module
 	bad = lambda m: TicketError(f"{CONFIG_FILE}: {m}")
-	base, tdir = tickets_dir.resolve().parent, tickets_dir.resolve()
 
 	def path(what: str, rel) -> None:  # inside the project, an existing text file, NOT under the tickets folder (tickets/files/<ID>/ is writable by anyone with ticket access)
+		if tickets_dir is None:
+			raise bad(f"{what}: {rel!r}: this board has no project folder to read files from")
+		base, tdir = Path(tickets_dir).resolve().parent, Path(tickets_dir).resolve()
 		try:
 			p = _inside(base, rel)
 		except TicketError as e:
@@ -392,82 +382,64 @@ def _check_schema(sc) -> None:
 
 
 class Store:
-	def __init__(self, tickets_dir: str | os.PathLike, legacy_files: list[str] | None = None):
-		self.dir = Path(tickets_dir)
-		self.dir.mkdir(parents=True, exist_ok=True)
-		self.config = load_config(self.dir)
+	def __init__(self, tickets_dir: str | os.PathLike | None = None, legacy_files: list[str] | None = None, backend=None):
+		"""A board on a tickets folder (the files connector), a database location (`sqlite:///x.db#board`, see connectors), or
+		on `backend`, any connector (files.FileBackend lists the methods)."""
+		if backend is None and connectors.is_db(tickets_dir):
+			backend = connectors.open_backend(tickets_dir)  # a database board's row is created on first use
+		self.backend = backend if backend is not None else FileBackend(tickets_dir)
+		self.backend.parse = _parse  # upgrading what old tickets hold is a rule: the same for every connector
+		files = isinstance(self.backend, FileBackend)
+		self.dir = self.backend.dir if files else None  # the tickets folder and its runtime folder (.unblockd): files boards only
+		self.rt = self.backend.rt if files else None
+		self.config = config_from(*self.backend.read_config(), self.dir)
 		self.stale_days = int(self.config["stale_days"])
 		# Old ticket lists: new IDs never reuse a number seen there.
-		self.legacy_files = [Path(p) for p in (legacy_files or []) if p] + [self.dir / p for p in self.config["legacy_files"]]
-		self._key = str(self.dir.resolve())
-		# runtime state (lock, claims, activity): <tickets>/.unblockd, except in a linked git worktree, where it is the MAIN
-		# checkout's copy of the same folder: every worktree then shares one lock and one claims.json (ticket files stay per branch)
-		wt = linked_worktree(self.dir.resolve())
-		self.rt = (wt[1] / self.dir.resolve().relative_to(wt[0]) if wt else self.dir) / ".unblockd"
+		self.legacy_files = [Path(p) for p in (legacy_files or []) if p] + ([self.dir / p for p in self.config["legacy_files"]] if files else [])
+		self._key = self.backend.key
 		self._cfg_sig = json.dumps(self.config, sort_keys=True)
 
-	# ---------- files ----------
-	def _path(self, tid: str) -> Path:
+	# ---------- storage (always through the connector) ----------
+	@staticmethod
+	def _valid(tid: str) -> str:
 		if not isinstance(tid, str) or not ID_RE.match(tid):
 			raise TicketError(f"bad ticket id {tid!r}: expected like BUG-10 or ART-23")
-		return self.dir / f"{tid}.json"
+		return tid
 
-	def _read(self, path: Path) -> dict:
-		with open(path, encoding="utf-8") as f:
-			t = json.load(f)
-		if t.get("status") == "pending":  # derived only (effective_status); old files stored it, read as todo
-			t["status"] = "todo"
-		t.setdefault("rev", 0)
-		if "notes" not in t:  # old files: notes were appended to the body; split them out (written back on the ticket's next write)
-			t["body"], t["notes"] = split_notes(t.get("body", ""))
-		for i, n in enumerate(t["notes"], 1):  # notes written before they were numbered
-			n.setdefault("n", i)
+	def _exists(self, tid: str) -> bool:
+		return self.backend.exists(self._valid(tid))
+
+	def _fresh(self, tid: str) -> dict:
+		"""One ticket as stored, read now (not from a cache): what every read-modify-write under the lock starts from."""
+		t = self.backend.read(self._valid(tid))
+		if t is None:
+			raise NotFound(f"no ticket {tid}")
 		return t
 
-	def _write(self, t: dict) -> None:
-		path = self._path(t["id"])
-		t["rev"] = t.get("rev", 0) + 1  # every ticket write goes through here (claims.json / heartbeats never touch the ticket file)
-		fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".tmp")
-		with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-			json.dump(t, f, indent=2, ensure_ascii=False)
-			f.write("\n")
-		os.replace(tmp, path)  # atomic: a reader never sees half a file
+	def _path(self, tid: str) -> Path:  # files boards: the ticket's file
+		return self.backend.path(self._valid(tid))
 
-	def _scan(self) -> dict[str, tuple]:
-		"""{stem: (stamp, ticket)} for every ticket file, re-parsing only the files that changed since the last call (any Store, this process)."""
-		old, new = _RAW.get(self._key, {}), {}
-		with os.scandir(self.dir) as it:
-			for e in it:
-				if not e.name.endswith(".json") or not ID_RE.match(stem := e.name[:-5]):
-					continue
-				st = e.stat()
-				stamp = (st.st_ino, st.st_mtime_ns, st.st_size)  # os.replace makes a new file, so a rewrite changes the stamp even within one clock tick
-				hit = old.get(stem)
-				new[stem] = hit if hit and hit[0] == stamp else (stamp, self._read(Path(e.path)))
-		_RAW[self._key] = dict(sorted(new.items()))
-		return _RAW[self._key]
+	def _read(self, path: Path) -> dict:  # files boards: one ticket file, parsed
+		return self.backend.read_file(path)
+
+	def _write(self, t: dict) -> None:
+		t["rev"] = t.get("rev", 0) + 1  # every ticket write goes through here (claims and heartbeats never touch the ticket)
+		self.backend.write(t)
 
 	def _all_raw(self) -> list[dict]:
-		return [_copy(t) for _, t in self._scan().values()]
+		return [_copy(t) for t in self.backend.tickets().values()]
 
 	def _board(self) -> dict[str, dict]:
-		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket file, the claims, an attachment, the config or the date changed."""
+		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket, the claims, an attachment, the config or the date changed."""
 		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
-		raw = self._scan()
-		sig = (tuple((k, v[0]) for k, v in raw.items()), _stamp(self.rt / "claims.json"), self._files_sig(), date.today(), self._cfg_sig)
+		raw = self.backend.tickets()
+		sig = (self.backend.version(), date.today(), self._cfg_sig)
 		hit = _DEC.get(self._key)
 		if hit and hit[0] == sig:
 			return hit[1]
-		dec = {t["id"]: t for t in self._decorate([t for _, t in raw.values()])}  # _decorate builds new dicts and only reads the cached ones
+		dec = {t["id"]: t for t in self._decorate(list(raw.values()))}  # _decorate builds new dicts and only reads the cached ones
 		_DEC[self._key] = (sig, dec)
 		return dec
-
-	def _files_sig(self) -> tuple:
-		fd = self.dir / "files"
-		if not fd.is_dir():
-			return ()
-		with os.scandir(fd) as it:  # the names themselves: a directory's mtime is not reliably bumped on every OS
-			return tuple(sorted((d.name, tuple(sorted(os.listdir(d.path)))) for d in it if d.is_dir()))
 
 	# ---------- validation ----------
 	def _clean(self, data: dict, partial: bool) -> dict:
@@ -556,6 +528,8 @@ class Store:
 		keys = [c["key"] for c in components(self)["components"]]
 		bad = [k for k in bad if k not in keys]
 		if bad and not keys:
+			if self.dir is None:
+				raise TicketError(f"components {', '.join(bad)}: this board has no architecture notes (it has no repo linked), so leave components empty")
 			if not self.config.get("architecture"):
 				raise TicketError(f"components {', '.join(bad)}: this board has no architecture. Set \"architecture\" in {CONFIG_FILE} to a repo folder "
 				                  "with one .md note per component (docs/reference.md, Architecture), or leave components empty")
@@ -609,8 +583,7 @@ class Store:
 		if unknown:
 			raise TicketError(f"unknown profile(s) {', '.join(unknown)}: profiles are {', '.join(names) or 'none'}")
 		def run():
-			p = self.dir / CONFIG_FILE
-			raw = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+			raw = self.backend.read_config()[0] or {}
 			if base == list(WORKER_TOOLS):
 				raw.pop("worker_tools", None)
 			else:
@@ -626,10 +599,8 @@ class Store:
 						ag[k] = v
 					else:
 						ag.pop(k, None)
-			tmp = p.with_suffix(".tmp")
-			tmp.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-			os.replace(tmp, p)
-			self.config = load_config(self.dir)
+			self.backend.write_config(raw)
+			self.config = config_from(*self.backend.read_config(), self.dir)
 			self._cfg_sig = json.dumps(self.config, sort_keys=True)
 			self._log("config", None, by, "worker tools")
 		self._locked(run)
@@ -690,8 +661,7 @@ class Store:
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
 		live = self._live_claims()
-		fd = self.dir / "files"
-		attached = {d.name: sorted(f.name for f in d.iterdir() if f.is_file()) for d in fd.iterdir() if d.is_dir()} if fd.is_dir() else {}
+		attached = self.backend.attachment_names()
 		by_id = {t["id"]: t for t in tickets}
 		blocks: dict[str, list[str]] = {t["id"]: [] for t in tickets}
 		kids: dict[str, list[dict]] = {}
@@ -848,7 +818,7 @@ class Store:
 		return res[:max(0, int(limit))]
 
 	def get(self, tid: str) -> dict:
-		self._path(tid)  # validates the id
+		self._valid(tid)
 		t = self._board().get(tid)
 		if t is None:
 			raise NotFound(f"no ticket {tid}")
@@ -865,7 +835,7 @@ class Store:
 		if not PREFIX_RE.match(prefix or ""):
 			raise TicketError(f"bad prefix {prefix!r}: expected like BUG or ART")
 		pat = re.compile(rf"(?<![A-Z0-9]){re.escape(prefix)}-(\d+)")
-		nums = [int(m) for p in self.dir.glob(f"{prefix}-*.json") for m in pat.findall(p.stem)]
+		nums = self.backend.numbers(prefix)
 		for f in self.legacy_files:
 			if f.exists():
 				nums += [int(m) for m in pat.findall(f.read_text(encoding="utf-8", errors="ignore"))]
@@ -938,7 +908,7 @@ class Store:
 					if tid is not None:
 						if not isinstance(tid, str):
 							raise TicketError(f"invalid id {tid!r}")
-						if self._path(tid).exists():
+						if self._exists(tid):
 							raise TicketError(f"{tid} already exists")
 						if tid in tids:
 							raise TicketError(f"{tid} is given twice in this batch")
@@ -1007,9 +977,10 @@ class Store:
 				for t in built:
 					self._write(t)
 					done.append(t["id"])
-			except OSError as e:
+			except OSError as e:  # a database connector's write is inside the lock's transaction: it rolls back on its own
 				for x in done:
-					self._path(x).unlink(missing_ok=True)
+					if self._exists(x):
+						self.backend.delete(x)
 				raise TicketError(f"could not write the batch ({e}): nothing was created")
 			for t in built:
 				self._log("created", t["id"], agent, t["title"])
@@ -1045,7 +1016,7 @@ class Store:
 			if not prefix:
 				raise TicketError("give an id or a prefix (e.g. BUG)")
 			tid = self.next_id(prefix)
-		if self._path(tid).exists():
+		if self._exists(tid):
 			raise TicketError(f"{tid} already exists")
 		t = self._prepare(data, tid, inherited, inherited_caps, inherited_components, proposed_by)
 		self._write(t)
@@ -1085,10 +1056,7 @@ class Store:
 		return self._with_lease(self._locked(lambda: self._update(tid, changes, agent, expected_rev)), agent)
 
 	def _update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
-		path = self._path(tid)
-		if not path.exists():
-			raise NotFound(f"no ticket {tid}")
-		t = self._read(path)
+		t = self._fresh(tid)
 		if expected_rev is not None and expected_rev != t["rev"]:
 			raise Conflict(f"{tid} changed since you loaded it (rev {t['rev']}, you had {expected_rev}): reload it and apply your change again")
 		clean = self._clean(changes, partial=True)
@@ -1110,7 +1078,7 @@ class Store:
 			if t.get("proposed_by"):
 				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
 			open_b = [b for b in clean.get("blocked_by", t.get("blocked_by", []))
-			          if self._path(b).exists() and self._read(self._path(b)).get("status") != "done"]
+			          if self._exists(b) and self._fresh(b).get("status") != "done"]
 			if open_b:
 				raise TicketError(f"{tid} is blocked by {', '.join(open_b)} (still open): finish or unlink it first")
 		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
@@ -1191,10 +1159,7 @@ class Store:
 			raise TicketError("accept needs `by`: who is accepting")
 		self._human_only("accept", by)
 		def run():
-			path = self._path(tid)
-			if not path.exists():
-				raise NotFound(f"no ticket {tid}")
-			raw = self._read(path)
+			raw = self._fresh(tid)
 			if not raw.get("proposed_by"):
 				raise TicketError(f"{tid} isn't a proposal (nothing to accept)")
 			if raw["proposed_by"] == by.strip():
@@ -1207,110 +1172,47 @@ class Store:
 		return self.get(tid)
 
 	def _delete(self, tid: str, agent: str | None = None, reason: str = "") -> dict:
-		path = self._path(tid)
-		if not path.exists():
-			raise NotFound(f"no ticket {tid}")
+		t = self._fresh(tid)
 		self._holder_only(tid, agent)
-		t = self._read(path)
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		if agent and self.profile_of(agent) and t.get("owner") in humans:
 			raise TicketError(f"{tid} is owned by {t['owner']} (a human): a worker can't delete it; add_note or ask_human")
 		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
-		path.unlink()
+		self.backend.delete(tid)  # and its attachments
 		self._drop_claim(tid, "ticket deleted")
-		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)  # attachments
 		self._log("deleted", tid, agent, t["title"] + (f" (rejected: {reason.strip()})" if reason.strip() else ""))
 		return {**t, "referenced_by": refs}  # still list it in blocked_by / parent: not edited, now dangling
 
 	# ---------- claims: which agent is working what, right now ----------
-	# Runtime state, not ticket content: kept in <tickets>/.unblockd/ (git-ignored by a .gitignore
-	# inside it), so heartbeats never show up as changes in the project repo.
-	def _rt(self) -> Path:
-		d = self.rt
-		if not d.is_dir():
-			d.mkdir(parents=True, exist_ok=True)  # parallel first calls race here
-			(d / ".gitignore").write_text("*\n", encoding="utf-8")
-		return d
+	# Runtime state, not ticket content (files: <tickets>/.unblockd/, git-ignored), so heartbeats never show up as changes in the project repo.
+	def _rt(self) -> Path:  # files boards: the runtime folder, created on first use
+		return self.backend.runtime()
 
 	def _locked(self, fn):
-		"""Run fn under a lock file so two agents can't claim the same ticket. Re-entrant: claim()
+		"""Run fn under the board lock so two agents can't claim the same ticket. Re-entrant: claim()
 		holds it while next_ready() may expire stale claims, which needs it too."""
 		if getattr(self, "_held", False):
 			return fn()
-		lock = self._rt() / "lock"
-		deadline = time.monotonic() + 10
-		while True:
+		with self.backend.lock(lambda p: type(self)._steal(p)):  # looked up per call, so a test can replace Store._steal
+			self._held = True
 			try:
-				fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-				break
-			except PermissionError:  # Windows: the holder just deleted it and the delete is still pending; wait like for a held lock
-				if time.monotonic() > deadline:
-					raise TicketError(f"can't create {lock} (permission denied for 10 s): check the folder is writable")
-				time.sleep(0.01)
-				continue
-			except FileExistsError:
-				try:
-					if time.time() - lock.stat().st_mtime > 30:  # left behind by a crash
-						self._steal(lock)  # then fall through: deadline + sleep, so a stuck guard can't spin us
-				except FileNotFoundError:
-					continue
-				if time.monotonic() > deadline:
-					raise TicketError("another claim is in progress; try again")
-				time.sleep(0.05)
-		self._held = True
-		try:
-			return fn()
-		finally:
-			self._held = False
-			os.close(fd)
-			lock.unlink(missing_ok=True)
+				return fn()
+			finally:
+				self._held = False
 
-	@staticmethod
-	def _steal(lock: Path) -> None:
-		"""Remove a stale lock. Only the holder of lock.steal may, and it re-checks the age under it: two processes that both
-		read the same stale mtime can't then delete the fresh lock the first one just created."""
-		guard = lock.with_name("lock.steal")
-		try:
-			fd = os.open(guard, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-		except FileExistsError:  # someone else is stealing; the caller retries. A guard left by a crash goes after 30 s too
-			try:
-				if time.time() - guard.stat().st_mtime > 30:
-					guard.unlink()
-			except FileNotFoundError:
-				pass
-			return
-		try:
-			if time.time() - lock.stat().st_mtime > 30:
-				lock.unlink()
-		except FileNotFoundError:
-			pass
-		finally:
-			os.close(fd)
-			guard.unlink(missing_ok=True)
+	_steal = staticmethod(steal_stale)  # files boards: remove a stale lock file (see files.steal_stale)
 
 	def _claims(self) -> dict:
-		p = self.rt / "claims.json"
-		try:
-			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
-		except json.JSONDecodeError as e:
-			raise TicketError(f"{p} is not valid JSON ({e}), so no claim can be read: fix it by hand, or delete {p}: claims are runtime state "
-			                  "and live workers will re-claim (tickets they held stay 'doing' until then)")
+		return self.backend.claims()
 
 	def _save_claims(self, claims: dict) -> None:
-		p = self._rt() / "claims.json"
-		tmp = p.with_suffix(".tmp")
-		tmp.write_text(json.dumps(claims, indent=2), encoding="utf-8")
-		os.replace(tmp, p)
+		self.backend.save_claims(claims)
 
 	def _log(self, event: str, tid: str | None, agent: str | None, note: str = "", principal: str | None = None) -> None:
 		line = {"ts": _now(), "event": event, "ticket": tid, "agent": agent, "note": note[:500]}
 		if principal:
 			line["principal"] = principal
-		p = self._rt() / "activity.jsonl"
-		if p.exists() and p.stat().st_size > ACTIVITY_MAX:
-			self._locked(lambda: p.stat().st_size > ACTIVITY_MAX and os.replace(p, p.with_name("activity.1.jsonl")))
-		with open(p, "a", encoding="utf-8") as f:
-			f.write(json.dumps(line, ensure_ascii=False) + "\n")
+		self.backend.append_event(line, self._locked, ACTIVITY_MAX)
 
 	def _live_claims(self) -> dict:
 		"""Claims with a recent heartbeat. Expired ones are released here (ticket back to todo)."""
@@ -1327,9 +1229,8 @@ class Store:
 					c = cur.pop(tid, None)
 					if c is None:
 						continue
-					path = self._path(tid)
-					if path.exists():
-						t = self._read(path)
+					t = self.backend.read(tid)
+					if t is not None:
 						if t.get("status") == "doing":
 							t["status"] = "todo"
 							t["updated"] = date.today().isoformat()
@@ -1435,7 +1336,7 @@ class Store:
 			                      "seen": len(pick.get("notes", [])),  # inbox(): notes before the claim came with it, they are not news
 				                      **({"principal": principal} if principal else {})}
 			self._save_claims(claims)
-			raw = self._read(self._path(pick["id"]))
+			raw = self._fresh(pick["id"])
 			raw["status"], raw["updated"] = "doing", date.today().isoformat()
 			self._write(raw)
 			self._log("claim", pick["id"], agent, note, principal)
@@ -1594,7 +1495,7 @@ class Store:
 		claims[tid] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": "taken back after the lease lapsed",
 		               **({"principal": principal} if principal else {})}
 		self._save_claims(claims)
-		raw = self._read(self._path(tid))
+		raw = self._fresh(tid)
 		raw["status"], raw["updated"] = "doing", date.today().isoformat()
 		self._write(raw)
 		self._log("claim", tid, agent, "taken back after the lease lapsed (nobody claimed it since)", principal)
@@ -1651,7 +1552,7 @@ class Store:
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
-			raw = self._read(self._path(tid))
+			raw = self._fresh(tid)
 			if raw.get("status") == "doing":
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			if reason.strip():
@@ -1676,7 +1577,7 @@ class Store:
 			raise TicketError(f"question is {len(q)} chars, the limit is {QUESTION_MAX}: shorten it, or put the background in add_note and ask the decision")
 		def run():
 			self._holder(tid, agent)
-			raw = self._read(self._path(tid))
+			raw = self._fresh(tid)
 			raw.update(status="todo", waiting_on=q, asked_at=_now(), asked_by=agent, updated=date.today().isoformat())
 			_append_note(raw, agent, q, kind="question")  # refuses before the claim is touched
 			claims = self._claims()
@@ -1704,10 +1605,7 @@ class Store:
 		if kind not in NOTE_KINDS_ADD:
 			raise TicketError(f"note kind must be one of {', '.join(NOTE_KINDS_ADD)} (progress = note)")
 		def run():
-			path = self._path(tid)
-			if not path.exists():
-				raise NotFound(f"no ticket {tid}")
-			raw = self._read(path)
+			raw = self._fresh(tid)
 			notes, who = raw.get("notes", []), by.strip()
 			for ref, what in ((reply_to, "reply_to"), (supersedes, "supersedes")):
 				if ref is not None and not (isinstance(ref, int) and 1 <= ref <= len(notes)):
@@ -1733,10 +1631,7 @@ class Store:
 		if not (isinstance(text, str) and text.strip()):
 			raise TicketError("answer needs text: what you decide")
 		def run():
-			path = self._path(tid)
-			if not path.exists():
-				raise NotFound(f"no ticket {tid}")
-			raw = self._read(path)
+			raw = self._fresh(tid)
 			if not raw.get("waiting_on"):
 				raise TicketError(f"{tid} isn't waiting on anyone (no question to answer): use add_note to comment")
 			if raw.get("asked_by") == by.strip():
@@ -1756,10 +1651,7 @@ class Store:
 		self._human_only("approve", by)
 		by = by.strip()
 		def run():
-			path = self._path(tid)
-			if not path.exists():
-				raise NotFound(f"no ticket {tid}")
-			raw = self._read(path)
+			raw = self._fresh(tid)
 			if raw.get("status") != "review":
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be approved")
 			res = raw.get("result")  # none = moved to review by hand: the note and the log record the approver, no result is invented
@@ -1783,10 +1675,7 @@ class Store:
 		if not (isinstance(reason, str) and reason.strip()):
 			raise TicketError("reject needs a reason: say what is wrong, the worker reads it before redoing the ticket")
 		def run():
-			path = self._path(tid)
-			if not path.exists():
-				raise NotFound(f"no ticket {tid}")
-			raw = self._read(path)
+			raw = self._fresh(tid)
 			if raw.get("status") != "review":
 				raise TicketError(f"{tid} is {raw.get('status')}, not review: only a ticket waiting for review can be rejected")
 			if (raw.get("result") or {}).get("by") == by.strip():
@@ -1819,7 +1708,7 @@ class Store:
 			c = self._holder(tid, agent, principal, retake=True)
 			if c.get("principal"):
 				result["principal"] = c["principal"]
-			raw = self._read(self._path(tid))
+			raw = self._fresh(tid)
 			status = "review" if self.config["review"] else "done"
 			bar = {"done_when": raw["done_when"]} if raw.get("done_when") else {}  # the bar it was finished against, next to the summary
 			_append_note(raw, agent, summary.strip(), kind="complete", status=status, **bar)  # refuses before the claim is touched
@@ -1845,36 +1734,14 @@ class Store:
 			floor = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()
 		limit = max(0, int(limit))
 		out = []
-		for name in ("activity.jsonl", "activity.1.jsonl"):  # newest first, so stop as soon as the limit or the floor is reached
-			for e in reversed(self._events(self.rt / name)):
-				if len(out) >= limit:
-					return out
-				if floor is not None and _ts(e["ts"]) < floor:
-					return out
-				if tid is None or e.get("ticket") == tid:
-					out.append(dict(e))
+		for e in self.backend.events_newest_first(ticket=tid):  # stop as soon as the limit or the floor is reached
+			if len(out) >= limit:
+				return out
+			if floor is not None and _ts(e["ts"]) < floor:
+				return out
+			if tid is None or e.get("ticket") == tid:
+				out.append(dict(e))
 		return out
-
-	@staticmethod
-	def _events(p: Path) -> list[dict]:
-		"""Parsed lines of one activity file, oldest first. The log only grows (or is renamed away by rotation), so a repeat call
-		parses just the bytes appended since; a different inode or a shorter file = read it again. A half-written last line waits."""
-		try:
-			st = p.stat()
-		except FileNotFoundError:
-			return []
-		ino, done, events = _LOG.get(str(p), (None, 0, []))
-		if ino != st.st_ino or st.st_size < done:
-			done, events = 0, []
-		if st.st_size > done:
-			with open(p, "rb") as f:
-				f.seek(done)
-				chunk = f.read(st.st_size - done)
-			end = chunk.rfind(b"\n") + 1
-			events = events + [e for e in (_jline(x) for x in chunk[:end].decode("utf-8", "replace").splitlines()) if e is not None]
-			done += end
-		_LOG[str(p)] = (st.st_ino, done, events)
-		return events
 
 	def agents_now(self) -> dict:
 		"""The live view: one row per working agent, plus recent activity."""
@@ -1940,47 +1807,22 @@ def split_notes(body: str) -> tuple[str, list[dict]]:
 	return "\n\n".join(desc), notes
 
 
-def linked_worktree(path: Path) -> tuple[Path, Path] | None:
-	"""(worktree root, main checkout root) when `path` is inside a linked git worktree (`git worktree add`: its .git is a FILE
-	pointing at <main>/.git/worktrees/<name>, which has a `commondir`), else None (a normal checkout, a submodule, no git)."""
-	for d in (path, *path.parents):
-		g = d / ".git"
-		if g.is_dir():
-			return None
-		if g.is_file():
-			m = re.match(r"gitdir:\s*(.+)", g.read_text(encoding="utf-8", errors="replace").strip())
-			if not m:
-				return None
-			gd = Path(m[1].strip())
-			gd = gd if gd.is_absolute() else d / gd
-			cf = gd / "commondir"
-			if not cf.is_file():
-				return None  # a submodule: its own repo, nothing to share
-			common = (gd / cf.read_text(encoding="utf-8").strip()).resolve()
-			return (d, common.parent) if common.name == ".git" else None  # a bare repo has no main checkout
-	return None
+def _parse(t: dict) -> dict:
+	"""A ticket as stored, from any connector, upgraded from what old files hold (a rule, so it lives here, not in a connector)."""
+	if t.get("status") == "pending":  # derived only (effective_status); old files stored it, read as todo
+		t["status"] = "todo"
+	t.setdefault("rev", 0)
+	if "notes" not in t:  # old files: notes were appended to the body; split them out (written back on the ticket's next write)
+		t["body"], t["notes"] = split_notes(t.get("body", ""))
+	for i, n in enumerate(t["notes"], 1):  # notes written before they were numbered
+		n.setdefault("n", i)
+	return t
 
 
 def _copy(t: dict) -> dict:
 	"""A copy of a cached ticket that a caller may change freely (lists and dicts copied two levels deep: result.files, claim)."""
 	return {k: v[:] if isinstance(v, list) else {a: b[:] if isinstance(b, list) else b for a, b in v.items()} if isinstance(v, dict) else v
 	        for k, v in t.items()}
-
-
-def _stamp(p: Path) -> tuple | None:
-	try:
-		st = p.stat()
-	except FileNotFoundError:
-		return None
-	return (st.st_ino, st.st_mtime_ns, st.st_size)
-
-
-def _jline(line: str) -> dict | None:
-	try:
-		e = json.loads(line)
-	except json.JSONDecodeError:
-		return None
-	return e if isinstance(e, dict) else None
 
 
 def _now() -> str:

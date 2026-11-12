@@ -17,7 +17,7 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_ALLOW_OPEN` | `1` = allow a non-loopback `HOST` with no token. compose sets it because it publishes `127.0.0.1` only; `docker run -p 8787:8787` without a token refuses to start on purpose. |
 | `UNBLOCKD_URL`, `UNBLOCKD_BOARD` | CLI only: send commands to a running server (with `UNBLOCKD_TOKEN`) instead of opening the folder. |
 | `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
-| `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional. |
+| `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional, or database boards (`sqlite:///x.db#payments`, see Storage connectors). |
 | `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
 | `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
 | `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
@@ -517,6 +517,51 @@ DELETE tickets/<id>                   ?agent=, ?reason= (rejecting a proposal; l
 ```
 
 **Auth**: none unless `UNBLOCKD_TOKEN` is set (then `Authorization: Bearer <token>` or the cookie from opening `/?token=<token>`). It listens on 127.0.0.1 by default (`HOST`, `PORT`); don't expose it wider without a token (a non-loopback `HOST` without one refuses to start unless `UNBLOCKD_ALLOW_OPEN=1`). Against cross-site requests (a web page POSTing to localhost): writes (POST/PATCH/PUT) must send `Content-Type: application/json` (else 415), an `Origin` header must match the request's `Host` and scheme (else 403; none = curl/CLI, allowed), DELETE needs no body. Responses carry `X-Content-Type-Options: nosniff` and `Content-Security-Policy: frame-ancestors 'none'`; the token cookie is `Secure` when `X-Forwarded-Proto: https`; a bad `Content-Length` is a 400.
+
+## Storage connectors
+
+A board's tickets live in one connector. **Files** (the default) is the `tickets/` folder in your repo. **SQL**
+(experimental, CORE-30) keeps many boards in one database: SQLite (`sqlite:///path/to/unblockd.db`, nothing to install)
+or Postgres (`postgres://user:password@host:5432/db`). **MongoDB** (experimental, CORE-31): `mongodb://user:password@host:27017/db`
+(database `unblockd` when the URL names none; Atlas `mongodb+srv://` works the same). Postgres and MongoDB need
+`pip install -r requirements-db.txt` (included in the Docker image).
+
+**Serve a database board** by naming it, with `#board` after the URL, in `UNBLOCKD_BOARDS` (or `TICKETS_DIR`), next to
+any folders; entries are separated like paths (`:` on Linux/macOS, `;` on Windows; a URL's own `:` is fine):
+
+```bash
+UNBLOCKD_BOARDS="sqlite:///unblockd.db#payments" python -m unblockd.web
+```
+
+```bash
+python -m unblockd.cli --dir "sqlite:///unblockd.db#payments" list
+```
+
+The web board, MCP and CLI then work on it like on a folder board. Its id is the name after `#`; a board that is not in
+the database yet is created on first use. The password never appears in the board list or the logs. A database that
+can't be reached shows an error on its own board only and is tried again every 30 seconds.
+
+**Move a board** between any two places (folder, SQLite, Postgres, MongoDB) with the CLI; the target must be empty
+(`--force` replaces what is there):
+
+```bash
+python -m unblockd.cli migrate --from tickets --to "sqlite:///unblockd.db#demo"
+python -m unblockd.cli migrate --from "sqlite:///unblockd.db#demo" --to other/tickets
+```
+
+It copies the settings, every ticket exactly as stored (ids, `rev`, notes, results), attachments and the history,
+then reads it all back and compares. Live claims are not copied: workers claim again (a ticket that was `doing` shows
+as orphaned until someone moves it). Settings that point at repo files (`skills` paths, `mcp` docs) can't move into a
+database yet: the command says so before it writes anything.
+
+What every connector guarantees is one test suite, `tests/contract.py` (one ticket claimed by 8 at once has one holder,
+parallel creates never share an id, same-rev edits: one wins, one gets 409...). On SQL everything the store does under
+the board lock is one transaction: it all commits, or none of it does. MongoDB does the same on a replica set (Atlas, or
+any `--replSet` server); a standalone `mongod` has no transactions, so there each write applies on its own, in order, still
+one writer per board at a time (a crash halfway keeps the writes made so far). A lock left by a crashed worker expires
+after 30 seconds (by the database server's clock). A database board has no repo yet, so repo docs
+report "no repo linked", the Map is off and `components` are refused (CORE-36); attachments are stored in the database.
+Tables are prefixed `ub_` and can share a database with other apps.
 
 ## Develop
 
