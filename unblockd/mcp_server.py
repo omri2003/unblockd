@@ -68,7 +68,7 @@ WORK_LOOP = kn.PROTOCOL_FILE  # the protocol is a doc: knowledge.graph() shows i
 def work_loop_text(board: str | None = None, profile: str | None = None) -> str:
 	return string.Template(WORK_LOOP.read_text(encoding="utf-8")).safe_substitute(
 		board=board or "(the default board; list_boards shows the others)", profile_line=f" with the agent profile {profile}" if profile else "",
-		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. backend-1 (board_info lists the profiles)",
+		agent_hint=f"{profile}-1, {profile}-2, ... (profile name + number)" if profile else "profile name + number, e.g. backend-1 (your human names the profile)",
 		claim_args=(f", profile={profile}" if profile else "") + (f", board={board}" if board else ""))
 
 
@@ -193,8 +193,7 @@ def board_info(board: str | None = None) -> dict:
 	`components` [{key, title}] when it has an architecture (the keys `components` on tickets take), the `skills` / `mcp` registries (names `skills` / `mcp` on tickets take),
 	and `limits`: per field {items, chars} plus the note / question / summary / handoff caps, so you can check before writing."""
 	store = BOARDS.get(board)
-	info = {**store.config, "limits": {"fields": st.LIMITS, "note_kinds": list(st.NOTE_KINDS_ADD), "question_chars": st.QUESTION_MAX,
-	                                    "summary_chars": st.SUMMARY_MAX, "handoff_chars": 2000, "notes_per_ticket": st.NOTES_MAX}}
+	info = {**store.config, "limits": store.rules()["limits"]}
 	comps = kn.components(store)["components"]
 	if comps:
 		info["components"] = [{"key": c["key"], "title": c["title"]} for c in comps]
