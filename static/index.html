@@ -473,6 +473,15 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .toast button{background:none;border:0;border-bottom:1px solid currentColor;padding:0;font-weight:800;cursor:pointer;color:inherit}
 @keyframes toastin{from{opacity:0;transform:translateY(8px)}}
 .dots::after{content:'…';animation:dots 1.2s steps(3) infinite}
+/* Loading, one look everywhere: ldHtml() = skeleton bars + a sentence (a panel or view waiting for its first data); #topbar = a thin bar while a request you started is in flight */
+.ld{display:grid;gap:9px;padding:14px 2px;color:var(--muted);font-size:.86rem;list-style:none}
+.ld i{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,var(--sunk) 25%,var(--line) 50%,var(--sunk) 75%);background-size:300% 100%;animation:ldsh 1.4s ease-in-out infinite}
+.ld i:nth-child(2){width:78%} .ld i:nth-child(3){width:58%} .ld i:nth-child(4){width:70%}
+@keyframes ldsh{from{background-position:100% 0}to{background-position:0 0}}
+.bload{grid-column:1/-1;width:min(460px,100%);margin:40px auto} .bload .ld{width:100%}
+.topbar{position:fixed;inset:0 0 auto;height:3px;z-index:100;overflow:hidden;pointer-events:none}
+.topbar::before{content:'';position:absolute;inset:0 auto 0 0;width:35%;background:var(--jade);border-radius:0 2px 2px 0;animation:tbar 1.1s ease-in-out infinite}
+@keyframes tbar{from{transform:translateX(-100%)}to{transform:translateX(290%)}}
 @keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
 /* Docs view: tickets left, docs right, lines between. Plain DOM + one SVG: CSS tokens resolve natively, no JS colour reads. */
 .dprob{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
@@ -754,7 +763,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.dcard{transition:none} body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.ld i,.topbar::before{animation:none} .topbar::before{width:100%;opacity:.55} .dcard{transition:none} body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -920,6 +929,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   <p style="margin:14px 0 0"><button type="button" class="btn ghost" data-kbclose>Close</button></p>
 </div>
 <aside id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dTitle"></aside>
+<div id="topbar" class="topbar" hidden role="progressbar" aria-label="Working on it"></div>
 <aside id="npanel" class="npanel" hidden role="dialog" aria-modal="true" aria-labelledby="npT"><div class="nphead"><div class="dhead"><h2 id="npT">Needs you</h2><span class="sp"><button type="button" class="btn ghost" data-nclose>Close</button></span></div><p class="npsum" id="npSum"></p></div><ul class="nl" id="npList"></ul><p class="none" id="npEmpty" hidden>Nothing needs you right now. Questions from agents and work waiting for review show up here.</p></aside>
 
 <script>
@@ -1050,6 +1060,15 @@ document.addEventListener('keydown',e=>{
 const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
+// Top bar: a request started within 1.5 s of a click or key press (or while one is already showing, e.g. the reload after a save) is one
+// the person is waiting on; it shows the bar after 250 ms (fast ones never flash it). Polls start on timers, so they never show it.
+const BUSY={n:0,t:null,at:0};
+addEventListener('pointerdown',()=>{BUSY.at=Date.now();},true); addEventListener('keydown',()=>{BUSY.at=Date.now();},true);
+const rawFetch=window.fetch.bind(window);
+window.fetch=(...a)=>{ if(!BUSY.n&&Date.now()-BUSY.at>1500) return rawFetch(...a);
+  if(BUSY.n++===0) BUSY.t=setTimeout(()=>{$('topbar').hidden=false;},250);
+  return rawFetch(...a).finally(()=>setTimeout(()=>{ if(--BUSY.n===0){clearTimeout(BUSY.t);$('topbar').hidden=true;} },0)); }; // after the caller's next step, so a chained reload counts
+const ldHtml=(what,rows=3,tag='div')=>`<${tag} class="ld" role="status">${'<i aria-hidden="true"></i>'.repeat(rows)}<span>${esc(what)}…</span></${tag}>`; // a panel or view waiting for its first data
 async function jf(url, method='GET', body, hdr){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
   const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json',...hdr},body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({error:'bad response'}));
@@ -1064,14 +1083,15 @@ function authFail(text){ // 401: say how to get in, once (the 4 s poll must not 
   toast(m||'Unauthorized: open the board once with ?token=...',{err:1});
   authMsg=m||'Unauthorized: open the board once with ?token=...'; renderBoard(); // the board says why it is empty, not "No tickets yet"
 }
+let LOADED=false, LERR=''; // the first /tickets answer arrived / why it failed: until then the board shows loading, not "No tickets yet"
 let etag=null; // ETag of the last /tickets response; sent back so an unchanged board costs a 304
 async function load(force){
   let text, msg404; // msg404: the server's "no board 'x'. Boards: ..."
   try{ const r=await fetch(API+'/tickets',{cache:'no-store',headers:etag&&!force?{'If-None-Match':etag}:{}}); if(r.status===304) return; // unchanged since the last ETag
     text=await r.text(); if(r.status===401){ authFail(text); return; } if(r.status===404){ try{ msg404=JSON.parse(text).error; }catch{} } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
-  catch{ toast(msg404||'Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
+  catch{ const m=msg404||'Cannot load tickets: is the server running, and does this board exist?'; toast(m,{err:1}); if(!LOADED){LERR=m; if(state.view==='board') render();} return; }
   if(text===raw && !force) return;
-  raw=text; T=JSON.parse(text); setCols(); loadNeeds(); loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
+  raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!reduce.matches) noteFinished(prev);
   paint=()=>{ paint=null;
     renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(state.view==='map'||CFG.architecture)loadMap(); if(!$('chat').hidden&&!CH.busy) renderChat();
@@ -1359,7 +1379,7 @@ function renderDigest(){
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
 let NMARK=''; // ids of this board's failed-N-times cards; a change repaints the board (the cards read NEEDS)
-const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
+const DRAFTS={}; let NEEDS=[], nLoaded=false, nErr='', NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
 const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
 const noteLine=n=>{const k=n.kind; return k==='answer'?`Answer to “${n.q}”: ${n.text}`:k==='question'?'Question: '+n.text:k==='rejected'?'Rejected: '+n.text:k==='released'?'Released: '+n.text:k==='complete'?(n.status==='review'?'Finished, for review: ':'Finished: ')+n.text:k==='decision'?'Decision: '+n.text:k==='finding'?'Finding: '+n.text:k==='warning'?'Warning: '+n.text:n.text;}; // a ticket's notes ({by, at, kind, text}, the store's _append_note) in words; claim notes and attempts have text only
 const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: the panel already shows the question
@@ -1368,8 +1388,8 @@ function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
   return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.pinned&&!n.superseded_by?' <span class="hint" title="Always sent to the next agent">· pinned</span>':''}${n.superseded_by?` <span class="hint">· replaced by note ${esc(n.superseded_by)}</span>`:''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
 async function loadNeeds(){ // ETag: an idle poll costs headers only
   if(!BOARDS.length) return; const tok=++nTok;
-  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||!r.ok||tok!==nTok) return; const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
-  catch{ return; }
+  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||tok!==nTok) return; if(!r.ok){ nErr='the server answered '+r.status; if(!$('npanel').hidden) renderNeedsPanel(); return; } const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nLoaded=true; nErr=''; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
+  catch{ if(tok===nTok){ nErr='the server did not answer'; if(!$('npanel').hidden) renderNeedsPanel(); } return; }
   paintNeeds();
 }
 // The board shows the files of its checkout; branches.py tells how far that checkout is behind origin (GET git, polled with Needs you).
@@ -1444,6 +1464,8 @@ function renderNeedsPanel(){
   const cur=curBoard(),gs=NEEDS.filter(g=>g.id===cur),all=gs.flatMap(g=>g.items),multi=false; // this board only
   if(NX&&!gs.some(g=>g.items.some(i=>nkey(g,i)===NX))) NX=null;
   const c=k=>all.filter(i=>i.kind===k).length;
+  if(!nLoaded){ $('npSum').textContent=''; $('npEmpty').hidden=true; npSig=''; npShown=false; // nothing to say "nothing needs you" about yet
+    $('npList').innerHTML=nErr?`<li class="ld" role="status"><span class="msg err">Could not check for questions and reviews: ${esc(nErr)}. It tries again every 15 seconds.</span></li>`:ldHtml('Checking every board for questions and reviews',3,'li'); return; }
   $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&(l==='question'||l==='proposal')?'s':''}`).join(', '):'';
   $('npEmpty').hidden=!!all.length;
   const sig=JSON.stringify([NX,cur,multi,gs]); if(sig===npSig){tickAges();return;} npSig=sig;
@@ -1523,7 +1545,7 @@ async function loadAgents(){
 }
 function renderAgents(){
   const rows=AP.ev?agentStats(AP.ev):[], seg=`<div class="seg" id="apRange" data-l="Range" role="group" aria-label="Range">${chipsHtml([[7,'7 days'],[30,'30 days']],AP.days,'aprange')}</div>`;
-  const body=AP.err?`<p class="hint">Could not load activity: ${esc(AP.err)}</p>`:!AP.ev?'<p class="hint">Loading…</p>':!rows.length?`<p class="hint">No agent activity in the last ${AP.days} days. Claims, completions and splits by agents show up here once they happen.</p>`
+  const body=AP.err?`<p class="hint">Could not load activity: ${esc(AP.err)}</p>`:!AP.ev?ldHtml('Reading agent activity'):!rows.length?`<p class="hint">No agent activity in the last ${AP.days} days. Claims, completions and splits by agents show up here once they happen.</p>`
     :`<table class="astat"><thead><tr><th>Profile</th><th>Finished</th><th title="Claim to complete, same ticket and agent">Median to finish</th><th title="(expired + released) / claims. 30% or more: tickets too big or instructions weak">Stuck rate</th><th>Splits</th><th>Working now</th></tr></thead><tbody>${rows.map(([p,r])=>{
       const rate=r.claims?r.stuck/r.claims:null, bad=rate!=null&&rate>=.3;
       return `<tr><td><b>${esc(p)}</b><span class="nm" title="${esc([...r.names].sort().join(', '))}">${r.names.size} ${r.names.size===1?'worker':'workers'}</span></td><td>${r.fin}</td><td>${dur(median(r.d))}</td><td${bad?' class="warn" title="30% or more of claims ended stuck: split the tickets or tighten the instructions"':''}>${rate==null?'–':(bad?'⚠ ':'')+Math.round(rate*100)+'%'}<span class="sub2">${r.stuck} of ${r.claims}</span></td><td>${r.split}</td><td>${r.now}</td></tr>`;}).join('')}</tbody></table>`;
@@ -1535,7 +1557,7 @@ async function loadTools(){ try{AP.tl=await jf(API+'/tools');AP.draft=null;AP.te
 const tdraft=()=>AP.draft??={base:[...AP.tl.base],profiles:Object.fromEntries(AP.tl.profiles.map(p=>[p.name,{tools:[...p.tools],tools_off:[...p.tools_off]}]))};
 function toolsHtml(){
   if(AP.terr) return `<p class="hint">Could not load the tools: ${esc(AP.terr)}</p>`;
-  if(!AP.tl) return '<p class="hint">Loading…</p>';
+  if(!AP.tl) return ldHtml('Reading profiles and tools');
   const d=tdraft(),all=AP.tl.all,shown=AP.more?all:[...new Set([...AP.tl.default,...d.base,...Object.values(d.profiles).flatMap(p=>[...p.tools])])];
   const btn=(attr,t,on,cls='')=>`<button type="button" class="tl${cls}" ${attr} data-t="${esc(t)}" aria-pressed="${on}">${on?'✓ ':''}${esc(t)}</button>`;
   const baseBox=`<div class="tlbox"><h4>Every worker <span>${d.base.length} tools</span></h4><div class="tls">${shown.map(t=>btn('data-tb',t,d.base.includes(t))).join('')}</div></div>`;
@@ -1593,6 +1615,7 @@ async function quickAdd(f,again){
   qaBusy=false; const n=document.querySelector('.qa-t'); if(again) n?.focus(); else n?.blur();
 }
 function emptyState(){
+  if(!LOADED) return LERR?`<div class="empty"><h2>Can't load this board</h2><p>${esc(LERR)}</p><p>It tries again every 4 seconds.</p></div>`:`<div class="bload">${ldHtml('Loading tickets',4)}</div>`;
   if(authMsg&&!T.length) return `<div class="empty"><h2>Not signed in</h2><p>${esc(authMsg)}</p></div>`;
   if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
   const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.q&&`“${state.q}”`].filter(Boolean);
@@ -1783,9 +1806,9 @@ function showTicket(id,refresh){
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
     <details class="kn" id="kn"${t.status==='review'||store.get('knOpen',false)?' open':''}><summary>Knowledge and agent activity</summary>
-    <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
+    <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}">${ldHtml('Reading what an agent gets',2,'li')}</ul>
     <div class="formrow" style="margin-top:6px"><button type="button" class="btn ghost sm" data-attach>Attach files</button><span class="hint">or drop text files here</span><input type="file" id="kfile" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.toml,.csv,.py,.gd,.js,.ts,.html,.css,.sh,.xml"></div>
-    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul></details>`, refresh);
+    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}">${ldHtml('Reading the activity log',2,'li')}</ul></details>`, refresh);
   peek(true); loadActs(id); loadKnowledge(id);
 }
 // Peek (UI-51): a ticket's drawer is not modal. No scrim, the board stays clickable (another card swaps the ticket) and on wide
@@ -2534,7 +2557,7 @@ const bandShort=b=>b.via==='tag'?'#'+b.from:b.via==='profile'?b.from:{board:'eve
 const bandRule=b=>b.via==='tag'?'docs_by_tag.'+b.from:b.via==='profile'?`agents[${b.from}].docs`:{board:'docs in unblockd.json',component:"the ticket's components (or what it touches)",ticket:"the ticket's docs field",file:'tickets/files/<ID>/',linked:''}[b.via];
 function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s own budget pass
   const c=DV.ctx[id],g=DV.data;
-  if(!c||c.busy)return `<div class="dctx"><p class="hint">Reading what ${esc(id)}'s agent gets<span class="dots"></span></p></div>`;
+  if(!c||c.busy)return `<div class="dctx">${ldHtml(`Reading what ${id}'s agent gets`,2)}</div>`;
   if(c.err)return `<div class="dctx"><p class="msg err">${esc(c.err)}</p></div>`;
   const B=g.budget, SW={full:['in','Sent'],too_big:['out','Too big: path only'],budget:['out','Budget spent: path only'],image:['img','Image: path sent']};
   const cut=c.docs.filter(d=>d.sent!=='full'&&d.sent!=='image').length,used=c.inlined_chars||0;
@@ -2625,7 +2648,7 @@ const dChev=(k,open,name)=>`<button type="button" class="dchev" data-dshut="${es
 function renderDocs(){
   const g=DV.data,P=$('dProb'),T_=$('dT'),D_=$('dD');
   if(!g){P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
-    T_.innerHTML=`<li class="dempty">${DV.err?`<span class="msg err">${esc(DV.err)}</span>`:'Reading docs<span class="dots"></span>'}</li>`;return;}
+    T_.innerHTML=`<li class="dempty">${DV.err?`<span class="msg err">${esc(DV.err)}</span>`:ldHtml('Reading docs')}</li>`;return;}
   if(!Array.isArray(g.rules)||typeof g.budget!=='number'){ // a server started before this page's code (the page is served live, Python loads once): say so, never hang
     P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
     T_.innerHTML=`<li class="dempty"><span class="msg err">This server is older than this page, so it cannot group the docs. Restart the server (<code>docker compose restart</code>), then reload the page.</span></li>`;return;}
@@ -2822,7 +2845,7 @@ function renderMap(){
     'Set <code>"architecture": "docs/arch"</code> in <code>tickets/unblockd.json</code>.'],
     how=skip=>`<p><b>The map shows how your app's components connect and where the open tickets are.</b> It is drawn from short markdown notes in your repo.</p><ol>${steps.filter((_,i)=>i!==skip).map(x=>`<li>${x}</li>`).join('')}</ol>`;
   const say=h=>{msg.innerHTML=h;msg.hidden=!h;$('mapStage').hidden=$('mapList').hidden=!!h;$('mProb').hidden=$('mTools').hidden=!!h;if(h){$('mNote').hidden=true;}};
-  if(!d)return say(MV.err?`<span class="msg err">${esc(MV.err)}</span>`:'Reading the map<span class="dots"></span>');
+  if(!d)return say(MV.err?`<span class="msg err">${esc(MV.err)}</span>`:ldHtml('Reading the map'));
   if(d.error)return say(`<p class="msg err">${esc(d.error)}</p><p>Check <code>architecture</code> in <code>tickets/unblockd.json</code>.</p>`);
   if(!d.folder)return say(how(-1));
   if(!d.components.length)return say(`<p><button type="button" class="btn" data-anew>Add your first component</button></p><p>${esc(d.folder)} has no component notes yet.</p>`+how(2));
