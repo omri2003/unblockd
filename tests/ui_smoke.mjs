@@ -141,15 +141,25 @@ try {
 			const rows = await page.$$eval('#digest .dg-r', (rs) => rs.map((r) => [r.dataset.open, !!r.querySelector('.dg-tile'), !!r.querySelector('.idc .tid'), !!r.querySelector('.dt')]));
 			ok(rows.length > 0 && rows.every((r) => r[1] && r[2] && r[3]), `[${tag}] digest rows need a tile, an id and a title: ${JSON.stringify(rows.slice(0, 3))}`);
 			ok(new Set(rows.map((r) => r[0])).size === rows.length, `[${tag}] digest lists a ticket twice`);
-			const off = await page.evaluate(async () => { // UI-68: a row's section agrees with its ticket's status now
+			const off = await page.evaluate(async () => { // UI-68, UI-69: a row's section (New and Stuck too) agrees with its ticket's status now
 				const b = new URLSearchParams(location.search).get('board'), ts = await (await fetch(b ? `/api/b/${encodeURIComponent(b)}/tickets` : '/api/tickets')).json();
-				const st = Object.fromEntries((Array.isArray(ts) ? ts : ts?.tickets || []).map((t) => [t.id, t.status])), want = { sta: ['doing'], rev: ['review'], fin: ['done'] };
+				const st = Object.fromEntries((Array.isArray(ts) ? ts : ts?.tickets || []).map((t) => [t.id, t.status])), want = { sta: ['doing'], rev: ['review'], fin: ['done'], stk: ['todo'], new: ['todo'] };
 				return [...document.querySelectorAll('#digest .dg-r')].map((r) => [r.dataset.open, [...r.querySelector('.dg-tile').classList].find((c) => want[c]), st[r.dataset.open]]).filter(([, c, s]) => c && !want[c].includes(s));
 			});
 			ok(off.length === 0, `[${tag}] digest rows contradict the ticket status: ${JSON.stringify(off)}`);
 			await page.evaluate(() => { document.querySelector('#digest .dg-r').dataset.keep = '1'; });
 			await page.fill('#q', 'zz'); await page.fill('#q', ''); await refresh();
 			ok(await page.evaluate(() => document.querySelector('#digest .dg-r')?.dataset.keep === '1'), `[${tag}] a render with no digest change rebuilt the digest rows`);
+			// UI-69: dismiss one row (x) or a whole section; Undo brings them back
+			const rowIds = () => page.$$eval('#digest .dg-r', (rs) => rs.map((r) => r.dataset.open));
+			const before = await rowIds(), first = before[0];
+			await page.hover(`#digest .dg-r[data-open="${first}"]`); await page.click(`#digest [data-dghide="${first}"]`);
+			ok(!(await rowIds()).includes(first), `[${tag}] the row x did not dismiss ${first}`);
+			await page.click('#toasts button:has-text("Undo")'); ok((await rowIds()).includes(first), `[${tag}] Undo did not bring ${first} back`);
+			const sec = await page.$eval('#digest [data-dghidesec]', (b) => b.dataset.dghidesec);
+			await page.click(`#digest [data-dghidesec="${sec}"]`);
+			ok(!(await page.$(`#digest .dg-g.${sec}`)), `[${tag}] Dismiss all left the ${sec} section`);
+			await page.click('#toasts button:has-text("Undo")'); ok((await rowIds()).length === before.length, `[${tag}] Undo did not restore the ${sec} section`);
 		}
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
