@@ -507,6 +507,8 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .tk .mk{border-radius:50%} .tk .mk.doing{background:var(--amber);border-color:var(--amber)} .tk .mk.pending{background:var(--slate);border-color:var(--slate)} .tk .mk.review{background:var(--plum);border-color:var(--plum)}
 .dk .mk{border-radius:3px;border-color:var(--muted)} .dk.orph .mk{border-style:dashed} .dk.bad .mk{border-color:var(--cinnabar);background:var(--cinnabar)}
 .dk.hub .mk{background:var(--jade);border-color:var(--jade)}
+.dk.img .mk,.sw.img{border-radius:50%;border-color:var(--slate);background:var(--slate-soft)} .dk .imgt{color:var(--slate);font-size:.74rem;white-space:nowrap}
+.dwarn{align-self:center;font-size:.72rem;font-weight:700;color:var(--cinnabar);background:color-mix(in srgb,var(--cinnabar) 12%,transparent);border-radius:4px;padding:0 6px;white-space:nowrap} .dwarn.soft{color:var(--amber);background:var(--amber-soft)}
 .dk.brd .mk,.sw.brd{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 2px var(--surface)} .sw.brd{box-shadow:inset 0 0 0 1px var(--surface)} /* nested square: outline + solid centre */
 .dk .pth{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.82rem} .dk .pth i{font-style:normal;color:var(--muted)}
 .dn .tag{flex:none;font-size:.74rem;color:var(--muted);white-space:nowrap} .dn .tag.bad,.dn .tag.warn{color:var(--cinnabar);font-weight:700}
@@ -546,7 +548,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .dctx li{display:grid;grid-template-columns:72px minmax(0,1fr) 34px minmax(0,150px);gap:6px;align-items:center}
 .dctx .v{color:var(--muted);font:.7rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth{font:.76rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth i{font-style:normal;color:var(--muted)}
 .dctx .z{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
-.dctx .s{font-size:.72rem} .dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar);font-weight:700} .dctx .s.wl{color:var(--muted)}
+.dctx .s{font-size:.72rem} .dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar);font-weight:700} .dctx .s.wl{color:var(--muted)} .dctx .s.img{color:var(--slate)}
 .dcb{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 0}
 .dempty{padding:18px 4px;color:var(--muted)}
 .dh3{font-size:.85rem;margin:14px 0 4px;color:var(--muted)}
@@ -765,6 +767,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
       <span><i class="sw" style="background:var(--jade);border-radius:3px"></i>Hub</span>
       <span><i class="sw" style="background:var(--cinnabar);border-radius:3px"></i>Broken</span>
       <span><i class="sw" style="border:2px dashed var(--muted);border-radius:3px"></i>Only linked from another doc</span>
+      <span><i class="sw img" style="border:2px solid var(--slate)"></i>Image: sent as a path</span>
       <span class="hint">Sizes are estimated tokens (characters ÷ 4). Size bar: the tick is the context budget; red hatching = too big to send. Click a ticket to see what its agent gets.</span></div>
     <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets, by profile</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs, grouped by the rule that sends them</h2><ol id="dD"></ol></div></div></div>
   </section>
@@ -2398,7 +2401,7 @@ const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_do
   ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
   ['hubs',['hub doc','hub docs'],g=>g.hubs,'','Docs read by the most tickets (2 or more; board-wide docs excluded). Changing one affects many tickets.'],
   ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.']];
-const dBig=g=>g.docs.filter(d=>!d.builtin&&d.size>g.budget).map(d=>d.path);
+const dBig=g=>g.docs.filter(d=>!d.builtin&&!d.image&&d.size>g.budget).map(d=>d.path);
 async function loadDocs(){
   if(!DV.shut)DV.shut=new Set(store.get('docsShut.'+curBoard(),[]));
   if(DV.busy)return;DV.busy=true;DV.err='';
@@ -2407,18 +2410,19 @@ async function loadDocs(){
   DV.busy=false;if(state.view==='docs')renderDocs();
 }
 const dBase=p=>p.split('/').pop(),dDir=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')+1):'';
-const dKind={board:'board',builtin:'built-in',tag:'by tag',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
+const dKind={board:'board',builtin:'built-in',tag:'by tag',profile:'profile',component:'from the Map',ticket:'ticket',file:'attached',linked:'linked only'};
 const dK=x=>x.via==='tag'||x.via==='profile'?x.via+':'+x.from:x.via; // a read's / rule's band key
 const dTk=n=>{const t=n/4;return '≈'+(t<1000?Math.max(10,Math.round(t/10)*10):t<9950?(Math.round(t/100)/10)+'k':Math.round(t/1000)+'k');}; // characters -> estimated tokens (chars / 4); the budget itself is counted in characters
 const dCh=n=>Number(n).toLocaleString('en-US')+' characters';
 const DIC={board:'<rect x="2" y="2" width="12" height="12" rx="2"/><rect x="5.5" y="5.5" width="5" height="5" rx="1" class="f"/>',
   tag:'<path d="M6 2.5 4.5 13.5M11.5 2.5 10 13.5M2.5 6h11M2 10.5h11"/>',profile:'<rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 2.5V5"/><circle cx="6" cy="9" r=".9" class="f"/><circle cx="10" cy="9" r=".9" class="f"/>',
   ticket:'<path d="M3 3h10v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z"/>',file:'<path d="M10.5 5 6 9.5a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4-4"/>',
-  linked:'<path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.8.8M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.8-.8"/>'};
+  linked:'<path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.8.8M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.8-.8"/>',
+  component:'<rect x="2" y="3" width="5" height="4" rx="1"/><rect x="9" y="9" width="5" height="4" rx="1"/><path d="M7 5h2.5v4"/>'};
 const dIc=k=>`<svg class="dic" viewBox="0 0 16 16" aria-hidden="true">${DIC[k]}</svg>`;
 function dBands(g){ // [{key, via, from, docs: [home paths], also: [paths an earlier band lists], tickets}] in context() output order
   const out=g.rules.map(r=>({key:dK(r),via:r.via,from:r.from,all:r.docs,tickets:r.tickets}));
-  for(const via of ['ticket','file']){const rs=g.reads.filter(r=>r.via===via);out.push({key:via,via,from:null,all:[...new Set(rs.map(r=>r.doc))],tickets:[...new Set(rs.map(r=>r.ticket))]});}
+  for(const via of ['component','ticket','file']){const rs=g.reads.filter(r=>r.via===via);out.push({key:via,via,from:null,all:[...new Set(rs.map(r=>r.doc))],tickets:[...new Set(rs.map(r=>r.ticket))]});}
   out.push({key:'linked',via:'linked',from:null,all:g.orphans,tickets:[]});
   const home=new Set(),rd=p=>(g.docs.find(d=>d.path===p)||{}).readers||0;
   for(const b of out){b.docs=[];b.also=[];for(const p of b.all){if(home.has(p))b.also.push(p);else{home.add(p);b.docs.push(p);}}
@@ -2440,20 +2444,22 @@ function dSets(f){ // what a problem filter, a selected ticket / band or a hover
   return {t,d,a,k,id};
 }
 function dMeter(d,B){ // size bar: the tick is the context budget; too big = hatched cinnabar plus the words
-  if(d.error)return `<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`;if(d.size==null)return '';
+  if(d.error)return `<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`;
+  if(d.image)return `<span class="imgt" title="An image: agents get its path and open it with their own file tools (a model that cannot read images cannot use it). Not counted in the budget.">image · path sent</span>`;
+  if(d.size==null)return '';
   const big=!d.builtin&&d.size>B,w=Math.min(100,d.size/B*50);
   return `<span class="szw${big?' big':''}" title="${dCh(d.size)} (${dTk(d.size)} tokens) of a ${dCh(B)} budget${big?': too big to send, agents get the path only':''}"><span class="szm"><i style="width:${w}%"></i><b></b></span><span class="szt">${dTk(d.size)}<span class="u"> tokens</span>${big?' · too big':''}</span></span>`;}
 const dPath=p=>`<span class="pth" title="${esc(p)}"><i>${esc(dDir(p))}</i>${esc(dBase(p))}</span>`;
-const bandName=b=>b.via==='tag'?`Tag <code>${esc(b.from)}</code>`:b.via==='profile'?`Profile <code>${esc(b.from)}</code>`:{board:'Every open ticket',ticket:'Picked per ticket',file:'Attached to a ticket',linked:'Linked from a doc only'}[b.via];
-const bandShort=b=>b.via==='tag'?'#'+b.from:b.via==='profile'?b.from:{board:'every ticket',ticket:'picked per ticket',file:'attached',linked:'linked only'}[b.via];
-const bandRule=b=>b.via==='tag'?'docs_by_tag.'+b.from:b.via==='profile'?`agents[${b.from}].docs`:{board:'docs in unblockd.json',ticket:"the ticket's docs field",file:'tickets/files/<ID>/',linked:''}[b.via];
+const bandName=b=>b.via==='tag'?`Tag <code>${esc(b.from)}</code>`:b.via==='profile'?`Profile <code>${esc(b.from)}</code>`:{board:'Every open ticket',component:'From the Map',ticket:'Picked per ticket',file:'Attached to a ticket',linked:'Linked from a doc only'}[b.via];
+const bandShort=b=>b.via==='tag'?'#'+b.from:b.via==='profile'?b.from:{board:'every ticket',component:'from the Map',ticket:'picked per ticket',file:'attached',linked:'linked only'}[b.via];
+const bandRule=b=>b.via==='tag'?'docs_by_tag.'+b.from:b.via==='profile'?`agents[${b.from}].docs`:{board:'docs in unblockd.json',component:"the ticket's components (or what it touches)",ticket:"the ticket's docs field",file:'tickets/files/<ID>/',linked:''}[b.via];
 function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s own budget pass
   const c=DV.ctx[id],g=DV.data;
   if(!c||c.busy)return `<div class="dctx"><p class="hint">Reading what ${esc(id)}'s agent gets<span class="dots"></span></p></div>`;
   if(c.err)return `<div class="dctx"><p class="msg err">${esc(c.err)}</p></div>`;
   const B=g.budget,lab=s=>s.startsWith('tag:')?'#'+s.slice(4):s.startsWith('agent:')?s.slice(6):s.startsWith('component:')?'component':s;
-  const SW={full:['in','sent in full'],too_big:['out','path only: too big'],budget:['out','path only: budget spent']};
-  const cut=c.docs.filter(d=>d.sent!=='full').length,used=c.inlined_chars||0;
+  const SW={full:['in','sent in full'],too_big:['out','path only: too big'],budget:['out','path only: budget spent'],image:['img','image: path sent']};
+  const cut=c.docs.filter(d=>d.sent!=='full'&&d.sent!=='image').length,used=c.inlined_chars||0;
   const seg=c.docs.filter(d=>d.sent==='full').map(d=>{const s=d.source.split(':')[0];return `<i class="${s==='board'?'b':s==='tag'?'g':s==='agent'?'p':'t'}" style="width:${Math.max(.4,(d.chars||0)/B*100)}%" title="${esc(d.path)} ${dTk(d.chars||1)} tokens (${dCh(d.chars||0)})"></i>`;}).join('');
   return `<div class="dctx"><h3>What an agent gets for ${esc(id)}<span title="${dCh(used)} of ${dCh(B)}">${dTk(used)} of ${dTk(B)} tokens sent${cut?` · <b>${cut} not sent</b>`:''}</span></h3>
     <div class="cbar" role="img" aria-label="About ${dTk(used).slice(1)} of the ${dTk(B).slice(1)} token budget used">${seg}</div>
@@ -2476,6 +2482,7 @@ function dShut(k){DV.shut.has(k)?DV.shut.delete(k):DV.shut.add(k);dShutSave();re
 function dShutAll(){const ks=[...document.querySelectorAll('#dStage [data-dshut]')].map(b=>b.dataset.dshut),open=ks.filter(k=>!DV.shut.has(k));
   DV.shut=new Set(open.length?ks:[]);dShutSave();renderDocs();}
 const dQm=()=>{const q=DV.q.trim().toLowerCase();return {q,tm:t=>!!q&&(t.id+' '+t.title).toLowerCase().includes(q),dm:p=>!!q&&p.toLowerCase().includes(q)};};
+const dWarn=a=>a.filter(([n])=>n).map(([n,w,soft])=>`<span class="dwarn${soft?' soft':''}">${n} ${w}</span>`).join(''); // a collapsed header keeps the problems its rows had
 const dChev=(k,open,name)=>`<button type="button" class="dchev" data-dshut="${esc(k)}" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(name)}" title="${open?'Collapse':'Expand'}"><i class="chev" aria-hidden="true"></i></button>`;
 function renderDocs(){
   const g=DV.data,P=$('dProb'),T_=$('dT'),D_=$('dD');
@@ -2492,19 +2499,19 @@ function renderDocs(){
   const bands=dBands(g),tagRules=g.rules.filter(r=>r.via==='tag'),{q,tm,dm}=dQm();
   DV.home=new Map();bands.forEach(b=>b.docs.forEach(p=>DV.home.set(p,b.key)));
   const bandsOf=id=>g.rules.filter(r=>r.via!=='board'&&r.tickets.includes(id)).map(dK).join(',');
-  const own=id=>[...new Set(g.reads.filter(r=>r.ticket===id&&r.via!=='board'&&(byP.get(r.doc)||{}).size>B).map(r=>r.doc))]; // too big among the docs its OWN rules send; board-wide ones are flagged once at the top
+  const own=id=>[...new Set(g.reads.filter(r=>r.ticket===id&&r.via!=='board'&&!(byP.get(r.doc)||{}).image&&(byP.get(r.doc)||{}).size>B).map(r=>r.doc))]; // too big among the docs its OWN rules send; board-wide ones are flagged once at the top
   const groups=[...new Set(g.tickets.map(t=>t.agent||''))].sort((a,b)=>!a-!b||a.localeCompare(b));
   T_.innerHTML=g.tickets.length?groups.map(p=>{const ts=g.tickets.filter(t=>(t.agent||'')===p).sort((a,b)=>bandsOf(a.id).localeCompare(bandsOf(b.id))||a.id.localeCompare(b.id,undefined,{numeric:true}));
     const key='p:'+(p||'-'),name=p?'Profile '+p:'No profile',hit=ts.filter(tm).length,open=!DV.shut.has(key)||hit>0||ts.some(t=>DV.sel==='t:'+t.id);
-    return `<li class="dgrp${open?'':' shut'}"><h3 class="dgh" data-n="${esc(key)}">${dChev(key,open,name)}${p?dIc('profile'):''}<span>${esc(name)} · ${ts.length}</span>${q&&hit?`<em class="dhit">${hit} match${hit>1?'es':''}</em>`:''}</h3>${open?`<ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id),cn=c.length;
+    return `<li class="dgrp${open?'':' shut'}"><h3 class="dgh" data-n="${esc(key)}">${dChev(key,open,name)}${p?dIc('profile'):''}<span>${esc(name)} · ${ts.length}</span>${open?'':dWarn([[ts.filter(t=>nod.has(t.id)).length,'no docs',1],[ts.filter(t=>own(t.id).length).length,'with a doc too big']])}${q&&hit?`<em class="dhit">${hit} match${hit>1?'es':''}</em>`:''}</h3>${open?`<ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id),cn=c.length;
       const tg=tagRules.filter(r=>r.tickets.includes(t.id)).map(r=>r.from);
       return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
     :'<li class="dempty">No open tickets.</li>';
-  const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
+  const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${d.image?' img':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':d.image?'Image: sent as a path':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
   const gRow=(p,b)=>{const h=bands.find(x=>x.docs.includes(p));return `<li><button type="button" class="dn dk ghost" data-dnode="${esc(p)}" data-n="g:${esc(b.key)}|${esc(p)}">${dPath(p)}<span class="tag">also here · listed under ${esc(h?bandShort(h):'')} ↑</span></button></li>`;};
   D_.innerHTML=bands.length?bands.map(b=>{const n=b.via==='board'?g.tickets.length:b.tickets.length,m=b.docs.length+b.also.length,an='a:'+b.key,port=b.via==='tag'||b.via==='profile';
     const hit=[...b.docs,...b.also].filter(dm).length,open=!DV.shut.has(an)||hit>0,name=bandName(b).replace(/<[^>]+>/g,'');
-    return `<li class="dband ${b.via}${open?'':' shut'}" data-band="${esc(b.key)}"><h3><button type="button" class="dbh${DV.sel===an?' sel':''}" data-dsel="${esc(an)}" data-n="${esc(an)}" aria-pressed="${DV.sel===an}">${port?'<i class="port"></i>':''}${dIc(b.via)}<span class="bn">${bandName(b)}</span><em>${b.via==='board'?`all ${n} tickets, lines on hover`:b.via==='linked'?'no ticket reads it':`${n} ticket${n===1?'':'s'} · ${m} doc${m===1?'':'s'}`}${q&&hit?` · <b class="dhit">${hit} match${hit>1?'es':''}</b>`:''}</em>${bandRule(b)?`<span class="rule">${esc(bandRule(b))}</span>`:''}</button>${dChev(an,open,name)}</h3>
+    return `<li class="dband ${b.via}${open?'':' shut'}" data-band="${esc(b.key)}"><h3><button type="button" class="dbh${DV.sel===an?' sel':''}" data-dsel="${esc(an)}" data-n="${esc(an)}" aria-pressed="${DV.sel===an}">${port?'<i class="port"></i>':''}${dIc(b.via)}<span class="bn">${bandName(b)}</span><em>${b.via==='board'?`all ${n} tickets, lines on hover`:b.via==='linked'?'no ticket reads it':`${n} ticket${n===1?'':'s'} · ${m} doc${m===1?'':'s'}`}${q&&hit?` · <b class="dhit">${hit} match${hit>1?'es':''}</b>`:''}</em>${bandRule(b)?`<span class="rule">${esc(bandRule(b))}</span>`:''}${open?'':dWarn([[b.docs.filter(p=>bad.has(p)).length,'broken'],[b.docs.filter(p=>{const d=byP.get(p)||{};return !d.builtin&&!d.image&&d.size>B;}).length,'too big']])}</button>${dChev(an,open,name)}</h3>
       ${open?`<ol>${b.docs.map(p=>dRow(p,b)).join('')}${b.also.map(p=>gRow(p,b)).join('')}</ol>`:''}</li>`;}).join('')
     :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board, a tag (<code>docs_by_tag</code>) or an agent profile in unblockd.json, or to a ticket.</li>`;
   const nt=q?g.tickets.filter(tm).length:0,nd=q?g.docs.filter(d=>dm(d.path)).length:0;

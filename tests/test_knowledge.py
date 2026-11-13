@@ -238,6 +238,38 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(sent, {"AGENTS.md": "budget", "docs/BIG.md": "too_big", "docs/MID.md": "full", "nope.md": "error"})
 		self.assertNotIn("sent", kn.context(self.s, "CMB-2", inline=False)["docs"][0])
 
+	def test_graph_counts_component_notes(self):
+		"""Step 1 (Docs view truth): a ticket's component notes are in its context(), so the graph reads them too and the ticket has docs."""
+		(self.repo / "docs" / "arch").mkdir(parents=True, exist_ok=True)
+		(self.repo / "docs" / "arch" / "store.md").write_text("\n".join(["---", "paths: src/store.py", "---", "# Store", "", "The core.", ""]), encoding="utf-8")
+		self.s.create({"title": "no docs, touches the store", "touches": ["src/store.py"]}, tid="CMB-2")
+		self.s.create({"title": "names the component", "components": ["store"]}, tid="CMB-3")
+		self.s.create({"title": "nothing"}, tid="CMB-4")
+		g = kn.graph(self.s)
+		reads = {(r["ticket"], r["doc"]): (r["via"], r["from"]) for r in g["reads"]}
+		self.assertEqual(reads[("CMB-2", "docs/arch/store.md")], ("component", "store"))
+		self.assertEqual(reads[("CMB-3", "docs/arch/store.md")], ("component", "store"))
+		self.assertNotIn("CMB-2", g["no_docs"])
+		self.assertNotIn("CMB-3", g["no_docs"])
+		self.assertIn("CMB-4", g["no_docs"])
+		self.assertEqual({d["path"]: d["kind"] for d in g["docs"]}["docs/arch/store.md"], "component")
+
+	def test_images_are_paths_not_broken(self):
+		"""A picked image (a pick sheet) exists: it is a doc sent as a path, not a broken reference; a missing one stays broken."""
+		(self.repo / "docs" / "pick.png").write_bytes(bytes([0x89, 0x50, 0x4E, 0x47]) + bytes(104))
+		self.s.create({"title": "picked", "docs": ["docs/pick.png", "docs/gone.png"]}, tid="CMB-2")
+		g = kn.graph(self.s)
+		node = {d["path"]: d for d in g["docs"]}["docs/pick.png"]
+		self.assertTrue(node["image"])
+		self.assertEqual(node["size"], 108)
+		self.assertNotIn("error", node)
+		self.assertIn("docs/gone.png", [b["path"] for b in g["broken"]])
+		self.assertNotIn("docs/pick.png", [b["path"] for b in g["broken"]])
+		self.assertNotIn("CMB-2", g["no_docs"])
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		self.assertEqual((c["docs/pick.png"]["sent"], c["docs/pick.png"]["image"], "content" in c["docs/pick.png"]), ("image", True, False))
+		self.assertEqual(c["docs/gone.png"]["sent"], "error")
+
 	def test_graph_flags_paths_outside_the_project(self):
 		self.s.config["docs"].append("../secret.md")  # can't be written through the API, but a hand-edited config can
 		g = kn.graph(self.s)
