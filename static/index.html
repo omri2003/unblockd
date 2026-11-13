@@ -549,11 +549,37 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .dctx h3{margin:0 0 6px;font-size:.8rem;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;color:var(--ink)} .dctx h3 span{font-weight:400;color:var(--muted)} .dctx h3 b{color:var(--cinnabar)}
 .cbar{display:flex;height:8px;border-radius:4px;background:var(--sunk);overflow:hidden;margin:0 0 7px}
 .cbar i{display:block;height:100%;border-right:1px solid var(--surface)} .cbar i.t{background:var(--jade)} .cbar i.p{background:var(--slate)} .cbar i.g{background:var(--plum)} .cbar i.b{background:var(--muted)}
-.dctx ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;grid-template-columns:minmax(0,1fr)}
-.dctx li{display:grid;grid-template-columns:72px minmax(0,1fr) 34px minmax(0,150px);gap:6px;align-items:center}
-.dctx .v{color:var(--muted);font:.7rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth{font:.76rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth i{font-style:normal;color:var(--muted)}
+.dctx ol{list-style:none;margin:0;padding:0;display:grid;gap:6px;grid-template-columns:minmax(0,1fr)}
+/* AI-14 design A (owner pick 2026-11-14 of 3 + 4 mockups): one card per doc; a coloured From badge; the name opens the file; status = dot + word */
+/* A1 Soft (owner pick 2026-11-14): no borders; white cards float on the preview's grey tray and lift on hover; a doc not sent in full gets a red left edge */
+.dctx:has(.dcard){background:var(--sunk);box-shadow:none} .dctx:has(.dcard) .cbar{background:var(--surface)} .dcard{border-radius:var(--rc);background:var(--surface);box-shadow:var(--sh1);transition:box-shadow .15s ease-out} .dcard:hover{box-shadow:var(--sh2)} .dcard.bad{box-shadow:inset 3px 0 0 var(--cinnabar),var(--sh1)} .dcard.bad:hover{box-shadow:inset 3px 0 0 var(--cinnabar),var(--sh2)}
+.dch{display:grid;grid-template-columns:max-content minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:7px 10px}
+.dsrc{justify-self:start;font-size:.66rem;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap;background:var(--slate-soft);color:var(--slate)}
+.dsrc.k-tag{background:var(--amber-soft);color:var(--amber)} .dsrc.k-profile{background:var(--plum-soft);color:var(--plum)} .dsrc.k-ticket,.dsrc.k-attached{background:var(--jade-soft);color:var(--jade)}
+.dctx .pw{display:flex;flex-wrap:wrap;gap:3px 6px;align-items:center;min-width:0}
+.dctx .dl{display:inline-flex;align-items:center;min-width:0;max-width:100%;border:0;background:none;padding:0;cursor:pointer;color:var(--ink);font:.76rem var(--mono);text-align:left}
+.dctx .dl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .dl i{font-style:normal;color:var(--muted)} .dctx .dl svg{width:12px;height:12px;flex:none;margin-left:5px;opacity:.55}
+.dctx .dl:hover{color:var(--jade)} .dctx .dl:hover span{text-decoration:underline;text-underline-offset:3px} .dctx .dl:hover svg{opacity:1}
+.dctx .pth{font:.76rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth i{font-style:normal;color:var(--muted)}
 .dctx .z{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
-.dctx .s{font-size:.72rem} .dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar);font-weight:700} .dctx .s.wl{color:var(--muted)} .dctx .s.img{color:var(--slate)}
+.dctx .s{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:600;white-space:nowrap} .dctx .s::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar)} .dctx .s.wl{color:var(--muted)} .dctx .s.wl::before{background:none;border:1.5px solid currentColor} .dctx .s.img{color:var(--slate)}
+.dsc{font-size:.7rem;font-weight:600;border-radius:999px;padding:0 7px;white-space:nowrap} .dsc.in{background:var(--jade-soft);color:var(--jade)} .dsc.out{background:color-mix(in srgb,var(--cinnabar) 13%,var(--surface));color:var(--cinnabar)} /* a picked section: sent or not */
+/* the fold: a tree of the doc's headings with guide lines, a size bar each against the budget, then ONE bar for the whole budget */
+.dsec{padding:6px 10px 8px;background:color-mix(in srgb,var(--sunk) 35%,var(--surface));border-radius:0 0 var(--rc) var(--rc)} .dsec>summary{cursor:pointer;color:var(--jade);font-weight:600;font-size:.76rem;width:fit-content;padding:2px 0} .dsec .hint{margin:4px 0 6px}
+.dtree,.dtree ul{list-style:none;margin:0;padding:0} .dtree ul{margin-left:9px;padding-left:14px;border-left:1.5px solid var(--line)}
+.dsr{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(60px,130px) 3.2rem;gap:10px;align-items:center;font-size:.76rem;cursor:pointer;border-radius:var(--r);padding:4px 8px;margin:1px 0}
+.dtree ul .dsr::before{content:"";position:absolute;left:-14px;top:50%;width:12px;border-top:1.5px solid var(--line)}
+.dsr:hover{background:var(--sunk)} .dsr:has(input:checked:not(:disabled)){box-shadow:inset 3px 0 0 var(--jade);border-radius:0 var(--r) var(--r) 0} .dsr:has(input:checked:not(:disabled)) .dst>span{font-weight:600} /* ticked: a jade edge + bold, no fill */ .dsr.big,.dsr.cov{color:var(--muted)} .dsr.big{cursor:default} .dsr.big:hover{background:none}
+.dst{display:flex;gap:8px;align-items:center;min-width:0} .dst span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dst small{color:var(--muted)} .dst input{margin:0;width:16px;height:16px;accent-color:var(--jade);flex:none}
+.dsr .mb{position:relative;height:6px;background:var(--sunk);border-radius:3px;margin-right:2px} .dsr .mb i{position:absolute;inset:0 auto 0 0;border-radius:3px;background:color-mix(in srgb,var(--jade) 45%,var(--sunk))}
+.dsr:has(input:checked) .mb i{background:var(--jade)} .dsr .mb.over i{background:repeating-linear-gradient(45deg,var(--cinnabar) 0 4px,transparent 4px 7px)}
+.dsr .mb::after{content:"";position:absolute;top:-3px;bottom:-3px;right:-2px;width:2px;border-radius:1px;background:var(--ink)} /* the budget */
+.dsr .n{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.dbud{position:relative;height:14px;border-radius:7px;background:var(--sunk);margin:10px 2px 0} .dbud i{position:absolute;top:0;bottom:0} .dbud .o{background:var(--slate)} .dbud .p{background:var(--jade)}
+.dbud .x{background:repeating-linear-gradient(45deg,var(--cinnabar) 0 4px,color-mix(in srgb,var(--cinnabar) 30%,transparent) 4px 7px)} .dbud .tk{top:-4px;bottom:-4px;width:2px;border-radius:1px;background:var(--ink)}
+.dbl{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.72rem;color:var(--muted);margin:4px 2px 0} .dbl b{color:var(--ink);font-weight:600} .dbl b.over{color:var(--cinnabar)}
+.dsf{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:.76rem} .dsf>span{flex:1 1 14rem} .dsf .warn{color:var(--cinnabar);font-weight:600} .dsf .btn{white-space:nowrap}
 .dcb{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 0}
 .dempty{padding:18px 4px;color:var(--muted)}
 .dh3{font-size:.85rem;margin:14px 0 4px;color:var(--muted)}
@@ -561,7 +587,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .dlist li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
-  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0} .dctx .v,.dctx .z{display:none} .dbud{margin-left:0}
+  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dch{grid-template-columns:max-content minmax(0,1fr);row-gap:4px} .dsf>span{flex-basis:100%} .dsf .btn:first-of-type{margin-left:auto} .dch .z{display:none} .dch .s{grid-column:2} .dsr{grid-template-columns:minmax(0,1fr) 3.5rem 2.8rem;gap:6px} .dtree ul{margin-left:6px;padding-left:10px} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0}  .dbud{margin-left:0}
 }
 /* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
 .mapstage{position:relative;overflow:hidden;height:calc(100dvh - 360px);min-height:340px;background:var(--sunk);border-radius:8px;touch-action:none;user-select:none;cursor:grab}
@@ -621,7 +647,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
 }
 /* touch: 44px targets (UX-5); desktop and the compact density keep their sizes */
-@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip,.dchev{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
+@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip,.dchev,.dsr{min-height:44px;min-width:44px} .dsec>summary{min-height:44px;display:inline-flex;align-items:center} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
 /* Elevated surfaces (dev/premium-look trial): white raised cards and controls on a quiet page, hairline borders, soft shadows,
    rounder corners; segmented controls are a grey track with a raised white pill. Overrides only, so the trial reverts as one block. */
 .bar{border-block:0;padding:10px 0;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px)}
@@ -723,7 +749,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.dcard{transition:none} body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -1368,7 +1394,7 @@ function needsMotion(ul,old){ // rows that arrived fade in; rows that left (answ
 const bLink=(g,i)=>`?board=${encodeURIComponent(g.id)}#${encodeURIComponent(i.id)}`;
 const RQ={}; // review forms whose "Request changes…" is open, by draft key (a re-render keeps it open; a typed reason keeps it open too)
 const reviewForm=(dk,B,tag)=>`<form class="nd-f rv" data-nform="reject" ${B}><button type="button" class="btn" data-approve ${B}>Approve</button><details class="rqd" data-rq="${esc(dk)}"${RQ[dk]||DRAFTS[dk]?' open':''}><summary>Request changes…</summary>${draftField(dk,'','What needs to change…',tag)}<button class="btn ghost sm" type="submit">Send back</button></details></form>`; // Approve is the one primary action; sending back is quiet and goes through the same form[data-nform=reject] handler
-document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.rq){RQ[d.dataset.rq]=d.open; if(d.open)d.querySelector('[data-draft]')?.focus();}},true);
+document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.dsk){d.open?dSecOpen.add(d.dataset.dsk):dSecOpen.delete(d.dataset.dsk);return;} if(d.dataset?.rq){RQ[d.dataset.rq]=d.open; if(d.open)d.querySelector('[data-draft]')?.focus();}},true);
 function needsRow(g,i){
   const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
@@ -1863,6 +1889,8 @@ document.addEventListener('click',async e=>{
   if(g('#kbBtn')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
+  if(b=g('[data-dsecgo]')){dSecApply(b.dataset.dsecgo);return;}
+  if(b=g('[data-dsecreset]')){delete dPick[b.dataset.dsecreset];renderDocs();return;}
   if(b=g('[data-dsel]')){dSelect(b.dataset.dsel);return;}
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
@@ -2473,15 +2501,74 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
   const c=DV.ctx[id],g=DV.data;
   if(!c||c.busy)return `<div class="dctx"><p class="hint">Reading what ${esc(id)}'s agent gets<span class="dots"></span></p></div>`;
   if(c.err)return `<div class="dctx"><p class="msg err">${esc(c.err)}</p></div>`;
-  const B=g.budget,lab=s=>s.startsWith('tag:')?'#'+s.slice(4):s.startsWith('agent:')?s.slice(6):s.startsWith('component:')?'component':s;
-  const SW={full:['in','sent in full'],too_big:['out','path only: too big'],budget:['out','path only: budget spent'],image:['img','image: path sent']};
+  const B=g.budget, SW={full:['in','Sent'],too_big:['out','Too big: path only'],budget:['out','Budget spent: path only'],image:['img','Image: path sent']};
   const cut=c.docs.filter(d=>d.sent!=='full'&&d.sent!=='image').length,used=c.inlined_chars||0;
   const seg=c.docs.filter(d=>d.sent==='full').map(d=>{const s=d.source.split(':')[0];return `<i class="${s==='board'?'b':s==='tag'?'g':s==='agent'?'p':'t'}" style="width:${Math.max(.4,(d.chars||0)/B*100)}%" title="${esc(d.path)} ${dTk(d.chars||1)} tokens (${dCh(d.chars||0)})"></i>`;}).join('');
   return `<div class="dctx"><h3>What an agent gets for ${esc(id)}<span title="${dCh(used)} of ${dCh(B)}">${dTk(used)} of ${dTk(B)} tokens sent${cut?` · <b>${cut} not sent</b>`:''}</span></h3>
     <div class="cbar" role="img" aria-label="About ${dTk(used).slice(1)} of the ${dTk(B).slice(1)} token budget used">${seg}</div>
-    <ol>${c.docs.map(d=>{const [k,w]=SW[d.sent]||['out','not sent: '+(d.error||'broken')];return `<li><span class="v">${esc(lab(d.source))}</span>${dPath(d.path)}<span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span></li>`;}).join('')}
-      <li><span class="v">board</span>${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">sent by the MCP prompt</span></li></ol>
+    <ol>${dRows(c.docs).map((r,i,all)=>{const f=r.f||r.path.split('#')[0], last=!all.slice(i+1).some(x=>(x.f||x.path.split('#')[0])===f), fold=last?dSecHtml(id,f,c.docs):'';
+      if(r.f){const n=r.secs.filter(d=>d.sent==='full').length, tot=r.secs.reduce((a,d)=>a+(d.chars||0),0), S=dSecState(id,r.f,c.docs);
+        const chip=d=>{const a=d.path.split('#')[1], h=S.hs.find(x=>x.a===a), [k,w]=SW[d.sent]||['out','not sent'];return `<span class="dsc ${k}" title="${esc(d.path)}: ${esc(w)} (${dCh(d.chars||0)})">${esc(h?h.t:a)}</span>`;};
+        return `<li class="dcard${n<r.secs.length?' bad':''}"><div class="dch">${dSrc('ticket')}<span class="pw">${dLink(r.f)}${r.secs.map(chip).join('')}</span><span class="z" title="${dCh(tot)}">${dTk(tot)}</span><span class="s ${n===r.secs.length?'in':'out'}">${n===r.secs.length?(n>1?'All sections sent':'Section sent'):n?`${n} of ${r.secs.length} sections sent`:'Sections not sent'}</span></div>${fold}</li>`;}
+      const d=r,[k,w]=SW[d.sent]||['out','Not sent: '+(d.error||'broken')];return `<li class="dcard${k==='out'?' bad':''}"><div class="dch">${dSrc(d.source)}<span class="pw">${dLink(d.path)}</span><span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span></div>${fold}</li>`;}).join('')}
+      <li class="dcard"><div class="dch">${dSrc('board')}${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">Sent by the MCP prompt</span></div></li></ol>
     <p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
+// AI-14 (owner pick: option C + a fold per doc + several sections): under the last row of a doc that is not sent in full (too big, budget
+// spent) or whose sections this ticket picked, a fold lists the doc's headings with a size bar against the budget (the tick = the budget)
+// and a checkbox each. Ticking a heading covers its sub-headings (they are inside it); Send writes the ticked ones as `path#heading` in the
+// ticket's Docs, in place of the path and of the sections picked before (nothing ticked = the sections go; the whole path comes back when
+// nothing else sends it). The ticks are a draft (DV-independent `dPick`) until Send, so the 4 s poll keeps them. Undo = the old Docs.
+const dSlug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); // = knowledge._slug
+const dSecOpen=new Set(), dPick={}; // "id|file" of the open folds; "id|file" -> Set of ticked anchors (unsent draft)
+function dSecState(id,f,all){ // headings with size, anchor, ticked, covered; what the ticket has now
+  const rows=all.filter(x=>x.path.split('#')[0]===f), whole=rows.find(x=>x.path===f), src=rows.find(x=>x.outline_chars?.length);
+  const have=(BY.get(id)?.docs||[]).filter(x=>x.startsWith(f+'#')).map(x=>x.slice(f.length+1)), k=id+'|'+f, sel=dPick[k]||new Set(have);
+  let cov=Infinity; const hs=(src?.outline||[]).map((l,i)=>{const m=l.match(/^(#+)\s+(.*)$/);return m&&{lv:m[1].length,t:m[2],n:src.outline_chars[i],a:dSlug(m[2])};}).filter(Boolean)
+    .map(h=>{if(h.lv<=cov)cov=Infinity;h.cov=cov!==Infinity;h.on=sel.has(h.a);if(h.on&&!h.cov)cov=h.lv;return h;});
+  return {rows,whole,src,have,k,sel,hs,total:hs.reduce((s,h)=>s+(h.on&&!h.cov?h.n:0),0),changed:sel.size!==have.length||have.some(a=>!sel.has(a))};
+}
+// The preview's rows: the sections a ticket picked of one doc are ONE row (the doc's name, then the sections as chips: jade = sent, cinnabar =
+// not), not one row each; the name opens the file (data-doc -> viewDoc; a lone path#heading opens that section).
+function dRows(docs){const out=[],grp={};for(const d of docs){const f=d.path.split('#')[0];
+  if(d.path.includes('#')&&d.source==='ticket'){if(!grp[f]){grp[f]={f,secs:[]};out.push(grp[f]);}grp[f].secs.push(d);}else out.push(d);}return out;}
+const dLink=p=>`<button type="button" class="dl" data-doc="${esc(p)}" title="Open ${esc(p)}"><span><i>${esc(dDir(p))}</i>${esc(dBase(p))}</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M13 3 7 9"/></svg></button>`;
+// Why a doc is sent, as a coloured badge: the rule's kind (board, tag, profile, Map) or the ticket itself (its Docs field, or a file attached
+// to it); the tag / profile / component name and the config key are in the tooltip.
+function dSrc(src){const [k,x]=[src.split(':')[0],src.slice(src.indexOf(':')+1)];
+  const [c,l,t]=k==='tag'?['tag','tag',`Tickets tagged #${x} get it (docs_by_tag.${x} in unblockd.json)`]:k==='agent'?['profile','profile',`The ${x} profile's docs (agents[${x}].docs)`]
+    :k==='component'?['map','Map',`The ticket changes ${x}: its architecture note`]:k==='ticket'?['ticket','ticket',"Picked in this ticket's Docs field"]:k==='attached'?['attached','attached','A file attached to this ticket']
+    :['board','board','Every ticket gets it (docs in unblockd.json)'];
+  return `<span class="dsrc k-${c}" title="${esc(t)}">${l}</span>`;}
+function dSecHtml(id,f,all){ // the fold, under the doc's last row
+  const S=dSecState(id,f,all), B=DV.data?.budget||Infinity, picked=S.rows.some(x=>x!==S.whole&&x.source==='ticket');
+  if(!S.src||!(S.whole&&['too_big','budget'].includes(S.whole.sent)||picked)) return '';
+  const n=S.hs.filter(h=>h.on&&!h.cov).length, w=x=>Math.min(100,x/B*100).toFixed(1);
+  const node=h=>{const big=h.n>B, dis=h.cov||big&&!h.on;
+    return `<label class="dsr${big?' big':''}${h.cov?' cov':''}" title="${esc(h.cov?`${h.t} is inside a section you ticked`:big?`${h.t} is bigger than the whole budget (${dCh(h.n)})`:`${f}#${h.a} (${dCh(h.n)})`)}"><span class="dst"><input type="checkbox" data-dsbox="${esc(S.k)}" value="${esc(h.a)}"${h.on||h.cov?' checked':''}${dis?' disabled':''}><span>${esc(h.t)}${h.cov?' <small>in it</small>':big&&h.lv===Math.min(...S.hs.map(x=>x.lv))?' <small>whole doc</small>':''}</span></span><span class="mb${big?' over':''}"><i style="width:${w(h.n)}%"></i></span><span class="n">${dTk(h.n)}</span></label>`;};
+  let tree='', depth=0; const lv0=Math.min(...S.hs.map(h=>h.lv)); // nested lists from the heading levels, so the guide lines show what is under what
+  S.hs.forEach((h,i)=>{const d=h.lv-lv0; if(i){ if(d>depth) tree+='<ul>'.repeat(d-depth); else { tree+='</li>'; if(d<depth) tree+='</ul></li>'.repeat(depth-d); } } tree+='<li>'+node(h); depth=d;});
+  tree+='</li>'+'</ul></li>'.repeat(depth);
+  const other=all.filter(d=>d.sent==='full'&&d.path.split('#')[0]!==f).reduce((a,d)=>a+(d.chars||0),0), tot=other+S.total, sc=Math.max(tot,B), pc=x=>(x/sc*100).toFixed(1)+'%';
+  const bud=`<div class="dbud" role="img" aria-label="Other docs about ${dTk(other).slice(1)}, these sections about ${dTk(S.total).slice(1)}, of a ${dTk(B).slice(1)} token max"><i class="o" style="left:0;width:${pc(other)};border-radius:7px 0 0 7px"></i><i class="p" style="left:${pc(other)};width:${pc(Math.min(S.total,Math.max(0,B-other)))}"></i><i class="x" style="left:${pc(Math.max(B,other))};width:${pc(Math.max(0,tot-Math.max(B,other)))};border-radius:0 7px 7px 0"></i><i class="tk" style="left:calc(${pc(B)} - 1px)"></i></div>
+    <div class="dbl"><span>Other docs <b>${dTk(other)}</b> · these sections <b${tot>B?' class="over"':''}>${dTk(S.total)}</b></span><span>of <b>${dTk(B)}</b> max</span></div>`;
+  const msg=!n?'Nothing ticked':S.total>B?'The sections alone are over the max: the last ones will go as paths':tot>B?"Over the max: the ticket's own docs are paid first, so other docs will go as paths":`${dTk(B-tot)} left`;
+  return `<details class="dsec" data-dsk="${esc(S.k)}"${dSecOpen.has(S.k)?' open':''}><summary>${S.have.length?'Change sections':'Send sections instead'}</summary>
+    <p class="hint">Tick the parts ${esc(id)} needs. Its agent gets those sections and the list of headings, and can read the rest itself.</p>
+    <ul class="dtree">${tree}</ul>${bud}
+    <p class="dsf"><span${tot>B&&n?' class="warn"':''}>${msg}</span>${S.changed?`<button type="button" class="btn sm ghost" data-dsecreset="${esc(S.k)}">Reset</button><button type="button" class="btn sm" data-dsecgo="${esc(S.k)}">${n?`Send ${n} section${n>1?'s':''}`:S.whole?'Send no sections':'Send the whole doc'}</button>`:''}</p></details>`;
+}
+async function dSecApply(k){
+  const [id,f]=[k.slice(0,k.indexOf('|')),k.slice(k.indexOf('|')+1)], t=BY.get(id), c=DV.ctx[id]; if(!t||!c?.docs) return;
+  const S=dSecState(id,f,c.docs), old=[...(t.docs||[])], keep=S.hs.filter(h=>h.on&&!h.cov).map(h=>f+'#'+h.a);
+  const nw=[...old.filter(x=>x!==f&&!x.startsWith(f+'#')),...(keep.length?keep:S.whole?[]:[f])];
+  try{ await api('PATCH','/'+encodeURIComponent(id),{docs:nw}); delete dPick[k]; await load(true); loadDocs();
+    toast(keep.length?`${id} now gets ${keep.length} section${keep.length>1?'s':''} of ${dBase(f)}`:`${id} no longer picks sections of ${dBase(f)}`,{undo:async()=>{try{await api('PATCH','/'+encodeURIComponent(id),{docs:old}); await load(true); loadDocs(); toast(`${id}'s docs restored`);}catch(e){toast('Undo failed: '+e.message,{err:1});}}});
+  }catch(e){ toast('Could not change the docs: '+e.message,{err:1}); }
+}
+document.addEventListener('change',e=>{const b=e.target; if(!b.dataset?.dsbox) return; const k=b.dataset.dsbox, c=DV.ctx[k.slice(0,k.indexOf('|'))];
+  const S=dSecState(k.slice(0,k.indexOf('|')),k.slice(k.indexOf('|')+1),c?.docs||[]), s=new Set([...S.sel].filter(a=>S.hs.some(h=>h.a===a&&!h.cov)));
+  b.checked?s.add(b.value):s.delete(b.value); dPick[k]=s; renderDocs();
+  document.querySelector(`#dT [data-dsbox="${CSS.escape(k)}"][value="${CSS.escape(b.value)}"]`)?.focus();});
 async function dLoadCtx(id){
   if(DV.ctx[id])return;DV.ctx[id]={busy:1};
   try{DV.ctx[id]=await jf(API+'/tickets/'+encodeURIComponent(id)+'/context?content=0');}catch(e){DV.ctx[id]={err:e.message||'Could not load'};}
@@ -2523,7 +2610,7 @@ function renderDocs(){
       const tg=tagRules.filter(r=>r.tickets.includes(t.id)).map(r=>r.from);
       return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
     :'<li class="dempty">No open tickets.</li>';
-  const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${d.image?' img':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':d.image?'Image: sent as a path':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
+  const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${d.image?' img':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':d.image?'Image: sent as a path':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${p.includes('#')&&!d.builtin?'<span class="tag" title="Only this section is sent, with the doc&#39;s outline (its headings)">section</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
   const gRow=(p,b)=>{const h=bands.find(x=>x.docs.includes(p));return `<li><button type="button" class="dn dk ghost" data-dnode="${esc(p)}" data-n="g:${esc(b.key)}|${esc(p)}">${dPath(p)}<span class="tag">also here · listed under ${esc(h?bandShort(h):'')} ↑</span></button></li>`;};
   D_.innerHTML=bands.length?bands.map(b=>{const n=b.via==='board'?g.tickets.length:b.tickets.length,m=b.docs.length+b.also.length,an='a:'+b.key,port=b.via==='tag'||b.via==='profile';
     const hit=[...b.docs,...b.also].filter(dm).length,open=!DV.shut.has(an)||hit>0,name=bandName(b).replace(/<[^>]+>/g,'');

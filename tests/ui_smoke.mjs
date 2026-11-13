@@ -36,9 +36,10 @@ try {
 	}
 	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also here" row; a small budget makes big.md "too big"
 		const ep = join(root, 'example/tickets/unblockd.json'), ec = JSON.parse(await readFile(ep, 'utf8'));
-		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png'] } }, null, 2));
-		await writeFile(join(root, 'example/docs/big.md'), '# Big' + 'x'.repeat(3000));
+		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png', 'docs/mech.md#combat'] } }, null, 2));
+		await writeFile(join(root, 'example/docs/big.md'), ['# Big', '## Part one', 'x'.repeat(3000), '## Part two', 'end', '## Part three', 'more'].join(String.fromCharCode(10))); // headings: the preview offers one section of it (AI-14)
 		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
+		await writeFile(join(root, 'example/docs/mech.md'), ['# Mechanics', '## Combat', 'parry', '## Movement', 'run'].join(String.fromCharCode(10))); // a section: path#heading
 		await writeFile(join(root, 'example/docs/pick.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])); // an image: a path, never "broken"
 		const tp = join(root, 'example/tickets/UI-2.json');
 		await writeFile(tp, JSON.stringify({ ...JSON.parse(await readFile(tp, 'utf8')), tags: ['api', 'sec'] }, null, 2));
@@ -251,14 +252,27 @@ try {
 			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
 			await visible('#dD .dband[data-band="component"]', 'From the Map band'); // UI-2 maps to api + web-ui: their notes are in its context
 			ok((await page.locator('#dD .dband[data-band="component"] .bn').innerText()) === 'From the Map', `[${tag}] docs: the component band reads From the Map`);
+			ok((await page.locator('#dD [data-n="d:docs/mech.md#combat"]').innerText()).includes('section'), `[${tag}] docs: a path#heading entry is a section row`);
 			{ const im = page.locator('#dD [data-n="d:docs/pick.png"]'); ok((await im.getAttribute('class')).includes('img') && (await im.innerText()).includes('image · path sent'), `[${tag}] docs: an image is a path, not broken`); }
 			ok((await page.locator('#dProb .dbud').innerText()).includes('≈500 tokens') && (await page.getAttribute('#dProb .dbud', 'title')).includes('2,000 characters'), `[${tag}] docs: the budget reads as estimated tokens, exact characters in the tooltip`);
 			ok(await page.evaluate(() => [...document.querySelectorAll('#dD .dband[data-band="ticket"] .bn')].every((b) => b.textContent === 'Picked per ticket')), `[${tag}] docs: the ticket band reads Picked per ticket`);
 			await page.click('[data-dsel="t:UI-2"]');
 			await page.waitForSelector('#dT .dctx h3');
 			const ctx = await page.locator('#dT .dctx').innerText();
-			ok(ctx.includes('What an agent gets for UI-2') && ctx.includes('path only: too big') && ctx.includes('sent in full'), `[${tag}] docs: UI-2's preview should say what is sent and what is not: ${ctx.slice(0, 200)}`);
+			ok(ctx.includes('What an agent gets for UI-2') && ctx.includes('Too big: path only') && ctx.includes('Sent'), `[${tag}] docs: UI-2's preview should say what is sent and what is not: ${ctx.slice(0, 200)}`);
 			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
+			{ // AI-14 (design C): a doc too big to send folds out its headings with size bars; tick two, Send, both are in the preview; Undo takes them back
+				const sec = page.locator('#dT .dsec').first(); await sec.locator('summary').click();
+				const hs = await sec.locator('.dsr').evaluateAll((rs) => rs.map((r) => r.querySelector('.dst span').firstChild.textContent.trim() + (r.querySelector('input').disabled ? '!' : '')));
+				ok(hs.join('|') === 'Big!|Part one!|Part two|Part three', `[${tag}] docs: the fold lists big.md's headings, the ones over the budget disabled: ${hs.join('|')}`);
+				await sec.locator('.dsr', { hasText: 'Part two' }).locator('input').check();
+				await page.locator('#dT .dsec').first().locator('.dsr', { hasText: 'Part three' }).locator('input').check();
+				await page.click('#dT [data-dsecgo]');
+				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return [...document.querySelectorAll('#dT .dsc')].map((x) => x.textContent).join('|') === 'Part two|Part three'; }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: the two ticked sections are not one big.md row with two chips in UI-2's preview`));
+				ok((await page.locator('#dT .dsec summary').first().innerText()) === 'Change sections' && (await page.locator('#dT .dcard .dsrc.k-ticket').count()) >= 1, `[${tag}] docs: a doc with picked sections is a ticket card + Change sections`);
+				await page.click('#toasts button:has-text("Undo")');
+				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return c.includes('big.md') && !document.querySelector('#dT .dsc'); }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not take the sections back`)); await page.waitForSelector('#toasts :text("docs restored")'); // Undo's reload is done
+			}
 			await noOverflow('docs with a preview');
 			await page.keyboard.press('Escape');
 			await page.waitForFunction(() => !document.querySelector('#dT .dctx'));

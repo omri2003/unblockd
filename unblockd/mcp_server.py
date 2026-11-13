@@ -480,7 +480,8 @@ def arch_remove_edge(frm: str, to: str, agent: str, board: str | None = None) ->
 
 @tool
 def read_doc(path: str, board: str | None = None) -> dict:
-	"""One text file from the board's project repo (path relative to the repo root), with its links."""
+	"""One text file from the board's project repo (path relative to the repo root), with its links.
+	path#heading (e.g. docs/MECHANICS.md#combat) = only that section, plus the doc's outline (its headings)."""
 	return kn.read_doc(BOARDS.get(board), path)
 
 
