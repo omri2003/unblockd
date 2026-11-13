@@ -148,6 +148,7 @@ try {
 				return [...document.querySelectorAll('#digest .dg-r')].map((r) => [r.dataset.open, [...r.querySelector('.dg-tile').classList].find((c) => want[c]), st[r.dataset.open]]).filter(([, c, s]) => c && !want[c].includes(s));
 			});
 			ok(off.length === 0, `[${tag}] digest rows contradict the ticket status: ${JSON.stringify(off)}`);
+			ok(!(await page.locator('#digest .dg-r .w').allInnerTexts()).some((x) => /by hand/.test(x)), `[${tag}] digest: no "by hand" byline (UI-70: the outcome line says it)`);
 			await page.evaluate(() => { document.querySelector('#digest .dg-r').dataset.keep = '1'; });
 			await page.fill('#q', 'zz'); await page.fill('#q', ''); await refresh();
 			ok(await page.evaluate(() => document.querySelector('#digest .dg-r')?.dataset.keep === '1'), `[${tag}] a render with no digest change rebuilt the digest rows`);

@@ -155,7 +155,7 @@ a.btn{display:inline-block;text-decoration:none}
 .dg-x{position:absolute;right:8px;top:6px;width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:var(--r);background:var(--sunk);color:var(--muted);font:inherit;font-size:1rem;line-height:1;cursor:pointer;opacity:0} /* takes the time's place on hover / focus, like the Done card's Move-to */
 .dg-x:hover{color:var(--ink)} .dg-l li:hover .dg-x,.dg-x:focus-visible{opacity:1} .dg-l li:hover time,.dg-l li:has(.dg-x:focus-visible) time{visibility:hidden}
 @media (hover:none){.dg-x{opacity:1;width:40px;height:40px;top:2px;right:2px;background:none} .dg-l li .dg-r{padding-right:44px}} /* li .dg-r: wins over the <=600px padding */
-.dg-r .own.hand{padding-right:2px} /* the italic's last letter is not clipped */ .dg-l li+li{border-top:1px solid var(--line)}
+.dg-l li+li{border-top:1px solid var(--line)}
 .dg-r{--pc:var(--p-other);position:relative;grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:start;width:100%;padding:8px 12px 8px 16px;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;min-width:0}
 .dg-r::before{content:'';position:absolute;left:5px;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--pc);pointer-events:none}
 .dg-r:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))} .dg-r:hover .dt{text-decoration:underline;text-underline-offset:2px}
@@ -168,7 +168,7 @@ a.btn{display:inline-block;text-decoration:none}
 .dg-r .o{font-size:.82rem;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dg-r .o.bad{color:var(--cinnabar);font-weight:600}
 .dg-r .w{padding-top:3px;min-width:0;display:flex} .dg-r .w2{display:none}
 .dg-r .own{background:none;padding:0;border-radius:0;color:var(--muted);font-weight:600;font-size:.76rem;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dg-r .own.human{color:var(--ink);font-weight:700} .dg-r .own .gl{opacity:.85;flex:none} .dg-r .own.hand{font-style:italic;font-weight:500}
+.dg-r .own.human{color:var(--ink);font-weight:700} .dg-r .own .gl{opacity:.85;flex:none}
 .dg-r time{padding-top:4px;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .dg-more{grid-column:1/-1;justify-self:start;margin:4px 0 0;padding:3px 0;border:0;background:none;font:inherit;font-size:.84rem;color:var(--jade);cursor:pointer}
 .dg-more:hover{text-decoration:underline}
@@ -1327,7 +1327,7 @@ function digestGroups(){
   return DGS.map(([c,i,n])=>[c,i,n,rows[c].reverse()]).filter(g=>g[3].length); // newest first inside a section
 }
 const dgTime=ts=>{const d=new Date(ts); return d.toDateString()===new Date().toDateString()?hm(d):d.toLocaleDateString([],{weekday:'short'})+' '+hm(d);}; // a list that spans days says which day
-const dgBy=n=>n?`<span class="own ${HUMAN.has(n)||n==='human'?'human':'agent'}">${glyph(HUMAN.has(n)||n==='human'?'human':'agent')}${esc(n)}</span>`:'<span class="own hand">by hand</span>'; // ownHtml's byline, for who acted (not the owner)
+const dgBy=n=>n?`<span class="own ${HUMAN.has(n)||n==='human'?'human':'agent'}">${glyph(HUMAN.has(n)||n==='human'?'human':'agent')}${esc(n)}</span>`:''; // nobody acted (a hand move, a file edit): the outcome line already says "by hand" (UI-70); ownHtml's byline, for who acted (not the owner)
 function dgRow(c,i,n,{e,t,who,out,full}){
   const seal=t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'', by=c==='new'&&!who?'':dgBy(who), p0=t.priority==='P0'&&t.status!=='done';
   const tip=`${t.id} ${t.title}\n${n} ${dgTime(e.ts)}${who?' by '+who:''}`+(full&&full!==out?'\n\n'+full:out?'\n\n'+out:'');
