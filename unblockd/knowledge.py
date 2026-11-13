@@ -771,6 +771,51 @@ def remove_edge(store, frm, to, by=None) -> dict:
 HUBS = 5  # how many hub docs graph() lists
 
 
+SUGGEST_MAX = 3      # suggestions per ticket
+SUGGEST_FILES = 400  # markdown / text files read once per graph() call to look for mentions
+
+
+def _mention_keys(touch: str) -> list[str]:
+	"""What a doc has to name to be about a `touches` entry: the path itself, or a glob's fixed folder part
+	(`unblockd/*.py` -> `unblockd/`); too-short or bare-name prefixes match too much and are dropped."""
+	t = touch.strip().lstrip("./")
+	if any(c in t for c in "*?["):
+		t = t[:min(t.index(c) for c in "*?[" if c in t)]
+		t = t[:t.rfind("/") + 1]
+	return [t] if len(t) >= 4 and ("/" in t or "." in t) else []
+
+
+def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], budget: int) -> dict:
+	"""Docs a ticket with no doc of its own could get: repo markdown / text docs that name what it `touches` (a path, or a glob's folder).
+	{ticket: [{path, why: [touches named], size}]}, best first, SUGGEST_MAX each. Never a doc the board already sends to everyone,
+	one bigger than the budget (it would arrive as a path only), or the tickets folder. Read-only; the UI adds one with a PATCH of `docs`."""
+	want = {t["id"]: [k for e in t.get("touches", []) for k in _mention_keys(e)] for t in tickets if t["id"] in set(no_docs)}
+	want = {i: ks for i, ks in want.items() if ks}
+	if not want:
+		return {}
+	board = set(next((r["docs"] for r in rules if r["via"] == "board"), []))
+	base, texts = root(store), {}
+	for rel in repo_files(store)["files"]:
+		if len(texts) >= SUGGEST_FILES:
+			break
+		p = base / rel
+		if rel in board or p.suffix.lower() not in (".md", ".txt") or rel.startswith("tickets/"):
+			continue
+		try:
+			if p.stat().st_size > budget:
+				continue
+			texts[rel] = p.read_text(encoding="utf-8", errors="replace")
+		except OSError:
+			continue
+	out = {}
+	for tid, keys in want.items():
+		hits = [(rel, [k for k in keys if k in text]) for rel, text in texts.items()]
+		hits = sorted(((rel, ks) for rel, ks in hits if ks), key=lambda h: (-len(h[1]), len(texts[h[0]]), h[0]))[:SUGGEST_MAX]
+		if hits:
+			out[tid] = [{"path": rel, "why": ks, "size": len(texts[rel])} for rel, ks in hits]
+	return out
+
+
 def graph(store) -> dict:
 	"""Who reads what, without inlining anything: every open ticket -> the docs context() would give it.
 	{tickets, docs, reads: [{ticket, doc, via, from}], links: [{from, to}], rules, budget, no_docs, broken, hubs, orphans}.
@@ -785,7 +830,8 @@ def graph(store) -> dict:
 	  board-wide docs (or nothing, or only broken refs) means an agent gets no task-specific context.
 	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big. An image (IMAGE_EXT) is not
 	  broken: it is a doc node with `image: true` and its size, sent to agents as a path.
-	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design)."""
+	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design).
+	- `suggest` = {ticket: [{path, why, size}]} for `no_docs` tickets: docs that name what the ticket touches (suggest())."""
 	base, cache, finfo = root(store), {}, {}
 	rank = {"board": 0, "tag": 1, "profile": 2, "component": 3, "ticket": 4, "file": 5}
 	arch = components(store)  # a ticket's component notes are part of its context() (from the Map), so they are reads too
@@ -870,8 +916,9 @@ def graph(store) -> dict:
 	good = {r["ticket"] for r in reads if r["via"] != "board" and "error" not in docs[r["doc"]]}
 	broken = [{"path": r, "error": d["error"], "via": d["kind"], "tickets": sorted(readers[r])} for r, d in docs.items() if d.get("error")]
 	hubs = sorted((d for d in docs.values() if d["kind"] != "board" and d["readers"] >= 2), key=lambda d: (-d["readers"], d["path"]))[:HUBS]
+	budget = int(cfg.get("context_budget") or BUDGET)
+	no_docs = [t["id"] for t in tickets if t["id"] not in good]
 	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links, "rules": rules,
-	        "budget": int(cfg.get("context_budget") or BUDGET),
-	        "no_docs": [t["id"] for t in tickets if t["id"] not in good], "broken": broken,
+	        "budget": budget, "no_docs": no_docs, "broken": broken, "suggest": suggest(store, no_docs, opn, rules, budget),
 	        "hubs": [{"path": d["path"], "readers": d["readers"]} for d in hubs],
 	        "orphans": sorted(r for r, d in docs.items() if d.get("linked_only"))}
