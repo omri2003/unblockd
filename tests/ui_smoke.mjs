@@ -36,7 +36,7 @@ try {
 	}
 	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also here" row; a small budget makes big.md "too big"
 		const ep = join(root, 'example/tickets/unblockd.json'), ec = JSON.parse(await readFile(ep, 'utf8'));
-		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png'] } }, null, 2));
+		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png', 'AGENT_POLICY.md'], idle: ['docs/sec.md'] } }, null, 2));
 		await writeFile(join(root, 'example/docs/big.md'), '# Big' + 'x'.repeat(3000));
 		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
 		await writeFile(join(root, 'example/docs/pick.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])); // an image: a path, never "broken"
@@ -229,7 +229,13 @@ try {
 		await noOverflow('docs');
 		{ // Docs view bands: one band per rule, the doc a second tag sends is an "also here" row, a ticket shows its tags and what its agent gets
 			await visible('#dD .dband[data-band="tag:api"]', 'tag band');
-			ok(await page.locator('#dD .dband[data-band="tag:sec"] .ghost').count() === 1, `[${tag}] docs: the sec band should list sec.md as "also here"`);
+			ok(await page.locator('#dD .dband[data-band="tag:sec"] .gchip').count() === 2, `[${tag}] docs: the sec band lists sec.md and AGENT_POLICY.md as "also sent" chips`);
+			ok((await page.locator('#dD .dband[data-band="tag:sec"] .gchip.red').innerText()).includes('this entry can go'), `[${tag}] docs: a board-wide doc listed again under a tag is marked as doing nothing`);
+			ok(await page.locator('#dD .dband[data-band="tag:idle"].shut').count() === 1, `[${tag}] docs: a tag no open ticket has starts collapsed`);
+			await page.click('[data-dshut="a:tag:idle"]');
+			await page.waitForFunction(() => !document.querySelector('#dD .dband[data-band="tag:idle"]').classList.contains('shut'));
+			await page.click('[data-dshut="a:tag:idle"]');
+			await page.waitForFunction(() => document.querySelector('#dD .dband[data-band="tag:idle"]').classList.contains('shut'));
 			ok(await page.locator('[data-dsel="t:UI-2"] .dtg').count() === 2, `[${tag}] docs: UI-2 should show its two tags`);
 			{ const tb = page.locator('[data-dsel="t:UI-2"] .tag.warn', { hasText: 'too big' }); ok(await tb.innerText() === '1 too big' && (await tb.getAttribute('title')).includes('docs/big.md'), `[${tag}] docs: UI-2's row says 1 too big and names docs/big.md`); }
 			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
