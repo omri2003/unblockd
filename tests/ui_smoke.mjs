@@ -274,6 +274,20 @@ try {
 				await page.click('#toasts button:has-text("Undo")');
 				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return c.includes('big.md') && !document.querySelector('#dT .dsc'); }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not take the sections back`)); await page.waitForSelector('#toasts :text("docs restored")'); // Undo's reload is done
 			}
+			ok((await page.locator('#dT .dsec.miss summary.strip').first().innerText()).includes("Didn't fit"), `[${tag}] docs: a doc that did not fit gets the strip with Pick sections (UI-72)`);
+			{ // UI-72: a doc with no headings that did not fit says what to do instead; a big doc sent in full gets a quiet Sections button
+				await writeFile(join(root, 'example/docs/plain.txt'), 'plain notes with no headings '.repeat(100));
+				await writeFile(join(root, 'example/docs/mid.md'), ['# Mid', '## One', 'y'.repeat(400), '## Two', 'z'.repeat(400)].join(String.fromCharCode(10)));
+				const nid = JSON.parse(cli('create', '--prefix', 'DOC', '--title', 'sections trigger', '--json', JSON.stringify({ docs: ['docs/mid.md', 'docs/plain.txt'] })).toString()).id;
+				await page.click('[data-drefresh]'); await page.waitForSelector(`[data-dsel="t:${nid}"]`); await page.click(`[data-dsel="t:${nid}"]`);
+				await page.waitForSelector('#dT .dctx .dstrip');
+				ok((await page.locator('#dT .dstrip').innerText()).includes('no headings to pick from'), `[${tag}] docs: a doc with no headings that did not fit says so`);
+				ok((await page.locator('#dT .dsb').count()) === 1 && !(await page.locator('#dT .dsec').count()), `[${tag}] docs: one quiet Sections button (mid.md), its fold closed`);
+				await page.click('#dT .dsb'); await page.waitForSelector('#dT .dsec .dsr');
+				ok((await page.locator('#dT .dsb').getAttribute('aria-expanded')) === 'true' && (await page.locator('#dT .dsec .dsr').count()) === 3, `[${tag}] docs: the Sections button opens mid.md's tree`);
+				await page.click(`[data-dsel="t:${nid}"]`); cli('delete', nid); await page.click('[data-drefresh]'); await page.waitForFunction((id) => !document.querySelector(`[data-dsel="t:${id}"]`), nid);
+				await page.click('[data-dsel="t:UI-2"]'); await page.waitForSelector('#dT .dctx .dcard');
+			}
 			await noOverflow('docs with a preview');
 			await page.keyboard.press('Escape');
 			await page.waitForFunction(() => !document.querySelector('#dT .dctx'));

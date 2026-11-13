@@ -298,6 +298,23 @@ class KnowledgeTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "path#heading"):
 			kn.read_doc(self.s, "docs/BIG.md")
 
+	def test_the_preview_outlines_big_sent_docs_only(self):
+		"""UI-72: the Docs view's preview gets the outline of a doc sent in full that takes over a third of the budget; the agent's context
+		does not (it has the text), and small docs or docs without headings get none."""
+		(self.repo / "docs" / "BIGOK.md").write_text("# Big\n## One\n" + "x" * 400 + "\n## Two\ny\n", encoding="utf-8", newline="\n")
+		(self.repo / "docs" / "PLAIN.md").write_text("no headings " * 40, encoding="utf-8")
+		self.s.create({"title": "t", "docs": ["docs/BIGOK.md", "docs/PLAIN.md"]}, tid="CMB-2")
+		self.s.config["context_budget"] = 1200
+		ctx = kn.context(self.s, "CMB-2")
+		by = {d["path"]: d for d in ctx["docs"]}
+		self.assertEqual(by["docs/BIGOK.md"]["sent"], "full")
+		self.assertNotIn("outline", by["docs/BIGOK.md"])  # the agent has the text
+		by = {d["path"]: d for d in kn.preview_outlines(self.s, ctx)["docs"]}
+		self.assertEqual(by["docs/BIGOK.md"]["outline"], ["# Big", "## One", "## Two"])
+		self.assertEqual(len(by["docs/BIGOK.md"]["outline_chars"]), 3)
+		self.assertNotIn("outline", by["docs/PLAIN.md"])  # no headings
+		self.assertNotIn("outline", by["AGENTS.md"])  # small: under a third of the budget
+
 	def test_a_doc_that_does_not_fit_sends_its_outline(self):
 		"""AI-14: a doc cut by the budget comes with its headings, so the agent can read the part it needs, not only a path."""
 		(self.repo / "docs" / "LONG.md").write_text("# Long\n## Part one\n" + "x" * 3000 + "\n## Part two\ny\n", encoding="utf-8", newline="\n")
