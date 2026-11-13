@@ -1267,11 +1267,16 @@ const DGS=[['rev','●','Ready for review'],['stk','⚠','Stuck'],['fin','✓','
 const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
 const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
 function digestGroups(){
-  const last=new Map();
-  for(const e of DG.ev) if(BY.has(e.ticket)&&['complete','done','claim','expired','release','created'].includes(e.event)) last.set(e.ticket,e); // oldest first: the latest wins
+  const last=new Map(), made=new Map(); // made: the ticket's created event in this window, the fallback row when its latest event no longer fits
+  for(const e of DG.ev) if(BY.has(e.ticket)&&['complete','done','claim','expired','release','question','created'].includes(e.event)) {last.set(e.ticket,e); if(e.event==='created') made.set(e.ticket,e);} // oldest first: the latest wins; question ends a claim too
   const rows={rev:[],stk:[],fin:[],sta:[],new:[]};
   for(const e of last.values()){
-    const t=BY.get(e.ticket), k=e.event==='created'?'new':e.event==='claim'?'sta':['expired','release'].includes(e.event)?'stk':t.status==='review'?'rev':'fin'; // a complete still in review waits on a human
+    const t=BY.get(e.ticket), ev=e.event;
+    // The latest event picks the section, but only while the ticket's status still says so (UI-68): a claim that ended by an ask or a hand
+    // move logs nothing here, so it is not In progress any more; a complete moved back out of done / review is not Finished.
+    const k=ev==='created'?'new':ev==='claim'?(t.status==='doing'?'sta':''):['expired','release'].includes(ev)?(t.status==='done'?'':'stk')
+      :ev==='question'?'':t.status==='review'?'rev':t.status==='done'?'fin':''; // a question waits in Needs you, not here
+    if(!k){ if(made.has(e.ticket)) rows.new.push({e:made.get(e.ticket),t,who:made.get(e.ticket).agent||'',out:'',full:''}); continue; } // created while you were away: still New
     const who=e.agent||'', out=k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
       :k==='new'?'':k==='sta'?(t.claim?.note?`“${dgFirst(t.claim.note)}”`:''):e.note?dgFirst(e.note):e.event==='done'?'Moved to Done by hand':'';
     rows[k].push({e,t,who,out,full:(e.note||'').trim()});
