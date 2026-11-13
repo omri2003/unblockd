@@ -20,6 +20,8 @@ from .store import TicketError, _overlap
 
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".csv", ".py", ".gd",
             ".js", ".ts", ".html", ".css", ".sh", ".ps1", ".xml", ".tscn", ".tres", ".gdshader", ""}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}  # sent as a path (agents open them with their own tools), never inlined
+IMAGE = "image"  # expand()'s marker for an image entry: not an error, not text
 MAX_FILE = 300_000      # bytes: bigger files are listed, never inlined or uploaded
 MAX_FOLDER = 40         # files taken from one folder/glob entry
 BUDGET = 60_000         # characters inlined per context bundle; the rest is listed for read_doc
@@ -96,6 +98,8 @@ def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
 	if not p.exists():
 		return [(entry, None, "missing")]
 	if not _is_text(p):
+		if p.suffix.lower() in IMAGE_EXT and p.is_file():
+			return [(p.relative_to(base).as_posix(), p, IMAGE)]
 		return [(entry, None, "not a text file")]
 	return [(p.relative_to(base).as_posix(), p, None)]
 
@@ -269,7 +273,9 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 				continue
 			seen.add(rel)
 			item, text = {"path": rel, "source": src, "trust": "untrusted" if src == "ticket" or src.startswith("component:") else "trusted"}, None
-			if err:
+			if err == IMAGE:
+				item.update(image=True, chars=p.stat().st_size)
+			elif err:
 				item["error"] = err
 			else:
 				size = p.stat().st_size
@@ -300,7 +306,8 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 	if inline:  # why a doc came without its text: the Docs view's "what an agent gets" reads this
 		for d, text in zip(docs, texts):
 			n = len(text) if text is not None else d.get("chars")
-			d["sent"] = "full" if "content" in d else "too_big" if n is not None and n > budget else "error" if "error" in d else "budget"
+			d["sent"] = ("full" if "content" in d else IMAGE if d.get("image") else "too_big" if n is not None and n > budget
+			             else "error" if "error" in d else "budget")
 	up = []
 	for b in t.get("blocked_by", []):  # what the tickets this one waited on produced (complete()'s result)
 		try:
@@ -767,7 +774,7 @@ HUBS = 5  # how many hub docs graph() lists
 def graph(store) -> dict:
 	"""Who reads what, without inlining anything: every open ticket -> the docs context() would give it.
 	{tickets, docs, reads: [{ticket, doc, via, from}], links: [{from, to}], rules, budget, no_docs, broken, hubs, orphans}.
-	- `via` = board | tag | profile | ticket | file (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag);
+	- `via` = board | tag | profile | component | ticket | file (component = a note from the Map, `from` = its key) (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag);
 	  `from` = which tag or profile (null for the others).
 	- `rules` = [{via: board|tag|profile, from, docs, tickets}]: each rule in unblockd.json that sends docs, everything it sends (expanded,
 	  the protocol last on the board rule) and the open tickets it reaches. `budget` = the board's context_budget.
@@ -776,10 +783,13 @@ def graph(store) -> dict:
 	- `links` = doc -> doc, one hop from the docs tickets read (links_of(): only targets that exist, as text).
 	- `no_docs` = open tickets with no readable doc from their profile, themselves or attachments: only
 	  board-wide docs (or nothing, or only broken refs) means an agent gets no task-specific context.
-	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big.
+	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big. An image (IMAGE_EXT) is not
+	  broken: it is a doc node with `image: true` and its size, sent to agents as a path.
 	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design)."""
 	base, cache, finfo = root(store), {}, {}
-	rank = {"board": 0, "tag": 1, "profile": 2, "ticket": 3, "file": 4}
+	rank = {"board": 0, "tag": 1, "profile": 2, "component": 3, "ticket": 4, "file": 5}
+	arch = components(store)  # a ticket's component notes are part of its context() (from the Map), so they are reads too
+	by_key = {c["key"]: c["path"] for c in arch["components"]}
 	tickets, docs, reads, links, readers = [], {}, [], [], {}
 
 	def info(rel, p):  # size + outgoing links, once per file
@@ -793,7 +803,9 @@ def graph(store) -> dict:
 		d = docs.setdefault(rel, {"path": rel, "kind": via})
 		if rank[via] < rank[d["kind"]]:
 			d["kind"] = via
-		if err:
+		if err == IMAGE:
+			d.update(image=True, size=p.stat().st_size)
+		elif err:
 			d["error"] = err
 		elif p is not None:
 			d["size"], lk = info(rel, p)
@@ -816,7 +828,7 @@ def graph(store) -> dict:
 		if t["status"] == "done":
 			continue
 		tickets.append({k: t.get(k) for k in ("id", "title", "pillar", "agent", "priority")} | {"status": t["effective_status"]})
-		for entry, src in sources(store, t):
+		for entry, src in sources(store, t, [(by_key[k], k) for k in ticket_components(t, arch)]):
 			kind, _, frm = src.partition(":")
 			for rel, p, err in exp(entry):
 				add(t, rel, p, err, kind.replace("agent", "profile"), frm or None)
@@ -846,7 +858,7 @@ def graph(store) -> dict:
 	for rel in list(docs):
 		d = docs[rel]
 		d["readers"] = len(readers[rel])
-		if "error" in d or d.get("builtin"):
+		if "error" in d or d.get("builtin") or d.get("image"):
 			continue
 		for to in finfo[rel][1] or []:
 			if to not in docs:
