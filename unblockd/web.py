@@ -69,6 +69,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from . import boards as bd
 from . import chat
+from . import branches
 from . import github
 from . import knowledge as kn
 from . import notify
@@ -255,6 +256,9 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and rest == ["meta"]:
 				return self._send(200, {"statuses": st.STATUSES, "priorities": st.PRIORITIES, "fields": list(st.FIELDS),
 				                        "config": store.config, "board": board or next(iter(BOARDS.all()))})
+			if method == "GET" and rest == ["git"]:  # how the board's checkout compares with origin (branches.py); {} fields when git evidence is off
+				d = branches.load(store.rt)
+				return self._send(200, {k: d.get(k) for k in ("source", "remote", "base", "checkout", "error", "since")})
 			if method == "GET" and rest == ["next"]:
 				return self._send(200, store.next_ready(owner=q.get("owner"), pillar=q.get("pillar"), agent=q.get("agent"),
 				                                        tag=q.get("tag"), limit=_num(q, "limit", 5)))
@@ -378,6 +382,8 @@ def main():
 		print("notifications: webhook on", flush=True)
 	if github.start(BOARDS):
 		print("github: syncing PRs of tickets in review", flush=True)
+	if branches.start(BOARDS):
+		print("branches: reading unmerged branches from git (UNBLOCKD_GIT=0 turns it off)", flush=True)
 	ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 

@@ -1,5 +1,7 @@
 # Pinned to Debian release + Python minor (a floating tag changes under you); pin a @sha256 digest for fully reproducible builds.
 FROM python:3.12-slim-bookworm
+# git: branch evidence (unblockd/branches.py) reads the projects' branches; without it that feature is off, nothing else changes.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
