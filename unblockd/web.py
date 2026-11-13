@@ -33,7 +33,7 @@ POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
-GET    tickets/<id>/context              docs + attached files to read before working it (?content=0: each doc's `sent` without its text)
+GET    tickets/<id>/context              docs + attached files to read before working it (?content=0: each doc's `sent` without its text; ?budget=N: a trial budget in characters, read-only)
 GET    knowledge                         who reads what: tickets, docs, ticket->doc (with the tag / profile it came from) and doc->doc edges, the rules that send docs, plus no_docs / broken / hubs / orphans
 GET    files                             project file paths (no .git / node_modules / tickets/, capped at 3000): what the form suggests for docs and touches
 GET    tools                             worker tool sets: {all, default, base, profiles: [{name, tools, tools_off, effective}]}
@@ -73,6 +73,8 @@ from . import github
 from . import knowledge as kn
 from . import notify
 from . import store as st
+
+TRY_MIN, TRY_MAX = 1_000, 4_000_000  # GET tickets/<id>/context?budget=: the what-if range, in characters
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 BOARDS = bd.from_env()
@@ -285,7 +287,10 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":
-				c = kn.context(store, rest[1], inline=q.get("inline") != "0")
+				bq = q.get("budget")  # a trial budget (characters) for the Docs view's what-if: read-only, nothing is saved
+				if bq is not None and (not bq.isdigit() or not TRY_MIN <= int(bq) <= TRY_MAX):
+					raise st.TicketError(f"budget must be a whole number of characters from {TRY_MIN} to {TRY_MAX} (a trial: nothing is saved)")
+				c = kn.context(store, rest[1], budget=int(bq) if bq else None, inline=q.get("inline") != "0")
 				if q.get("content") == "0":  # what would be sent, without the text (the Docs view's preview)
 					for d in c["docs"]:
 						d.pop("content", None)

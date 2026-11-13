@@ -242,6 +242,11 @@ try {
 			await page.waitForSelector('#dT .dctx h3');
 			const ctx = await page.locator('#dT .dctx').innerText();
 			ok(ctx.includes('What an agent gets for UI-2') && ctx.includes('path only: too big') && ctx.includes('sent in full'), `[${tag}] docs: UI-2's preview should say what is sent and what is not: ${ctx.slice(0, 200)}`);
+			// what-if: a trial budget, run by the server's own budget pass; nothing is saved
+			await page.locator('#dT .dtry [data-dtry]').last().click();
+			await page.waitForFunction(() => (document.querySelector('#dT .dtres')?.textContent || '').includes('docs sent'));
+			ok((await page.locator('#dT .dtry').innerText()).includes('would be sent in full'), `[${tag}] docs: the all-fit budget sends big.md in full`);
+			await noOverflow('docs what-if');
 			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
 			await noOverflow('docs with a preview');
 			await page.keyboard.press('Escape');

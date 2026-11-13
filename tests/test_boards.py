@@ -378,6 +378,14 @@ class ApiTest(unittest.TestCase):
 		self.assertIn("window 0.2", ctx["docs"][0]["content"])
 		lean = self.call("GET", "/api/b/a/tickets/CMB-1/context?content=0")[1]  # the Docs view's preview: what is sent, without the text
 		self.assertEqual((lean["docs"][0]["sent"], "content" in lean["docs"][0]), ("full", False))
+		self.call("POST", "/api/b/a/tickets/CMB-1/files", {"name": "big.md", "content": "y" * 3000})  # the what-if: a trial budget, nothing saved
+		sent = lambda b: {d["file"]: d["sent"] for d in self.call("GET", f"/api/b/a/tickets/CMB-1/context?content=0&budget={b}")[1]["docs"] if "file" in d}
+		self.assertEqual(sent(1000)["big.md"], "too_big")
+		self.assertEqual(sent(5000)["big.md"], "full")
+		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/context?content=0")[1]["inlined_chars"], 3010)  # the board's own budget again
+		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/context?budget=12")[0], 400)
+		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/context?budget=lots")[0], 400)
+		self.call("DELETE", "/api/b/a/tickets/CMB-1/files/big.md")
 		self.assertIn("rules", self.call("GET", "/api/b/a/knowledge")[1])
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=tickets/unblockd.json")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=../b/tickets/unblockd.json")[0], 400)
