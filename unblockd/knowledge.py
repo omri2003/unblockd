@@ -120,6 +120,27 @@ def outline_chars(text: str) -> list[int]:
 	return [sum(map(len, lines[i:next((j for j, l2, _ in hs if j > i and l2 <= lv), len(lines))])) for i, lv, _ in hs][:OUTLINE_MAX]
 
 
+BIG_SHARE = 3  # a doc sent in full is "big" when it takes more than 1/BIG_SHARE of the budget: the Docs view offers to trim it (UI-72)
+
+
+def preview_outlines(store, ctx: dict) -> dict:
+	"""For the Docs view's preview (REST context?content=0) only: a doc SENT in full that takes over a third of the budget gets its
+	`outline` + `outline_chars`, so the page can offer to send only some of its sections. Agents never get these on a sent doc
+	(they have its text). Section entries, attachments and docs without headings are left alone."""
+	budget = int(store.config.get("context_budget") or BUDGET)
+	base = root(store)
+	for d in ctx["docs"]:
+		if d.get("sent") != "full" or "#" in d["path"] or "file" in d or "outline" in d or (d.get("chars") or 0) * BIG_SHARE <= budget:
+			continue
+		try:
+			text = _decode(_inside(base, d["path"]))[0]
+		except (TicketError, OSError):
+			continue
+		if (o := outline(text)):
+			d["outline"], d["outline_chars"] = o, outline_chars(text)
+	return ctx
+
+
 def _span(text: str, anchor: str, path: str = "") -> tuple[int, int, list[str]]:
 	"""(first line, end line, outline) of the section under `anchor`; see section()."""
 	hs, want = _headings(text), _slug(anchor)
