@@ -59,7 +59,7 @@ Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map 
 - **Settings are per browser.** Keys `theme`, `density`, `digest` in `store`, set through `setPref`. A tiny inline script in `<head>` applies theme and density before first paint.
 - **Poll every 4 s.** `load()` sends the last `ETag`. The UI re-renders only when the tickets JSON text changes. So the JSON must stay stable while nothing happens. Store timestamps, never "x seconds ago". Ages are filled in the browser by `tickAges`.
 - **Menus.** Every popover `<details>` goes in `MENUS`, and nowhere else. `MENUS` and `closeMenus` give you outside-click, Esc, and render deferral while a menu is open.
-- **Shared helpers.** Use `jf` (every fetch), `chips`/`chipsHtml` (every segmented control), `store`, `pickOf`, `hm`/`ago`, `toast`. Do not write a second one.
+- **Shared helpers.** Use `jf` (every fetch), `chips`/`chipsHtml` (every segmented control), `store`, `pickOf`, `hm`/`ago`, `toast`, `ldHtml` (every loading state; the top bar comes free with any fetch you start from a click). Do not write a second one.
 - **Segmented controls.** `slidePill` is the one indicator. A new pressed colour sets `--ind`, not `background`. Keep exactly one button pressed.
 - **Motion.** At most 200 ms, card slides at most 280 ms, ease-out, only where it explains a change. Off under `prefers-reduced-motion: reduce`: CSS in the one `@media` block at the end of `<style>`, JS checks `reduce.matches`. JS motion is Web Animations (`el.animate`).
 - **Init order.** Anything `chips()` or `slidePill` reaches runs during init. Every `const` they read must be declared above the first call (`reduce` once broke this).
@@ -138,7 +138,7 @@ Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map 
 ### 5.6 Copy
 - Plain words. Say what happens next ("Release it so someone can pick it up").
 - Do not show derived field names like `effective_status` in the UI.
-- Every empty, loading and error state gets a sentence and a next step.
+- Every empty, loading and error state gets a sentence and a next step. Never show an empty state before the first answer arrived: until then it is `ldHtml(...)` (AGENTS.md "Loading").
 
 ### 5.7 Front doors
 - A UI change that needs a new Store operation also needs the REST route AND a `Remote` method, or remote workers lose it. Add the MCP tool and CLI command when agents need it. [AGENTS: "Remote CLI"]
@@ -159,7 +159,7 @@ Mark a check "n/a" when the change cannot touch it.
 7. It looks right in light, dark and System, comfortable and compact?
 8. No horizontal overflow at 390px (`scrollWidth === 390`) on each view it touches?
 9. Copy is plain, says what happens next, shows no internal field names?
-10. Empty, loading and error states each have a sentence and a next step?
+10. Empty, loading and error states each have a sentence and a next step, and nothing says "empty" before its data arrived (`ldHtml`)?
 11. New chrome is hidden or reduced at 600px and below, and `body[data-tab]` still works?
 
 **Accessibility**

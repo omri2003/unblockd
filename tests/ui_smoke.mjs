@@ -1076,6 +1076,49 @@ try {
 		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
 		await ctx.close();
 	}
+	// 7b. loading states: slow /tickets and /api/needs (held until released) show skeleton bars, never "No tickets yet" or "Nothing needs you";
+	// a slow write you started shows the top bar; a failed /api/needs says so
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		const tag = `loading/${w}px`, ctx = await browser.newContext({ viewport: { width: w, height: h } }), page = await ctx.newPage(); page.setDefaultTimeout(5000); lastPage = page;
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && !/status of 500/.test(m.text()) && errs.push(m.text()));
+		const ok = (c, msg) => { if (!c) throw new Error(`[${tag}] ${msg}` + (errs.length ? '\n  browser errors:\n  ' + errs.join('\n  ') : '')); };
+		const hold = () => { let go; const p = new Promise((r) => { go = r; }); return { p, go }; };
+		const tk = hold(), nd = hold();
+		await page.route(/\/api\/tickets$/, async (r) => { await tk.p; await r.continue(); });
+		await page.route(/\/api\/needs$/, async (r) => { await nd.p; await r.continue(); });
+		await page.goto(base);
+		await page.waitForSelector('#board .bload .ld');
+		ok(!/No tickets yet/.test(await page.innerText('#board')), 'the board says loading, not "No tickets yet", before the first answer');
+		const sw = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], `loading board: overflow ${sw}`);
+		tk.go(); await page.waitForSelector('#board .card', { state: 'attached' });
+		await page.keyboard.press('i'); await page.waitForSelector('#npList .ld');
+		ok(await page.locator('#npEmpty').isHidden(), 'Needs you says it is checking, not "Nothing needs you", before /api/needs answers');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/loading-needs-${w}.png` });
+		nd.go(); await page.waitForFunction(() => !document.querySelector('#npList .ld'));
+		ok(await page.locator('#npList .nr').count() > 0 || await page.locator('#npEmpty').isVisible(), 'after the answer: rows or the empty sentence');
+		await page.keyboard.press('Escape');
+		if (w === 1400) { // a slow write you started: the top bar, then gone; polls never show it
+			ok(await page.locator('#topbar').isHidden(), 'no top bar while idle');
+			const slow = hold();
+			await page.route(/\/api\/tickets\/[^/]+$/, async (r) => { if (r.request().method() === 'PATCH') await slow.p; await r.continue(); });
+			const id = await page.getAttribute('#board [data-col="todo"] .card', 'data-open');
+			await page.evaluate(() => { const d = document.querySelector('#board [data-col="todo"] .cw details.mv'); d.open = true; });
+			await page.click(`.cw:has([data-open="${id}"]) [data-moveto="doing"]`, { force: true });
+			await page.waitForSelector('#topbar:not([hidden])');
+			slow.go(); await page.waitForSelector('#topbar', { state: 'hidden' });
+			await page.unroute(/\/api\/tickets\/[^/]+$/);
+			await page.evaluate((i) => fetch(`/api/tickets/${i}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }), id);
+			// a failed /api/needs: the panel says so instead of loading forever
+			await page.unroute(/\/api\/needs$/); await ctx.route(/\/api\/needs$/, (r) => r.fulfill({ status: 500, body: '{"error":"x"}' })); // on the context: the new page gets it too
+			const fresh = await ctx.newPage(); lastPage = fresh; fresh.on('pageerror', (e) => errs.push(e.message));
+			await fresh.goto(base); await fresh.waitForSelector('#board .card', { state: 'attached' });
+			await fresh.keyboard.press('i'); await fresh.waitForSelector('#npList .msg.err');
+			ok(/tries again every 15 seconds/.test(await fresh.innerText('#npList')), 'a failed check says so and that it retries');
+			await fresh.close(); lastPage = page;
+		}
+		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
+		await ctx.close();
+	}
 	// 8. branch evidence (branches.py writes tickets/.unblockd/branches.json; written by hand here): a todo ticket with a pushed branch
 	// reads as In progress with the branch line, the drawer lists the branch and its ticket edit, the checkout notice says it is behind,
 	// Move to > To do dismisses the branch, Dismiss hides the notice
