@@ -78,6 +78,7 @@ LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is l
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
+BRANCH_DAYS = 14  # a linked branch with no commit for this long is still listed, but no longer reads as work in progress
 
 # Per-process caches, keyed by folder / file path, so every Store on the same folder (the web server builds one per request)
 # shares them. Files stay the only truth: every read re-stats the folder and re-parses only files whose (inode, mtime, size)
@@ -454,7 +455,8 @@ class Store:
 		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket file, the claims, an attachment, the config or the date changed."""
 		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
 		raw = self._scan()
-		sig = (tuple((k, v[0]) for k, v in raw.items()), _stamp(self.rt / "claims.json"), self._files_sig(), date.today(), self._cfg_sig)
+		sig = (tuple((k, v[0]) for k, v in raw.items()), _stamp(self.rt / "claims.json"), self._files_sig(), date.today(), self._cfg_sig,
+		       _stamp(self.rt / "branches.json"), _stamp(self.rt / "branches_ignored.json"))
 		hit = _DEC.get(self._key)
 		if hit and hit[0] == sig:
 			return hit[1]
@@ -690,6 +692,7 @@ class Store:
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
 		live = self._live_claims()
+		links = self._branch_links()
 		fd = self.dir / "files"
 		attached = {d.name: sorted(f.name for f in d.iterdir() if f.is_file()) for d in fd.iterdir() if d.is_dir()} if fd.is_dir() else {}
 		by_id = {t["id"]: t for t in tickets}
@@ -740,6 +743,9 @@ class Store:
 		for t in tickets:
 			open_b = [b for b in t.get("blocked_by", []) if b in by_id and by_id[b].get("status") != "done"]
 			eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on") or t.get("proposed_by")) else t.get("status")
+			br = links.get(t["id"], []) if t.get("status") != "done" else []
+			if eff == "todo" and any(b["active"] for b in br):
+				eff = "doing"  # work on an unmerged branch nobody claimed here (another clone, a cloud session): derived, never written
 			n = unblocks(t["id"])
 			stale = None
 			if t.get("status") == "doing":
@@ -755,9 +761,47 @@ class Store:
 			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
-			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []),
+			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []), "branches": br,
 			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None})
 		return out
+
+	def _branch_links(self) -> dict[str, list[dict]]:
+		"""{ticket id: [branch]} from branches.json (written by the web server's branches thread; absent = no git evidence).
+		active = linked by the branch's name or a ticket file it edits (a commit subject alone is a mention, not a claim on the work),
+		with a commit in the last BRANCH_DAYS days, and not dismissed by moving the ticket back to todo (branches_ignored.json)."""
+		try:
+			data = json.loads((self.rt / "branches.json").read_text(encoding="utf-8"))
+		except (OSError, ValueError):
+			return {}
+		try:
+			ign = json.loads((self.rt / "branches_ignored.json").read_text(encoding="utf-8"))
+		except (OSError, ValueError):
+			ign = {}
+		today, out = date.today(), {}
+		for b in data.get("branches") or []:
+			try:
+				age = (today - date.fromisoformat(str(b.get("at"))[:10])).days
+			except ValueError:
+				continue
+			for tid, via in (b.get("tickets") or {}).items():
+				e = {"name": b.get("name"), "sha": b.get("sha"), "at": b.get("at"), "author": b.get("author") or "", "commits": b.get("commits"), "via": via,
+				     "active": bool({"name", "file"} & set(via)) and age <= BRANCH_DAYS and b.get("sha") not in ign.get(tid, [])}
+				if tid in (b.get("edits") or {}):
+					e["edit"] = b["edits"][tid]
+				out.setdefault(tid, []).append(e)
+		return out
+
+	def _ignore_branches(self, tid: str, shas: list[str]) -> None:
+		"""A human moved a ticket that only reads as doing because of a branch back to todo: that branch tip no longer counts
+		for it (a new commit on the branch counts again). Runtime state, like claims (caller holds the lock)."""
+		p = self.rt / "branches_ignored.json"
+		try:
+			ign = json.loads(p.read_text(encoding="utf-8"))
+		except (OSError, ValueError):
+			ign = {}
+		ign[tid] = sorted(set(ign.get(tid, [])) | set(shas))[-20:]
+		self._rt()
+		p.write_text(json.dumps(ign, indent=1), encoding="utf-8")
 
 	def route(self, t: dict) -> str | None:
 		"""The agent profile that should work this ticket, or None."""
@@ -1115,6 +1159,8 @@ class Store:
 				raise TicketError(f"{tid} is blocked by {', '.join(open_b)} (still open): finish or unlink it first")
 		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
 			self._drop_claim(tid, f"status set to {clean['status']}")
+		if clean.get("status") == "todo" and (act := [b["sha"] for b in self._board().get(tid, {}).get("branches", []) if b["active"]]):
+			self._ignore_branches(tid, act)  # "it isn't being worked on": the branch that made it read as doing stops counting
 		was = t.get("status")
 		if "waiting_on" in clean:  # by hand: age starts now, no asked_by (only ask() names an agent); cleared with the question
 			if not clean["waiting_on"]:
@@ -1227,7 +1273,7 @@ class Store:
 	# inside it), so heartbeats never show up as changes in the project repo.
 	def _rt(self) -> Path:
 		d = self.rt
-		if not d.is_dir():
+		if not (d / ".gitignore").is_file():  # also when something else made the folder first: it holds a git mirror too, which must never show in git status
 			d.mkdir(parents=True, exist_ok=True)  # parallel first calls race here
 			(d / ".gitignore").write_text("*\n", encoding="utf-8")
 		return d
@@ -1353,9 +1399,16 @@ class Store:
 					self._log("dropped", tid, c["agent"], why)
 			self._locked(drop)
 
-	def _claimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None) -> bool:
+	@staticmethod
+	def _on_branch(t: dict) -> list[dict]:
+		"""The active branches that make a todo ticket read as doing (none when it is doing for another reason)."""
+		return [b for b in t.get("branches", []) if b["active"]] if t.get("status") == "todo" and t["effective_status"] == "doing" else []
+
+	def _claimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None, explicit: bool = False) -> bool:
+		"""explicit = claimed by id: a ticket that reads as doing only because of a branch may be taken that way (to continue
+		that branch's work); claim_next never hands it out, so two clones don't do the same work."""
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
-		if t["effective_status"] != "todo" or t.get("owner") in humans or t["id"] in live or self._lacks(t, profile):
+		if (t["effective_status"] != "todo" and not (explicit and self._on_branch(t))) or t.get("owner") in humans or t["id"] in live or self._lacks(t, profile):
 			return False
 		mine = t.get("touches", [])
 		if mine:
@@ -1380,6 +1433,8 @@ class Store:
 			return f"it's waiting on a human's answer ({t['waiting_on'][:80]})"
 		if t["open_blockers"]:
 			return "it's blocked by " + ", ".join(b["id"] if isinstance(b, dict) else b for b in t["open_blockers"])
+		if (br := self._on_branch(t)):
+			return f"branch {br[0]['name']} already has work for it (last commit {br[0]['at']}): claim it by id to continue that branch"
 		if t["effective_status"] != "todo":
 			return f"it's {t['effective_status']}"
 		if t.get("owner") in humans:
@@ -1421,7 +1476,7 @@ class Store:
 				t = self.get(tid)
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
-				if not self._claimable(t, live, by_id, profile):
+				if not self._claimable(t, live, by_id, profile, explicit=True):
 					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile)}")
 				pick = t
 			else:
@@ -1449,10 +1504,12 @@ class Store:
 		t["notes"], left = self.lean_notes(t["notes"])
 		if left:
 			t["notes_omitted"] = f"{left} older notes not sent (none of them pinned): get_ticket shows every note"
+		warn = [f"branch {b['name']} already has {b['commits']} commit(s) for {got} (last {b['at']}{', by ' + b['author'] if b['author'] else ''}): "
+		        "fetch it and build on it instead of starting over, unless it is abandoned" for b in t.get("branches", []) if b["active"]]
+		if not principal and len(humans) > 1:
+			warn.append("no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it")
 		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
-		        "previous_attempts": self.attempts(got, 5),
-		        **({"warnings": ["no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it"]}
-		           if not principal and len(humans) > 1 else {})}
+		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None) -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
@@ -1470,9 +1527,9 @@ class Store:
 		for t in self.list():
 			if t["status"] == "done" or (profile and t["agent"] != profile):
 				continue
-			if t["status"] == "doing":
+			if t["effective_status"] == "doing":  # claimed, or work on an unmerged branch (Store._on_branch)
 				k = "in_flight"
-				if not t.get("claim"):
+				if not t.get("claim") and t["status"] == "doing":
 					orphaned.append(t["id"])  # doing with no live claim: moved by hand, or the claim was lost (claims.json is not in git)
 			elif t["status"] == "review":
 				k = "in_review"

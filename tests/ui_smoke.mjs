@@ -66,7 +66,7 @@ try {
 	}
 
 	// 3+4. every viewport x theme
-	browser = await chromium.launch();
+	browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}); // PW_CHANNEL=chrome: an installed Chrome instead of Playwright's own build
 	for (const [w, h] of [[1400, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
 		const tag = `${w}px/${theme}`;
 		const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
@@ -1073,6 +1073,63 @@ try {
 		ok(await note('web') === null && await note('photos') !== null, 'delete removes the note');
 		await noOver('after delete');
 		await page.evaluate(() => fetch('/api/b/zempty/tickets/T-1', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }));
+		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
+		await ctx.close();
+	}
+	// 8. branch evidence (branches.py writes tickets/.unblockd/branches.json; written by hand here): a todo ticket with a pushed branch
+	// reads as In progress with the branch line, the drawer lists the branch and its ticket edit, the checkout notice says it is behind,
+	// Move to > To do dismisses the branch, Dismiss hides the notice
+	await mkdir(join(root, 'zgit/tickets/.unblockd'), { recursive: true });
+	await writeFile(join(root, 'zgit/tickets/unblockd.json'), JSON.stringify({ id: 'zgit', title: 'Git board' }));
+	const cliG = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zgit/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
+	cliG('create', '--prefix', 'G', '--title', 'pushed from a cloud session'); cliG('create', '--prefix', 'G', '--title', 'nobody on it');
+	const brJ = join(root, 'zgit/tickets/.unblockd/branches.json'), now = new Date().toISOString().slice(0, 19) + '+00:00';
+	const long = 'feat/g-1-' + 'a-very-long-branch-name-that-must-wrap-'.repeat(2);
+	await writeFile(brJ, JSON.stringify({ source: 'origin', remote: 'https://example.com/o/r', base: 'main', error: null,
+		checkout: { branch: 'main', upstream: 'main', behind: 226, ahead: 1, missing: ['G-7', 'G-8', 'G-9', 'G-10'], missing_count: 267 },
+		branches: [{ name: long, sha: 'a'.repeat(40), at: now, author: 'Cloud Worker', commits: 3, tickets: { 'G-1': ['name', 'file'] }, edits: { 'G-1': { status: 'doing', notes: 2 } } },
+			{ name: 'refactor', sha: 'b'.repeat(40), at: now, author: 'Cloud Worker', commits: 1, tickets: { 'G-2': ['commit'] }, edits: {} }] }));
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		await rm(join(root, 'zgit/tickets/.unblockd/branches_ignored.json'), { force: true }); // the wide pass dismissed G-1's branch
+		const tag = `branches/${w}px`, ctx = await browser.newContext({ viewport: { width: w, height: h } }), page = await ctx.newPage(); page.setDefaultTimeout(5000); lastPage = page;
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+		const ok = (c, msg) => { if (!c) throw new Error(`[${tag}] ${msg}` + (errs.length ? '\n  browser errors:\n  ' + errs.join('\n  ') : '')); };
+		const noOver = async (what) => { const sw = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], `${what}: horizontal overflow ${sw[0]} > ${sw[1]}`); };
+		await page.goto(base + '?board=zgit'); await page.waitForSelector('#board .card[data-open="G-1"]', { state: 'attached' });
+		ok(await page.locator('#board [data-col="doing"] .card[data-open="G-1"] .liv.br').count() === 1, 'a todo ticket with a pushed branch is In progress, with the branch line');
+		ok(await page.locator('#board [data-col="todo"] .card[data-open="G-2"]').count() === 1 && await page.locator('.card[data-open="G-2"] .liv.br').count() === 0, 'a commit mention alone leaves it in To do');
+		await page.waitForSelector('#gitNote:not([hidden])');
+		const gn = await page.innerText('#gitNote');
+		ok(/226 commits behind origin/.test(gn) && /1 local commit not pushed/.test(gn) && /267 tickets on origin are missing here \(G-7, G-8, G-9…\)/.test(gn), `checkout notice: ${gn}`);
+		await noOver('board with the notice');
+		await page.evaluate(() => document.querySelector('#board .card[data-open="G-1"]').click()); await page.waitForSelector('#drawer .brl');
+		const dr = await page.innerText('#drawer .brl');
+		ok(dr.includes('3 commits') && dr.includes('Cloud Worker') && /In progress with 2 new notes/.test(dr) && /once the branch is merged/.test(dr), `drawer Branches: ${dr}`);
+		ok(/On branch feat\/g-1-/.test(await page.innerText('#drawer .srow')), 'drawer says why it shows as In progress');
+		await noOver('drawer with a long branch name');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/branches-${w}.png` });
+		await page.keyboard.press('Escape');
+		if (w === 1400) { // Move to > To do: the branch stops counting for it (a new commit would count again)
+			await page.click('.card[data-open="G-1"] ~ details.mv > summary', { force: true }).catch(() => page.evaluate(() => document.querySelector('.cw:has([data-open="G-1"]) details.mv').open = true));
+			await page.evaluate(() => document.querySelector('.cw:has([data-open="G-1"]) [data-moveto="todo"]').click());
+			await page.waitForSelector('#board [data-col="todo"] .card[data-open="G-1"]', { state: 'attached' });
+			ok(/no longer marks it in progress/.test(await page.innerText('#toasts')), 'the toast says what moving it back did');
+			ok(JSON.parse(await readFile(join(root, 'zgit/tickets/.unblockd/branches_ignored.json'), 'utf8'))['G-1'].length === 1, 'dismissed tip recorded as runtime state');
+			ok(JSON.parse(await readFile(join(root, 'zgit/tickets/G-1.json'), 'utf8')).status === 'todo', 'the ticket file still says todo');
+		}
+		await page.click('#gitNote [data-gitdismiss]'); ok(await page.locator('#gitNote').isHidden(), 'Dismiss hides the notice');
+		await Promise.all([page.waitForResponse((r) => /\/git$/.test(r.url())), page.reload()]);
+		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
+		ok(await page.locator('#gitNote').isHidden(), 'and it stays hidden until the numbers change');
+		if (w === 1400) { // origin exists but can't be read (a private repo, no token): the notice says so instead of showing nothing
+			const keep = await readFile(brJ, 'utf8');
+			await writeFile(brJ, JSON.stringify({ source: 'local', remote: 'https://example.com/o/private', base: 'main', checkout: null, branches: [],
+				error: "could not read origin, showing this checkout's branches only: git clone: Authentication failed" }));
+			await Promise.all([page.waitForResponse((r) => /\/git$/.test(r.url())), page.reload()]);
+			await page.waitForSelector('#gitNote:not([hidden])');
+			ok(/can't read https:\/\/example.com\/o\/private/.test(await page.innerText('#gitNote')) && /Authentication failed/.test(await page.innerText('#gitNote')), 'unreadable origin: the notice says why and what to set');
+			await writeFile(brJ, keep);
+		}
 		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
 		await ctx.close();
 	}

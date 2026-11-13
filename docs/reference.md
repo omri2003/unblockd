@@ -21,6 +21,8 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
 | `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
 | `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
+| `UNBLOCKD_GIT` | `0` turns branch evidence off (see Branch evidence). On by default when `git` is installed and the project is a git repository. |
+| `UNBLOCKD_GIT_TOKEN` | Optional token for a private https `origin` on any host. `GITHUB_TOKEN` is used too, but only when origin is on github.com. Sent only to that host, through git's environment (never on a command line). |
 | `GITHUB_TOKEN` (or `UNBLOCKD_GITHUB_TOKEN`), `UNBLOCKD_GITHUB_API` | Optional GitHub token: every 60 s the server reads the PRs in `result.refs` of tickets in `review` (see GitHub PR sync). Unset: off. API base defaults to `https://api.github.com`. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
 
@@ -33,6 +35,19 @@ ntfy: `UNBLOCKD_WEBHOOK=https://ntfy.sh/my-topic UNBLOCKD_WEBHOOK_FORMAT=text`. 
 ## GitHub PR sync
 
 With `GITHUB_TOKEN` set, a ticket in `review` whose `result.refs` has `https://github.com/<owner>/<repo>/pull/<n>` shows the PR's state and CI (`PR #12 · open · ✓3 ✗0 …1`, red when a check failed) in the Needs you review row and the drawer. A merged PR moves the ticket to done (merge = approval; note signed `github`). A PR closed without merging adds one note and the ticket stays in review. The token needs read access to the repo's pull requests, checks and statuses. State is cached in `tickets/.unblockd/prs.json`, not in the ticket.
+
+## Branch evidence: work that lives on branches
+
+The board shows the ticket files of the checkout it was started on. Work pushed from somewhere else (a cloud session, a container, a teammate's laptop) lives on a branch until it is merged and that checkout pulls, so it used to be invisible. Every 2 minutes the web server reads the branches of the project's `origin` and links them to tickets. Any git host works (GitHub, GitLab, Bitbucket, Gitea, a bare repo on a share): it is plain git, not a forge API.
+
+- **Where it reads**: a private bare mirror of `origin` in `tickets/.unblockd/git` (a blob-less partial clone: commits and trees, plus the few ticket files it reads). Your own repository is never written: no fetch into it, no new refs. No `origin`, or `origin` can't be read (offline, no credentials): it reads your checkout's own branches instead and the git endpoint says why.
+- **Linking**: a branch is linked to a ticket by its **name** (`wear-34`, `feat/WEAR-34-login`, `nut_85`), by a **commit subject** that names it, or by an **edit to the ticket's file** on the branch. Only branches not merged into origin's default branch count; a ticket that is done shows none.
+- **In progress**: a `todo` ticket with a linked branch (by name or file edit) that has a commit in the last 14 days reads as **In progress** (`effective_status` doing) and its card shows the branch instead of a claim. Nothing is written: the ticket file still says todo. A commit subject alone is a mention, listed in the drawer but not counted. `claim_next` skips such a ticket (someone is already on it elsewhere); `claim_ticket` by id takes it, with a warning to build on that branch.
+- **Not it after all**: move the card back to To do (Move to, drag, or `update status todo`). That branch tip stops counting for the ticket; a new commit on it counts again. Kept in `tickets/.unblockd/branches_ignored.json`.
+- **Ticket edits on a branch** (a note or a status a worker committed there) are reported in the drawer: "On that branch this ticket is In progress with 2 new notes. You see that here once the branch is merged and this checkout pulls."
+- **Behind origin**: when the checkout is behind origin (or has unpushed commits) the board shows a notice with the counts and how many tickets origin has that the checkout doesn't. Dismiss hides it until the numbers change. Pulling is yours to do: the server never changes your checkout.
+- **Private repos**: set `UNBLOCKD_GIT_TOKEN` for an https remote (a `GITHUB_TOKEN` that can read contents also works, for github.com only: it is never sent to another host). The notice says when origin can't be read; an ssh remote uses the keys of the user the server runs as. The Docker image ships `git`.
+- State: `tickets/.unblockd/branches.json` (REST `GET git` returns its summary: source, remote, base, checkout, error). Off: `UNBLOCKD_GIT=0`.
 
 ## Agent profiles: which agent works which ticket
 
