@@ -42,6 +42,9 @@ try {
 		await writeFile(join(root, 'example/docs/pick.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])); // an image: a path, never "broken"
 		const tp = join(root, 'example/tickets/UI-2.json');
 		await writeFile(tp, JSON.stringify({ ...JSON.parse(await readFile(tp, 'utf8')), tags: ['api', 'sec'] }, null, 2));
+		const dp = join(root, 'example/tickets/DOC-1.json'); // suggested docs: DOC-1 has no doc but touches scripts/release.sh (no component covers it), which a doc names
+		await writeFile(dp, JSON.stringify({ ...JSON.parse(await readFile(dp, 'utf8')), touches: ['scripts/release.sh'] }, null, 2));
+		await writeFile(join(root, 'example/docs/readme-style.md'), ['# README style', 'Run scripts/release.sh to cut a release.'].join(String.fromCharCode(10)));
 	}
 	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
 	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board', agent_tickets: 'propose', schema: { prefixes: { ZQ: 'questions', ZP: 'proposed work' }, required: ['done_when', 'priority'], tags: ['bug', 'chore'], body_template: '## Why\n' } }));
@@ -257,6 +260,18 @@ try {
 			await noOverflow('docs with a preview');
 			await page.keyboard.press('Escape');
 			await page.waitForFunction(() => !document.querySelector('#dT .dctx'));
+			// suggested docs: a doc names what DOC-1 touches; Add puts it on DOC-1, Undo takes it off
+			ok((await page.locator('#dProb').innerText()).includes('could get a doc'), `[${tag}] docs: the problem strip counts tickets that could get a doc`);
+			await page.click('[data-dsel="t:DOC-1"]');
+			await visible('#dT .dsug [data-path="docs/readme-style.md"]', 'suggested doc');
+			await page.click('#dT .dsug [data-path="docs/readme-style.md"]');
+			await visible('#toasts .toast:has-text("Added docs/readme-style.md")', 'added toast');
+			await page.waitForFunction(() => !document.querySelector('[data-dsel="t:DOC-1"] .tag.warn'));
+			ok(JSON.parse(cli('get', 'DOC-1')).docs.includes('docs/readme-style.md'), `[${tag}] docs: Add saved the doc on DOC-1`);
+			await page.click('#toasts .toast:has-text("Added") button');
+			await page.waitForFunction(() => document.querySelector('[data-dsel="t:DOC-1"] .tag.warn'));
+			ok(!JSON.parse(cli('get', 'DOC-1')).docs.includes('docs/readme-style.md'), `[${tag}] docs: Undo took it off`);
+			if (await page.locator('#dT .dctx').count()) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('#dT .dctx')); }
 			// a server started before this page (no `rules` / `budget` in /knowledge) says "restart it" instead of hanging on "Reading docs"
 			await page.route('**/knowledge', async (r) => { const res = await r.fetch(); const j = await res.json(); delete j.rules; delete j.budget; await r.fulfill({ response: res, json: j }); });
 			await page.click('[data-drefresh]');

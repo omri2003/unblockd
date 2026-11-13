@@ -551,6 +551,8 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dctx .v{color:var(--muted);font:.7rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth{font:.76rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth i{font-style:normal;color:var(--muted)}
 .dctx .z{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
 .dctx .s{font-size:.72rem} .dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar);font-weight:700} .dctx .s.wl{color:var(--muted)} .dctx .s.img{color:var(--slate)}
+.dsug{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)} .dsug h4{margin:0;font-size:.8rem}
+.dctx .dsug ol li{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px} .dsug .why{font-size:.74rem;color:var(--muted)} .dsug .btn{margin-left:auto} .tag.sug{color:var(--jade)}
 .dtry{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)} .dtry h4{margin:0;font-size:.8rem} .dtres{margin:0;font-size:.8rem} .dctx .dtlist{margin:0;padding-left:18px;font-size:.78rem;display:grid;gap:2px;list-style:disc} .dctx .dtlist li{display:list-item} .dtlist .s{font-size:.72rem}
 .dcb{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 0}
 .dempty{padding:18px 4px;color:var(--muted)}
@@ -1849,6 +1851,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
   if(g('[data-drefresh]')){loadDocs();return;}
+  if(b=g('[data-dadd]')){dAddDoc(b.dataset.dadd,b.dataset.path);return;}
   if(b=g('[data-dtry]')){const id=DV.sel&&DV.sel.slice(2),v=+b.dataset.dtry;if(id){DV.try[id]=v===DV.data.budget?0:v;if(DV.try[id])dLoadCtx(id,v);renderDocs();document.querySelector(`#dT [data-dtry="${v}"]`)?.focus();}return;}
   if(b=g('[data-dshut]')){dShut(b.dataset.dshut,!!b.dataset.didle);document.querySelector(`#dStage [data-dshut="${CSS.escape(b.dataset.dshut)}"]`)?.focus();return;}
   if(g('[data-dshutall]')){dShutAll();return;}
@@ -2399,7 +2402,8 @@ const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_do
   ['broken',['broken reference','broken references'],g=>g.broken,'bad','A docs entry that is missing, outside the project, not text, or too big.'],
   ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
   ['hubs',['hub doc','hub docs'],g=>g.hubs,'','Docs read by the most tickets (2 or more; board-wide docs excluded). Changing one affects many tickets.'],
-  ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.']];
+  ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.'],
+  ['suggest',['ticket could get a doc','tickets could get a doc'],g=>Object.keys(g.suggest||{}),'','Tickets without docs whose touches are named in a doc of this repo. Click one to see the suggestion and add it.']];
 const dBig=g=>g.docs.filter(d=>!d.builtin&&!d.image&&d.size>g.budget).map(d=>d.path);
 async function loadDocs(){
   if(!DV.shut){DV.shut=new Set(store.get('docsShut.'+curBoard(),[]));DV.opened=new Set(store.get('docsOpen.'+curBoard(),[]));}
@@ -2440,6 +2444,7 @@ function dSets(f){ // what a problem filter, a selected ticket / band or a hover
   else if(f==='big')dBig(g).forEach(p=>{d.add(p);g.reads.forEach(r=>{if(r.doc===p)t.add(r.ticket);});});
   else if(f==='hubs')g.hubs.forEach(h=>{d.add(h.path);g.reads.forEach(r=>{if(r.doc===h.path)t.add(r.ticket);});});
   else if(f==='orphans')g.orphans.forEach(x=>{d.add(x);g.links.forEach(l=>{if(l.to===x)d.add(l.from);});});
+  else if(f==='suggest')Object.entries(g.suggest||{}).forEach(([id,xs])=>{t.add(id);xs.forEach(x=>d.add(x.path));});
   return {t,d,a,k,id};
 }
 function dMeter(d,B){ // size bar: the tick is the context budget; too big = hatched cinnabar plus the words
@@ -2464,8 +2469,16 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
     <div class="cbar" role="img" aria-label="About ${dTk(used).slice(1)} of the ${dTk(B).slice(1)} token budget used">${seg}</div>
     <ol>${c.docs.map(d=>{const [k,w]=SW[d.sent]||['out','not sent: '+(d.error||'broken')];return `<li><span class="v">${esc(lab(d.source))}</span>${dPath(d.path)}<span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span></li>`;}).join('')}
       <li><span class="v">board</span>${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">sent by the MCP prompt</span></li></ol>
-    ${dTryHtml(id,c)}
+    ${dSugHtml(id)}${dTryHtml(id,c)}
     <p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
+function dSugHtml(id){ // docs that name what this ticket touches (graph().suggest): one click adds it to the ticket's docs
+  const xs=(DV.data.suggest||{})[id];if(!xs)return '';
+  return `<div class="dsug"><h4>Docs that name what ${esc(id)} touches</h4><ol>${xs.map(x=>`<li>${dPath(x.path)}<span class="z">${dTk(x.size)}</span><span class="why">names ${x.why.map(w=>`<code>${esc(w)}</code>`).join(', ')}</span><button type="button" class="btn sm ghost" data-dadd="${esc(id)}" data-path="${esc(x.path)}">Add to ${esc(id)}</button></li>`).join('')}</ol></div>`;}
+async function dAddDoc(id,path){
+  const t=BY.get(id),old=(t&&t.docs)||[];
+  try{await api('PATCH','/'+encodeURIComponent(id),{docs:[...old,path]});}catch(e){toast(e.message,{err:1});return;}
+  toast(`Added ${path} to ${id}`,{undo:async()=>{try{await api('PATCH','/'+encodeURIComponent(id),{docs:old});}catch(e){toast(e.message,{err:1});}loadDocs();load(true);}});
+  loadDocs();load(true);}
 function dTryHtml(id,c){ // what-if: the same budget pass at a trial budget (server-side, read-only); B = the board's real one
   const g=DV.data,B=g.budget,need=c.docs.filter(d=>!d.image&&!d.error&&d.chars!=null).reduce((n,d)=>n+d.chars,0);
   const cut0=c.docs.filter(d=>d.sent==='too_big'||d.sent==='budget').length; // only these change with the budget (a missing doc does not)
@@ -2521,7 +2534,7 @@ function renderDocs(){
     const key='p:'+(p||'-'),name=p?'Profile '+p:'No profile',hit=ts.filter(tm).length,open=!DV.shut.has(key)||hit>0||ts.some(t=>DV.sel==='t:'+t.id);
     return `<li class="dgrp${open?'':' shut'}"><h3 class="dgh" data-n="${esc(key)}">${dChev(key,open,name)}${p?dIc('profile'):''}<span>${esc(name)} · ${ts.length}</span>${open?'':dWarn([[ts.filter(t=>nod.has(t.id)).length,'no docs',1],[ts.filter(t=>own(t.id).length).length,'with a doc too big']])}${q&&hit?`<em class="dhit">${hit} match${hit>1?'es':''}</em>`:''}</h3>${open?`<ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id),cn=c.length;
       const tg=tagRules.filter(r=>r.tickets.includes(t.id)).map(r=>r.from);
-      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
+      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?`<span class="tag warn">no docs</span>${(g.suggest||{})[t.id]?'<span class="tag sug" title="A doc in this repo names what it touches: click the ticket to see it">doc suggested</span>':''}`:''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
     :'<li class="dempty">No open tickets.</li>';
   const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${d.image?' img':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':d.image?'Image: sent as a path':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
   const brdDocs=new Set((g.rules.find(r=>r.via==='board')||{docs:[]}).docs);

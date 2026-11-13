@@ -254,6 +254,22 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertIn("CMB-4", g["no_docs"])
 		self.assertEqual({d["path"]: d["kind"] for d in g["docs"]}["docs/arch/store.md"], "component")
 
+	def test_suggest_docs_from_touches(self):
+		"""A ticket with no doc of its own is offered the docs that name what it touches; never a board-wide or a too-big doc."""
+		(self.repo / "docs" / "UI_NOTES.md").write_text("The board page lives in static/index.html.", encoding="utf-8")
+		(self.repo / "docs" / "FOLDER.md").write_text("Everything under static/ is served as is. static/index.html too.", encoding="utf-8")
+		(self.repo / "docs" / "HUGE.md").write_text("static/index.html " + "x" * 70000, encoding="utf-8")
+		(self.repo / "AGENTS.md").write_text("static/index.html is the UI.", encoding="utf-8")  # the board sends it already
+		self.s.create({"title": "ui work", "touches": ["static/index.html"]}, tid="CMB-2")
+		self.s.create({"title": "glob", "touches": ["static/*.css"]}, tid="CMB-3")
+		self.s.create({"title": "has a doc", "touches": ["static/index.html"], "docs": ["docs/UI_NOTES.md"]}, tid="CMB-4")
+		sug = kn.graph(self.s)["suggest"]
+		self.assertEqual([x["path"] for x in sug["CMB-2"]], ["docs/UI_NOTES.md", "docs/FOLDER.md"])  # shorter doc first at the same score
+		self.assertEqual(sug["CMB-2"][0]["why"], ["static/index.html"])
+		self.assertEqual([x["path"] for x in sug["CMB-3"]], ["docs/UI_NOTES.md", "docs/FOLDER.md"])  # both name the glob's folder, static/: shorter first
+		self.assertNotIn("CMB-4", sug)
+		self.assertEqual(kn._mention_keys("*.py"), [])  # a bare pattern names nothing
+
 	def test_images_are_paths_not_broken(self):
 		"""A picked image (a pick sheet) exists: it is a doc sent as a path, not a broken reference; a missing one stays broken."""
 		(self.repo / "docs" / "pick.png").write_bytes(bytes([0x89, 0x50, 0x4E, 0x47]) + bytes(104))
