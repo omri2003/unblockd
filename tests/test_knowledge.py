@@ -270,6 +270,27 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertNotIn("CMB-4", sug)
 		self.assertEqual(kn._mention_keys("*.py"), [])  # a bare pattern names nothing
 
+	def test_a_docs_entry_can_name_a_section(self):
+		"""AI-14: `path#heading` sends only that section (down to the next heading of its level) plus the doc's outline."""
+		lines = ["# Mechanics", "intro", "## Combat", "parry", "```", "## not a heading in code", "```", "### Timing", "0.2s", "## Movement", "run"]
+		(self.repo / "docs" / "MECH.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")  # LF on Windows too
+		self.s.create({"title": "combat", "docs": ["docs/MECH.md#combat", "docs/MECH.md#nope"]}, tid="CMB-2")
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		combat = c["docs/MECH.md#combat"]
+		self.assertIn("parry", combat["content"])
+		self.assertIn("0.2s", combat["content"])  # a sub-heading stays in the section
+		self.assertNotIn("run", combat["content"])
+		self.assertEqual(combat["section"], "combat")
+		self.assertEqual(combat["outline"], ["# Mechanics", "## Combat", "### Timing", "## Movement"])  # the fenced line is no heading
+		self.assertIn("no heading 'nope'", c["docs/MECH.md#nope"]["error"])
+		self.assertIn("combat", c["docs/MECH.md#nope"]["error"])  # the error lists the anchors
+		self.assertEqual(kn.read_doc(self.s, "docs/MECH.md#timing")["content"], "### Timing\n0.2s\n")
+		g = kn.graph(self.s)
+		node = {d["path"]: d for d in g["docs"]}
+		self.assertEqual(node["docs/MECH.md#combat"]["size"], combat["chars"])  # the section, not the file (content is wrapped: untrusted)
+		self.assertIn("no heading", node["docs/MECH.md#nope"]["error"])
+		self.assertEqual(kn.expand(self.s, "docs#x")[0][2], "a #heading works on one text file, not a folder")
+
 	def test_images_are_paths_not_broken(self):
 		"""A picked image (a pick sheet) exists: it is a doc sent as a path, not a broken reference; a missing one stays broken."""
 		(self.repo / "docs" / "pick.png").write_bytes(bytes([0x89, 0x50, 0x4E, 0x47]) + bytes(104))

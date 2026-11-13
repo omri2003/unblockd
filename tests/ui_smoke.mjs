@@ -36,9 +36,10 @@ try {
 	}
 	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also here" row; a small budget makes big.md "too big"
 		const ep = join(root, 'example/tickets/unblockd.json'), ec = JSON.parse(await readFile(ep, 'utf8'));
-		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png', 'AGENT_POLICY.md'], idle: ['docs/sec.md'] } }, null, 2));
+		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png', 'AGENT_POLICY.md', 'docs/mech.md#combat'], idle: ['docs/sec.md'] } }, null, 2));
 		await writeFile(join(root, 'example/docs/big.md'), '# Big' + 'x'.repeat(3000));
 		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
+		await writeFile(join(root, 'example/docs/mech.md'), ['# Mechanics', '## Combat', 'parry', '## Movement', 'run'].join(String.fromCharCode(10))); // a section: path#heading
 		await writeFile(join(root, 'example/docs/pick.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])); // an image: a path, never "broken"
 		const tp = join(root, 'example/tickets/UI-2.json');
 		await writeFile(tp, JSON.stringify({ ...JSON.parse(await readFile(tp, 'utf8')), tags: ['api', 'sec'] }, null, 2));
@@ -244,6 +245,7 @@ try {
 			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
 			await visible('#dD .dband[data-band="component"]', 'From the Map band'); // UI-2 maps to api + web-ui: their notes are in its context
 			ok((await page.locator('#dD .dband[data-band="component"] .bn').innerText()) === 'From the Map', `[${tag}] docs: the component band reads From the Map`);
+			ok((await page.locator('#dD [data-n="d:docs/mech.md#combat"]').innerText()).includes('section'), `[${tag}] docs: a path#heading entry is a section row`);
 			{ const im = page.locator('#dD [data-n="d:docs/pick.png"]'); ok((await im.getAttribute('class')).includes('img') && (await im.innerText()).includes('image · path sent'), `[${tag}] docs: an image is a path, not broken`); }
 			ok((await page.locator('#dProb .dbud').innerText()).includes('≈500 tokens') && (await page.getAttribute('#dProb .dbud', 'title')).includes('2,000 characters'), `[${tag}] docs: the budget reads as estimated tokens, exact characters in the tooltip`);
 			ok(await page.evaluate(() => [...document.querySelectorAll('#dD .dband[data-band="ticket"] .bn')].every((b) => b.textContent === 'Picked per ticket')), `[${tag}] docs: the ticket band reads Picked per ticket`);
