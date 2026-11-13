@@ -549,6 +549,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dctx .v{color:var(--muted);font:.7rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth{font:.76rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth i{font-style:normal;color:var(--muted)}
 .dctx .z{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
 .dctx .s{font-size:.72rem} .dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar);font-weight:700} .dctx .s.wl{color:var(--muted)} .dctx .s.img{color:var(--slate)}
+.dtry{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)} .dtry h4{margin:0;font-size:.8rem} .dtres{margin:0;font-size:.8rem} .dctx .dtlist{margin:0;padding-left:18px;font-size:.78rem;display:grid;gap:2px;list-style:disc} .dctx .dtlist li{display:list-item} .dtlist .s{font-size:.72rem}
 .dcb{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 0}
 .dempty{padding:18px 4px;color:var(--muted)}
 .dh3{font-size:.85rem;margin:14px 0 4px;color:var(--muted)}
@@ -1846,6 +1847,7 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
   if(g('[data-drefresh]')){loadDocs();return;}
+  if(b=g('[data-dtry]')){const id=DV.sel&&DV.sel.slice(2),v=+b.dataset.dtry;if(id){DV.try[id]=v===DV.data.budget?0:v;if(DV.try[id])dLoadCtx(id,v);renderDocs();document.querySelector(`#dT [data-dtry="${v}"]`)?.focus();}return;}
   if(b=g('[data-dshut]')){dShut(b.dataset.dshut);document.querySelector(`#dStage [data-dshut="${CSS.escape(b.dataset.dshut)}"]`)?.focus();return;}
   if(g('[data-dshutall]')){dShutAll();return;}
   if(g('[data-anew]')){mapNew();return;}
@@ -2390,7 +2392,7 @@ readColors();
 // everything its rule sends (graph()'s `rules`, from the config): a doc an earlier band already lists is a dashed "also here" row, never drawn twice.
 // Clicking a ticket shows what its agent gets (GET tickets/<id>/context?content=0: each doc's `sent`, against the budget). DOM + SVG on purpose:
 // rows are real buttons (keyboard, a11y, the <=700px list), tokens resolve in CSS.
-const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null};
+const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null,try:{}};
 const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_docs,'bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
   ['broken',['broken reference','broken references'],g=>g.broken,'bad','A docs entry that is missing, outside the project, not text, or too big.'],
   ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
@@ -2400,7 +2402,7 @@ const dBig=g=>g.docs.filter(d=>!d.builtin&&!d.image&&d.size>g.budget).map(d=>d.p
 async function loadDocs(){
   if(!DV.shut)DV.shut=new Set(store.get('docsShut.'+curBoard(),[]));
   if(DV.busy)return;DV.busy=true;DV.err='';
-  try{DV.data=await jf(API+'/knowledge');DV.ctx={};if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));}
+  try{DV.data=await jf(API+'/knowledge');DV.ctx={};DV.try={};if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));}
   catch(e){DV.err=e.message||'Could not load';}
   DV.busy=false;if(state.view==='docs')renderDocs();
 }
@@ -2460,10 +2462,27 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
     <div class="cbar" role="img" aria-label="About ${dTk(used).slice(1)} of the ${dTk(B).slice(1)} token budget used">${seg}</div>
     <ol>${c.docs.map(d=>{const [k,w]=SW[d.sent]||['out','not sent: '+(d.error||'broken')];return `<li><span class="v">${esc(lab(d.source))}</span>${dPath(d.path)}<span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span></li>`;}).join('')}
       <li><span class="v">board</span>${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">sent by the MCP prompt</span></li></ol>
+    ${dTryHtml(id,c)}
     <p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
-async function dLoadCtx(id){
-  if(DV.ctx[id])return;DV.ctx[id]={busy:1};
-  try{DV.ctx[id]=await jf(API+'/tickets/'+encodeURIComponent(id)+'/context?content=0');}catch(e){DV.ctx[id]={err:e.message||'Could not load'};}
+function dTryHtml(id,c){ // what-if: the same budget pass at a trial budget (server-side, read-only); B = the board's real one
+  const g=DV.data,B=g.budget,need=c.docs.filter(d=>!d.image&&!d.error&&d.chars!=null).reduce((n,d)=>n+d.chars,0);
+  const cut0=c.docs.filter(d=>d.sent==='too_big'||d.sent==='budget').length; // only these change with the budget (a missing doc does not)
+  if(!cut0&&!DV.try[id])return '';
+  const fit=Math.min(4e6,Math.ceil(need/1000)*1000),opts=[...new Set([B,...[B*2,B*4].filter(v=>v<fit),fit])].filter(v=>v>=B).sort((a,b)=>a-b); // nothing past "all fit": a bigger budget sends nothing more
+  if(opts.length<2)return '';
+  const cur=DV.try[id]||B,t=DV.ctx[id+'@'+cur],per=n=>dTk(n),ag=(g.tickets.find(y=>y.id===id)||{}).agent,nT=ag?g.tickets.filter(x=>x.agent===ag).length:0;
+  let res='';
+  if(cur!==B){
+    if(!t||t.busy)res=`<p class="hint">Trying ${dTk(cur)} tokens<span class="dots"></span></p>`;
+    else if(t.err)res=`<p class="msg err">${esc(t.err)}</p>`;
+    else{const sent=t.docs.filter(d=>d.sent==='full').length,all=t.docs.filter(d=>!d.image&&!d.error).length,gain=sent-c.docs.filter(d=>d.sent==='full').length;
+      res=`<p class="dtres"><b>${sent} of ${all} docs sent</b>${gain>0?` · ${gain} more than now`:''} · ${per(t.inlined_chars||0)} tokens on every claim of ${esc(id)} (now ${per(c.inlined_chars||0)})${nT>1?` · ${nT} open tickets share this profile`:''}</p>
+      <ol class="dtlist">${t.docs.filter(d=>d.sent!==(c.docs.find(x=>x.path===d.path)||{}).sent).map(d=>`<li>${dPath(d.path)} <span class="s ${d.sent==='full'?'in':'out'}">${d.sent==='full'?'would be sent in full':d.sent==='too_big'?'still too big':'still path only'}</span></li>`).join('')}</ol>`;}}
+  return `<div class="dtry"><h4>What if the budget were bigger?</h4><div class="seg" role="group" aria-label="Try a budget" data-pk="try-${esc(id)}">${chipsHtml(opts.map(v=>[String(v),v===B?`${dTk(v)} (now)`:v===fit?`${dTk(v)} (all fit)`:dTk(v)]),String(cur),'dtry')}</div>
+    ${res}<p class="hint">A trial: nothing changes. To keep a budget, set <code>context_budget</code> in unblockd.json (characters; ${dCh(B)} now). A bigger budget is paid on every claim; a big doc is often better sent in part (<code>path#heading</code>).</p></div>`;}
+async function dLoadCtx(id,budget){
+  const k=budget?id+'@'+budget:id;if(DV.ctx[k])return;DV.ctx[k]={busy:1};
+  try{DV.ctx[k]=await jf(API+'/tickets/'+encodeURIComponent(id)+'/context?content=0'+(budget?'&budget='+budget:''));}catch(e){DV.ctx[k]={err:e.message||'Could not load'};}
   if(state.view==='docs'&&DV.sel==='t:'+id)renderDocs();
 }
 function dSelect(n){DV.sel=DV.sel===n?null:n;if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));renderDocs();
@@ -2513,6 +2532,7 @@ function renderDocs(){
   $('dQn').textContent=q?(nt||nd?`${nt} ticket${nt===1?'':'s'}, ${nd} doc${nd===1?'':'s'}`:'No match'):'';
   const anyOpen=[...document.querySelectorAll('#dStage [data-dshut]')].some(b=>b.getAttribute('aria-expanded')==='true');
   $('dShutAll').textContent=anyOpen?'Collapse all':'Expand all';
+  slideAll(T_);
   markDocs();
 }
 function markDocs(){ // classes + lines only; cheap, runs on hover
