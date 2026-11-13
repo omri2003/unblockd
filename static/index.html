@@ -150,7 +150,12 @@ a.btn{display:inline-block;text-decoration:none}
 .dg-tile.rev{background:var(--plum-soft);color:var(--plum)} .dg-tile.stk{background:color-mix(in srgb,var(--cinnabar) 14%,var(--surface));color:var(--cinnabar)}
 .dg-tile.fin{background:var(--jade-soft);color:var(--jade)} .dg-tile.sta{background:var(--amber-soft);color:var(--amber)} .dg-tile.new{background:var(--slate-soft);color:var(--slate)}
 .dg-l{grid-column:1/-1;display:grid;grid-template-columns:subgrid;list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);overflow:hidden}
-.dg-l li{grid-column:1/-1;display:grid;grid-template-columns:subgrid} .dg-l li+li{border-top:1px solid var(--line)}
+.dg-l li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;position:relative}
+.dg-g .dg-gx{margin-left:auto;font-weight:600} /* Dismiss a whole section */
+.dg-x{position:absolute;right:8px;top:6px;width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:var(--r);background:var(--sunk);color:var(--muted);font:inherit;font-size:1rem;line-height:1;cursor:pointer;opacity:0} /* takes the time's place on hover / focus, like the Done card's Move-to */
+.dg-x:hover{color:var(--ink)} .dg-l li:hover .dg-x,.dg-x:focus-visible{opacity:1} .dg-l li:hover time,.dg-l li:has(.dg-x:focus-visible) time{visibility:hidden}
+@media (hover:none){.dg-x{opacity:1;width:40px;height:40px;top:2px;right:2px;background:none} .dg-l li .dg-r{padding-right:44px}} /* li .dg-r: wins over the <=600px padding */
+.dg-r .own.hand{padding-right:2px} /* the italic's last letter is not clipped */ .dg-l li+li{border-top:1px solid var(--line)}
 .dg-r{--pc:var(--p-other);position:relative;grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:start;width:100%;padding:8px 12px 8px 16px;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;min-width:0}
 .dg-r::before{content:'';position:absolute;left:5px;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--pc);pointer-events:none}
 .dg-r:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))} .dg-r:hover .dt{text-decoration:underline;text-underline-offset:2px}
@@ -1267,22 +1272,31 @@ async function loadDigest(){
 // Sections in the order a person acts on them: review (waits on you), stuck, finished, in progress, new.
 // Each row reads as a ticket (UI-55, design C): status tile, pillar spine, seal, id, title, byline, and ONE outcome line under the title.
 const DGS=[['rev','●','Ready for review'],['stk','⚠','Stuck'],['fin','✓','Finished'],['sta','▶','In progress'],['new','＋','New']];
+const DGH='unblockd.dgHide.'+(BOARD||'default'); // rows dismissed one by one or a section at a time: {id: ts of the event dismissed}; newer activity on that ticket brings it back
+const dgHid=(id,ts)=>{const h=store.get(DGH,{})[id]; return !!h&&h>=ts;};
+function dgHide(rows,what){ // rows = [{e,t}]; Undo puts the old map back
+  const old=store.get(DGH,{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH,h); renderDigest();
+  toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH,old);renderDigest();}});
+}
 const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
 const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
 function digestGroups(){
   const last=new Map(), made=new Map(); // made: the ticket's created event in this window, the fallback row when its latest event no longer fits
   for(const e of DG.ev) if(BY.has(e.ticket)&&['complete','done','claim','expired','release','question','created'].includes(e.event)) {last.set(e.ticket,e); if(e.event==='created') made.set(e.ticket,e);} // oldest first: the latest wins; question ends a claim too
   const rows={rev:[],stk:[],fin:[],sta:[],new:[]};
-  for(const e of last.values()){
-    const t=BY.get(e.ticket), ev=e.event;
-    // The latest event picks the section, but only while the ticket's status still says so (UI-68): a claim that ended by an ask or a hand
-    // move logs nothing here, so it is not In progress any more; a complete moved back out of done / review is not Finished.
-    const k=ev==='created'?'new':ev==='claim'?(t.status==='doing'?'sta':''):['expired','release'].includes(ev)?(t.status==='done'?'':'stk')
+  const sec=t=>({done:'fin',review:'rev',doing:'sta'})[t.status]||''; // the section the ticket's status alone points at
+  for(const l of last.values()){
+    const t=BY.get(l.ticket), ev=l.event;
+    // The latest event picks the section, but only while the ticket's status still says so (UI-68, UI-69): a claim ended by an ask or a hand move,
+    // a release followed by a hand move, a ticket created and then finished in its file or by a git pull: none of these log an event here.
+    let e=l, k=ev==='created'?(sec(t)||'new'):ev==='claim'?(t.status==='doing'?'sta':''):['expired','release'].includes(ev)?(t.status==='todo'?'stk':'')
       :ev==='question'?'':t.status==='review'?'rev':t.status==='done'?'fin':''; // a question waits in Needs you, not here
-    if(!k){ if(made.has(e.ticket)) rows.new.push({e:made.get(e.ticket),t,who:made.get(e.ticket).agent||'',out:'',full:''}); continue; } // created while you were away: still New
-    const who=e.agent||'', out=k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
+    if(!k){ e=made.get(l.ticket)||l; k=sec(t)||(made.has(l.ticket)?'new':''); if(!k) continue; } // then the status decides; created while you were away and still open = New
+    const hand=(k==='fin'||k==='rev')&&!['complete','done'].includes(e.event); // got there by a move no event recorded
+    const who=hand?'':e.agent||'', out=hand?(k==='fin'?'Moved to Done by hand':'Moved to review by hand'):k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
       :k==='new'?'':k==='sta'?(t.claim?.note?`“${dgFirst(t.claim.note)}”`:''):e.note?dgFirst(e.note):e.event==='done'?'Moved to Done by hand':'';
-    rows[k].push({e,t,who,out,full:(e.note||'').trim()});
+    if(dgHid(t.id,e.ts)) continue; // dismissed by hand, nothing newer since
+    rows[k].push({e,t,who,out,full:hand?'':(e.note||'').trim()});
   }
   return DGS.map(([c,i,n])=>[c,i,n,rows[c].reverse()]).filter(g=>g[3].length); // newest first inside a section
 }
@@ -1291,7 +1305,7 @@ const dgBy=n=>n?`<span class="own ${HUMAN.has(n)||n==='human'?'human':'agent'}">
 function dgRow(c,i,n,{e,t,who,out,full}){
   const seal=t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'', by=c==='new'&&!who?'':dgBy(who), p0=t.priority==='P0'&&t.status!=='done';
   const tip=`${t.id} ${t.title}\n${n} ${dgTime(e.ts)}${who?' by '+who:''}`+(full&&full!==out?'\n\n'+full:out?'\n\n'+out:'');
-  return `<li><button type="button" class="dg-r${p0?' p0':''}"${PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:''} data-open="${esc(t.id)}" title="${esc(tip)}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i><span class="idc"><span class="tid">${esc(t.id)}</span>${seal}</span><span class="m"><span class="dt">${inline(t.title)}</span>${out?`<span class="o${c==='stk'?' bad':''}">${esc(out)}</span>`:''}<span class="w2"><span class="tid">${esc(t.id)}</span>${seal}${by}</span></span><span class="w">${by}</span><time datetime="${esc(e.ts)}">${esc(dgTime(e.ts))}</time></button></li>`;
+  return `<li><button type="button" class="dg-r${p0?' p0':''}"${PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:''} data-open="${esc(t.id)}" title="${esc(tip)}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i><span class="idc"><span class="tid">${esc(t.id)}</span>${seal}</span><span class="m"><span class="dt">${inline(t.title)}</span>${out?`<span class="o${c==='stk'?' bad':''}">${esc(out)}</span>`:''}<span class="w2"><span class="tid">${esc(t.id)}</span>${seal}${by}</span></span><span class="w">${by}</span><time datetime="${esc(e.ts)}">${esc(dgTime(e.ts))}</time></button><button type="button" class="dg-x" data-dghide="${esc(t.id)}" title="Dismiss ${esc(t.id)}" aria-label="Dismiss ${esc(t.id)} from this list">×</button></li>`;
 }
 function renderDigest(){
   const el=$('digest'); if(!DG||SET.digest==='off'||state.view!=='board'){el.hidden=true;dgHtml='';return;}
@@ -1302,7 +1316,7 @@ function renderDigest(){
   const since=sameDay?hm(d):d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm(d);
   const head=`<h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}`;
   const body=`<div class="dg-body"><div><div class="dg-grid">`+gs.map(([c,i,n,r])=>{const all=dgMore.has(c)||r.length<=DG_CAP+1, shown=all?r:r.slice(0,DG_CAP);
-     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
+     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span><button type="button" class="btn ghost sm dg-gx" data-dghidesec="${c}" aria-label="Dismiss all ${r.length} ${esc(n.toLowerCase())}">${r.length>1?'Dismiss all':'Dismiss'}</button></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
   if(head+body===dgHtml) return; dgHtml=head+body; // same items, statuses, titles and times: keep the DOM (no hover or focus flicker on the 4 s poll); the toggle edits its own button, so it is not in the key
   const sc=el.querySelector('.dg-grid')?.scrollTop||0;
   el.innerHTML=`<div class="dg-bar">${head}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}"><span>${dgOpen?'Collapse':'Expand'}</span> <i class="chev" aria-hidden="true"></i></button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`+body; const g=el.querySelector('.dg-grid'); if(g) g.scrollTop=sc;
@@ -1828,7 +1842,9 @@ document.addEventListener('click',async e=>{
   if(g('[data-new]')){openId=null;editForm(null);return;}
   if(b=g('[data-dgmore]')){dgMore.add(b.dataset.dgmore);renderDigest();return;}
   if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
-  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());const el=$('digest'),done=()=>{DG=null;renderDigest();};
+  if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
+  if(b=g('[data-dghidesec]')){const s=digestGroups().find(x=>x[0]===b.dataset.dghidesec); if(s) dgHide(s[3],`${s[3].length} ${s[2].toLowerCase()}`); return;}
+  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());store.set(DGH,{}); /* everything up to now is seen: the per-row list is no longer needed */ const el=$('digest'),done=()=>{DG=null;renderDigest();};
     if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
   if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-pstep]')){peekStep(+b.dataset.pstep);return;}
