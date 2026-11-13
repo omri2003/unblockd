@@ -254,6 +254,61 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertIn("CMB-4", g["no_docs"])
 		self.assertEqual({d["path"]: d["kind"] for d in g["docs"]}["docs/arch/store.md"], "component")
 
+	def test_a_docs_entry_can_name_a_section(self):
+		"""AI-14: `path#heading` sends only that section (down to the next heading of its level) plus the doc's outline."""
+		lines = ["# Mechanics", "intro", "## Combat", "parry", "```", "## not a heading in code", "```", "### Timing", "0.2s", "## Movement", "run"]
+		(self.repo / "docs" / "MECH.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")  # LF on Windows too
+		self.s.create({"title": "combat", "docs": ["docs/MECH.md#combat", "docs/MECH.md#nope"]}, tid="CMB-2")
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		combat = c["docs/MECH.md#combat"]
+		self.assertIn("parry", combat["content"])
+		self.assertIn("0.2s", combat["content"])  # a sub-heading stays in the section
+		self.assertNotIn("run", combat["content"])
+		self.assertEqual(combat["section"], "combat")
+		self.assertEqual(combat["outline"], ["# Mechanics", "## Combat", "### Timing", "## Movement"])  # the fenced line is no heading
+		self.assertIn("no heading 'nope'", c["docs/MECH.md#nope"]["error"])
+		self.assertIn("combat", c["docs/MECH.md#nope"]["error"])  # the error lists the anchors
+		self.assertEqual(kn.read_doc(self.s, "docs/MECH.md#timing")["content"], "### Timing\n0.2s\n")
+		g = kn.graph(self.s)
+		node = {d["path"]: d for d in g["docs"]}
+		self.assertEqual(node["docs/MECH.md#combat"]["size"], combat["chars"])  # the section, not the file (content is wrapped: untrusted)
+		self.assertIn("no heading", node["docs/MECH.md#nope"]["error"])
+		self.assertEqual(kn.expand(self.s, "docs#x")[0][2], "a #heading works on one text file, not a folder")
+
+	def test_a_section_is_not_sent_twice(self):
+		"""AI-14: the whole file, or a wider section, already in the bundle covers a section of it; two sections side by side both stay."""
+		md = "\n".join(["# Mech", "## Combat", "parry", "### Timing", "0.2s", "## Movement", "run"]) + "\n"
+		(self.repo / "docs" / "MECH.md").write_text(md, encoding="utf-8", newline="\n")
+		self.s.create({"title": "a", "docs": ["docs/MECH.md#timing", "docs/MECH.md", "docs/MECH.md#combat"]}, tid="CMB-2")
+		self.s.create({"title": "b", "docs": ["docs/MECH.md#combat", "docs/MECH.md#timing", "docs/MECH.md#Combat", "docs/MECH.md#movement"]}, tid="CMB-3")
+		paths = lambda tid: [d["path"] for d in kn.context(self.s, tid)["docs"] if d["path"].startswith("docs/MECH")]
+		self.assertEqual(paths("CMB-2"), ["docs/MECH.md"])  # the whole file covers both sections
+		self.assertEqual(paths("CMB-3"), ["docs/MECH.md#combat", "docs/MECH.md#movement"])  # timing is inside combat; Combat = combat
+
+	def test_a_section_of_a_doc_too_big_to_send(self):
+		"""AI-14: the section is cut before the size check, so a doc over MAX_FILE can still send one part; the whole doc gets its outline."""
+		big = "# Lore\n" + ("filler line\n" * 30000) + "## Combat\nparry\n## Movement\nrun\n"  # ~360 KB > MAX_FILE
+		(self.repo / "docs" / "BIG.md").write_text(big, encoding="utf-8", newline="\n")
+		self.s.create({"title": "big", "docs": ["docs/BIG.md", "docs/BIG.md#combat"]}, tid="CMB-2")
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		self.assertIn("parry", c["docs/BIG.md#combat"]["content"])  # kept: the whole file can't be sent, so it covers nothing
+		self.assertEqual(c["docs/BIG.md"]["outline"], ["# Lore", "## Combat", "## Movement"])
+		self.assertIn("path#heading", c["docs/BIG.md"]["error"])
+		self.assertEqual(kn.read_doc(self.s, "docs/BIG.md#movement")["content"], "## Movement\nrun\n")
+		with self.assertRaisesRegex(TicketError, "path#heading"):
+			kn.read_doc(self.s, "docs/BIG.md")
+
+	def test_a_doc_that_does_not_fit_sends_its_outline(self):
+		"""AI-14: a doc cut by the budget comes with its headings, so the agent can read the part it needs, not only a path."""
+		(self.repo / "docs" / "LONG.md").write_text("# Long\n## Part one\n" + "x" * 3000 + "\n## Part two\ny\n", encoding="utf-8", newline="\n")
+		self.s.create({"title": "long", "docs": ["docs/LONG.md"]}, tid="CMB-2")
+		ctx = kn.context(self.s, "CMB-2", budget=1000)
+		d = next(d for d in ctx["docs"] if d["path"] == "docs/LONG.md")
+		self.assertEqual((d["sent"], d["outline"]), ("too_big", ["# Long", "## Part one", "## Part two"]))
+		self.assertEqual(d["outline_chars"], [3034, 3013, 14])  # each section's size: whether path#heading would fit
+		self.assertIn("read_doc(path#heading)", ctx["note"])
+		self.assertTrue(all("outline" not in x for x in ctx["docs"] if "content" in x and "section" not in x))  # docs sent whole carry none
+
 	def test_images_are_paths_not_broken(self):
 		"""A picked image (a pick sheet) exists: it is a doc sent as a path, not a broken reference; a missing one stays broken."""
 		(self.repo / "docs" / "pick.png").write_bytes(bytes([0x89, 0x50, 0x4E, 0x47]) + bytes(104))

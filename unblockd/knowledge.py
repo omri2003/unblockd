@@ -78,9 +78,70 @@ def _decode(p: Path) -> tuple[str, str | None]:
 		              "probably saved as Windows-1252): re-save the file as UTF-8")
 
 
+OUTLINE_MAX = 60  # headings listed with a section, so the agent knows what else the doc holds
+SECTION_FILE_MAX = 5_000_000  # bytes: a path#heading entry may cut its section from a file this big (MAX_FILE is for whole files)
+HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
+
+
+def _slug(s: str) -> str:
+	return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+
+def _headings(text: str) -> list[tuple[int, int, str]]:
+	"""(line number, level, title) of every markdown heading outside ``` / ~~~ fences."""
+	out, fence = [], None
+	for i, line in enumerate(text.splitlines()):
+		m = re.match(r"^[ ]{0,3}(`{3,}|~{3,})", line)
+		if m:
+			fence = None if fence and m.group(1)[0] == fence else (fence or m.group(1)[0])
+			continue
+		if not fence and (h := HEADING.match(line)):
+			out.append((i, len(h.group(1)), h.group(2)))
+	return out
+
+
+def section(text: str, anchor: str, path: str = "") -> tuple[str, list[str]]:
+	"""The part of a markdown doc under the heading `anchor` (its slug, e.g. `combat` or `combat-timing`, or the heading text),
+	down to the next heading of the same or a higher level, and the doc's outline (`## Combat` lines). Unknown anchor -> TicketError
+	listing the headings, so a docs entry `path#heading` can be fixed from the error alone (AI-14)."""
+	start, end, out = _span(text, anchor, path)
+	return "".join(text.splitlines(keepends=True)[start:end]), out
+
+
+def outline(text: str) -> list[str]:
+	"""The doc's headings as `## Title` lines (at most OUTLINE_MAX): sent with a doc that did not fit, so the agent can
+	read_doc(path#heading) the part it needs instead of skipping the doc (AI-14)."""
+	return [f"{'#' * lv} {t}" for _, lv, t in _headings(text)][:OUTLINE_MAX]
+
+
+def outline_chars(text: str) -> list[int]:
+	"""The size (characters) of each outline() section, in the same order: whether `path#heading` would fit the budget."""
+	hs, lines = _headings(text), text.splitlines(keepends=True)
+	return [sum(map(len, lines[i:next((j for j, l2, _ in hs if j > i and l2 <= lv), len(lines))])) for i, lv, _ in hs][:OUTLINE_MAX]
+
+
+def _span(text: str, anchor: str, path: str = "") -> tuple[int, int, list[str]]:
+	"""(first line, end line, outline) of the section under `anchor`; see section()."""
+	hs, want = _headings(text), _slug(anchor)
+	hit = next((h for h in hs if _slug(h[2]) == want), None)
+	if not hit:
+		names = ", ".join(_slug(t) for _, _, t in hs[:20]) or "none"
+		raise TicketError(f"no heading {anchor!r} in {path or 'the doc'} (its headings, as anchors: {names})")
+	start, level, _ = hit
+	end = next((i for i, lv, _ in hs if i > start and lv <= level), len(text.splitlines()))
+	return start, end, [f"{'#' * lv} {t}" for _, lv, t in hs][:OUTLINE_MAX]
+
+
 def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
-	"""One docs entry -> [(display path, file or None, error or None)]."""
+	"""One docs entry -> [(display path, file or None, error or None)]. `path#heading` (one markdown file) is kept as the
+	display path: readers cut the text with section() (AI-14)."""
 	base = root(store)
+	entry, _, anchor = entry.partition("#") if not any(c in entry for c in "*?[") else (entry, "", "")
+	if anchor:
+		got = expand(store, entry)
+		if len(got) != 1 or got[0][2] or got[0][1] is None or got[0][1].is_dir():
+			return [(f"{entry}#{anchor}", None, got[0][2] if len(got) == 1 and got[0][2] else "a #heading works on one text file, not a folder")]
+		return [(f"{got[0][0]}#{anchor}", got[0][1], None)]
 	if any(c in entry for c in "*?["):
 		try:
 			_inside(base, entry.split("*")[0] or ".")
@@ -177,15 +238,21 @@ def read_doc(store, path: str) -> dict:
 		return {"path": PROTOCOL, "content": string.Template(PROTOCOL_FILE.read_text(encoding="utf-8")).safe_substitute(  # generic values; workers get theirs filled in
 			board=store.config.get("id", "this board"), profile_line="", agent_hint="<profile>-<number>, e.g. backend-1", claim_args=""), "links": [], "builtin": True}
 	base = root(store)
+	path, _, anchor = path.partition("#")
 	p = _inside(base, path)
 	if not p.is_file():
 		raise TicketError(f"no file {path} in the project")
 	if not _is_text(p):
 		raise TicketError(f"{path} is not a text file")
-	if p.stat().st_size > MAX_FILE:
-		raise TicketError(f"{path} is too big to read here ({p.stat().st_size} bytes)")
+	if p.stat().st_size > (SECTION_FILE_MAX if anchor else MAX_FILE):  # a section is cut first, so a huge doc can still be read in parts
+		raise TicketError(f"{path} is too big to read here ({p.stat().st_size} bytes)"
+		                  + ("" if anchor else ": read one section with path#heading (the headings are in the doc's outline)"))
 	text, bad = _decode(p)
-	return {"path": p.relative_to(base).as_posix(), "content": text, "links": links_of(text, p, base), **({"warning": bad} if bad else {})}
+	rel = p.relative_to(base).as_posix()
+	if anchor:  # one section + the outline, like context() sends it
+		part, outline = section(text, anchor, rel)
+		return {"path": f"{rel}#{anchor}", "content": part, "outline": outline, "links": links_of(part, p, base), **({"warning": bad} if bad else {})}
+	return {"path": rel, "content": text, "links": links_of(text, p, base), **({"warning": bad} if bad else {})}
 
 
 def sources(store, t: dict, comps: list[tuple[str, str]] = ()) -> list[tuple[str, str]]:
@@ -267,6 +334,7 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 	keys = ticket_components(t, arch)
 	by_key = {c["key"]: c for c in arch["components"]}
 	docs, texts, seen, left = [], [], set(), budget
+	spans = {}  # index in docs -> (file, first line, end line or None = the whole file): finds a section already covered (AI-14)
 	for entry, src in sources(store, t, [(by_key[k]["path"], k) for k in keys]):
 		for rel, p, err in expand(store, entry):
 			if rel in seen:
@@ -280,15 +348,35 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			else:
 				size = p.stat().st_size
 				item["chars"] = size
-				if size > MAX_FILE:
-					item["error"] = "too big to inline; read it in parts in the repo"
+				if size > (SECTION_FILE_MAX if "#" in rel else MAX_FILE):  # a section is cut first, so a huge doc can still send one part
+					item["error"] = "too big to inline: read one section with read_doc(path#heading)"
+					if size <= SECTION_FILE_MAX and (o := outline(big := _decode(p)[0])):
+						item["outline"], item["outline_chars"] = o, outline_chars(big)
 				else:
 					text, bad = _decode(p)
-					item["links"] = links_of(text, p, base)
+					if "#" in rel:  # path#heading: only that section is sent, with the doc's outline
+						try:
+							a, b, item["outline"] = _span(text, rel.partition("#")[2], rel.partition("#")[0])
+							item["outline_chars"] = outline_chars(text)  # the Docs view's picker edits the chosen sections from here
+							text = "".join(text.splitlines(keepends=True)[a:b])
+							item.update(section=rel.partition("#")[2], chars=len(text))
+							spans[len(docs)] = (p, a, b)
+						except TicketError as e:
+							text, item["error"] = None, str(e)
+					else:
+						spans[len(docs)] = (p, 0, None)
+					if text is not None:
+						item["links"] = links_of(text, p, base)
 					if bad:
 						item["warning"] = bad
 			docs.append(item)
 			texts.append(text)
+	# A section is dropped when its whole file, or a section holding it, is in the bundle and small enough to be sent in full;
+	# the same heading twice keeps the first. A whole file too big to send keeps its sections: they are the only way to get its text.
+	cover = [(j, *sp) for j, sp in spans.items() if texts[j] is not None and len(texts[j]) <= budget]
+	drop = {i for i, (p, a, b) in spans.items() if b is not None and any(
+		j != i and q == p and (e is None or (c, e) == (a, b) and j < i or (c, e) != (a, b) and c <= a and b <= e) for j, q, c, e in cover)}
+	docs, texts = [d for i, d in enumerate(docs) if i not in drop], [x for i, x in enumerate(texts) if i not in drop]
 	for f in list_files(store, tid):
 		item = {"path": f"tickets/files/{tid}/{f['name']}", "file": f["name"], "source": "attached", "trust": "untrusted", "chars": f["bytes"]}
 		text = None
@@ -308,6 +396,8 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			n = len(text) if text is not None else d.get("chars")
 			d["sent"] = ("full" if "content" in d else IMAGE if d.get("image") else "too_big" if n is not None and n > budget
 			             else "error" if "error" in d else "budget")
+			if d["sent"] in ("too_big", "budget") and text is not None and "outline" not in d and (o := outline(text)):
+				d["outline"], d["outline_chars"] = o, outline_chars(text)  # a bare path gets skipped; its headings let the agent read_doc(path#heading) the part it needs
 	up = []
 	for b in t.get("blocked_by", []):  # what the tickets this one waited on produced (complete()'s result)
 		try:
@@ -321,6 +411,8 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			up.append(e)
 	out = {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "protocol": PROTOCOL, "rule": RULE, "inlined_chars": budget - left,
 	       "note": "Read these before working the ticket. Items without content: read_doc(path)."
+	               + (" A doc with `section` is that part only; its `outline` lists the rest: read_doc(path#heading)." if any("section" in d for d in docs) else "")
+               + (" A doc with an `outline` but no content did not fit: read_doc(path#heading) the part you need." if any("outline" in d and "content" not in d for d in docs) else "")
 	               + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
 	if (prof := next((a for a in store.config["agents"] if a["name"] == t.get("agent")), None)):  # committed config: trusted
 		out["profile"] = {"name": prof["name"], "instructions": prof.get("instructions", ""), "model": prof.get("model"), "trust": "trusted"}
@@ -792,10 +884,13 @@ def graph(store) -> dict:
 	by_key = {c["key"]: c["path"] for c in arch["components"]}
 	tickets, docs, reads, links, readers = [], {}, [], [], {}
 
-	def info(rel, p):  # size + outgoing links, once per file
+	def info(rel, p):  # size + outgoing links, once per file (per section for path#heading)
 		if rel not in finfo:
 			size = p.stat().st_size
-			text = p.read_text(encoding="utf-8", errors="replace") if size <= MAX_FILE else None
+			text = p.read_text(encoding="utf-8", errors="replace") if size <= (SECTION_FILE_MAX if "#" in rel else MAX_FILE) else None
+			if text is not None and "#" in rel:
+				text = section(text, rel.partition("#")[2], rel.partition("#")[0])[0]  # a bad anchor raises: note() turns it into the doc's error
+				size = len(text)
 			finfo[rel] = (size, None if text is None else links_of(text, p, base))
 		return finfo[rel]
 
@@ -808,7 +903,10 @@ def graph(store) -> dict:
 		elif err:
 			d["error"] = err
 		elif p is not None:
-			d["size"], lk = info(rel, p)
+			try:
+				d["size"], lk = info(rel, p)
+			except TicketError as e:  # path#heading whose heading is not in the doc
+				d["error"], lk = str(e), []
 			if lk is None:
 				d["error"] = "too big to inline; read it in parts in the repo"
 		readers.setdefault(rel, set())
