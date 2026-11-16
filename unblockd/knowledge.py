@@ -11,6 +11,7 @@ Only text files are read; paths can't leave the project folder.
 """
 from __future__ import annotations
 
+import bisect
 import os
 import re
 import string
@@ -128,25 +129,25 @@ def outline_chars(text: str) -> list[int]:
 	return [sum(map(len, lines[i:next((j for j, l2, _ in hs if j > i and l2 <= lv), len(lines))])) for i, lv, _ in hs][:OUTLINE_MAX]
 
 
-BIG_SHARE = 3  # a doc sent in full is "big" when it takes more than 1/BIG_SHARE of the budget: the Docs view offers to trim it (UI-72)
+BIG_SHARE = 3  # a doc over 1/BIG_SHARE of the budget is "big": suggest() ranks it after smaller ones (UI-66). UI-72 used it for the Sections button; UI-75 offers that on any doc with 2+ headings
 
 
 def preview_outlines(store, ctx: dict) -> dict:
-	"""For the Docs view's preview (REST context?content=0) only: a doc SENT in full that takes over a third of the budget gets its
-	`outline` + `outline_chars`, so the page can offer to send only some of its sections. Agents never get these on a sent doc
-	(they have its text). Section entries, attachments and docs without headings are left alone."""
-	budget = int(store.config.get("context_budget") or BUDGET)
+	"""For the Docs view's preview (REST context?content=0) only: a doc SENT in full with at least 2 headings gets its `outline` +
+	`outline_chars`, so the page can offer to send only some of its sections (UI-75: any size; UI-72 did this only past a third of
+	the budget). Agents never get these on a sent doc (they have its text). Section entries, attachments and docs with 0-1 headings
+	are left alone."""
 	base = root(store)
 	if base is None:  # a database board has no repo to read docs from
 		return ctx
 	for d in ctx["docs"]:
-		if d.get("sent") != "full" or "#" in d["path"] or "file" in d or "outline" in d or (d.get("chars") or 0) * BIG_SHARE <= budget:
+		if d.get("sent") != "full" or "#" in d["path"] or "file" in d or "outline" in d:
 			continue
 		try:
 			text = _decode(_inside(base, d["path"]))[0]
 		except (TicketError, OSError):
 			continue
-		if (o := outline(text)):
+		if len(o := outline(text)) >= 2:
 			d["outline"], d["outline_chars"] = o, outline_chars(text)
 	return ctx
 
@@ -889,6 +890,172 @@ def remove_edge(store, frm, to, by=None) -> dict:
 
 
 
+SUGGEST_MAX = 3      # suggestions per ticket
+SUGGEST_FILES = 400  # markdown / text files read once per graph() call to look for mentions
+SUGGEST_MIN = 3      # the score a doc needs: an exact path in prose (3) qualifies; folders count only next to a file of the ticket
+WEAK_MAX = 2         # weak matches (score > 0, under SUGGEST_MIN or folders only) offered to a ticket that got no real suggestion
+# what one mention of a touched thing is worth: kind = the exact path, its file name (only when no other file in the repo has it),
+# or its folder (a glob's fixed part); where = a heading line, a markdown link target, or anywhere else (prose, lists, code blocks)
+WEIGHT = {"path": {"heading": 6, "link": 6, "text": 3}, "file": {"heading": 5, "link": 5, "text": 2},
+          "folder": {"heading": 2, "link": 2, "text": 1}}
+EXTRA, EXTRA_MAX = 0.5, 1  # each further mention of the same touch adds EXTRA, at most EXTRA_MAX in all
+NAME_END = r"(?![\w/-]|\.\w)"  # `static/index.html.` at the end of a sentence still counts, `index.html5` does not
+
+
+def _mention_names(touch: str, unique: dict, files: set) -> list[tuple[str, str]]:
+	"""[(kind, name)] a doc can name to be about one `touches` entry: the path, its folder, and its file name when no other
+	file in the repo has that name. A glob names only its fixed folder part (`unblockd/*.py` -> `unblockd/`); short or bare
+	names (`*.py`, `src`) match too much and name nothing, unless the bare name is a file of the repo (`Dockerfile`)."""
+	t = re.sub(r"^(\./)+", "", touch.strip().replace("\\", "/")).lstrip("/")
+	if any(c in t for c in "*?["):
+		t = t[:min(t.index(c) for c in "*?[" if c in t)]
+		t = t[:t.rfind("/") + 1]
+	ok = lambda s: len(s) >= 4 and ("/" in s or "." in s or s in files)
+	if t.endswith("/"):
+		return [("folder", t)] if ok(t) else []
+	out = [("path", t)] if ok(t) else []
+	if "/" in t:
+		folder, name = t[:t.rfind("/") + 1], t[t.rfind("/") + 1:]
+		if ok(folder):
+			out.append(("folder", folder))
+		if unique.get(name) == 1 and len(name) >= 4 and "." in name:
+			out.append(("file", name))
+	return out
+
+
+def _mentions(text: str, here: str, names: list[tuple[str, str]], rx: dict) -> list[tuple[float, str, str, str, int]]:
+	"""Every mention of `names` in one doc: [(weight, kind, name, where, offset)]. A link target is resolved from the doc's folder
+	(`../unblockd/store.py` names unblockd/store.py); one spot counts once, as its best kind (a path is not also its folder)."""
+	starts = [0] + [m.end() for m in re.finditer("\n", text)]
+	heads = {i for i, _, _ in _headings(text)}
+	spans, hits = [], {}
+	folder = here.rpartition("/")[0]
+	for m in re.finditer(r"\]\(([^)\s#]+)", text):  # markdown link targets
+		spans.append((m.start(1), m.end(1)))
+		parts = []
+		for seg in (f"{folder}/{m.group(1)}" if folder else m.group(1)).split("/"):
+			if seg == "..":
+				parts = parts[:-1]
+			elif seg not in ("", "."):
+				parts.append(seg)
+		rel = "/".join(parts)
+		for kind, name in names:
+			if (kind == "path" and rel == name) or (kind == "folder" and (rel + "/").startswith(name)):
+				w = WEIGHT[kind]["link"]
+				if w > hits.get(m.start(1), (0,))[0]:
+					hits[m.start(1)] = (w, kind, name, "link", m.start(1))
+	for kind, name in names:
+		if name not in rx:
+			rx[name] = re.compile(r"(?<![\w/.-])(?:\./)?" + re.escape(name) + ("" if name.endswith("/") else NAME_END))
+		for m in rx[name].finditer(text):
+			if any(a <= m.start() < b for a, b in spans):
+				continue  # inside a link target: the link pass above decided
+			where = "heading" if bisect.bisect_right(starts, m.start()) - 1 in heads else "text"
+			w = WEIGHT[kind][where]
+			if w > hits.get(m.start(), (0,))[0]:
+				hits[m.start()] = (w, kind, name, where, m.start())
+	return list(hits.values())
+
+
+def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], budget: int) -> dict:
+	"""Docs a ticket with no doc of its own could get, scored by how they name what it `touches` (UI-66).
+	Per touch: its best mention (WEIGHT: exact path > unique file name > folder; heading or link > anywhere else) + EXTRA per
+	further mention (capped at EXTRA_MAX); a doc's score = the sum over the ticket's touches (a folder two touches share counts
+	once). Folder mentions count only in a doc that also names one of the ticket's files (its path or unique file name): a doc
+	that names folders alone ("code lives in unblockd/, UI in static/") never qualifies, however many. Only docs scoring
+	>= SUGGEST_MIN, SUGGEST_MAX each: the docs that fit the budget first (best first, then the shorter doc, a big one over
+	1/BIG_SHARE of the budget after every smaller one: it names everything, and would eat the budget), then the docs bigger than
+	the budget whose mentions of the ticket's files sit under a heading (`too_big: true`, its `outline` and `sections` = the
+	anchors of the sections holding those mentions, deepest heading first seen: the Docs view opens its section picker with them
+	ticked, which is why it was offered; owner, 2026-11-16); one with no headings, or whose mentions all come before its first
+	heading, would only ever send a path: never offered. A ticket with no such doc gets at most WEAK_MAX `weak: true` matches
+	instead (a doc that fits, scoring > 0 but under SUGGEST_MIN, folders-only docs included), best first, so the human sees the
+	closest thing and why it is weak. Never a doc the board sends to everyone, one over MAX_FILE bytes or one in the tickets
+	folder; reads <= SUGGEST_FILES docs. No repo (a database board): {}.
+	{ticket: [{path, size, score, why: [{touch, kind, name, where, count}], too_big?, outline?, sections?, weak?}]}. Read-only;
+	the UI adds one with a PATCH of `docs`."""
+	if root(store) is None:
+		return {}
+	files = repo_files(store)["files"]
+	unique = {}
+	for rel in files:
+		n = rel.rpartition("/")[2]
+		unique[n] = unique.get(n, 0) + 1
+	nd = set(no_docs)
+	fset = set(files)
+	want = {t["id"]: [(e, _mention_names(e, unique, fset)) for e in t.get("touches") or []] for t in tickets if t["id"] in nd}
+	want = {i: [(e, ns) for e, ns in xs if ns] for i, xs in want.items()}
+	want = {i: xs for i, xs in want.items() if xs}
+	if not want:
+		return {}
+	board = set(next((r["docs"] for r in rules if r["via"] == "board"), []))
+	base, texts = root(store), {}
+	for rel in files:
+		if len(texts) >= SUGGEST_FILES:
+			break
+		p = base / rel
+		if rel in board or p.suffix.lower() not in (".md", ".txt") or rel.startswith("tickets/"):
+			continue
+		try:
+			if p.stat().st_size > MAX_FILE:
+				continue
+			text = p.read_text(encoding="utf-8", errors="replace")
+		except OSError:
+			continue
+		if len(text) <= budget or _headings(text):  # too big with no headings: nothing to pick, it would only send a path
+			texts[rel] = text
+	out, rx, heads = {}, {}, {}
+	for tid, touches in want.items():
+		names = list(dict.fromkeys(n for _, ns in touches for n in ns))
+		scored, weak = [], []
+		for rel, text in texts.items():
+			found = _mentions(text, rel, names, rx)
+			if not found:
+				continue
+			score, why, used = 0.0, [], set()
+			for touch, ns in touches:
+				mine = [f for f in found if (f[1], f[2]) in ns]
+				if not mine:
+					continue
+				best = max(mine, key=lambda f: f[0])
+				if (best[1], best[2]) in used:
+					continue  # two touches in one folder: that folder counts once
+				used.add((best[1], best[2]))
+				score += best[0] + min(EXTRA * (len(mine) - 1), EXTRA_MAX)
+				why.append({"touch": touch, "kind": best[1], "name": best[2], "where": best[3], "count": len(mine)})
+			big = len(text) > budget
+			if all(f[1] == "folder" for f in found) or score < SUGGEST_MIN:  # folders alone never qualify: a folder only counts next to a file
+				if not big and score > 0:
+					weak.append((score, rel, why, None))
+				continue
+			secs = None
+			if big:  # offered only for the sections that name the ticket's files: those are what Pick sections starts with
+				if rel not in heads:
+					starts = [0] + [m.end() for m in re.finditer("\n", text)]
+					heads[rel] = (starts, _headings(text))
+				starts, hs = heads[rel]
+				secs = []
+				for f in sorted(found, key=lambda f: f[4]):
+					if f[1] == "folder":
+						continue
+					line = bisect.bisect_right(starts, f[4]) - 1
+					h = next((h for h in reversed(hs) if h[0] <= line), None)
+					if h and _slug(h[2]) not in secs:
+						secs.append(_slug(h[2]))
+				if not secs:
+					continue  # every mention is before the first heading: no section to pick holds it
+			scored.append((score, rel, why, secs))
+		scored.sort(key=lambda s: (len(texts[s[1]]) > budget, len(texts[s[1]]) * BIG_SHARE > budget, -s[0], len(texts[s[1]]), s[1]))
+		lo = not scored
+		if lo:
+			scored = sorted(weak, key=lambda s: (-s[0], len(texts[s[1]]), s[1]))[:WEAK_MAX]
+		if scored:
+			out[tid] = [{"path": rel, "size": len(texts[rel]), "score": score, "why": why}
+			            | ({"too_big": True, "outline": outline(texts[rel]), "sections": secs} if secs is not None else {})
+			            | ({"weak": True} if lo else {}) for score, rel, why, secs in scored[:SUGGEST_MAX]]
+	return out
+
+
 HUBS = 5  # how many hub docs graph() lists
 
 
@@ -906,7 +1073,8 @@ def graph(store) -> dict:
 	  board-wide docs (or nothing, or only broken refs) means an agent gets no task-specific context.
 	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big. An image (IMAGE_EXT) is not
 	  broken: it is a doc node with `image: true` and its size, sent to agents as a path.
-	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design)."""
+	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design).
+	- `suggest` = {ticket: [{path, size, score, why, too_big?, outline?}]} for `no_docs` tickets: docs that name what the ticket touches (suggest())."""
 	base, cache, finfo = root(store), {}, {}
 	rank = {"board": 0, "tag": 1, "profile": 2, "component": 3, "ticket": 4, "file": 5}
 	arch = components(store)  # a ticket's component notes are part of its context() (from the Map), so they are reads too
@@ -1002,8 +1170,8 @@ def graph(store) -> dict:
 	good = {r["ticket"] for r in reads if r["via"] != "board" and "error" not in docs[r["doc"]]}
 	broken = [{"path": r, "error": d["error"], "via": d["kind"], "tickets": sorted(readers[r])} for r, d in docs.items() if d.get("error")]
 	hubs = sorted((d for d in docs.values() if d["kind"] != "board" and d["readers"] >= 2), key=lambda d: (-d["readers"], d["path"]))[:HUBS]
+	budget, no_docs = int(cfg.get("context_budget") or BUDGET), [t["id"] for t in tickets if t["id"] not in good]
 	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links, "rules": rules,
-	        "budget": int(cfg.get("context_budget") or BUDGET),
-	        "no_docs": [t["id"] for t in tickets if t["id"] not in good], "broken": broken,
+	        "budget": budget, "no_docs": no_docs, "broken": broken, "suggest": suggest(store, no_docs, opn, rules, budget),
 	        "hubs": [{"path": d["path"], "readers": d["readers"]} for d in hubs],
 	        "orphans": sorted(r for r, d in docs.items() if d.get("linked_only"))}

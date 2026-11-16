@@ -254,6 +254,119 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertIn("CMB-4", g["no_docs"])
 		self.assertEqual({d["path"]: d["kind"] for d in g["docs"]}["docs/arch/store.md"], "component")
 
+	def _sug(self, tid, docs, touches, weak=False):
+		"""Write docs/<name>, create a no-docs ticket touching `touches`, return graph()'s suggestions for it: the real ones, or
+		with weak=True every one (weak matches included)."""
+		for name, text in docs.items():
+			(self.repo / "docs" / name).write_text(text, encoding="utf-8", newline="")
+		self.s.create({"title": "work", "touches": touches}, tid=tid)
+		return [x for x in kn.graph(self.s)["suggest"].get(tid, []) if weak or not x.get("weak")]
+
+	def test_suggest_exact_path_beats_a_folder_and_a_passing_folder_is_not_enough(self):
+		"""UI-66: an exact path mention qualifies on its own; a folder named in passing (even twice) never does."""
+		sug = self._sug("CMB-2", {"FOLDER.md": "Everything under static/ is served as is; static/ has no build step.",
+		                          "EXACT.md": "The board page lives in static/index.html, and nothing else."}, ["static/index.html"])
+		self.assertEqual([x["path"] for x in sug], ["docs/EXACT.md"])
+		self.assertEqual(sug[0]["why"], [{"touch": "static/index.html", "kind": "path", "name": "static/index.html", "where": "text", "count": 1}])
+		self.assertNotIn("CMB-3", kn.graph(self.s)["suggest"])
+		self.s.create({"title": "glob", "touches": ["static/*.css"]}, tid="CMB-3")  # a glob names only its folder: not enough
+		self.assertTrue(all(x["weak"] for x in kn.graph(self.s)["suggest"]["CMB-3"]))  # only weak matches
+		self.assertEqual(kn._mention_names("*.py", {}, set()), [])  # a bare pattern names nothing
+
+	def test_suggest_heading_and_link_beat_prose(self):
+		"""A path in a heading or a link target (resolved from the doc's folder) outranks one in running text, even in a longer doc."""
+		sug = self._sug("CMB-2", {"PROSE.md": "Edit static/index.html.",
+		                          "HEAD.md": "# static/index.html\n\nThe whole UI, one file, vanilla JS, no build step.\n",
+		                          "LINK.md": "The UI is [one file](../static/index.html) with no build step at all, really.\n"}, ["static/index.html"])
+		self.assertEqual([x["path"] for x in sug], ["docs/HEAD.md", "docs/LINK.md", "docs/PROSE.md"])  # heading 6 = link 6 (shorter first), prose 3
+		self.assertEqual([x["why"][0]["where"] for x in sug], ["heading", "link", "text"])
+		self.assertGreater(sug[0]["score"], sug[2]["score"])
+
+	def test_suggest_repeats_count_a_little_and_file_names_only_when_unique(self):
+		"""More mentions add a little (capped); a bare file name counts only when no other file in the repo has it."""
+		for f in ("src/store.py", "src/index.html", "web/index.html"):
+			(self.repo / f).parent.mkdir(parents=True, exist_ok=True)
+			(self.repo / f).write_text("x", encoding="utf-8")
+		sug = self._sug("CMB-2", {"ONCE.md": "src/store.py holds it.", "MANY.md": "src/store.py " * 9,
+		                          "NAME.md": "store.py holds it; store.py again; and store.py.", "NAME1.md": "store.py, once."},
+		                ["src/store.py"])
+		by = {x["path"]: x for x in sug}
+		self.assertEqual(by["docs/MANY.md"]["score"], 4)  # 3 + capped extras (1)
+		self.assertEqual(by["docs/ONCE.md"]["score"], 3)
+		self.assertEqual(by["docs/NAME.md"]["why"][0]["kind"], "file")  # 2 + 2 x 0.5
+		self.assertNotIn("docs/NAME1.md", by)  # one bare name in prose is below the bar
+		self.assertEqual(sug[0]["path"], "docs/MANY.md")
+		sug = self._sug("CMB-3", {"IDX.md": "index.html, index.html, index.html, index.html."}, ["src/index.html"])
+		self.assertEqual(sug, [])  # two index.html in the repo: the bare name names nothing
+
+	def test_suggest_never_board_wide_and_at_most_three(self):
+		(self.repo / "AGENTS.md").write_text("# static/index.html\nThe UI.", encoding="utf-8")  # the board sends it already
+		docs = {f"N{i}.md": f"See static/index.html ({i})." for i in range(5)}
+		docs["CODE.md"] = "Files:\n\n```\nstatic/index.html   the UI\n```\n"  # a file map in a code block counts like prose
+		sug = self._sug("CMB-2", docs, ["static/index.html"])
+		self.assertEqual(len(sug), kn.SUGGEST_MAX)
+		paths = [x["path"] for x in sug]
+		self.assertNotIn("AGENTS.md", paths)
+		self.s.update("CMB-2", {"docs": ["docs/N1.md"]})  # a ticket with a doc of its own gets no suggestion
+		self.assertNotIn("CMB-2", kn.graph(self.s)["suggest"])
+
+	def test_suggest_a_too_big_doc_only_with_headings_after_the_docs_that_fit(self):
+		"""Owner, 2026-11-16: a doc bigger than the budget is offered when it has headings (marked too_big, with its outline, so the
+		Docs view can open Pick sections), after every doc that fits; one with no headings would only ever send a path: never offered."""
+		big = "# Guide\n## static/index.html\nThe UI.\n## Other\n" + "x" * 70000  # bigger than the 60k budget
+		sug = self._sug("CMB-2", {"HUGE.md": big, "FLAT.md": "static/index.html " + "x" * 70000, "SMALL.md": "See static/index.html."},
+		                ["static/index.html"])
+		self.assertEqual([x["path"] for x in sug], ["docs/SMALL.md", "docs/HUGE.md"])  # HUGE outscores SMALL (a heading), the doc that fits still comes first
+		self.assertGreater(sug[1]["score"], sug[0]["score"])
+		self.assertNotIn("too_big", sug[0])
+		self.assertTrue(sug[1]["too_big"])
+		self.assertEqual(sug[1]["outline"], ["# Guide", "## static/index.html", "## Other"])
+		self.assertEqual(sug[1]["sections"], ["static-index-html"])  # the section holding the mention
+
+	def test_suggest_a_too_big_doc_says_which_sections_name_the_files(self):
+		"""Owner, 2026-11-16: a too-big doc is offered for the sections that hold the mentions of the ticket's files (Pick sections
+		starts with them ticked); mentions before the first heading hold no section, so such a doc is not offered."""
+		pad = "x" * 70000
+		sug = self._sug("CMB-2", {"PARTS.md": f"# Guide\nintro\n## Setup\n{pad}\n## Build\nRun static/index.html.\n### Deep\nAgain static/index.html.\n## Other\nnothing\n",
+		                          "TOP.md": f"static/index.html static/index.html\n# Guide\n{pad}\n## Other\nnothing\n"}, ["static/index.html"])
+		self.assertEqual([x["path"] for x in sug], ["docs/PARTS.md"])
+		self.assertEqual(sug[0]["sections"], ["build", "deep"])
+		self.assertTrue(sug[0]["too_big"])
+
+	def test_suggest_weak_matches_only_without_a_real_one(self):
+		"""Owner, 2026-11-16: a ticket with no real suggestion gets at most WEAK_MAX weak matches (score > 0 under the bar, folders-only
+		docs included), flagged weak and best first; a too-big doc is never a weak match; one real suggestion hides them all."""
+		(self.repo / "src").mkdir()
+		(self.repo / "src" / "store.py").write_text("x", encoding="utf-8")
+		sug = self._sug("CMB-2", {"A.md": "Code lives in src/.", "B.md": "We keep store.py small.", "C.md": "## src/\nThe code.",
+		                          "BIG.md": "# Big\n## src/\n" + "x" * 70000}, ["src/store.py"], weak=True)
+		self.assertEqual([(x["path"], x["score"], x["weak"]) for x in sug], [("docs/C.md", 2, True), ("docs/B.md", 2, True)])  # a tie: the shorter first; A scores 1, BIG is too big
+		self.assertEqual([x["why"][0]["kind"] for x in sug], ["folder", "file"])
+		self.assertEqual(len(sug), kn.WEAK_MAX)
+		(self.repo / "docs" / "D.md").write_text("See src/store.py.", encoding="utf-8")
+		sug = kn.graph(self.s)["suggest"]["CMB-2"]
+		self.assertEqual([(x["path"], x.get("weak")) for x in sug], [("docs/D.md", None)])  # a real one: no weak matches
+	def test_suggest_folders_alone_never_qualify(self):
+		"""Owner, 2026-11-16: a doc that names only the ticket's folders is not about its files, however many folders it names;
+		a folder still adds to a doc that names one of the files."""
+		touches = ["unblockd/web.py", "static/index.html", "tests/test_boards.py", "docs/overview.md"]
+		(self.repo / "docs" / "overview.md").write_text("x", encoding="utf-8")
+		sug = self._sug("CMB-2", {"MAP.md": "The code lives in unblockd/, the UI in static/, the tests in tests/.",
+		                          "api.md": "# API\n## unblockd/web.py\nThe REST routes; tests in tests/.\n"}, touches)
+		self.assertEqual([x["path"] for x in sug], ["docs/api.md"])
+		self.assertEqual({w["kind"] for w in sug[0]["why"]}, {"path", "folder"})  # the folder counts here: the doc names a file too
+		self.assertEqual(sug[0]["score"], 7)
+
+	def test_suggest_counts_a_file_map_in_a_code_block(self):
+		"""Kept on purpose: a repo's file map is often a code block (AGENTS.md's is), and it says what each file is."""
+		sug = self._sug("CMB-2", {"MAP.md": "Files:\n\n```\nstatic/index.html   the UI\n```\n"}, ["static/index.html"])
+		self.assertEqual([(x["path"], x["why"][0]["where"]) for x in sug], [("docs/MAP.md", "text")])
+
+	def test_suggest_a_folder_two_touches_share_counts_once(self):
+		sug = self._sug("CMB-2", {"F.md": "## src/\nThe code."}, ["src/a.py", "src/b.py"])
+		self.assertEqual(sug, [])  # folder heading 2, counted once, not twice
+		self.assertEqual([x["score"] for x in self._sug("CMB-3", {}, ["src/a.py", "src/b.py"], weak=True)], [2])  # a weak match at most
+
 	def test_a_docs_entry_can_name_a_section(self):
 		"""AI-14: `path#heading` sends only that section (down to the next heading of its level) plus the doc's outline."""
 		lines = ["# Mechanics", "intro", "## Combat", "parry", "```", "## not a heading in code", "```", "### Timing", "0.2s", "## Movement", "run"]
@@ -298,12 +411,14 @@ class KnowledgeTest(unittest.TestCase):
 		with self.assertRaisesRegex(TicketError, "path#heading"):
 			kn.read_doc(self.s, "docs/BIG.md")
 
-	def test_the_preview_outlines_big_sent_docs_only(self):
-		"""UI-72: the Docs view's preview gets the outline of a doc sent in full that takes over a third of the budget; the agent's context
-		does not (it has the text), and small docs or docs without headings get none."""
+	def test_the_preview_outlines_sent_docs_with_two_headings(self):
+		"""UI-72 + UI-75: the Docs view's preview gets the outline of a doc sent in full with 2+ headings, whatever its size; the agent's
+		context does not (it has the text), and docs with 0 or 1 heading get none."""
 		(self.repo / "docs" / "BIGOK.md").write_text("# Big\n## One\n" + "x" * 400 + "\n## Two\ny\n", encoding="utf-8", newline="\n")
 		(self.repo / "docs" / "PLAIN.md").write_text("no headings " * 40, encoding="utf-8")
-		self.s.create({"title": "t", "docs": ["docs/BIGOK.md", "docs/PLAIN.md"]}, tid="CMB-2")
+		(self.repo / "docs" / "SMALL.md").write_text("# Small\n## A\na\n", encoding="utf-8", newline="\n")
+		(self.repo / "docs" / "ONE.md").write_text("# One heading\ntext\n", encoding="utf-8", newline="\n")
+		self.s.create({"title": "t", "docs": ["docs/BIGOK.md", "docs/PLAIN.md", "docs/SMALL.md", "docs/ONE.md"]}, tid="CMB-2")
 		self.s.config["context_budget"] = 1200
 		ctx = kn.context(self.s, "CMB-2")
 		by = {d["path"]: d for d in ctx["docs"]}
@@ -313,7 +428,10 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(by["docs/BIGOK.md"]["outline"], ["# Big", "## One", "## Two"])
 		self.assertEqual(len(by["docs/BIGOK.md"]["outline_chars"]), 3)
 		self.assertNotIn("outline", by["docs/PLAIN.md"])  # no headings
-		self.assertNotIn("outline", by["AGENTS.md"])  # small: under a third of the budget
+		self.assertNotIn("outline", by["AGENTS.md"])  # no headings
+		self.assertEqual(by["docs/SMALL.md"]["outline"], ["# Small", "## A"])  # UI-75: small, but 2 headings
+		self.assertNotIn("outline", by["docs/ONE.md"])  # one heading: nothing to pick
+		self.assertTrue(all("outline" not in d for d in kn.context(self.s, "CMB-2")["docs"]))  # agents: unchanged
 
 	def test_a_doc_that_does_not_fit_sends_its_outline(self):
 		"""AI-14: a doc cut by the budget comes with its headings, so the agent can read the part it needs, not only a path."""
