@@ -5,14 +5,14 @@ description: Use before designing or reviewing any change to static/index.html (
 
 # unblockd design skill (one-file vanilla web UI)
 
-Source of truth: `AGENTS.md`. This skill points at its bullets by name. If this skill and AGENTS.md disagree, AGENTS.md wins, and you fix this skill in the same commit.
-Tags: **[AGENTS]** a rule written in AGENTS.md (bullet name in quotes). **[GENERAL]** a basic accessibility rule that AGENTS.md does not spell out. Use it, but do not cite AGENTS.md for it.
+Source of truth: `AGENTS.md` plus `UI-REFERENCE.md` in this folder (the UI conventions moved there from AGENTS.md "Conventions" on 2026-11-16, same bullet names). Load UI-REFERENCE.md before designing or reviewing any change to static/index.html. This skill points at their bullets by name. If this skill and either file disagree, the file wins, and you fix this skill in the same commit.
+Tags: **[AGENTS]** a rule written in AGENTS.md or UI-REFERENCE.md (bullet name in quotes; search both). **[GENERAL]** a basic accessibility rule that AGENTS.md does not spell out. Use it, but do not cite AGENTS.md for it.
 
 ## 1. How to use this skill
 
 - Reviewers: read sections 2 and 3, then score the change against section 6. Report each failed check as `check number, screen/state, evidence, smallest fix`. Do not restyle what passes.
 - Designers: follow sections 2 to 5 while you work. Self-score with section 6 before you hand off.
-- Read AGENTS.md "Conventions" and "Traps that already bit" first. They are long. Search them for the feature you touch.
+- Read UI-REFERENCE.md (the UI conventions), AGENTS.md "UI rules a non-UI change can break" and AGENTS.md "Traps that already bit" first. They are long. Search them for the feature you touch.
 - Always check these states:
   - **Empty**: a new board, an empty column, the Needs you panel with nothing in it.
   - **Loading**: first paint with no data yet.
@@ -26,9 +26,9 @@ Tags: **[AGENTS]** a rule written in AGENTS.md (bullet name in quotes). **[GENER
 
 When rules clash, the first one wins:
 
-1. **Owner decisions** in AGENTS.md. Do not re-argue them. They are listed in 2.1.
+1. **Owner decisions** in AGENTS.md and UI-REFERENCE.md. Do not re-argue them. They are listed in 2.1.
 2. **Basic accessibility** (section 4.5).
-3. **AGENTS.md "Conventions" and "Traps that already bit"**.
+3. **UI-REFERENCE.md, AGENTS.md "Conventions" and "Traps that already bit"**.
 4. **Existing patterns** in `static/index.html`. Reuse the helper before you write another.
 5. **Taste**.
 
@@ -48,9 +48,9 @@ Ties go to the simplest thing that works.
 
 ### 2.2 Do not re-propose what exists
 
-Check AGENTS.md and the `?` sheet first. Already built: Board, Graph, Docs, Map and Roadmap views; the `Ctrl/Cmd+K` command palette; the Board's List layout (`l`); `j`/`k` card focus; `p` then `0`-`3` priority; bulk bar; Needs you panel (`i`); digest; split; Undo toasts; settings (theme, density, digest); free pickers; Component and Milestone filters and Group by; agent stats panel. Improve them. Do not add a second one.
+Check AGENTS.md, UI-REFERENCE.md and the `?` sheet first. Already built: Board, Graph, Docs, Map and Roadmap views; the `Ctrl/Cmd+K` command palette; the Board's List layout (`l`); `j`/`k` card focus; `p` then `0`-`3` priority; bulk bar; Needs you panel (`i`); digest; split; Undo toasts; settings (theme, density, digest); free pickers; Component and Milestone filters and Group by; agent stats panel. Improve them. Do not add a second one.
 
-## 3. Hard rules (from AGENTS.md "Conventions")
+## 3. Hard rules (from UI-REFERENCE.md "Conventions (UI)")
 
 - **One file.** The UI is `static/index.html`: vanilla JS, no build, no CDN, no library. Do not add a UI file.
 - **Colour tokens.** Colours are CSS tokens on `:root`, each one `light-dark(light, dark)` with `color-scheme: light dark`. There is no separate dark block. Add a token once with both values. Pillar colours come from config in `applyConfig`.
@@ -149,7 +149,7 @@ Mark a check "n/a" when the change cannot touch it.
 
 **Scope and decisions**
 1. No owner decision from 2.1 is reversed?
-2. The feature is not already built (AGENTS.md and the `?` sheet checked)?
+2. The feature is not already built (AGENTS.md, UI-REFERENCE.md and the `?` sheet checked)?
 3. One file, vanilla JS, no library, no CDN, no build step, no new UI file?
 4. No control or chip is added to the header or a card unless it replaces one?
 
@@ -193,7 +193,7 @@ Mark a check "n/a" when the change cannot touch it.
 **Safety and process**
 34. Front doors agree: a new Store operation has its REST route and `Remote` method (and MCP/CLI if agents need it)?
 35. No known trap is hit: `.board` class, `[hidden]` override, `pkill -f` self-kill, bare `[data-tab]`, ETag stored with its data, `<input value>` newline loss?
-36. Docs moved with code: the AGENTS.md bullet, `docs/reference.md` if user-visible, the `?` sheet? (CHANGELOG is the maintainer's.)
+36. Docs moved with code: the AGENTS.md / UI-REFERENCE.md bullet, `docs/reference.md` if user-visible, the `?` sheet? (CHANGELOG is the maintainer's.)
 37. Verified with section 7, and the report says what was NOT verified?
 
 ## 7. Verify

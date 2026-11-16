@@ -229,3 +229,6 @@ class ConnectorCases:
 		with self.assertRaises(TicketError):
 			s.update(t["id"], {"components": ["web"]})
 		self.assertTrue(kn.graph(s)["broken"])
+		u = s.create({"title": "u", "touches": ["unblockd/web.py"]}, prefix="T")  # UI-66: no repo, so no doc to suggest, and no error
+		self.assertEqual(kn.graph(s)["suggest"], {})
+		self.assertEqual(kn.suggest(s, [u["id"]], [u], [], kn.BUDGET), {})

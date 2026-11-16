@@ -92,12 +92,17 @@ NEEDS_BODY = 6000  # chars of body (the description) sent per item
 NEEDS_NOTES = 10  # the newest notes sent per item: the panel shows the last 3 that are not the question itself
 
 
-def _needs() -> list[dict]:
+def _needs(board: str | None = None) -> list[dict]:
 	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
 	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
+	`board` = that board only (the UI shows just its own board: API-18, every board cost ~1 s); None = every board.
 	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does."""
-	out = []
-	for bid, path in BOARDS.all().items():
+	out, boards = [], BOARDS.all()
+	if board is not None:
+		if board not in boards:
+			raise st.NotFound(f"no board {board!r}. Boards: {', '.join(boards)}")
+		boards = {board: boards[board]}
+	for bid, path in boards.items():
 		try:
 			s = BOARDS.open(path)
 			ts = s.list()
@@ -241,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(201, BOARDS.create(str(b.get("id", "")), str(b.get("title", "")), b.get("root") or None))
 				return self._send(405, {"error": "method not allowed"})
 			if parts == ["api", "needs"]:
-				return self._send(200, _needs()) if method == "GET" else self._send(405, {"error": "method not allowed"})
+				return self._send(200, _needs(q.get("board") or None)) if method == "GET" else self._send(405, {"error": "method not allowed"})
 			if parts == ["api", "chat"]:
 				if method == "GET":
 					return self._send(200, chat.enabled())
@@ -294,7 +299,7 @@ class Handler(BaseHTTPRequestHandler):
 				if q.get("content") == "0":  # what would be sent, without the text (the Docs view's preview)
 					for d in c["docs"]:
 						d.pop("content", None)
-					kn.preview_outlines(store, c)  # a big doc sent in full can be trimmed to sections (UI-72)
+					kn.preview_outlines(store, c)  # a sent doc with 2+ headings can be trimmed to sections (UI-72, UI-75)
 				return self._send(200, c)
 			if rest[:1] == ["tickets"] and len(rest) in (3, 4) and rest[2] == "files":
 				tid = rest[1]

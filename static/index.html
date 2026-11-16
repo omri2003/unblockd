@@ -607,13 +607,23 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .dbl{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.72rem;color:var(--muted);margin:4px 2px 0} .dbl b{color:var(--ink);font-weight:600} .dbl b.over{color:var(--cinnabar)}
 .dsf{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:.76rem} .dsf>span{flex:1 1 14rem} .dsf .warn{color:var(--cinnabar);font-weight:600} .dsf .btn{white-space:nowrap}
 .dcb{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 0}
+/* UI-66: docs that name what a ticket without docs touches. Same card as the preview's docs (badge, name, size, action), but not added yet:
+   flat (no shadow: only what is sent floats), a 2px dashed outline and a clear tint (owner pick C, 2026-11-16). Jade = a suggestion, cinnabar edge = too big (Pick sections),
+   grey = a weak match (offered only when nothing better exists; grey, not amber: amber means "needs attention"). The reason is under the name. */
+.dsug{margin:10px 0 0} .dsug h4{margin:0 0 2px;font-size:.78rem} .dsug>p{margin:0 0 6px;font-size:.72rem;color:var(--muted)}
+.dsug ol{gap:6px} .dsug .dcard{background:color-mix(in srgb,var(--jade) 12%,var(--surface));box-shadow:none;border:2px dashed color-mix(in srgb,var(--jade) 50%,var(--line))} .dsug .dcard:hover{box-shadow:none}
+.dsug .dcard.bad{background:color-mix(in srgb,var(--cinnabar) 10%,var(--surface));border-color:color-mix(in srgb,var(--cinnabar) 45%,var(--line));box-shadow:inset 3px 0 0 var(--cinnabar)} .dsug .pw .dsc{margin-left:6px} /* too big: its sections can still go (Pick sections) */
+.dsug .dcard.weak{background:color-mix(in srgb,var(--muted) 14%,var(--surface));border-color:color-mix(in srgb,var(--muted) 45%,var(--line))} .dsug .weak .dl{color:var(--muted)}
+.dsrc.k-sug{background:none;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--jade) 55%,transparent);color:var(--jade)} .dsrc.k-weak{background:none;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--muted) 55%,transparent);color:var(--muted)}
+.dsug ul{list-style:none;margin:0;padding:0 10px 8px;display:grid;gap:2px;font-size:.72rem;color:var(--muted)}
+.dsug ul li{overflow-wrap:anywhere} .dsug code{font:.7rem var(--mono);color:var(--ink)} .tag.sug{color:var(--jade);border-color:color-mix(in srgb,var(--jade) 40%,var(--line))}
 .dempty{padding:18px 4px;color:var(--muted)}
 .dh3{font-size:.85rem;margin:14px 0 4px;color:var(--muted)}
 .dlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .dlist li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
-  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dch,.dch.wb{grid-template-columns:max-content minmax(0,1fr);row-gap:4px} .dch .dsb{grid-column:2;justify-self:start} .dsec>summary.strip{flex-wrap:wrap} .dsf>span{flex-basis:100%} .dsf .btn:first-of-type{margin-left:auto} .dch .z{display:none} .dch .s{grid-column:2} .dsr{grid-template-columns:minmax(0,1fr) 3.5rem 2.8rem;gap:6px} .dtree ul{margin-left:6px;padding-left:10px} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0}  .dbud{margin-left:0}
+  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dch,.dch.wb{grid-template-columns:max-content minmax(0,1fr);row-gap:4px} .dch .dsb{grid-column:2;justify-self:start} .dsec>summary.strip{flex-wrap:wrap} .dsf>span{flex-basis:100%} .dsf .btn:first-of-type{margin-left:auto} .dch .z{display:none} .dch .s{grid-column:2} .dsr{grid-template-columns:minmax(0,1fr) 3.5rem 2.8rem;gap:6px} .dtree ul{margin-left:6px;padding-left:10px} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0}  .dbud{margin-left:0} .dsug .dch .btn{grid-column:2;justify-self:start}
 }
 /* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
 .mapstage{position:relative;overflow:hidden;height:calc(100dvh - 360px);min-height:340px;background:var(--sunk);border-radius:8px;touch-action:none;user-select:none;cursor:grab}
@@ -652,7 +662,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .mdir{margin:10px 0 4px;font-size:.78rem;color:var(--muted)}
 .mcl li{display:block} .ctr{font-size:.84rem;color:var(--muted);overflow-wrap:anywhere} .ctr.none{color:var(--cinnabar);font-style:italic}
 .mwhy{margin:0 0 10px;padding-left:18px;color:var(--cinnabar);font-weight:600;font-size:.88rem}
-/* editing the architecture from the Map (AGENTS.md, Map view): forms in the side panel, controls on each connection line */
+/* editing the architecture from the Map (UI-REFERENCE.md, Map view): forms in the side panel, controls on each connection line */
 .aform{display:grid;gap:10px;margin:8px 0} .aform label,.aform .lbl{display:grid;gap:4px;font-size:.85rem;font-weight:600}
 .aform input,.aform textarea{width:100%;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:7px 9px;font-weight:400}
 .aform textarea{resize:vertical;min-height:4.2em} .aform textarea.mono,.aform input.mono{font-family:var(--mono);font-size:.84rem}
@@ -766,7 +776,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .card.claimed{outline-width:1.5px;outline-offset:-1.5px;background-image:linear-gradient(to bottom,color-mix(in srgb,var(--amber) 6%,transparent),transparent 55%)}
 /* 7d phone: search gets row 1, the rest share row 2 */
 @media (max-width:600px){.bar input[type=search]{flex:1 1 100%} .bar>#nextBtn{margin-left:auto} header .hdr>.btn:not(.q),header .hdr>#apanel{flex:1 1 0}}
-/* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
+/* motion (UI-REFERENCE.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
 .sl{position:relative}
 .sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
 .sl>[aria-pressed="true"]{background:transparent;border-color:transparent}
@@ -953,11 +963,14 @@ const cap = s => s ? s[0]+s.slice(1).toLowerCase() : '';
 const pickOf=(v,ok,d)=>ok.includes(v)?v:d; // v if it is one of ok, else d (guards values read from localStorage)
 const setBoard=v=>{try{localStorage.setItem('unblockd.board',v)}catch{}};
 // Several boards: ?board=<id> picks one (remembered); API calls go to /api/b/<id>/...
-const BOARD=(new URLSearchParams(location.search).get('board')||(()=>{try{return localStorage.getItem('unblockd.board')}catch{return null}})()||'').replace(/[^a-z0-9_-]/g,'');
-const API=BOARD?`/api/b/${BOARD}`:'/api';
+let BOARD=(new URLSearchParams(location.search).get('board')||(()=>{try{return localStorage.getItem('unblockd.board')}catch{return null}})()||'').replace(/[^a-z0-9_-]/g,'');
+let API=BOARD?`/api/b/${BOARD}`:'/api';
+const BOARD0=BOARD; // the board this page opened on: Back to an entry without ?board= returns to it (UI-74)
+let BGEN=0; // bumped by an in-page board switch: a fetch started for the previous board never settles (see rawFetch)
 if(BOARD)setBoard(BOARD);
 // Project settings come from GET <API>/meta (the tickets folder's unblockd.json).
-let CFG={title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],agents:[],stale_days:7};
+const CFG0=()=>({title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],agents:[],stale_days:7});
+let CFG=CFG0(); // applyConfig merges into it: a board switch starts again from CFG0, so no key of the previous board's config survives
 let PILLARS=[],PNAME={},HUMAN=new Set(),LANES=[['OTHER','All','muted']];
 const pk=k=>'p-'+String(k).toLowerCase().replace(/[^a-z0-9]/g,'_');
 const pname=k=>PNAME[k]||cap(k);
@@ -987,10 +1000,12 @@ const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','milestone','parent','agent'];
 const LAYOUTS=['cols','list']; // the Board as columns or as a dense list (UI-49)
-const state={layout:pickOf(store.get('layout','cols'),LAYOUTS,'cols'),dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
-  showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
+const state0=()=>({layout:pickOf(store.get('layout','cols'),LAYOUTS,'cols'),dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
+  showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')});
+const state=state0(); // a board switch re-reads it the way a page load does (UI-74)
 const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
-const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
+const MV0=()=>({data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0});
+const MV=MV0(); // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
 const COMPS=()=>MV.data?.components||[], ctitle=k=>COMPS().find(c=>c.key===k)?.title||k;
 const MSL=()=>CFG.milestones||[], mtitle=k=>MSL().find(m=>m.key===k)?.title||k, msOf=t=>MSL().some(m=>m.key===t.milestone)?t.milestone:''; // the roadmap (config order); a key no longer listed counts as unscheduled
 const tcomps=t=>[...new Set([...(t.components||[]),...(MV.data?.ticket_map?.[t.id]||[])])]; // a ticket's components: explicit first, then those derived from its touches (GET /architecture ticket_map); explicit alone until that arrives
@@ -1019,7 +1034,8 @@ const SUG={
   docs:()=>{const f=FILES.files.filter(x=>/\.(md|txt)$/i.test(x));return [...dirsOf(f),...f];}, // docs and the folders holding them
   touches:()=>[...dirsOf(FILES.files),...FILES.files],
   tags:()=>[...new Set([...(CFG.agents||[]).map(a=>'agent:'+a.name),...(CFG.schema?.tags||[]),...T.flatMap(t=>t.tags||[])])].sort()};
-async function loadFiles(){const b=curBoard();if(FILES.b===b)return;try{FILES={b,...await jf(API+'/files')};}catch{}}
+async function loadFiles(){const b=curBoard();if(FILES.b===b)return;try{FILES={b,...await jf(API+'/files')};}catch{return;}
+  document.querySelectorAll('.pick[data-free]').forEach(box=>{if(!box.querySelector('.pl').hidden)pickList(box);});} // typed before /files answered: repaint the open list with the files (the 390px smoke once saw no docs/guide.md suggestion)
 function pickList(box){
   const q=box.querySelector('.pq').value.trim().toLowerCase(),have=new Set([...box.dataset.skip.split(','),...[...box.querySelectorAll('.pc')].map(c=>c.dataset.id)]);
   const ul=box.querySelector('.pl');
@@ -1076,10 +1092,13 @@ let T=[], BY=new Map(), raw='', openId=null, editing=false;
 // the person is waiting on; it shows the bar after 250 ms (fast ones never flash it). Polls start on timers, so they never show it.
 const BUSY={n:0,t:null,at:0};
 addEventListener('pointerdown',()=>{BUSY.at=Date.now();},true); addEventListener('keydown',()=>{BUSY.at=Date.now();},true);
-const rawFetch=window.fetch.bind(window);
+const fetch0=window.fetch.bind(window), HANG=new Promise(()=>{});
+// UI-74: a request started before an in-page board switch must not write the old board's answer into the new board's state. Its promise
+// never settles (so no handler, catch or finally runs); the body is read here, so a switch between headers and body is caught too.
+const rawFetch=(...a)=>{ const g=BGEN; return fetch0(...a).then(async r=>{ if(g!==BGEN) return HANG; const b=[101,204,205,304].includes(r.status)?null:await r.arrayBuffer(); return g!==BGEN?HANG:new Response(b,{status:r.status,statusText:r.statusText,headers:r.headers}); },e=>g!==BGEN?HANG:Promise.reject(e)); };
 window.fetch=(...a)=>{ if(!BUSY.n&&Date.now()-BUSY.at>1500) return rawFetch(...a);
-  if(BUSY.n++===0) BUSY.t=setTimeout(()=>{$('topbar').hidden=false;},250);
-  return rawFetch(...a).finally(()=>setTimeout(()=>{ if(--BUSY.n===0){clearTimeout(BUSY.t);$('topbar').hidden=true;} },0)); }; // after the caller's next step, so a chained reload counts
+  if(BUSY.n++===0) BUSY.t=setTimeout(()=>{$('topbar').hidden=false;},250); const g=BGEN;
+  return rawFetch(...a).finally(()=>setTimeout(()=>{ if(g===BGEN&&--BUSY.n===0){clearTimeout(BUSY.t);$('topbar').hidden=true;} },0)); }; // after the caller's next step, so a chained reload counts
 const ldHtml=(what,rows=3,tag='div')=>`<${tag} class="ld" role="status">${'<i aria-hidden="true"></i>'.repeat(rows)}<span>${esc(what)}…</span></${tag}>`; // a panel or view waiting for its first data
 async function jf(url, method='GET', body, hdr){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
   const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json',...hdr},body:body?JSON.stringify(body):undefined});
@@ -1103,16 +1122,30 @@ async function load(force){
     text=await r.text(); if(r.status===401){ authFail(text); return; } if(r.status===404){ try{ msg404=JSON.parse(text).error; }catch{} } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
   catch{ const m=msg404||'Cannot load tickets: is the server running, and does this board exist?'; toast(m,{err:1}); if(!LOADED){LERR=m; if(state.view==='board') render();} return; }
   if(text===raw && !force) return;
-  raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
+  if(LOADED&&!force&&hbOnly(text,raw)){ raw=text; T=JSON.parse(text); BY=new Map(T.map(t=>[t.id,t])); paintBeats(); return; } // UI-73: only heartbeats moved: no refetch, no re-render
+  const first=!LOADED; raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); if(first) loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t])); // git: its own 15 s poll after the first answer
+  const as=sigOf(T,ARCHF), ds=sigOf(T,DOCF); if(as!==archSig){archSig=as;archDue=true;} if(ds!==docSig){docSig=ds;docDue=true;} // what the Map / Docs fetch reads changed: due until the next paint
   if(prev.size&&!reduce.matches) noteFinished(prev);
   paint=()=>{ paint=null;
-    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(state.view==='map'||CFG.architecture)loadMap(); if(!$('chat').hidden&&!CH.busy) renderChat();
+    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs'&&docDue){docDue=false;loadDocs();} if((state.view==='map'||CFG.architecture)&&archDue){archDue=false;loadMap();} if(!$('chat').hidden&&!CH.busy) renderChat();
     if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
   };
   if(!force&&menuBusy()) return; // a re-render would destroy the open menu: keep the data, paint when it closes
   paint();
 }
 let paint=null; // the deferred render, if any
+// UI-73: a heartbeat changes claim.heartbeat_at (and the inbox mark `seen`) and nothing else, but every worker beats every few minutes:
+// that must not refetch /api/needs, /git and /architecture in every open tab. hbOnly = the two texts differ only there;
+// sigOf = the fields a server view reads, so the Map and Docs refetch only when one of those changed (archDue/docDue survive a deferred paint).
+const hbStrip=s=>s.replace(/"(?:heartbeat_at|seen)": ?(?:"[^"]*"|\d+)/g,'');
+const hbOnly=(a,b)=>a.length>0&&b.length>0&&hbStrip(a)===hbStrip(b);
+const ARCHF=['id','status','effective_status','touches','components'], DOCF=['id','title','status','tags','pillar','agent','docs','components','touches','files'];
+const sigOf=(ts,f)=>JSON.stringify(ts.map(t=>f.map(k=>t[k])));
+let archSig=null, docSig=null, archDue=false, docDue=false;
+function paintBeats(){ // the liveness line (time + lease bar) of every card, and the open drawer's "last heard": nothing else reads a heartbeat
+  document.querySelectorAll('time[data-hb]').forEach(e=>{ const hb=BY.get(e.closest('[data-open]')?.dataset.open)?.claim?.heartbeat_at; if(hb) e.dataset.hb=hb; });
+  tickAges(); if(openId&&!editing&&!$('drawer').hidden&&BY.has(openId)&&!paint) showTicket(openId,true);
+}
 let DATA=false, live=false, DROP=null; // DATA: true only while paint() renders fresh ticket data (not the first paint: `live`). Only those renders animate (cards slide, Needs rows fade); a filter, search, group, view or board change just redraws. DROP: where the last drag ended, so that card slides from the pointer
 const MENUS='.mv[open],.ovf[open],#fpanel[open],#spanel[open],#apanel[open],#bpanel[open],#gmore[open]'; // the popovers: at most one is open at a time
 const menuBusy=()=>!!document.querySelector(MENUS);
@@ -1329,9 +1362,9 @@ function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])ret
 const hm=d=>d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 const ago=iso=>{const s=Math.max(0,(Date.now()-Date.parse(iso))/1000);return s<60?'just now':s<3600?`${Math.round(s/60)} min ago`:s<86400?`${Math.round(s/3600)} h ago`:`${Math.round(s/86400)} d ago`;};
 // "While you were away": activity since this browser last dismissed it (per board). Fetched once on load; clock times only, no "x ago".
-const LSK='unblockd.lastSeen.'+(BOARD||'default'); let DG=null, dgOpen=false; // DG = {since, ev:[activity events, oldest first]}
+const LSK=()=>'unblockd.lastSeen.'+(BOARD||'default'); let DG=null, dgOpen=false; // DG = {since, ev:[activity events, oldest first]}
 async function loadDigest(){
-  const since=store.get(LSK,null); if(!since){store.set(LSK,new Date().toISOString());return;} // first visit: start counting now
+  const since=store.get(LSK(),null); if(!since){store.set(LSK(),new Date().toISOString());return;} // first visit: start counting now
   try{DG={since,ev:(await jf(API+'/activity?limit=2000&since='+encodeURIComponent(since))).reverse()};}catch{return;}
   renderDigest(); renderGit();
 }
@@ -1339,11 +1372,11 @@ async function loadDigest(){
 // Sections in the order a person acts on them: review (waits on you), stuck, finished, in progress, new.
 // Each row reads as a ticket (UI-55, design C): status tile, pillar spine, seal, id, title, byline, and ONE outcome line under the title.
 const DGS=[['rev','●','Ready for review'],['stk','⚠','Stuck'],['fin','✓','Finished'],['sta','▶','In progress'],['new','＋','New']];
-const DGH='unblockd.dgHide.'+(BOARD||'default'); // rows dismissed one by one or a section at a time: {id: ts of the event dismissed}; newer activity on that ticket brings it back
-const dgHid=(id,ts)=>{const h=store.get(DGH,{})[id]; return !!h&&h>=ts;};
+const DGH=()=>'unblockd.dgHide.'+(BOARD||'default'); // rows dismissed one by one or a section at a time: {id: ts of the event dismissed}; newer activity on that ticket brings it back
+const dgHid=(id,ts)=>{const h=store.get(DGH(),{})[id]; return !!h&&h>=ts;};
 function dgHide(rows,what){ // rows = [{e,t}]; Undo puts the old map back
-  const old=store.get(DGH,{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH,h); renderDigest();
-  toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH,old);renderDigest();}});
+  const old=store.get(DGH(),{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH(),h); renderDigest();
+  toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH(),old);renderDigest();}});
 }
 const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
 const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
@@ -1398,9 +1431,9 @@ const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: t
 const ntime=at=>at.length>10?new Date(at).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):at; // old complete() notes carry a date only
 function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
   return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.pinned&&!n.superseded_by?' <span class="hint" title="Always sent to the next agent">· pinned</span>':''}${n.superseded_by?` <span class="hint">· replaced by note ${esc(n.superseded_by)}</span>`:''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
-async function loadNeeds(){ // ETag: an idle poll costs headers only
+async function loadNeeds(){ // ETag: an idle poll costs headers only; ?board= = this board only (API-18: every board cost ~1 s per call)
   if(!BOARDS.length) return; const tok=++nTok;
-  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||tok!==nTok) return; if(!r.ok){ nErr='the server answered '+r.status; if(!$('npanel').hidden) renderNeedsPanel(); return; } const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nLoaded=true; nErr=''; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
+  try{ const r=await fetch('/api/needs?board='+encodeURIComponent(curBoard()),{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||tok!==nTok) return; if(!r.ok){ nErr='the server answered '+r.status; if(!$('npanel').hidden) renderNeedsPanel(); return; } const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nLoaded=true; nErr=''; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
   catch{ if(tok===nTok){ nErr='the server did not answer'; if(!$('npanel').hidden) renderNeedsPanel(); } return; }
   paintNeeds();
 }
@@ -1936,7 +1969,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-gitdismiss]')){store.set('unblockd.gitSeen.'+(BOARD||'default'),gitKey());renderGit();return;} // it comes back when the numbers change
   if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
   if(b=g('[data-dghidesec]')){const s=digestGroups().find(x=>x[0]===b.dataset.dghidesec); if(s) dgHide(s[3],`${s[3].length} ${s[2].toLowerCase()}`); return;}
-  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());store.set(DGH,{}); /* everything up to now is seen: the per-row list is no longer needed */ const el=$('digest'),done=()=>{DG=null;renderDigest();};
+  if(g('[data-dgdismiss]')){store.set(LSK(),new Date().toISOString());store.set(DGH(),{}); /* everything up to now is seen: the per-row list is no longer needed */ const el=$('digest'),done=()=>{DG=null;renderDigest();};
     if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
   if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-pstep]')){peekStep(+b.dataset.pstep);return;}
@@ -1957,7 +1990,8 @@ document.addEventListener('click',async e=>{
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
   if(b=g('[data-dsecopen]')){const k=b.dataset.dsecopen;dSecOpen.has(k)?dSecOpen.delete(k):dSecOpen.add(k);renderDocs();document.querySelector(`#dT [data-dsecopen="${CSS.escape(k)}"]`)?.focus();return;}
   if(b=g('[data-dsecgo]')){dSecApply(b.dataset.dsecgo);return;}
-  if(b=g('[data-dsecreset]')){delete dPick[b.dataset.dsecreset];renderDocs();return;}
+  if(b=g('[data-dadd]')){dAddDoc(b.dataset.dadd,b.dataset.path,!!b.dataset.pick);return;}
+  if(b=g('[data-dsecreset]')){const k=b.dataset.dsecreset;dSugPick[k]?dPick[k]=new Set(dSugPick[k].secs):delete dPick[k];renderDocs();return;} // a suggestion's picker resets to the suggested ticks
   if(b=g('[data-dsel]')){dSelect(b.dataset.dsel);return;}
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
@@ -2075,7 +2109,7 @@ function cmdList(q){
   for(const [v,l,key] of VIEWS) if(v!==state.view) out.push({g:'View',l:`Go to ${l}`,k:'view switch '+v+(key?' '+key:''),run:()=>setView(v)});
   if(state.view==='board') out.push({g:'View',l:state.layout==='list'?'Show as columns':'Show as list',k:'layout list columns rows table l',run:()=>setBoardLayout(state.layout==='list'?'cols':'list')});
   out.push({g:'Panel',l:'Needs you',k:'questions reviews proposals inbox',run:openNeeds},{g:'Panel',l:'Ask Claude',k:'chat ask',run:()=>openChat()});
-  for(const b of BOARDS) if(b.id!==curBoard()) out.push({g:'Board',l:`Switch to ${b.title}`,k:'board '+b.id,run:()=>{setBoard(b.id);location.href='?board='+encodeURIComponent(b.id);}});
+  for(const b of BOARDS) if(b.id!==curBoard()) out.push({g:'Board',l:`Switch to ${b.title}`,k:'board '+b.id,run:()=>switchBoard(b.id)});
   const cmds=words.length?out.filter(c=>hit(c.l+' '+c.k)):out.filter(c=>c.g===CMD.ctx||c.g==='Create'||c.g==='View');
   const id=q.trim().toUpperCase(),score=x=>x.id===id?-1:(x.id.startsWith(id)?0:2)+(x.status==='done'?1:0); // the exact id first, then open before done
   const ts=words.length?T.filter(x=>hit(x.id+' '+x.title)).sort((a,b)=>score(a)-score(b)||cmp(a,b)).slice(0,30):[];
@@ -2510,12 +2544,14 @@ readColors();
 // everything its rule sends (graph()'s `rules`, from the config): a doc an earlier band already lists is a dashed "also here" row, never drawn twice.
 // Clicking a ticket shows what its agent gets (GET tickets/<id>/context?content=0: each doc's `sent`, against the budget). DOM + SVG on purpose:
 // rows are real buttons (keyboard, a11y, the <=700px list), tokens resolve in CSS.
-const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null,opened:null};
+const DV0=()=>({data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null,opened:null}), DV=DV0();
 const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_docs,'bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
   ['broken',['broken reference','broken references'],g=>g.broken,'bad','A docs entry that is missing, outside the project, not text, or too big.'],
   ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
   ['hubs',['hub doc','hub docs'],g=>g.hubs,'','Docs read by the most tickets (2 or more; board-wide docs excluded). Changing one affects many tickets.'],
-  ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.']];
+  ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.'],
+  ['suggest',['ticket could get a doc','tickets could get a doc'],g=>dSugIds(g),'','Tickets without docs where a doc of this repo clearly names what they touch (the exact path, or it in a heading or a link). Click a ticket to see why and add it.']];
+const dSugIds=g=>Object.keys(g.suggest||{}).filter(id=>!g.suggest[id][0]?.weak); // tickets with a real suggestion (weak matches: only in the preview)
 const dBig=g=>g.docs.filter(d=>!d.builtin&&!d.image&&d.size>g.budget).map(d=>d.path);
 async function loadDocs(){
   if(!DV.shut){DV.shut=new Set(store.get('docsShut.'+curBoard(),[]));DV.opened=new Set(store.get('docsOpen.'+curBoard(),[]));}
@@ -2555,6 +2591,7 @@ function dSets(f){ // what a problem filter, a selected ticket / band or a hover
   else if(f==='broken')g.broken.forEach(b=>{d.add(b.path);b.tickets.forEach(x=>t.add(x));});
   else if(f==='big')dBig(g).forEach(p=>{d.add(p);g.reads.forEach(r=>{if(r.doc===p)t.add(r.ticket);});});
   else if(f==='hubs')g.hubs.forEach(h=>{d.add(h.path);g.reads.forEach(r=>{if(r.doc===h.path)t.add(r.ticket);});});
+  else if(f==='suggest')dSugIds(g).forEach(id=>{t.add(id);g.suggest[id].forEach(x=>d.add(x.path));});
   else if(f==='orphans')g.orphans.forEach(x=>{d.add(x);g.links.forEach(l=>{if(l.to===x)d.add(l.from);});});
   return {t,d,a,k,id};
 }
@@ -2583,7 +2620,7 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
         return `<li class="dcard${n<r.secs.length?' bad':''}"><div class="dch">${dSrc('ticket')}<span class="pw">${dLink(r.f)}${r.secs.map(chip).join('')}</span><span class="z" title="${dCh(tot)}">${dTk(tot)}</span><span class="s ${n===r.secs.length?'in':'out'}">${n===r.secs.length?(n>1?'All sections sent':'Section sent'):n?`${n} of ${r.secs.length} sections sent`:'Sections not sent'}</span></div>${fold}</li>`;}
       const d=r,[k,w]=SW[d.sent]||['out','Not sent: '+(d.error||'broken')], sb=dSecBtn(id,d,c.docs);return `<li class="dcard${k==='out'?' bad':''}"><div class="dch${sb?' wb':''}">${dSrc(d.source)}<span class="pw">${dLink(d.path)}</span><span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span>${sb}</div>${fold}</li>`;}).join('')}
       <li class="dcard"><div class="dch">${dSrc('board')}${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">Sent by the MCP prompt</span></div></li></ol>
-    <p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
+    ${dSugHtml(id)}<p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
 // AI-14 (owner pick: option C + a fold per doc + several sections): under the last row of a doc that is not sent in full (too big, budget
 // spent) or whose sections this ticket picked, a fold lists the doc's headings with a size bar against the budget (the tick = the budget)
 // and a checkbox each. Ticking a heading covers its sub-headings (they are inside it); Send writes the ticked ones as `path#heading` in the
@@ -2591,6 +2628,7 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
 // nothing else sends it). The ticks are a draft (DV-independent `dPick`) until Send, so the 4 s poll keeps them. Undo = the old Docs.
 const dSlug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); // = knowledge._slug
 const dSecOpen=new Set(), dPick={}; // "id|file" of the open folds; "id|file" -> Set of ticked anchors (unsent draft)
+const dSugPick={}; // UI-66: "id|file" -> {names: the files whose mentions pre-ticked its sections, secs: those anchors} (Pick sections on a suggestion: the line over the picker, what Reset brings back)
 function dSecState(id,f,all){ // headings with size, anchor, ticked, covered; what the ticket has now
   const rows=all.filter(x=>x.path.split('#')[0]===f), whole=rows.find(x=>x.path===f), src=rows.find(x=>x.outline_chars?.length);
   const have=(BY.get(id)?.docs||[]).filter(x=>x.startsWith(f+'#')).map(x=>x.slice(f.length+1)), k=id+'|'+f, sel=dPick[k]||new Set(have);
@@ -2610,13 +2648,14 @@ function dSrc(src){const [k,x]=[src.split(':')[0],src.slice(src.indexOf(':')+1)]
     :k==='component'?['map','Map',`The ticket changes ${x}: its architecture note`]:k==='ticket'?['ticket','ticket',"Picked in this ticket's Docs field"]:k==='attached'?['attached','attached','A file attached to this ticket']
     :['board','board','Every ticket gets it (docs in unblockd.json)'];
   return `<span class="dsrc k-${c}" title="${esc(t)}">${l}</span>`;}
-// A big doc sent in full (the preview gave it an outline: knowledge.preview_outlines) whose sections the ticket has not picked: a quiet button.
-const dSecBtn=(id,d,all)=>d.sent==='full'&&!d.path.includes('#')&&d.outline?.length&&!all.some(x=>x.path.startsWith(d.path+'#'))
+// A doc sent in full with 2+ headings (the preview gave it an outline: knowledge.preview_outlines; UI-75: any size, UI-72 only big ones)
+// whose sections the ticket has not picked: a quiet button.
+const dSecBtn=(id,d,all)=>d.sent==='full'&&!d.path.includes('#')&&d.outline?.length>1&&!all.some(x=>x.path.startsWith(d.path+'#'))
   ?`<button type="button" class="dsb" data-dsecopen="${esc(id+'|'+d.path)}" aria-expanded="${dSecOpen.has(id+'|'+d.path)}" title="Send only some sections of ${esc(dBase(d.path))}, to leave room for other docs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>Sections</button>`:'';
 function dSecHtml(id,f,all){ // the fold, under the doc's last row
   const S=dSecState(id,f,all), B=DV.data?.budget||Infinity, picked=S.rows.some(x=>x!==S.whole&&x.source==='ticket');
   // UI-72 (owner pick of 3 options in 3 situations, "middle ground"): a doc that did not fit gets a strip saying so, with Pick sections (or, with
-  // no headings, what to do instead); a big doc sent in full (over a third of the budget, so the preview has its outline) gets a quiet Sections
+  // no headings, what to do instead); a doc sent in full with 2+ headings (UI-75: any size; the preview has its outline) gets a quiet Sections
   // button in its card head (dSecBtn) that opens the same fold; picked sections keep "Change sections".
   const miss=S.whole&&['too_big','budget'].includes(S.whole.sent), big=!miss&&!picked&&S.whole?.sent==='full';
   if(miss&&!S.src&&!picked) return `<div class="dstrip"><span><strong>Didn't fit,</strong> and it has no headings to pick from. Split the doc or raise the budget.</span></div>`;
@@ -2632,17 +2671,43 @@ function dSecHtml(id,f,all){ // the fold, under the doc's last row
   const bud=`<div class="dbud" role="img" aria-label="Other docs about ${dTk(other).slice(1)}, these sections about ${dTk(S.total).slice(1)}, of a ${dTk(B).slice(1)} token max"><i class="o" style="left:0;width:${pc(other)};border-radius:7px 0 0 7px"></i><i class="p" style="left:${pc(other)};width:${pc(Math.min(S.total,Math.max(0,B-other)))}"></i><i class="x" style="left:${pc(Math.max(B,other))};width:${pc(Math.max(0,tot-Math.max(B,other)))};border-radius:0 7px 7px 0"></i><i class="tk" style="left:calc(${pc(B)} - 1px)"></i></div>
     <div class="dbl"><span>Other docs <b>${dTk(other)}</b> · these sections <b${tot>B?' class="over"':''}>${n?dTk(S.total):'none'}</b></span><span>of <b>${dTk(B)}</b> max</span></div>`;
   const msg=!n?'Nothing ticked':S.total>B?'The sections alone are over the max: the last ones will go as paths':tot>B?"Over the max: the ticket's own docs are paid first, so other docs will go as paths":`${dTk(B-tot)} left`;
+  // owner, 2026-11-16: the picker a suggestion opened keeps its line while it is open; once the ticks differ from the suggestion it says what was
+  // suggested instead of "ticked for you", and Reset brings those ticks back (a normal picker's Reset goes back to what the ticket has).
+  const sg=dSugPick[S.k], sgSame=sg&&sg.secs.length===S.sel.size&&sg.secs.every(a=>S.sel.has(a)), rs=sg?!sgSame:S.changed;
   const sum=S.have.length?'<summary>Change sections</summary>':miss?`<summary class="strip"><span><strong>Didn't fit.</strong> Send only the parts this ticket needs.</span><span class="dpk"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>Pick sections</span></summary>`:'<summary hidden>Sections</summary>';
   return `<details class="dsec${miss&&!S.have.length?' miss':''}" data-dsk="${esc(S.k)}"${dSecOpen.has(S.k)?' open':''}>${sum}
-    <p class="hint">Tick the parts ${esc(id)} needs. Its agent gets those sections and the list of headings, and can read the rest itself.</p>
+    ${sg?`<p class="hint sugpk">${sgSame?'Ticked for you':'Suggested'}: the section${sg.secs.length>1?'s':''} naming <code>${esc(sg.names)}</code>, why it was suggested.${sgSame?'':` Reset ticks ${sg.secs.length>1?'them':'it'} again.`}</p>`:''}<p class="hint">Tick the parts ${esc(id)} needs. Its agent gets those sections and the list of headings, and can read the rest itself.</p>
     <ul class="dtree">${tree}</ul>${bud}
-    <p class="dsf"><span${tot>B&&n?' class="warn"':''}>${msg}</span>${S.changed?`<button type="button" class="btn sm ghost" data-dsecreset="${esc(S.k)}">Reset</button><button type="button" class="btn sm" data-dsecgo="${esc(S.k)}">${n?`Send ${n} section${n>1?'s':''}`:S.whole?'Send no sections':'Send the whole doc'}</button>`:''}</p></details>`;
+    <p class="dsf"><span${tot>B&&n?' class="warn"':''}>${msg}</span>${rs?`<button type="button" class="btn sm ghost" data-dsecreset="${esc(S.k)}">Reset</button>`:''}${S.changed?`<button type="button" class="btn sm" data-dsecgo="${esc(S.k)}">${n?`Send ${n} section${n>1?'s':''}`:S.whole?'Send no sections':'Send the whole doc'}</button>`:''}</p></details>`;
 }
+// UI-66: docs that name what a ticket without docs touches (knowledge.suggest: scored, exact path > file name > folder, heading or link >
+// prose, nothing under the bar), each with the reason in words so the human can judge before Add (PATCH docs, Undo = the old list).
+function dWhy(w){const n=`<code>${esc(w.name)}</code>`, what=w.kind==='folder'?'the folder '+n:n;
+  return `${w.where==='link'?'Links to':'Names'} ${what}${w.where==='heading'?' in a heading':''}${w.kind==='file'?` (the only file by that name, so ${esc(w.touch)})`:''}${w.count>1?` · ${w.count} mentions`:''}`;}
+// A weak match (owner, 2026-11-16: shown only when a ticket got no real suggestion, at most 2) says why it is weak, in words: folders only,
+// or a file named once in passing. h = HTML (names as code, under the name); without it plain text (the badge's tooltip).
+function dWeak(x,h){const c=n=>h?`<code>${esc(n)}</code>`:n, fo=x.why.every(w=>w.kind==='folder');
+  if(fo)return `Only names the folder${x.why.length>1?'s':''} ${x.why.map(w=>c(w.name)).join(', ')}, not a file this ticket touches`;
+  const w=x.why.find(w=>w.kind!=='folder');
+  return `Names ${c(w.name)}${w.where==='heading'?' in a heading':w.where==='link'?' in a link':w.count>1?` ${w.count} times in passing`:' once in a sentence'}${w.kind==='file'?' (by file name only)':''}: too little to be sure it is about this ticket`;}
+// A doc bigger than the budget comes last, only when its mentions sit under a heading (too_big + outline + sections), with a cinnabar mark:
+// added whole it would send a path only, so its button is Pick sections = add the path, then open that doc's AI-14 fold (dSecOpen) in this
+// preview with the sections that name the ticket's files already ticked (dPick: why it was suggested); Send swaps the path for them.
+function dSugHtml(id){const xs=(DV.data?.suggest||{})[id];if(!xs)return '';const B=DV.data.budget, wk=xs[0].weak;
+  const card=x=>`<li class="dcard${x.too_big?' bad':''}${x.weak?' weak':''}"><div class="dch">${x.weak?`<span class="dsrc k-weak" title="${esc(dWeak(x))}">weak match</span>`:'<span class="dsrc k-sug" title="Not added yet: Add puts it in the ticket\'s Docs">suggested</span>'}<span class="pw">${dLink(x.path)}${x.too_big?`<span class="dsc out" title="${dTk(x.size)} tokens, more than the ${dTk(B)} budget: sent whole it would arrive as a path only. Pick some of its ${x.outline.length} sections instead.">too big: pick sections</span>`:''}</span><span class="z" title="${dCh(x.size)}">${dTk(x.size)}</span><button type="button" class="btn sm ghost" data-dadd="${esc(id)}" data-path="${esc(x.path)}"${x.too_big?' data-pick="1"':''}>${x.too_big?'Pick sections':'Add to '+esc(id)}</button></div><ul>${x.weak?`<li>${dWeak(x,1)}</li>`:x.why.map(w=>`<li>${dWhy(w)}</li>`).join('')}</ul></li>`;
+  return `<div class="dsug">${wk?`<h4>Weak matches for ${esc(id)}</h4><p>No doc clearly names what ${esc(id)} touches. ${xs.length>1?'These come':'This comes'} closest: check before you add.</p>`:`<h4>Docs that name what ${esc(id)} touches</h4><p>Not sent yet. Add one and ${esc(id)}'s agent gets it with the ticket.</p>`}<ol>${xs.map(card).join('')}</ol></div>`;}
+async function dAddDoc(id,path,pick){
+  const old=[...(BY.get(id)?.docs||[])], k=id+'|'+path, x=((DV.data?.suggest||{})[id]||[]).find(s=>s.path===path);
+  try{await api('PATCH','/'+encodeURIComponent(id),{docs:[...old,path]});}catch(e){toast('Could not add the doc: '+e.message,{err:1});return;}
+  if(pick){dSecOpen.add(k); // the preview reloads with the doc as "Didn't fit" and its fold open, the sections that name the ticket's files ticked
+    if(x?.sections?.length){dPick[k]=new Set(x.sections);dSugPick[k]={names:x.why.filter(w=>w.kind!=='folder').map(w=>w.name).join(', '),secs:[...x.sections]};}}
+  await load(true);loadDocs();
+  toast(pick?`Added ${path} to ${id}: check the ticked sections, then Send`:`Added ${path} to ${id}`,{undo:async()=>{try{delete dPick[k];delete dSugPick[k];dSecOpen.delete(k);await api('PATCH','/'+encodeURIComponent(id),{docs:old});await load(true);loadDocs();}catch(e){toast('Undo failed: '+e.message,{err:1});}}});}
 async function dSecApply(k){
   const [id,f]=[k.slice(0,k.indexOf('|')),k.slice(k.indexOf('|')+1)], t=BY.get(id), c=DV.ctx[id]; if(!t||!c?.docs) return;
   const S=dSecState(id,f,c.docs), old=[...(t.docs||[])], keep=S.hs.filter(h=>h.on&&!h.cov).map(h=>f+'#'+h.a);
   const nw=[...old.filter(x=>x!==f&&!x.startsWith(f+'#')),...(keep.length?keep:S.whole?[]:[f])];
-  try{ await api('PATCH','/'+encodeURIComponent(id),{docs:nw}); delete dPick[k]; await load(true); loadDocs();
+  try{ await api('PATCH','/'+encodeURIComponent(id),{docs:nw}); delete dPick[k]; delete dSugPick[k]; await load(true); loadDocs();
     toast(keep.length?`${id} now gets ${keep.length} section${keep.length>1?'s':''} of ${dBase(f)}`:`${id} no longer picks sections of ${dBase(f)}`,{undo:async()=>{try{await api('PATCH','/'+encodeURIComponent(id),{docs:old}); await load(true); loadDocs(); toast(`${id}'s docs restored`);}catch(e){toast('Undo failed: '+e.message,{err:1});}}});
   }catch(e){ toast('Could not change the docs: '+e.message,{err:1}); }
 }
@@ -2689,7 +2754,7 @@ function renderDocs(){
     const key='p:'+(p||'-'),name=p?'Profile '+p:'No profile',hit=ts.filter(tm).length,open=!DV.shut.has(key)||hit>0||ts.some(t=>DV.sel==='t:'+t.id);
     return `<li class="dgrp${open?'':' shut'}"><h3 class="dgh" data-n="${esc(key)}">${dChev(key,open,name)}${p?dIc('profile'):''}<span>${esc(name)} · ${ts.length}</span>${open?'':dWarn([[ts.filter(t=>nod.has(t.id)).length,'no docs',1],[ts.filter(t=>own(t.id).length).length,'with a doc too big']])}${q&&hit?`<em class="dhit">${hit} match${hit>1?'es':''}</em>`:''}</h3>${open?`<ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id),cn=c.length;
       const tg=tagRules.filter(r=>r.tickets.includes(t.id)).map(r=>r.from);
-      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
+      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${dSugIds(g).includes(t.id)?`<span class="tag sug" title="A doc of this repo names what ${esc(t.id)} touches: open the ticket to see it">doc suggested</span>`:''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
     :'<li class="dempty">No open tickets.</li>';
   const brdWhole=new Set((g.rules.find(r=>r.via==='board')||{docs:[]}).docs.filter(p=>!p.includes('#'))),dFile=p=>p.split('#')[0];
   const noop=(p,b)=>(b.via==='tag'||b.via==='profile')&&brdWhole.has(dFile(p)); // the board already sends the whole file to every ticket (a section of it is dropped too), so this entry does nothing
@@ -3165,6 +3230,9 @@ let BOARDS=[];
 const curBoard=()=>BOARD||BOARDS[0]?.id||'';
 async function loadBoards(){
   try{BOARDS=await jf('/api/boards');}catch{}
+  return paintBoards();
+}
+function paintBoards(){ // the board menu from BOARDS (fetched once per page: a switch only moves aria-current)
   $('bsum').inert=BOARDS.length<2; // one board: plain title, not a button
   $('bbody').innerHTML=BOARDS.map(b=>`<button type="button" class="bi" data-bd="${esc(b.id)}" aria-current="${b.id===curBoard()}"><span>${esc(b.title)}${b.error?' (config error)':''}</span><span class="hint">${b.error?esc(b.error):`${b.open} open, ${b.ready} ready`}</span></button>`).join('')+'<button type="button" class="bi" data-bd="__new">New board…</button>';
   return BOARDS;
@@ -3174,8 +3242,7 @@ $('bbody').addEventListener('click',e=>{
   $('bpanel').open=false;
   if(v==='__new'){newBoardForm();return;}
   if(v===curBoard())return;
-  setBoard(v);
-  location.href='?board='+encodeURIComponent(v);
+  switchBoard(v);
 });
 $('bbody').addEventListener('keydown',e=>{
   if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return; e.preventDefault();
@@ -3196,6 +3263,44 @@ async function submitBoard(){
     setBoard(j.id); location.href='?board='+encodeURIComponent(j.id);
   }catch(er){ m.className='msg err'; m.textContent=er.message; }
 }
+// UI-74: switch boards in the page (a reload cost /api/boards, ~1 s with many boards, plus the page and every other fetch). It must leave
+// the page exactly as a reload of ?board=<v> would: every per-board piece of state below goes back to its first value, filters come back
+// from localStorage (urlRead finds no params in the new URL), old requests never land (BGEN), and history gets a ?board= entry so Back
+// returns to the previous board (popstate). A failed meta falls back to the old full navigation.
+let SWTOK=0; const QT0=$('q').title;
+async function switchBoard(v,push=true){
+  const my=++SWTOK, api=v?`/api/b/${v}`:'/api'; let m;
+  try{ const r=await fetch(api+'/meta',{cache:'no-store'}); if(!r.ok) throw 0; m=await r.json(); }catch{ if(my===SWTOK) location.href='?board='+encodeURIComponent(v); return; }
+  if(my!==SWTOK) return; // a later switch won
+  const was=BOARDS.find(b=>b.id===curBoard()); if(was&&LOADED){ was.open=T.filter(t=>t.status!=='done').length; was.ready=T.filter(t=>t.effective_status==='todo').length; } // the menu's counts for the board we leave, without /api/boards
+  // close every layer first, while their state still describes the old board
+  closeMenus(); cmdClose(true); toggleKb(false); endP(); closeDoc(); hideAc(); closeNeeds(true); if(G.isolate) endIsolate(); if(MV.foc||MV.pan||MV.multi) mapClear(true); closeDrawer();
+  BGEN++; nTok++; gTok++; apTok++; BUSY.n=0; clearTimeout(BUSY.t); $('topbar').hidden=true;
+  BOARD=v; API=api; setBoard(v);
+  if(push) history.pushState(null,'','?board='+encodeURIComponent(v)); // no view params: like the reload, the remembered choices apply
+  // per-board state, as a fresh page has it
+  CFG=CFG0(); Object.assign(state,state0()); for(const k of Object.keys(MV)) delete MV[k]; Object.assign(MV,MV0()); for(const k of Object.keys(DV)) delete DV[k]; Object.assign(DV,DV0());
+  T=[]; BY=new Map(); raw=''; etag=null; LOADED=false; LERR=''; paint=null; DATA=false; live=false; DROP=null; authShown=false; authMsg='';
+  openId=null; editing=false; lastFocus=null; SPLIT=null; SPLITD={text:'',seq:false}; armedDelete=false; kbFocus=null; dragId=null; LPROPS=''; qaBusy=false; NEXTN=0;
+  SEL.clear(); flash.clear(); ACTS.clear(); dSecOpen.clear(); for(const o of [KNOW,dPick,RQ,RMX,RMD,DRAFTS]) for(const k of Object.keys(o)) delete o[k];
+  DG=null; dgOpen=false; dgMore.clear(); dgHtml='';
+  archSig=null; docSig=null; archDue=false; docDue=false; // UI-73: the Map / Docs fetch is due again on the first load, as on a fresh page
+  NEEDS=[]; nLoaded=false; nErr=''; NX=null; npSig=''; npShown=false; nEtag=null; lastNFocus=null; NMARK='';
+  GIT=null; gEtag=null; gHtml=null; renderGit();
+  Object.assign(AP,{ev:null,err:'',tl:null,draft:null,terr:'',more:false});
+  Object.assign(G,{nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',lkey:'',hover:null,focus:null,isolate:null,saved:null,restore:false,ptr:null,sized:false,fitted:false,lanes:[],preds:new Map(),critG:null,critF:null,selEdge:null,link:null,pts:new Map(),pinch:null,anims:[],last:0,fitSettle:false});
+  CH.busy=false; CH.others.clear(); chatLoad(); renderChat();
+  $('toasts').replaceChildren(); // an old toast's Undo would PATCH the same id on the new board
+  $('board').innerHTML=$('nextUp').innerHTML=''; $('nextUp').className='next'; $('dQ').value=$('cin').value=$('q').value=''; $('q').classList.remove('err'); $('q').title=QT0; renderBulk(); scrollTo(0,0); // state0 already cleared the search
+  // the page-load sequence (below), minus /api/boards
+  paintBoards(); loadNeeds(); applyConfig(m.config);
+  urlRead(); readColors(); renderBar(); setView(state.view);
+  load(true).then(loadDigest);
+}
+addEventListener('popstate',()=>{ // Back / Forward between boards switched in the page; a hash-only entry of the same board is left alone
+  const v=(new URLSearchParams(location.search).get('board')||BOARD0).replace(/[^a-z0-9_-]/g,'');
+  if(v!==BOARD) switchBoard(v,false);
+});
 loadBoards().then(loadNeeds);
 fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD&&!location.search.includes('board=')){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
   urlRead(); readColors(); renderBar(); setView(state.view);
