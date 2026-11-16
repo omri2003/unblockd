@@ -74,5 +74,42 @@ class ToolsTest(unittest.TestCase):
 		self.assertEqual(sorted(t.name for t in asyncio.run(m.mcp.list_tools())), sorted(st.MCP_TOOLS))
 
 
+class WorkLoopToolsTest(unittest.TestCase):
+	"""AI-41: a `--tools worker` worker must have every tool the protocol tells it to call, and the claim carries the board rules."""
+
+	def test_every_tool_work_loop_names_is_a_worker_or_human_tool(self):
+		import re
+		text = (Path(st.__file__).parent / "WORK_LOOP.md").read_text(encoding="utf-8")
+		named = {w for w in re.findall(r"[a-z_]+", text) if w in st.MCP_TOOLS}
+		self.assertIn("create_ticket", named)  # the scan sees tool names at all
+		missing = named - set(st.WORKER_TOOLS) - set(st.HUMAN_TOOLS)
+		self.assertEqual(missing, set(), "WORK_LOOP names tools a worker server does not have: add them to WORKER_TOOLS or HUMAN_TOOLS")
+		self.assertNotIn("board_info", named)  # the rules come with the claim (context.rules)
+
+	def test_worker_and_human_tools_are_real_and_apart(self):
+		self.assertLessEqual(set(st.WORKER_TOOLS) | set(st.HUMAN_TOOLS), set(st.MCP_TOOLS))
+		self.assertEqual(set(st.WORKER_TOOLS) & set(st.HUMAN_TOOLS), set())
+
+	def test_claim_context_carries_the_rules(self):
+		from unblockd import knowledge as kn
+		with tempfile.TemporaryDirectory() as tmp:
+			d = Path(tmp) / "p" / "tickets"
+			d.mkdir(parents=True)
+			cfg = {"title": "T", "review": True, "agent_tickets": "propose", "owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
+			       "schema": {"prefixes": {"BUG": "something broken"}, "required": ["done_when"]}}
+			(d / "unblockd.json").write_text(json.dumps(cfg), encoding="utf-8")
+			arch = d.parent / "docs" / "arch"
+			arch.mkdir(parents=True)
+			(arch / "store.md").write_text("# Store\n\nThe core.\n", encoding="utf-8")
+			s = Store(d)
+			s.create({"title": "x", "done_when": ["y"]}, prefix="BUG")
+			r = kn.context(s, "BUG-1")["rules"]
+			self.assertEqual(r["schema"]["prefixes"], {"BUG": "something broken"})
+			self.assertEqual((r["agent_tickets"], r["review"], r["humans"], r["trust"]), ("propose", True, ["Omri"], "trusted"))
+			self.assertEqual(r["components"], [{"key": "store", "title": "Store"}])
+			self.assertEqual(r["limits"]["summary_chars"], st.SUMMARY_MAX)
+			self.assertEqual(r["limits"]["fields"], st.LIMITS)
+
+
 if __name__ == "__main__":
 	unittest.main()
