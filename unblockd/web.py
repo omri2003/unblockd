@@ -299,7 +299,7 @@ class Handler(BaseHTTPRequestHandler):
 				if q.get("content") == "0":  # what would be sent, without the text (the Docs view's preview)
 					for d in c["docs"]:
 						d.pop("content", None)
-					kn.preview_outlines(store, c)  # a big doc sent in full can be trimmed to sections (UI-72)
+					kn.preview_outlines(store, c)  # a sent doc with 2+ headings can be trimmed to sections (UI-72, UI-75)
 				return self._send(200, c)
 			if rest[:1] == ["tickets"] and len(rest) in (3, 4) and rest[2] == "files":
 				tid = rest[1]
