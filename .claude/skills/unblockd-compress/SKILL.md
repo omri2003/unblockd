@@ -15,7 +15,7 @@ Shorter agent docs, same meaning. Built on the idea of caveman-compress (juliusb
 1. Optional: write the facts that must survive, one phrase per line, to `<scratch>/facts.txt` (decisions, warnings, limits a person stated).
 2. Rewrite. Either:
    - headless: `python .claude/skills/unblockd-compress/compress.py SOURCE <scratch>/OUT.md [--facts facts.txt]` (uses your `claude` CLI login, one automatic fix round), or
-   - yourself: follow `RULES.md` exactly, write the result to `<scratch>/OUT.md`.
+   - yourself: follow `docs/writing-for-agents.md` (the style guide) and `RULES.md` (what check.py enforces), write the result to `<scratch>/OUT.md`.
 3. Check: `python .claude/skills/unblockd-compress/check.py SOURCE <scratch>/OUT.md [--facts facts.txt]`. FAIL = keep the original or fix only what it names. Read every warning.
 4. Show the person: the token saving, the warnings, and a diff (`git diff --no-index SOURCE OUT.md`). Replace SOURCE only after they say yes.
 

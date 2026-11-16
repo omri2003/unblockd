@@ -41,6 +41,14 @@ try {
 		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
 		await writeFile(join(root, 'example/docs/mech.md'), ['# Mechanics', '## Combat', 'parry', '## Movement', 'run'].join(String.fromCharCode(10))); // a section: path#heading
 		await writeFile(join(root, 'example/docs/pick.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])); // an image: a path, never "broken"
+		// UI-66 suggested docs: DOC-1 has no doc but touches scripts/release.sh, which release.md names in a heading; misc.md names only the folder in passing
+		const dp = join(root, 'example/tickets/DOC-1.json');
+		await writeFile(dp, JSON.stringify({ ...JSON.parse(await readFile(dp, 'utf8')), touches: ['scripts/release.sh'] }, null, 2));
+		await writeFile(join(root, 'example/docs/release.md'), ['# Releases', '## scripts/release.sh', 'Run it to cut a release.'].join(String.fromCharCode(10)));
+		await writeFile(join(root, 'example/docs/misc.md'), 'Helper scripts live in scripts/.');
+		// too big for the 2k budget: releasing.md has headings, so it is offered last with Pick sections; flat.md has none, so never
+		await writeFile(join(root, 'example/docs/releasing.md'), ['# Release guide', '## scripts/release.sh', 'r'.repeat(2500), '## Rollback', 'back'].join(String.fromCharCode(10)));
+		await writeFile(join(root, 'example/docs/flat.md'), 'scripts/release.sh ' + 'q'.repeat(2500));
 		const tp = join(root, 'example/tickets/UI-2.json');
 		await writeFile(tp, JSON.stringify({ ...JSON.parse(await readFile(tp, 'utf8')), tags: ['api', 'sec'] }, null, 2));
 	}
@@ -131,6 +139,25 @@ try {
 			ok(q.length === 1 && /^quiet · \d+ min$/.test(q[0]), `[${tag}] one stale claim should read "quiet · N min", got ${q}`);
 			ok(/^\d+ of 15 min lease used$/.test(await page.locator('.col.doing .liv.quiet + .lbar').getAttribute('aria-label')), `[${tag}] lease bar reads N of 15 min`);
 		}
+		{ // UI-73: a heartbeat changes only claim.heartbeat_at: no /needs, /git or /architecture refetch, the liveness line still moves;
+			// a component change refetches the architecture (Component filter) and Needs you, git stays on its own poll.
+			// Waits for the real 4 s poll (refresh() fires visibilitychange, which asks for needs itself); a 15 s poll in the window asks for needs AND git, so needs is counted beyond git
+			const hits = { needs: 0, git: 0, architecture: 0 }; const onReq = (r) => { const m = /\/api\/(?:b\/[^/]+\/)?(needs|git|architecture)(\?|$)/.exec(r.url()); if (m) hits[m[1]]++; }; page.on('request', onReq);
+			const poll = async () => { await page.waitForResponse((r) => /\/api\/tickets$/.test(r.url()) && r.status() === 200, { timeout: 8000 }); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50)))); };
+			const mine = (await page.evaluate(() => fetch('/api/tickets').then((r) => r.json()))).find((t) => t.claim?.agent === 'backend-1');
+			await new Promise((r) => setTimeout(r, 1100)); // the stamp has 1 s resolution
+			const hb = JSON.parse(cli('heartbeat', mine.id, '--agent', 'backend-1').toString()).claim.heartbeat_at;
+			await poll();
+			await page.waitForFunction(([i, h]) => document.querySelector(`#board .card[data-open="${i}"] time[data-hb]`)?.dataset.hb === h, [mine.id, hb]);
+			ok(!hits.architecture && hits.needs === hits.git, `[${tag}] a heartbeat-only change refetched ${JSON.stringify(hits)}`);
+			const comp = (await page.evaluate(() => fetch('/api/architecture').then((r) => r.json()))).components[0].key; hits.architecture = 0;
+			const arch = page.waitForResponse((r) => /\/api\/architecture$/.test(r.url()), { timeout: 8000 });
+			cli('update', mine.id, '--component', comp, '--agent', 'backend-1');
+			await poll(); await arch;
+			ok(hits.architecture >= 1 && hits.needs > hits.git, `[${tag}] a component change should refetch architecture + needs, not git: ${JSON.stringify(hits)}`);
+			page.off('request', onReq);
+			cli('update', mine.id, '--json', JSON.stringify({ components: mine.components || [] }), '--agent', 'backend-1'); await refresh();
+		}
 		ok(await page.evaluate(() => /unblockd/.test(document.title) && !!document.querySelector('link[rel=icon]')), `[${tag}] title / favicon missing`);
 		await noOverflow('board');
 		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
@@ -177,14 +204,33 @@ try {
 		await page.keyboard.press('Escape');
 		ok(!(await page.locator('#bpanel').evaluate((e) => e.open)), `[${tag}] Escape should close the board list`);
 		if (w > 600) { await page.keyboard.press('Shift+B'); ok(await page.locator('#bpanel').evaluate((e) => e.open), `[${tag}] Shift+B should open the board list`); await page.keyboard.press('Escape'); }
+		// UI-74: the switch happens in the page: no reload, no /api/boards; filters drop as a reload did (search and URL params gone); Back returns
+		const boardsReq = []; const onB = (r) => /\/api\/boards$/.test(r.url()) && boardsReq.push(r.url()); page.on('request', onB);
+		const needsReq = []; const onN = (r) => /\/api\/needs/.test(r.url()) && needsReq.push(r.url()); // API-18 after a switch: the new board's needs
+		await page.fill('#q', 'smoke'); await page.waitForFunction(() => /[?&]q=smoke/.test(location.search));
+		await page.evaluate(() => { window.__noReload = 1; });
+		page.on('request', onN);
 		await page.click('#bsum');
 		await page.waitForFunction(() => document.activeElement.classList.contains('bi')); // the list focuses the current board
 		await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); // focus starts on the current board, so Down = the other one
 		await page.waitForURL(/board=zsecond/);
 		await page.waitForFunction(() => document.getElementById('appTitle').textContent === 'Second board');
+		await page.waitForSelector('#board .card', { state: 'attached' });
+		ok(await page.evaluate(() => window.__noReload === 1), `[${tag}] a board switch should not reload the page`);
+		ok(await page.evaluate(() => !/[?&]q=/.test(location.search) && document.getElementById('q').value === ''), `[${tag}] the search should drop on a switch, as a reload did`);
+		ok(await page.evaluate(() => !document.querySelector('#board .card[data-open^="SM-"]') && !!document.querySelector('#board .card[data-open^="ZQ-"]')), `[${tag}] the second board shows its own tickets, none of the first`);
+		ok((await page.locator('#bbody [aria-current=true]').textContent()).includes('Second board'), `[${tag}] the menu marks the new board`);
+		ok(needsReq.length > 0 && needsReq.every((u) => new URL(u).searchParams.get('board') === 'zsecond'), `[${tag}] after a switch /api/needs should ask board=zsecond: ${needsReq}`);
+		await page.goBack(); // Back: the previous board, with the URL it had (the search came back from it)
+		await page.waitForFunction((t) => document.getElementById('appTitle').textContent === t, title0);
+		await page.waitForFunction(() => /[?&]q=smoke/.test(location.search) && document.getElementById('q').value === 'smoke');
+		await page.waitForSelector('#board .card', { state: 'attached' });
+		await page.goForward(); await page.waitForFunction(() => document.getElementById('appTitle').textContent === 'Second board');
 		await page.click('#bsum'); await page.click('#bbody [data-bd="example"]'); // and back
 		await page.waitForFunction((t) => document.getElementById('appTitle').textContent === t, title0);
 		await page.waitForSelector('.card', { state: 'attached' });
+		ok(await page.evaluate(() => window.__noReload === 1 && document.getElementById('q').value === ''), `[${tag}] switching back stays in the page, search dropped`);
+		page.off('request', onB); page.off('request', onN); ok(!boardsReq.length, `[${tag}] a board switch should not ask /api/boards: ${boardsReq.length}`);
 		await page.evaluate(() => document.getElementById('kbBtn').click()); // hidden at <=600px (no keyboard there), so click it directly
 		await visible('#kb', 'shortcuts sheet from the hint');
 		ok((await page.locator('#kb').innerText()).includes('Shift'), `[${tag}] ? sheet should mention Shift-click select`);
@@ -282,17 +328,80 @@ try {
 				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return c.includes('big.md') && !document.querySelector('#dT .dsc'); }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not take the sections back`)); await page.waitForSelector('#toasts :text("docs restored")'); // Undo's reload is done
 			}
 			ok((await page.locator('#dT .dsec.miss summary.strip').first().innerText()).includes("Didn't fit"), `[${tag}] docs: a doc that did not fit gets the strip with Pick sections (UI-72)`);
-			{ // UI-72: a doc with no headings that did not fit says what to do instead; a big doc sent in full gets a quiet Sections button
+			{ // UI-72: a doc with no headings that did not fit says what to do instead; a sent doc with 2+ headings gets a quiet Sections button
 				await writeFile(join(root, 'example/docs/plain.txt'), 'plain notes with no headings '.repeat(100));
 				await writeFile(join(root, 'example/docs/mid.md'), ['# Mid', '## One', 'y'.repeat(400), '## Two', 'z'.repeat(400)].join(String.fromCharCode(10)));
-				const nid = JSON.parse(cli('create', '--prefix', 'DOC', '--title', 'sections trigger', '--json', JSON.stringify({ docs: ['docs/mid.md', 'docs/plain.txt'] })).toString()).id;
+				await writeFile(join(root, 'example/docs/small.md'), ['# Small', '## A', 'a', '## B', 'b'].join(String.fromCharCode(10))); // UI-75: small, 2+ headings
+				await writeFile(join(root, 'example/docs/one.md'), ['# One heading', 'text'].join(String.fromCharCode(10))); // 1 heading: nothing to pick
+				const nid = JSON.parse(cli('create', '--prefix', 'DOC', '--title', 'sections trigger', '--json', JSON.stringify({ docs: ['docs/mid.md', 'docs/plain.txt', 'docs/small.md', 'docs/one.md'] })).toString()).id;
 				await page.click('[data-drefresh]'); await page.waitForSelector(`[data-dsel="t:${nid}"]`); await page.click(`[data-dsel="t:${nid}"]`);
 				await page.waitForSelector('#dT .dctx .dstrip');
 				ok((await page.locator('#dT .dstrip').innerText()).includes('no headings to pick from'), `[${tag}] docs: a doc with no headings that did not fit says so`);
-				ok((await page.locator('#dT .dsb').count()) === 1 && !(await page.locator('#dT .dsec').count()), `[${tag}] docs: one quiet Sections button (mid.md), its fold closed`);
-				await page.click('#dT .dsb'); await page.waitForSelector('#dT .dsec .dsr');
-				ok((await page.locator('#dT .dsb').getAttribute('aria-expanded')) === 'true' && (await page.locator('#dT .dsec .dsr').count()) === 3, `[${tag}] docs: the Sections button opens mid.md's tree`);
+				const sb = await page.locator('#dT .dsb').evaluateAll((bs) => bs.map((b) => b.dataset.dsecopen.split('|')[1]).sort().join(','));
+				ok(sb === 'docs/mid.md,docs/small.md' && !(await page.locator('#dT .dsec').count()), `[${tag}] docs: a quiet Sections button on mid.md (big) and small.md (UI-75: small, 2 headings), none on one.md (1 heading), folds closed: ${sb}`);
+				await page.click('#dT .dsb[data-dsecopen$="|docs/mid.md"]'); await page.waitForSelector('#dT .dsec .dsr');
+				ok((await page.locator('#dT .dsb[data-dsecopen$="|docs/mid.md"]').getAttribute('aria-expanded')) === 'true' && (await page.locator('#dT .dsec .dsr').count()) === 3, `[${tag}] docs: the Sections button opens mid.md's tree`);
+				await page.click('#dT .dsb[data-dsecopen$="|docs/small.md"]');
+				await page.waitForFunction(() => document.querySelectorAll('#dT .dsec .dsr').length === 6, null, { timeout: 5000 }).catch(() => ok(false, `[${tag}] docs: small.md's Sections button did not open its 3 headings (UI-75)`));
 				await page.click(`[data-dsel="t:${nid}"]`); cli('delete', nid); await page.click('[data-drefresh]'); await page.waitForFunction((id) => !document.querySelector(`[data-dsel="t:${id}"]`), nid);
+				await page.click('[data-dsel="t:UI-2"]'); await page.waitForSelector('#dT .dctx .dcard');
+			}
+			{ // UI-66: a ticket without docs is offered a doc that names what it touches, with the reason; Add puts it on the ticket, Undo takes it off
+				ok((await page.locator('#dProb').innerText()).includes('could get a doc'), `[${tag}] docs: the problem strip counts tickets that could get a doc`);
+				ok(await page.locator('[data-dsel="t:DOC-1"] .tag.sug').count() === 1, `[${tag}] docs: DOC-1's row says a doc is suggested`);
+				await page.click('[data-dsel="t:DOC-1"]'); await page.waitForSelector('#dT .dsug');
+				const sug = await page.locator('#dT .dsug').innerText();
+				ok(sug.includes('Names scripts/release.sh in a heading') && !sug.includes('misc.md'), `[${tag}] docs: the suggestion says why, and a passing folder mention is not suggested: ${sug.slice(0, 200)}`);
+				await page.click('#dT .dsug [data-path="docs/release.md"]');
+				await visible('#toasts .toast:has-text("Added docs/release.md")', 'added toast');
+				await page.waitForFunction(() => !document.querySelector('[data-dsel="t:DOC-1"] .tag.sug') && !document.querySelector('#dT .dsug'));
+				ok(JSON.parse(cli('get', 'DOC-1')).docs.includes('docs/release.md'), `[${tag}] docs: Add saved the doc on DOC-1`);
+				await page.click('#toasts .toast:has-text("Added docs/release.md") button');
+				await page.waitForFunction(() => document.querySelector('[data-dsel="t:DOC-1"] .tag.sug') && document.querySelector('#dT .dsug'), null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not bring the suggestion back`));
+				ok(!(JSON.parse(cli('get', 'DOC-1')).docs || []).includes('docs/release.md'), `[${tag}] docs: Undo took it off`);
+				// a doc bigger than the budget with headings comes after the ones that fit, marked, and its button opens the section picker
+				const rows = await page.locator('#dT .dsug .dcard').evaluateAll((cs) => cs.map((c) => c.querySelector('.dl').textContent + (c.classList.contains('bad') ? '!' : '') + '|' + (c.querySelector('.dsc.out')?.textContent || '') + '|' + c.querySelector('[data-dadd]').textContent));
+				ok(rows.join(' / ') === 'docs/release.md||Add to DOC-1 / docs/releasing.md!|too big: pick sections|Pick sections', `[${tag}] docs: release.md fits and comes first, releasing.md is too big (red mark, Pick sections), flat.md (no headings) is not offered: ${rows.join(' / ')}`);
+				await page.click('#dT .dsug [data-path="docs/releasing.md"]');
+				await page.waitForSelector('#dT .dsec.miss[open] .dsr', { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Pick sections did not open releasing.md's section tree`));
+				ok((await page.locator('#dT .dsec.miss[open] summary.strip').innerText()).includes("Didn't fit") && (await page.locator('#dT .dsec.miss[open] .dsr').count()) === 3, `[${tag}] docs: the picker is the usual "Didn't fit" fold with releasing.md's 3 headings`);
+				ok(JSON.parse(cli('get', 'DOC-1')).docs.includes('docs/releasing.md'), `[${tag}] docs: Pick sections put releasing.md on DOC-1`);
+				{ // the sections that name scripts/release.sh start ticked, so the picker shows why the doc was offered
+					const ticked = await page.locator('#dT .dsec.miss[open] input[data-dsbox]:checked').evaluateAll((xs) => xs.map((x) => x.value).join(','));
+					ok(ticked === 'scripts-release-sh' && (await page.locator('#dT .dsec.miss[open] .sugpk').innerText()).includes('scripts/release.sh') && (await page.locator('#dT .dsec.miss[open] [data-dsecgo]').innerText()) === 'Send 1 section', `[${tag}] docs: Pick sections opens with the section naming the file ticked, says so, and offers Send 1 section: ${ticked}`);
+					ok(!(await page.locator('#dT .dsec.miss[open] [data-dsecreset]').count()), `[${tag}] docs: no Reset while the ticks are the suggested ones`);
+					// unticking keeps the line but rewords it (owner, 2026-11-16: it must not say "ticked for you" over an empty box); Reset ticks it again
+					await page.locator('#dT .dsec.miss[open] input[data-dsbox][value="scripts-release-sh"]').click();
+					await page.waitForFunction(() => /^Suggested: .*Reset ticks it again/.test(document.querySelector('#dT .dsec.miss[open] .sugpk')?.textContent || ''), null, { timeout: 4000 }).catch(() => ok(false, `[${tag}] docs: unticking the suggested section did not reword the line`));
+					ok(!(await page.locator('#dT .dsec.miss[open] input[data-dsbox]:checked').count()) && (await page.locator('#dT .dsec.miss[open] [data-dsecreset]').count()) === 1, `[${tag}] docs: after unticking nothing is ticked and Reset is offered`);
+					await page.click('#dT .dsec.miss[open] [data-dsecreset]');
+					await page.waitForFunction(() => document.querySelector('#dT .dsec.miss[open] input[data-dsbox][value="scripts-release-sh"]')?.checked && /^Ticked for you/.test(document.querySelector('#dT .dsec.miss[open] .sugpk')?.textContent || ''), null, { timeout: 4000 }).catch(() => ok(false, `[${tag}] docs: Reset did not bring the suggested tick back`));
+					ok(JSON.parse(cli('get', 'DOC-1')).docs.join(',') === 'docs/releasing.md', `[${tag}] docs: unticking and Reset changed nothing on the ticket`);
+				}
+				await noOverflow('docs with a too-big suggestion picked');
+				await page.click('#toasts .toast:has-text("Added docs/releasing.md") button');
+				await page.waitForFunction(() => document.querySelector('#dT .dsug [data-path="docs/releasing.md"]'), null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not bring releasing.md back as a suggestion`));
+				ok(!(JSON.parse(cli('get', 'DOC-1')).docs || []).length, `[${tag}] docs: Undo took releasing.md off`);
+				await noOverflow('docs with a suggestion');
+				await page.click('[data-dsel="t:UI-2"]'); await page.waitForSelector('#dT .dctx .dcard');
+			}
+			{ // UI-66 weak matches: a ticket with no real suggestion gets at most 2 grey "weak match" cards with the reason; it is not counted as "could get a doc"
+				const could = async () => ((await page.locator('#dProb').innerText()).match(/(\d+) tickets? could get a doc/) || [])[1];
+				const strip = await could();
+				const wid = JSON.parse(cli('create', '--prefix', 'DOC', '--title', 'release notes', '--json', JSON.stringify({ touches: ['scripts/notes.sh'] })).toString()).id;
+				await page.click('[data-drefresh]'); await page.waitForSelector(`[data-dsel="t:${wid}"]`);
+				ok(!(await page.locator(`[data-dsel="t:${wid}"] .tag.sug`).count()) && (await could()) === strip, `[${tag}] docs: weak matches do not tag the row or change the problem strip`);
+				await page.click(`[data-dsel="t:${wid}"]`); await page.waitForSelector('#dT .dsug');
+				const w = await page.locator('#dT .dsug .dcard').evaluateAll((cs) => cs.map((c) => c.classList.contains('weak') + '|' + c.querySelector('.dsrc').textContent + '|' + c.querySelector('.dsrc').title));
+				ok(w.length === 2 && w.every((x) => x.startsWith('true|weak match|Only names the folder scripts/')) && (await page.locator('#dT .dsug h4').innerText()).startsWith('Weak matches'), `[${tag}] docs: 2 weak matches, grey, labelled, the reason in the tooltip: ${w.join(' / ')}`);
+				ok((await page.locator('#dT .dsug .weak ul').first().innerText()).includes('Only names the folder scripts/'), `[${tag}] docs: the weak match's reason is also written under it`);
+				const bg = await page.locator('#dT .dsug .dcard.weak').first().evaluate((c) => getComputedStyle(c).borderTopStyle);
+				ok(bg === 'dashed', `[${tag}] docs: a suggestion card has a dashed outline (not added yet): ${bg}`);
+				await noOverflow('docs with weak matches');
+				await page.click('#dT .dsug .weak [data-dadd]');
+				await visible(`#toasts .toast:has-text("to ${wid}")`, 'weak added toast');
+				ok((JSON.parse(cli('get', wid)).docs || []).length === 1, `[${tag}] docs: Add on a weak match puts it on the ticket`);
+				await page.click(`[data-dsel="t:${wid}"]`); cli('delete', wid); await page.click('[data-drefresh]'); await page.waitForFunction((id) => !document.querySelector(`[data-dsel="t:${id}"]`), wid);
 				await page.click('[data-dsel="t:UI-2"]'); await page.waitForSelector('#dT .dctx .dcard');
 			}
 			await noOverflow('docs with a preview');
@@ -720,8 +829,11 @@ try {
 		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
 		// the other board's question shows on that board
 		await page.keyboard.press('Escape');
+		const nreq = []; const onReq = (r) => /\/api\/needs/.test(r.url()) && nreq.push(r.url()); page.on('request', onReq);
 		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' });
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
+		page.off('request', onReq); // API-18: the UI asks for its own board only, never every board
+		ok(nreq.length > 0 && nreq.every((u) => new URL(u).searchParams.get('board') === 'zsecond'), `[${tag}] /api/needs should carry board=zsecond: ${nreq}`);
 		await page.keyboard.press('i');
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
@@ -868,7 +980,7 @@ try {
 		const small = (await heights(page)).filter(([, w, h]) => h < 44 || w < 44);
 		ok0(!small.length, 'targets under 44px on touch: ' + JSON.stringify(small.slice(0, 5)));
 		ok0(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow on touch');
-		{ const top = (pg) => pg.evaluate(() => Math.round(document.querySelector('#board .card').getBoundingClientRect().top + scrollY)), M = await browser.newContext({ viewport: { width: 390, height: 844 } }), mp = await M.newPage(); // first card: <= 483px with a mouse, <= 523px on touch (AGENTS.md "Phone chrome")
+		{ const top = (pg) => pg.evaluate(() => Math.round(document.querySelector('#board .card').getBoundingClientRect().top + scrollY)), M = await browser.newContext({ viewport: { width: 390, height: 844 } }), mp = await M.newPage(); // first card: <= 483px with a mouse, <= 523px on touch (UI-REFERENCE.md "Phone chrome")
 			await mp.goto(base); await mp.waitForSelector('#board .card'); const mt = await top(mp); await M.close();
 			ok0(mt <= 483, `first card at 390 with a mouse starts ${mt}px down (max 483)`);
 			const T2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), tp = await T2.newPage(); await tp.goto(base); await tp.waitForSelector('#board .card'); const ct = await top(tp); await T2.close(); // fresh storage: this page above stored Next up open
@@ -1107,7 +1219,7 @@ try {
 		const hold = () => { let go; const p = new Promise((r) => { go = r; }); return { p, go }; };
 		const tk = hold(), nd = hold();
 		await page.route(/\/api\/tickets$/, async (r) => { await tk.p; await r.continue(); });
-		await page.route(/\/api\/needs$/, async (r) => { await nd.p; await r.continue(); });
+		await page.route(/\/api\/needs(\?|$)/, async (r) => { await nd.p; await r.continue(); });
 		await page.goto(base);
 		await page.waitForSelector('#board .bload .ld');
 		ok(!/No tickets yet/.test(await page.innerText('#board')), 'the board says loading, not "No tickets yet", before the first answer');
@@ -1131,7 +1243,7 @@ try {
 			await page.unroute(/\/api\/tickets\/[^/]+$/);
 			await page.evaluate((i) => fetch(`/api/tickets/${i}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }), id);
 			// a failed /api/needs: the panel says so instead of loading forever
-			await page.unroute(/\/api\/needs$/); await ctx.route(/\/api\/needs$/, (r) => r.fulfill({ status: 500, body: '{"error":"x"}' })); // on the context: the new page gets it too
+			await page.unroute(/\/api\/needs(\?|$)/); await ctx.route(/\/api\/needs(\?|$)/, (r) => r.fulfill({ status: 500, body: '{"error":"x"}' })); // on the context: the new page gets it too
 			const fresh = await ctx.newPage(); lastPage = fresh; fresh.on('pageerror', (e) => errs.push(e.message));
 			await fresh.goto(base); await fresh.waitForSelector('#board .card', { state: 'attached' });
 			await fresh.keyboard.press('i'); await fresh.waitForSelector('#npList .msg.err');

@@ -16,7 +16,7 @@ The Docker board (:8787, `unblockd` + `unblockd-mcp` containers) bind-mounts `./
   - PR #31: UI-49 the Board as a list (`l`, `?layout=list`).
   - PR #32: UI-51 the ticket drawer is a side peek (board stays usable, `j`/`k` step through tickets), Details as labelled rows.
 
-## Owner calls made today (already in AGENTS.md; don't re-argue)
+## Owner calls made today (already in AGENTS.md / .claude/skills/unblockd-design/UI-REFERENCE.md; don't re-argue)
 - View switch stays compact: only the active view has a label (UI-52 labels were tried and reverted). The chat button says "Ask Claude".
 - Tags and the `→ agent` hint on cards are off by default, behind Settings > Tags (the drawer always shows them).
 - The list is a Columns | List layout of the Board, not a sixth view.
