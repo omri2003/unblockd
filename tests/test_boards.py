@@ -378,6 +378,10 @@ class ApiTest(unittest.TestCase):
 		self.assertIn("window 0.2", ctx["docs"][0]["content"])
 		lean = self.call("GET", "/api/b/a/tickets/CMB-1/context?content=0")[1]  # the Docs view's preview: what is sent, without the text
 		self.assertEqual((lean["docs"][0]["sent"], "content" in lean["docs"][0]), ("full", False))
+		self.assertNotIn("fits_budget", lean)  # everything is sent: no "fits at" line (UI-64)
+		self.call("POST", "/api/b/a/tickets/CMB-1/files", {"name": "big.md", "content": "y" * 70000})  # over the 60k default budget
+		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/context?content=0")[1]["fits_budget"], 70010)
+		self.call("DELETE", "/api/b/a/tickets/CMB-1/files/big.md")
 		self.assertIn("rules", self.call("GET", "/api/b/a/knowledge")[1])
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=tickets/unblockd.json")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=../b/tickets/unblockd.json")[0], 400)

@@ -339,6 +339,19 @@ def with_context(store, t: dict | None) -> dict | None:
 	return {**t, "context": context(store, t["id"])} if t and "id" in t else t
 
 
+def fits_budget(store, tid: str, ctx: dict) -> int | None:
+	"""For the Docs view's preview (UI-64): the smallest context_budget (characters) at which context() would send every doc of
+	this ticket in full, or None when it already does (or nothing is budget-bound: a missing / broken doc no budget fixes).
+	Computed by the real pass, not a sum on the page: with no limit context() inlines exactly the texts it would need (sections a
+	whole file covers dropped, attachments read), so `inlined_chars` of that pass is the need N; an attachment is only read when
+	its BYTES fit, so the answer is max(N, its bytes). Every length that decides whether a doc covers or fits is <= that answer,
+	so context(budget=answer) sends all, and any smaller budget is below N or an attachment's bytes (tests/test_knowledge)."""
+	if not any(d.get("sent") in ("too_big", "budget") for d in ctx["docs"]):
+		return None
+	full = context(store, tid, budget=10 ** 12)
+	return max([full["inlined_chars"]] + [d["chars"] for d in full["docs"] if "file" in d and "content" in d])
+
+
 SPEND = {"component": 0, "ticket": 1, "attached": 2, "agent": 3, "tag": 4, "board": 5}  # who gets the budget first (output order is different)
 
 

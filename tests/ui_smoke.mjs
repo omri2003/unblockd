@@ -261,6 +261,13 @@ try {
 			await page.waitForSelector('#dT .dctx h3');
 			const ctx = await page.locator('#dT .dctx').innerText();
 			ok(ctx.includes('What an agent gets for UI-2') && ctx.includes('Too big: path only') && ctx.includes('Sent'), `[${tag}] docs: UI-2's preview should say what is sent and what is not: ${ctx.slice(0, 200)}`);
+			{ // UI-64 (owner decision 2026-11-16): a doc did not fit, so the bar spans what everything needs: hatched parts past the sent ones, a tick at today's budget, ONE label with the number to set
+				const fit = await page.locator('#dT .dfit').innerText();
+				const n = +(fit.match(/^Needs ≈[\d.]+k? tokens, the budget is ≈[\d.]+k? · set context_budget to (\d+) characters$/) || [])[1];
+				ok(await page.locator('#dT .dfit').count() === 1 && n > 2000, `[${tag}] docs: UI-2's preview labels the budget at which everything fits: ${fit}`);
+				ok(await page.locator('#dT .cbar i.x').count() >= 1 && await page.locator('#dT .cbw .ctk').count() === 1, `[${tag}] docs: the bar shows the docs that did not fit as hatched parts and a tick at the budget`);
+				ok(((await page.getAttribute('#dT .cbar', 'aria-label')) || '').includes('more needed to send everything'), `[${tag}] docs: the bar says in words how much more everything needs`);
+			}
 			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
 			{ // AI-14 (design C): a doc too big to send folds out its headings with size bars; tick two, Send, both are in the preview; Undo takes them back
 				const sec = page.locator('#dT .dsec').first(); await sec.locator('summary').click();

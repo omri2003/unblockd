@@ -238,6 +238,27 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(sent, {"AGENTS.md": "budget", "docs/BIG.md": "too_big", "docs/MID.md": "full", "nope.md": "error"})
 		self.assertNotIn("sent", kn.context(self.s, "CMB-2", inline=False)["docs"][0])
 
+	def test_fits_budget_is_the_smallest_that_sends_all(self):
+		"""UI-64: the preview's "Everything fits at N" comes from the real pass: N sends every doc, N - 1 does not.
+		A section its whole file covers counts once, an attachment counts its bytes (it is read only when they fit)."""
+		(self.repo / "docs" / "BIG.md").write_text("# Big\n## A\n" + "x" * 900 + "\n## B\nb\n", encoding="utf-8", newline="\n")
+		self.s.create({"title": "t", "docs": ["docs/BIG.md#a", "docs/BIG.md", "nope.md"]}, tid="CMB-2")
+		kn.attach(self.s, "CMB-2", "u.md", "é" * 50)  # 100 bytes, 50 characters
+		cut = lambda b: [d["path"] for d in kn.context(self.s, "CMB-2", budget=b)["docs"] if d["sent"] in ("too_big", "budget")]
+		ctx = kn.context(self.s, "CMB-2", budget=500)
+		n = kn.fits_budget(self.s, "CMB-2", ctx)
+		self.assertTrue(cut(500))
+		self.assertEqual(cut(n), [])  # nope.md is an error, not a budget problem
+		self.assertTrue(cut(n - 1))
+		self.assertNotIn("docs/BIG.md#a", [d["path"] for d in kn.context(self.s, "CMB-2", budget=n)["docs"]])  # covered by the whole file
+		self.assertIsNone(kn.fits_budget(self.s, "CMB-2", kn.context(self.s, "CMB-2", budget=n)))  # all sent: no line
+		big = kn.context(self.s, "CMB-2", budget=10 ** 6)["inlined_chars"]
+		kn.detach(self.s, "CMB-2", "u.md")
+		kn.attach(self.s, "CMB-2", "u.md", "é" * (big + 10))  # bytes > the texts' sum: the attachment's bytes decide
+		n = kn.fits_budget(self.s, "CMB-2", kn.context(self.s, "CMB-2", budget=500))
+		self.assertEqual((cut(n), bool(cut(n - 1))), ([], True))
+		self.assertEqual(n, 2 * (big + 10))
+
 	def test_graph_counts_component_notes(self):
 		"""Step 1 (Docs view truth): a ticket's component notes are in its context(), so the graph reads them too and the ticket has docs."""
 		(self.repo / "docs" / "arch").mkdir(parents=True, exist_ok=True)
