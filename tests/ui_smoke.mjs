@@ -196,14 +196,33 @@ try {
 		await page.keyboard.press('Escape');
 		ok(!(await page.locator('#bpanel').evaluate((e) => e.open)), `[${tag}] Escape should close the board list`);
 		if (w > 600) { await page.keyboard.press('Shift+B'); ok(await page.locator('#bpanel').evaluate((e) => e.open), `[${tag}] Shift+B should open the board list`); await page.keyboard.press('Escape'); }
+		// UI-74: the switch happens in the page: no reload, no /api/boards; filters drop as a reload did (search and URL params gone); Back returns
+		const boardsReq = []; const onB = (r) => /\/api\/boards$/.test(r.url()) && boardsReq.push(r.url()); page.on('request', onB);
+		const needsReq = []; const onN = (r) => /\/api\/needs/.test(r.url()) && needsReq.push(r.url()); // API-18 after a switch: the new board's needs
+		await page.fill('#q', 'smoke'); await page.waitForFunction(() => /[?&]q=smoke/.test(location.search));
+		await page.evaluate(() => { window.__noReload = 1; });
+		page.on('request', onN);
 		await page.click('#bsum');
 		await page.waitForFunction(() => document.activeElement.classList.contains('bi')); // the list focuses the current board
 		await page.keyboard.press('ArrowDown'); await page.keyboard.press('Enter'); // focus starts on the current board, so Down = the other one
 		await page.waitForURL(/board=zsecond/);
 		await page.waitForFunction(() => document.getElementById('appTitle').textContent === 'Second board');
+		await page.waitForSelector('#board .card', { state: 'attached' });
+		ok(await page.evaluate(() => window.__noReload === 1), `[${tag}] a board switch should not reload the page`);
+		ok(await page.evaluate(() => !/[?&]q=/.test(location.search) && document.getElementById('q').value === ''), `[${tag}] the search should drop on a switch, as a reload did`);
+		ok(await page.evaluate(() => !document.querySelector('#board .card[data-open^="SM-"]') && !!document.querySelector('#board .card[data-open^="ZQ-"]')), `[${tag}] the second board shows its own tickets, none of the first`);
+		ok((await page.locator('#bbody [aria-current=true]').textContent()).includes('Second board'), `[${tag}] the menu marks the new board`);
+		ok(needsReq.length > 0 && needsReq.every((u) => new URL(u).searchParams.get('board') === 'zsecond'), `[${tag}] after a switch /api/needs should ask board=zsecond: ${needsReq}`);
+		await page.goBack(); // Back: the previous board, with the URL it had (the search came back from it)
+		await page.waitForFunction((t) => document.getElementById('appTitle').textContent === t, title0);
+		await page.waitForFunction(() => /[?&]q=smoke/.test(location.search) && document.getElementById('q').value === 'smoke');
+		await page.waitForSelector('#board .card', { state: 'attached' });
+		await page.goForward(); await page.waitForFunction(() => document.getElementById('appTitle').textContent === 'Second board');
 		await page.click('#bsum'); await page.click('#bbody [data-bd="example"]'); // and back
 		await page.waitForFunction((t) => document.getElementById('appTitle').textContent === t, title0);
 		await page.waitForSelector('.card', { state: 'attached' });
+		ok(await page.evaluate(() => window.__noReload === 1 && document.getElementById('q').value === ''), `[${tag}] switching back stays in the page, search dropped`);
+		page.off('request', onB); page.off('request', onN); ok(!boardsReq.length, `[${tag}] a board switch should not ask /api/boards: ${boardsReq.length}`);
 		await page.evaluate(() => document.getElementById('kbBtn').click()); // hidden at <=600px (no keyboard there), so click it directly
 		await visible('#kb', 'shortcuts sheet from the hint');
 		ok((await page.locator('#kb').innerText()).includes('Shift'), `[${tag}] ? sheet should mention Shift-click select`);

@@ -950,11 +950,14 @@ const cap = s => s ? s[0]+s.slice(1).toLowerCase() : '';
 const pickOf=(v,ok,d)=>ok.includes(v)?v:d; // v if it is one of ok, else d (guards values read from localStorage)
 const setBoard=v=>{try{localStorage.setItem('unblockd.board',v)}catch{}};
 // Several boards: ?board=<id> picks one (remembered); API calls go to /api/b/<id>/...
-const BOARD=(new URLSearchParams(location.search).get('board')||(()=>{try{return localStorage.getItem('unblockd.board')}catch{return null}})()||'').replace(/[^a-z0-9_-]/g,'');
-const API=BOARD?`/api/b/${BOARD}`:'/api';
+let BOARD=(new URLSearchParams(location.search).get('board')||(()=>{try{return localStorage.getItem('unblockd.board')}catch{return null}})()||'').replace(/[^a-z0-9_-]/g,'');
+let API=BOARD?`/api/b/${BOARD}`:'/api';
+const BOARD0=BOARD; // the board this page opened on: Back to an entry without ?board= returns to it (UI-74)
+let BGEN=0; // bumped by an in-page board switch: a fetch started for the previous board never settles (see rawFetch)
 if(BOARD)setBoard(BOARD);
 // Project settings come from GET <API>/meta (the tickets folder's unblockd.json).
-let CFG={title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],agents:[],stale_days:7};
+const CFG0=()=>({title:'Tickets',owners:[{name:'Me',kind:'human'},{name:'Claude',kind:'agent'}],pillar_label:'Pillar',pillars:[],agents:[],stale_days:7});
+let CFG=CFG0(); // applyConfig merges into it: a board switch starts again from CFG0, so no key of the previous board's config survives
 let PILLARS=[],PNAME={},HUMAN=new Set(),LANES=[['OTHER','All','muted']];
 const pk=k=>'p-'+String(k).toLowerCase().replace(/[^a-z0-9]/g,'_');
 const pname=k=>PNAME[k]||cap(k);
@@ -984,10 +987,12 @@ const PDEF={P0:'breaks things or blocks people now',P1:'must happen for the goal
 const PLAB=[...PRIOS.map(p=>[p,`${p} – ${PDEF[p]}`]),['','None – '+PDEF['']]];
 const SHOWS=['only','paths','dim'], GROUPS=['none','pillar','component','milestone','parent','agent'];
 const LAYOUTS=['cols','list']; // the Board as columns or as a dense list (UI-49)
-const state={layout:pickOf(store.get('layout','cols'),LAYOUTS,'cols'),dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
-  showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')};
+const state0=()=>({layout:pickOf(store.get('layout','cols'),LAYOUTS,'cols'),dep:store.get('dep','ALL'),agent:'ALL',q:'',pillar:store.get('pillar','ALL'),comp:store.get('comp','ALL'),ms:store.get('ms','ALL'),owner:store.get('owner','ALL'),mine:store.get('mine',false)===true,parent:store.get('parent','ALL'),group:pickOf(store.get('group','none'),GROUPS,'none'),prio:store.get('prio',[]),allDone:false,view:store.get('view','board'),rx:null,rxErr:'',
+  showBoard:pickOf(store.get('showModeBoard','only'),SHOWS,'only'),showGraph:pickOf(store.get('showModeGraph','dim'),SHOWS,'dim')});
+const state=state0(); // a board switch re-reads it the way a page load does (UI-74)
 const ui0=()=>({mode:null,add:false,ce:null,del:false,noc:null,err:'',errAt:''}); // mode: new|edit (the panel's form); add: "+ Connection" open; ce: "from>to" whose contract is being edited; del: delete confirm; noc: the form that asked "save without a contract?"
-const MV={data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0}; // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
+const MV0=()=>({data:null,links:[],tried:false,p:null,err:'',foc:null,multi:null,f:null,pan:false,sig:'',v:{x:0,y:0,k:1},fitted:false,pos:null,drag:null,L:null,sig:'',ui:ui0(),gen:0});
+const MV=MV0(); // the Map's state (see the Map view); declared here because the board's Component filter / Group by / picker read MV.data
 const COMPS=()=>MV.data?.components||[], ctitle=k=>COMPS().find(c=>c.key===k)?.title||k;
 const MSL=()=>CFG.milestones||[], mtitle=k=>MSL().find(m=>m.key===k)?.title||k, msOf=t=>MSL().some(m=>m.key===t.milestone)?t.milestone:''; // the roadmap (config order); a key no longer listed counts as unscheduled
 const tcomps=t=>[...new Set([...(t.components||[]),...(MV.data?.ticket_map?.[t.id]||[])])]; // a ticket's components: explicit first, then those derived from its touches (GET /architecture ticket_map); explicit alone until that arrives
@@ -1073,10 +1078,13 @@ let T=[], BY=new Map(), raw='', openId=null, editing=false;
 // the person is waiting on; it shows the bar after 250 ms (fast ones never flash it). Polls start on timers, so they never show it.
 const BUSY={n:0,t:null,at:0};
 addEventListener('pointerdown',()=>{BUSY.at=Date.now();},true); addEventListener('keydown',()=>{BUSY.at=Date.now();},true);
-const rawFetch=window.fetch.bind(window);
+const fetch0=window.fetch.bind(window), HANG=new Promise(()=>{});
+// UI-74: a request started before an in-page board switch must not write the old board's answer into the new board's state. Its promise
+// never settles (so no handler, catch or finally runs); the body is read here, so a switch between headers and body is caught too.
+const rawFetch=(...a)=>{ const g=BGEN; return fetch0(...a).then(async r=>{ if(g!==BGEN) return HANG; const b=[101,204,205,304].includes(r.status)?null:await r.arrayBuffer(); return g!==BGEN?HANG:new Response(b,{status:r.status,statusText:r.statusText,headers:r.headers}); },e=>g!==BGEN?HANG:Promise.reject(e)); };
 window.fetch=(...a)=>{ if(!BUSY.n&&Date.now()-BUSY.at>1500) return rawFetch(...a);
-  if(BUSY.n++===0) BUSY.t=setTimeout(()=>{$('topbar').hidden=false;},250);
-  return rawFetch(...a).finally(()=>setTimeout(()=>{ if(--BUSY.n===0){clearTimeout(BUSY.t);$('topbar').hidden=true;} },0)); }; // after the caller's next step, so a chained reload counts
+  if(BUSY.n++===0) BUSY.t=setTimeout(()=>{$('topbar').hidden=false;},250); const g=BGEN;
+  return rawFetch(...a).finally(()=>setTimeout(()=>{ if(g===BGEN&&--BUSY.n===0){clearTimeout(BUSY.t);$('topbar').hidden=true;} },0)); }; // after the caller's next step, so a chained reload counts
 const ldHtml=(what,rows=3,tag='div')=>`<${tag} class="ld" role="status">${'<i aria-hidden="true"></i>'.repeat(rows)}<span>${esc(what)}…</span></${tag}>`; // a panel or view waiting for its first data
 async function jf(url, method='GET', body, hdr){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
   const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json',...hdr},body:body?JSON.stringify(body):undefined});
@@ -1340,9 +1348,9 @@ function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])ret
 const hm=d=>d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 const ago=iso=>{const s=Math.max(0,(Date.now()-Date.parse(iso))/1000);return s<60?'just now':s<3600?`${Math.round(s/60)} min ago`:s<86400?`${Math.round(s/3600)} h ago`:`${Math.round(s/86400)} d ago`;};
 // "While you were away": activity since this browser last dismissed it (per board). Fetched once on load; clock times only, no "x ago".
-const LSK='unblockd.lastSeen.'+(BOARD||'default'); let DG=null, dgOpen=false; // DG = {since, ev:[activity events, oldest first]}
+const LSK=()=>'unblockd.lastSeen.'+(BOARD||'default'); let DG=null, dgOpen=false; // DG = {since, ev:[activity events, oldest first]}
 async function loadDigest(){
-  const since=store.get(LSK,null); if(!since){store.set(LSK,new Date().toISOString());return;} // first visit: start counting now
+  const since=store.get(LSK(),null); if(!since){store.set(LSK(),new Date().toISOString());return;} // first visit: start counting now
   try{DG={since,ev:(await jf(API+'/activity?limit=2000&since='+encodeURIComponent(since))).reverse()};}catch{return;}
   renderDigest(); renderGit();
 }
@@ -1350,11 +1358,11 @@ async function loadDigest(){
 // Sections in the order a person acts on them: review (waits on you), stuck, finished, in progress, new.
 // Each row reads as a ticket (UI-55, design C): status tile, pillar spine, seal, id, title, byline, and ONE outcome line under the title.
 const DGS=[['rev','●','Ready for review'],['stk','⚠','Stuck'],['fin','✓','Finished'],['sta','▶','In progress'],['new','＋','New']];
-const DGH='unblockd.dgHide.'+(BOARD||'default'); // rows dismissed one by one or a section at a time: {id: ts of the event dismissed}; newer activity on that ticket brings it back
-const dgHid=(id,ts)=>{const h=store.get(DGH,{})[id]; return !!h&&h>=ts;};
+const DGH=()=>'unblockd.dgHide.'+(BOARD||'default'); // rows dismissed one by one or a section at a time: {id: ts of the event dismissed}; newer activity on that ticket brings it back
+const dgHid=(id,ts)=>{const h=store.get(DGH(),{})[id]; return !!h&&h>=ts;};
 function dgHide(rows,what){ // rows = [{e,t}]; Undo puts the old map back
-  const old=store.get(DGH,{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH,h); renderDigest();
-  toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH,old);renderDigest();}});
+  const old=store.get(DGH(),{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH(),h); renderDigest();
+  toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH(),old);renderDigest();}});
 }
 const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
 const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
@@ -1947,7 +1955,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-gitdismiss]')){store.set('unblockd.gitSeen.'+(BOARD||'default'),gitKey());renderGit();return;} // it comes back when the numbers change
   if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
   if(b=g('[data-dghidesec]')){const s=digestGroups().find(x=>x[0]===b.dataset.dghidesec); if(s) dgHide(s[3],`${s[3].length} ${s[2].toLowerCase()}`); return;}
-  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());store.set(DGH,{}); /* everything up to now is seen: the per-row list is no longer needed */ const el=$('digest'),done=()=>{DG=null;renderDigest();};
+  if(g('[data-dgdismiss]')){store.set(LSK(),new Date().toISOString());store.set(DGH(),{}); /* everything up to now is seen: the per-row list is no longer needed */ const el=$('digest'),done=()=>{DG=null;renderDigest();};
     if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
   if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-pstep]')){peekStep(+b.dataset.pstep);return;}
@@ -2086,7 +2094,7 @@ function cmdList(q){
   for(const [v,l,key] of VIEWS) if(v!==state.view) out.push({g:'View',l:`Go to ${l}`,k:'view switch '+v+(key?' '+key:''),run:()=>setView(v)});
   if(state.view==='board') out.push({g:'View',l:state.layout==='list'?'Show as columns':'Show as list',k:'layout list columns rows table l',run:()=>setBoardLayout(state.layout==='list'?'cols':'list')});
   out.push({g:'Panel',l:'Needs you',k:'questions reviews proposals inbox',run:openNeeds},{g:'Panel',l:'Ask Claude',k:'chat ask',run:()=>openChat()});
-  for(const b of BOARDS) if(b.id!==curBoard()) out.push({g:'Board',l:`Switch to ${b.title}`,k:'board '+b.id,run:()=>{setBoard(b.id);location.href='?board='+encodeURIComponent(b.id);}});
+  for(const b of BOARDS) if(b.id!==curBoard()) out.push({g:'Board',l:`Switch to ${b.title}`,k:'board '+b.id,run:()=>switchBoard(b.id)});
   const cmds=words.length?out.filter(c=>hit(c.l+' '+c.k)):out.filter(c=>c.g===CMD.ctx||c.g==='Create'||c.g==='View');
   const id=q.trim().toUpperCase(),score=x=>x.id===id?-1:(x.id.startsWith(id)?0:2)+(x.status==='done'?1:0); // the exact id first, then open before done
   const ts=words.length?T.filter(x=>hit(x.id+' '+x.title)).sort((a,b)=>score(a)-score(b)||cmp(a,b)).slice(0,30):[];
@@ -2521,7 +2529,7 @@ readColors();
 // everything its rule sends (graph()'s `rules`, from the config): a doc an earlier band already lists is a dashed "also here" row, never drawn twice.
 // Clicking a ticket shows what its agent gets (GET tickets/<id>/context?content=0: each doc's `sent`, against the budget). DOM + SVG on purpose:
 // rows are real buttons (keyboard, a11y, the <=700px list), tokens resolve in CSS.
-const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null};
+const DV0=()=>({data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null}), DV=DV0();
 const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_docs,'bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
   ['broken',['broken reference','broken references'],g=>g.broken,'bad','A docs entry that is missing, outside the project, not text, or too big.'],
   ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
@@ -3171,6 +3179,9 @@ let BOARDS=[];
 const curBoard=()=>BOARD||BOARDS[0]?.id||'';
 async function loadBoards(){
   try{BOARDS=await jf('/api/boards');}catch{}
+  return paintBoards();
+}
+function paintBoards(){ // the board menu from BOARDS (fetched once per page: a switch only moves aria-current)
   $('bsum').inert=BOARDS.length<2; // one board: plain title, not a button
   $('bbody').innerHTML=BOARDS.map(b=>`<button type="button" class="bi" data-bd="${esc(b.id)}" aria-current="${b.id===curBoard()}"><span>${esc(b.title)}${b.error?' (config error)':''}</span><span class="hint">${b.error?esc(b.error):`${b.open} open, ${b.ready} ready`}</span></button>`).join('')+'<button type="button" class="bi" data-bd="__new">New board…</button>';
   return BOARDS;
@@ -3180,8 +3191,7 @@ $('bbody').addEventListener('click',e=>{
   $('bpanel').open=false;
   if(v==='__new'){newBoardForm();return;}
   if(v===curBoard())return;
-  setBoard(v);
-  location.href='?board='+encodeURIComponent(v);
+  switchBoard(v);
 });
 $('bbody').addEventListener('keydown',e=>{
   if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return; e.preventDefault();
@@ -3202,6 +3212,44 @@ async function submitBoard(){
     setBoard(j.id); location.href='?board='+encodeURIComponent(j.id);
   }catch(er){ m.className='msg err'; m.textContent=er.message; }
 }
+// UI-74: switch boards in the page (a reload cost /api/boards, ~1 s with many boards, plus the page and every other fetch). It must leave
+// the page exactly as a reload of ?board=<v> would: every per-board piece of state below goes back to its first value, filters come back
+// from localStorage (urlRead finds no params in the new URL), old requests never land (BGEN), and history gets a ?board= entry so Back
+// returns to the previous board (popstate). A failed meta falls back to the old full navigation.
+let SWTOK=0; const QT0=$('q').title;
+async function switchBoard(v,push=true){
+  const my=++SWTOK, api=v?`/api/b/${v}`:'/api'; let m;
+  try{ const r=await fetch(api+'/meta',{cache:'no-store'}); if(!r.ok) throw 0; m=await r.json(); }catch{ if(my===SWTOK) location.href='?board='+encodeURIComponent(v); return; }
+  if(my!==SWTOK) return; // a later switch won
+  const was=BOARDS.find(b=>b.id===curBoard()); if(was&&LOADED){ was.open=T.filter(t=>t.status!=='done').length; was.ready=T.filter(t=>t.effective_status==='todo').length; } // the menu's counts for the board we leave, without /api/boards
+  // close every layer first, while their state still describes the old board
+  closeMenus(); cmdClose(true); toggleKb(false); endP(); closeDoc(); hideAc(); closeNeeds(true); if(G.isolate) endIsolate(); if(MV.foc||MV.pan||MV.multi) mapClear(true); closeDrawer();
+  BGEN++; nTok++; gTok++; apTok++; BUSY.n=0; clearTimeout(BUSY.t); $('topbar').hidden=true;
+  BOARD=v; API=api; setBoard(v);
+  if(push) history.pushState(null,'','?board='+encodeURIComponent(v)); // no view params: like the reload, the remembered choices apply
+  // per-board state, as a fresh page has it
+  CFG=CFG0(); Object.assign(state,state0()); for(const k of Object.keys(MV)) delete MV[k]; Object.assign(MV,MV0()); for(const k of Object.keys(DV)) delete DV[k]; Object.assign(DV,DV0());
+  T=[]; BY=new Map(); raw=''; etag=null; LOADED=false; LERR=''; paint=null; DATA=false; live=false; DROP=null; authShown=false; authMsg='';
+  openId=null; editing=false; lastFocus=null; SPLIT=null; SPLITD={text:'',seq:false}; armedDelete=false; kbFocus=null; dragId=null; LPROPS=''; qaBusy=false; NEXTN=0;
+  SEL.clear(); flash.clear(); ACTS.clear(); dSecOpen.clear(); for(const o of [KNOW,dPick,RQ,RMX,RMD,DRAFTS]) for(const k of Object.keys(o)) delete o[k];
+  DG=null; dgOpen=false; dgMore.clear(); dgHtml='';
+  archSig=null; docSig=null; archDue=false; docDue=false; // UI-73: the Map / Docs fetch is due again on the first load, as on a fresh page
+  NEEDS=[]; nLoaded=false; nErr=''; NX=null; npSig=''; npShown=false; nEtag=null; lastNFocus=null; NMARK='';
+  GIT=null; gEtag=null; gHtml=null; renderGit();
+  Object.assign(AP,{ev:null,err:'',tl:null,draft:null,terr:'',more:false});
+  Object.assign(G,{nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',lkey:'',hover:null,focus:null,isolate:null,saved:null,restore:false,ptr:null,sized:false,fitted:false,lanes:[],preds:new Map(),critG:null,critF:null,selEdge:null,link:null,pts:new Map(),pinch:null,anims:[],last:0,fitSettle:false});
+  CH.busy=false; CH.others.clear(); chatLoad(); renderChat();
+  $('toasts').replaceChildren(); // an old toast's Undo would PATCH the same id on the new board
+  $('board').innerHTML=$('nextUp').innerHTML=''; $('nextUp').className='next'; $('dQ').value=$('cin').value=$('q').value=''; $('q').classList.remove('err'); $('q').title=QT0; renderBulk(); scrollTo(0,0); // state0 already cleared the search
+  // the page-load sequence (below), minus /api/boards
+  paintBoards(); loadNeeds(); applyConfig(m.config);
+  urlRead(); readColors(); renderBar(); setView(state.view);
+  load(true).then(loadDigest);
+}
+addEventListener('popstate',()=>{ // Back / Forward between boards switched in the page; a hash-only entry of the same board is left alone
+  const v=(new URLSearchParams(location.search).get('board')||BOARD0).replace(/[^a-z0-9_-]/g,'');
+  if(v!==BOARD) switchBoard(v,false);
+});
 loadBoards().then(loadNeeds);
 fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD&&!location.search.includes('board=')){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
   urlRead(); readColors(); renderBar(); setView(state.view);
