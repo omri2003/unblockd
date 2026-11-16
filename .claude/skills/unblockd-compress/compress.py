@@ -14,7 +14,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from check import check, main as report  # noqa: E402
 
-RULES = (Path(__file__).parent / "RULES.md").read_text(encoding="utf-8")
+GUIDE = Path(__file__).resolve().parents[3] / "docs" / "writing-for-agents.md"  # the style guide (DOCS-17)
+RULES = (GUIDE.read_text(encoding="utf-8") + "\n\n" if GUIDE.is_file() else "") + (Path(__file__).parent / "RULES.md").read_text(encoding="utf-8")
 
 
 def ask(prompt: str) -> str:
