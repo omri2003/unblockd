@@ -1,17 +1,8 @@
 Rewrite DOCUMENT shorter for an AI agent to read. Same meaning, fewer words.
 
-The test for what to keep: anything a brand-new agent would need to do the work without knowing what happened before.
+The style guide is docs/writing-for-agents.md (what never to cut, what to cut, model-native terms, shape); compress.py sends it above these lines. Do not keep a second copy of it here.
 
-Cut:
-- filler, hedging, politeness, repetition ("it is worth noting that", "basically", "in order to" -> "to")
-- articles where the sentence still reads clearly
-- a sentence that only restates the one before
-
-Prefer:
-- lists and `key: value` lines over paragraphs; one fact per line
-- "e.g." for examples; short imperative rules ("Never X.", "Only when Y.")
-
-Keep exactly (a checker refuses the rewrite otherwise):
+What check.py enforces mechanically (a rewrite that breaks one is refused):
 - every heading line, every code block, every `inline code`, every URL
 - every file path, command, ticket id, number and unit
 - every negation and condition: not, no, never, without, only, unless, except, until, if, when, before, after, must, always, should, required

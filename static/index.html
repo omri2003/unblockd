@@ -659,7 +659,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .mdir{margin:10px 0 4px;font-size:.78rem;color:var(--muted)}
 .mcl li{display:block} .ctr{font-size:.84rem;color:var(--muted);overflow-wrap:anywhere} .ctr.none{color:var(--cinnabar);font-style:italic}
 .mwhy{margin:0 0 10px;padding-left:18px;color:var(--cinnabar);font-weight:600;font-size:.88rem}
-/* editing the architecture from the Map (AGENTS.md, Map view): forms in the side panel, controls on each connection line */
+/* editing the architecture from the Map (UI-REFERENCE.md, Map view): forms in the side panel, controls on each connection line */
 .aform{display:grid;gap:10px;margin:8px 0} .aform label,.aform .lbl{display:grid;gap:4px;font-size:.85rem;font-weight:600}
 .aform input,.aform textarea{width:100%;min-width:0;border:1px solid var(--line);background:var(--paper);border-radius:var(--r);padding:7px 9px;font-weight:400}
 .aform textarea{resize:vertical;min-height:4.2em} .aform textarea.mono,.aform input.mono{font-family:var(--mono);font-size:.84rem}
@@ -773,7 +773,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .card.claimed{outline-width:1.5px;outline-offset:-1.5px;background-image:linear-gradient(to bottom,color-mix(in srgb,var(--amber) 6%,transparent),transparent 55%)}
 /* 7d phone: search gets row 1, the rest share row 2 */
 @media (max-width:600px){.bar input[type=search]{flex:1 1 100%} .bar>#nextBtn{margin-left:auto} header .hdr>.btn:not(.q),header .hdr>#apanel{flex:1 1 0}}
-/* motion (AGENTS.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
+/* motion (UI-REFERENCE.md "Motion"): slidePill() puts one .ind behind the pressed button of a segmented control; labels in #viewSeg open with 0fr -> 1fr */
 .sl{position:relative}
 .sl>:not(.ind){position:relative;z-index:1;transition:color .18s ease-out}
 .sl>[aria-pressed="true"]{background:transparent;border-color:transparent}

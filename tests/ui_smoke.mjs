@@ -973,7 +973,7 @@ try {
 		const small = (await heights(page)).filter(([, w, h]) => h < 44 || w < 44);
 		ok0(!small.length, 'targets under 44px on touch: ' + JSON.stringify(small.slice(0, 5)));
 		ok0(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'horizontal overflow on touch');
-		{ const top = (pg) => pg.evaluate(() => Math.round(document.querySelector('#board .card').getBoundingClientRect().top + scrollY)), M = await browser.newContext({ viewport: { width: 390, height: 844 } }), mp = await M.newPage(); // first card: <= 483px with a mouse, <= 523px on touch (AGENTS.md "Phone chrome")
+		{ const top = (pg) => pg.evaluate(() => Math.round(document.querySelector('#board .card').getBoundingClientRect().top + scrollY)), M = await browser.newContext({ viewport: { width: 390, height: 844 } }), mp = await M.newPage(); // first card: <= 483px with a mouse, <= 523px on touch (UI-REFERENCE.md "Phone chrome")
 			await mp.goto(base); await mp.waitForSelector('#board .card'); const mt = await top(mp); await M.close();
 			ok0(mt <= 483, `first card at 390 with a mouse starts ${mt}px down (max 483)`);
 			const T2 = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }), tp = await T2.newPage(); await tp.goto(base); await tp.waitForSelector('#board .card'); const ct = await top(tp); await T2.close(); // fresh storage: this page above stored Next up open
