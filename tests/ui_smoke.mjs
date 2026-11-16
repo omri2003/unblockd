@@ -34,9 +34,13 @@ try {
 		const p = join(root, b, 'tickets', f);
 		await writeFile(p, JSON.stringify({ ...JSON.parse(await readFile(p, 'utf8')), created: today, updated: today }, null, 2));
 	}
-	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also here" row; a small budget makes big.md "too big"
+	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also sent" chip; a small budget makes big.md "too big"
+		// UI-65: sec also lists the board's AGENT_POLICY.md (a chip marked "can go") and a long path (the chip shows it in full); api lists a section of the
+		// board doc (a row marked "can go": the file part is compared); no open ticket has the tag "idle", so its band starts collapsed
 		const ep = join(root, 'example/tickets/unblockd.json'), ec = JSON.parse(await readFile(ep, 'utf8'));
-		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png', 'docs/mech.md#combat'] } }, null, 2));
+		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md', 'AGENT_POLICY.md#agent-policy-example', 'docs/a-rather-long-folder-name/with-another-nested-folder/and-a-long-file-name-to-wrap.md'], sec: ['docs/sec.md', 'docs/pick.png', 'docs/mech.md#combat', 'AGENT_POLICY.md', 'docs/a-rather-long-folder-name/with-another-nested-folder/and-a-long-file-name-to-wrap.md'], idle: ['docs/sec.md'] } }, null, 2));
+		await mkdir(join(root, 'example/docs/a-rather-long-folder-name/with-another-nested-folder'), { recursive: true });
+		await writeFile(join(root, 'example/docs/a-rather-long-folder-name/with-another-nested-folder/and-a-long-file-name-to-wrap.md'), '# Long path');
 		await writeFile(join(root, 'example/docs/big.md'), ['# Big', '## Part one', 'x'.repeat(3000), '## Part two', 'end', '## Part three', 'more'].join(String.fromCharCode(10))); // headings: the preview offers one section of it (AI-14)
 		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
 		await writeFile(join(root, 'example/docs/mech.md'), ['# Mechanics', '## Combat', 'parry', '## Movement', 'run'].join(String.fromCharCode(10))); // a section: path#heading
@@ -247,7 +251,20 @@ try {
 		await noOverflow('docs');
 		{ // Docs view bands: one band per rule, the doc a second tag sends is an "also here" row, a ticket shows its tags and what its agent gets
 			await visible('#dD .dband[data-band="tag:api"]', 'tag band');
-			ok(await page.locator('#dD .dband[data-band="tag:sec"] .ghost').count() === 1, `[${tag}] docs: the sec band should list sec.md as "also here"`);
+			{ // UI-65: the docs an earlier band lists are one line of chips with the full path; an entry the board already sends is marked "can go"
+				const ch = await page.locator('#dD .dband[data-band="tag:sec"] .gchip').evaluateAll((cs) => cs.map((c) => c.querySelector('.gp').textContent).sort());
+				ok(ch.join('|') === ['AGENT_POLICY.md', 'docs/a-rather-long-folder-name/with-another-nested-folder/and-a-long-file-name-to-wrap.md', 'docs/sec.md'].sort().join('|'), `[${tag}] docs: the sec band lists its repeats as full-path chips: ${ch.join('|')}`);
+				const cg = page.locator('#dD .dband[data-band="tag:sec"] .gchip .dwarn');
+				ok(await cg.count() === 1 && (await cg.innerText()).trim().toLowerCase() === 'can go' && (await cg.getAttribute('title')).includes("board's docs"), `[${tag}] docs: the board doc listed again under a tag is a short "can go" label with the reason in its tooltip`);
+				ok(await page.locator('#dD [data-n="d:AGENT_POLICY.md#agent-policy-example"] .dwarn', { hasText: 'can go' }).count() === 1, `[${tag}] docs: a section of a doc the board sends whole can go too`);
+				ok(await page.locator('#dD .dband[data-band="tag:api"] [data-n^="d:docs/sec.md"] .dwarn').count() === 0, `[${tag}] docs: a doc the board does not send is not marked`);
+				ok(await page.locator('#dD .dband[data-band="tag:idle"].shut').count() === 1 && (await page.locator('#dD .dband[data-band="tag:idle"] em').innerText()).includes('no open ticket uses it'), `[${tag}] docs: a tag no open ticket has starts collapsed and says why`);
+				await page.click('[data-dshut="a:tag:idle"]');
+				await page.waitForFunction(() => !document.querySelector('#dD .dband[data-band="tag:idle"]').classList.contains('shut'));
+				ok(await page.evaluate(() => JSON.parse(localStorage.getItem('docsOpen.example') || '[]').includes('a:tag:idle')), `[${tag}] docs: opening an unused band is remembered`);
+				await page.click('[data-dshut="a:tag:idle"]');
+				await page.waitForFunction(() => document.querySelector('#dD .dband[data-band="tag:idle"]').classList.contains('shut'));
+			}
 			ok(await page.locator('[data-dsel="t:UI-2"] .dtg').count() === 2, `[${tag}] docs: UI-2 should show its two tags`);
 			{ const tb = page.locator('[data-dsel="t:UI-2"] .tag.warn', { hasText: 'too big' }); ok(await tb.innerText() === '1 too big' && (await tb.getAttribute('title')).includes('docs/big.md'), `[${tag}] docs: UI-2's row says 1 too big and names docs/big.md`); }
 			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
