@@ -316,7 +316,7 @@ try {
 			}
 			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
 			{ // AI-14 (design C): a doc too big to send folds out its headings with size bars; tick two, Send, both are in the preview; Undo takes them back
-				const sec = page.locator('#dT .dsec').first(); await sec.locator('summary').click();
+				await page.locator('#dT .dsb.pk').first().click(); await page.waitForSelector('#dT .dsec .dsr'); const sec = page.locator('#dT .dsec').first(); // Pick sections sits in the doc's head (owner, 2026-11-17)
 				const hs = await sec.locator('.dsr').evaluateAll((rs) => rs.map((r) => r.querySelector('.dst span').firstChild.textContent.trim() + (r.querySelector('input').disabled ? '!' : '')));
 				ok(hs.join('|') === 'Big!|Part one!|Part two|Part three', `[${tag}] docs: the fold lists big.md's headings, the ones over the budget disabled: ${hs.join('|')}`);
 				await sec.locator('.dsr', { hasText: 'Part two' }).locator('input').check();
@@ -327,7 +327,10 @@ try {
 				await page.click('#toasts button:has-text("Undo")');
 				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return c.includes('big.md') && !document.querySelector('#dT .dsc'); }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not take the sections back`)); await page.waitForSelector('#toasts :text("docs restored")'); // Undo's reload is done
 			}
-			ok((await page.locator('#dT .dsec.miss summary.strip').first().innerText()).includes("Didn't fit"), `[${tag}] docs: a doc that did not fit gets the strip with Pick sections (UI-72)`);
+			{ // UI-72: a doc that did not fit gets "Didn't fit" under its head and Pick sections IN the head, where a sent doc's Sections button is (owner, 2026-11-17)
+				const card = page.locator('#dT .dcard:has(.dstrip)').first();
+				ok((await card.locator('.dstrip').innerText()).includes("Didn't fit") && (await card.locator('.dstrip .s.out').innerText()).includes('path only') && !(await card.locator('.dch .s').count()) && (await card.locator('.dch .dsb.pk').innerText()).includes('Pick sections') && !(await card.locator('.dstrip button, .dstrip .dsb').count()), `[${tag}] docs: a doc that did not fit has Pick sections in its head and, below, ONE line with its status ("Too big: path only") and "Didn't fit", with no button in it`);
+			}
 			{ // UI-72: a doc with no headings that did not fit says what to do instead; a sent doc with 2+ headings gets a quiet Sections button
 				await writeFile(join(root, 'example/docs/plain.txt'), 'plain notes with no headings '.repeat(100));
 				await writeFile(join(root, 'example/docs/mid.md'), ['# Mid', '## One', 'y'.repeat(400), '## Two', 'z'.repeat(400)].join(String.fromCharCode(10)));
@@ -364,7 +367,7 @@ try {
 				ok(rows.join(' / ') === 'docs/release.md||Add to DOC-1 / docs/releasing.md!|too big: pick sections|Pick sections', `[${tag}] docs: release.md fits and comes first, releasing.md is too big (red mark, Pick sections), flat.md (no headings) is not offered: ${rows.join(' / ')}`);
 				await page.click('#dT .dsug [data-path="docs/releasing.md"]');
 				await page.waitForSelector('#dT .dsec.miss[open] .dsr', { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Pick sections did not open releasing.md's section tree`));
-				ok((await page.locator('#dT .dsec.miss[open] summary.strip').innerText()).includes("Didn't fit") && (await page.locator('#dT .dsec.miss[open] .dsr').count()) === 3, `[${tag}] docs: the picker is the usual "Didn't fit" fold with releasing.md's 3 headings`);
+				ok((await page.locator('#dT .dcard:has(.dsec.miss[open]) .dstrip').innerText()).includes("Didn't fit") && (await page.locator('#dT .dcard:has(.dsec.miss[open]) .dsb.pk').getAttribute('aria-expanded')) === 'true' && (await page.locator('#dT .dsec.miss[open] .dsr').count()) === 3, `[${tag}] docs: the picker is the usual "Didn't fit" fold with releasing.md's 3 headings`);
 				ok(JSON.parse(cli('get', 'DOC-1')).docs.includes('docs/releasing.md'), `[${tag}] docs: Pick sections put releasing.md on DOC-1`);
 				{ // the sections that name scripts/release.sh start ticked, so the picker shows why the doc was offered
 					const ticked = await page.locator('#dT .dsec.miss[open] input[data-dsbox]:checked').evaluateAll((xs) => xs.map((x) => x.value).join(','));
