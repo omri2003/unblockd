@@ -34,6 +34,16 @@ try {
 		const p = join(root, b, 'tickets', f);
 		await writeFile(p, JSON.stringify({ ...JSON.parse(await readFile(p, 'utf8')), created: today, updated: today }, null, 2));
 	}
+	{ // Docs view bands (UI-59): two tags send docs/sec.md, so the second band lists it as an "also here" row; a small budget makes big.md "too big"
+		const ep = join(root, 'example/tickets/unblockd.json'), ec = JSON.parse(await readFile(ep, 'utf8'));
+		await writeFile(ep, JSON.stringify({ ...ec, context_budget: 2000, docs_by_tag: { api: ['docs/big.md', 'docs/sec.md'], sec: ['docs/sec.md', 'docs/pick.png', 'docs/mech.md#combat'] } }, null, 2));
+		await writeFile(join(root, 'example/docs/big.md'), ['# Big', '## Part one', 'x'.repeat(3000), '## Part two', 'end', '## Part three', 'more'].join(String.fromCharCode(10))); // headings: the preview offers one section of it (AI-14)
+		await writeFile(join(root, 'example/docs/sec.md'), '# Security. Tokens.');
+		await writeFile(join(root, 'example/docs/mech.md'), ['# Mechanics', '## Combat', 'parry', '## Movement', 'run'].join(String.fromCharCode(10))); // a section: path#heading
+		await writeFile(join(root, 'example/docs/pick.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])); // an image: a path, never "broken"
+		const tp = join(root, 'example/tickets/UI-2.json');
+		await writeFile(tp, JSON.stringify({ ...JSON.parse(await readFile(tp, 'utf8')), tags: ['api', 'sec'] }, null, 2));
+	}
 	const cfgP = join(root, 'zsecond/tickets/unblockd.json'), cfg = JSON.parse(await readFile(cfgP, 'utf8'));
 	await writeFile(cfgP, JSON.stringify({ ...cfg, id: 'zsecond', title: 'Second board', agent_tickets: 'propose', schema: { prefixes: { ZQ: 'questions', ZP: 'proposed work' }, required: ['done_when', 'priority'], tags: ['bug', 'chore'], body_template: '## Why\n' } }));
 	cli('create', '--prefix', 'SM', '--title', 'smoke ticket', '--json', '{"owner":"Claude","pillar":"API"}');
@@ -56,7 +66,7 @@ try {
 	}
 
 	// 3+4. every viewport x theme
-	browser = await chromium.launch();
+	browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}); // PW_CHANNEL=chrome: an installed Chrome instead of Playwright's own build
 	for (const [w, h] of [[1400, 900], [390, 844]]) for (const theme of ['light', 'dark']) {
 		const tag = `${w}px/${theme}`;
 		const ctx = await browser.newContext({ viewport: { width: w, height: h }, colorScheme: theme });
@@ -132,9 +142,26 @@ try {
 			const rows = await page.$$eval('#digest .dg-r', (rs) => rs.map((r) => [r.dataset.open, !!r.querySelector('.dg-tile'), !!r.querySelector('.idc .tid'), !!r.querySelector('.dt')]));
 			ok(rows.length > 0 && rows.every((r) => r[1] && r[2] && r[3]), `[${tag}] digest rows need a tile, an id and a title: ${JSON.stringify(rows.slice(0, 3))}`);
 			ok(new Set(rows.map((r) => r[0])).size === rows.length, `[${tag}] digest lists a ticket twice`);
+			const off = await page.evaluate(async () => { // UI-68, UI-69: a row's section (New and Stuck too) agrees with its ticket's status now
+				const b = new URLSearchParams(location.search).get('board'), ts = await (await fetch(b ? `/api/b/${encodeURIComponent(b)}/tickets` : '/api/tickets')).json();
+				const st = Object.fromEntries((Array.isArray(ts) ? ts : ts?.tickets || []).map((t) => [t.id, t.status])), want = { sta: ['doing'], rev: ['review'], fin: ['done'], stk: ['todo'], new: ['todo'] };
+				return [...document.querySelectorAll('#digest .dg-r')].map((r) => [r.dataset.open, [...r.querySelector('.dg-tile').classList].find((c) => want[c]), st[r.dataset.open]]).filter(([, c, s]) => c && !want[c].includes(s));
+			});
+			ok(off.length === 0, `[${tag}] digest rows contradict the ticket status: ${JSON.stringify(off)}`);
+			ok(!(await page.locator('#digest .dg-r .w').allInnerTexts()).some((x) => /by hand/.test(x)), `[${tag}] digest: no "by hand" byline (UI-70: the outcome line says it)`);
 			await page.evaluate(() => { document.querySelector('#digest .dg-r').dataset.keep = '1'; });
 			await page.fill('#q', 'zz'); await page.fill('#q', ''); await refresh();
 			ok(await page.evaluate(() => document.querySelector('#digest .dg-r')?.dataset.keep === '1'), `[${tag}] a render with no digest change rebuilt the digest rows`);
+			// UI-69: dismiss one row (x) or a whole section; Undo brings them back
+			const rowIds = () => page.$$eval('#digest .dg-r', (rs) => rs.map((r) => r.dataset.open));
+			const before = await rowIds(), first = before[0];
+			await page.hover(`#digest .dg-r[data-open="${first}"]`); await page.click(`#digest [data-dghide="${first}"]`);
+			ok(!(await rowIds()).includes(first), `[${tag}] the row x did not dismiss ${first}`);
+			await page.click('#toasts button:has-text("Undo")'); ok((await rowIds()).includes(first), `[${tag}] Undo did not bring ${first} back`);
+			const sec = await page.$eval('#digest [data-dghidesec]', (b) => b.dataset.dghidesec);
+			await page.click(`#digest [data-dghidesec="${sec}"]`);
+			ok(!(await page.$(`#digest .dg-g.${sec}`)), `[${tag}] Dismiss all left the ${sec} section`);
+			await page.click('#toasts button:has-text("Undo")'); ok((await rowIds()).length === before.length, `[${tag}] Undo did not restore the ${sec} section`);
 		}
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
@@ -218,6 +245,84 @@ try {
 		await visible('#dStage .dn', 'docs strip node'); // #dSvg (edges) is display:none on mobile by design
 		if (w > 600) await visible('#dSvg', 'docs strip svg');
 		await noOverflow('docs');
+		{ // Docs view bands: one band per rule, the doc a second tag sends is an "also here" row, a ticket shows its tags and what its agent gets
+			await visible('#dD .dband[data-band="tag:api"]', 'tag band');
+			ok(await page.locator('#dD .dband[data-band="tag:sec"] .ghost').count() === 1, `[${tag}] docs: the sec band should list sec.md as "also here"`);
+			ok(await page.locator('[data-dsel="t:UI-2"] .dtg').count() === 2, `[${tag}] docs: UI-2 should show its two tags`);
+			{ const tb = page.locator('[data-dsel="t:UI-2"] .tag.warn', { hasText: 'too big' }); ok(await tb.innerText() === '1 too big' && (await tb.getAttribute('title')).includes('docs/big.md'), `[${tag}] docs: UI-2's row says 1 too big and names docs/big.md`); }
+			ok((await page.locator('#dProb').innerText()).includes('1 doc too big to send'), `[${tag}] docs: big.md is over the 2k budget`);
+			await visible('#dD .dband[data-band="component"]', 'From the Map band'); // UI-2 maps to api + web-ui: their notes are in its context
+			ok((await page.locator('#dD .dband[data-band="component"] .bn').innerText()) === 'From the Map', `[${tag}] docs: the component band reads From the Map`);
+			ok((await page.locator('#dD [data-n="d:docs/mech.md#combat"]').innerText()).includes('section'), `[${tag}] docs: a path#heading entry is a section row`);
+			{ const im = page.locator('#dD [data-n="d:docs/pick.png"]'); ok((await im.getAttribute('class')).includes('img') && (await im.innerText()).includes('image · path sent'), `[${tag}] docs: an image is a path, not broken`); }
+			ok((await page.locator('#dProb .dbud').innerText()).includes('≈500 tokens') && (await page.getAttribute('#dProb .dbud', 'title')).includes('2,000 characters'), `[${tag}] docs: the budget reads as estimated tokens, exact characters in the tooltip`);
+			ok(await page.evaluate(() => [...document.querySelectorAll('#dD .dband[data-band="ticket"] .bn')].every((b) => b.textContent === 'Picked per ticket')), `[${tag}] docs: the ticket band reads Picked per ticket`);
+			await page.click('[data-dsel="t:UI-2"]');
+			await page.waitForSelector('#dT .dctx h3');
+			const ctx = await page.locator('#dT .dctx').innerText();
+			ok(ctx.includes('What an agent gets for UI-2') && ctx.includes('Too big: path only') && ctx.includes('Sent'), `[${tag}] docs: UI-2's preview should say what is sent and what is not: ${ctx.slice(0, 200)}`);
+			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
+			{ // AI-14 (design C): a doc too big to send folds out its headings with size bars; tick two, Send, both are in the preview; Undo takes them back
+				const sec = page.locator('#dT .dsec').first(); await sec.locator('summary').click();
+				const hs = await sec.locator('.dsr').evaluateAll((rs) => rs.map((r) => r.querySelector('.dst span').firstChild.textContent.trim() + (r.querySelector('input').disabled ? '!' : '')));
+				ok(hs.join('|') === 'Big!|Part one!|Part two|Part three', `[${tag}] docs: the fold lists big.md's headings, the ones over the budget disabled: ${hs.join('|')}`);
+				await sec.locator('.dsr', { hasText: 'Part two' }).locator('input').check();
+				await page.locator('#dT .dsec').first().locator('.dsr', { hasText: 'Part three' }).locator('input').check();
+				await page.click('#dT [data-dsecgo]');
+				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return [...document.querySelectorAll('#dT .dsc')].map((x) => x.textContent).join('|') === 'Part two|Part three'; }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: the two ticked sections are not one big.md row with two chips in UI-2's preview`));
+				ok((await page.locator('#dT .dsec summary').first().innerText()) === 'Change sections' && (await page.locator('#dT .dcard .dsrc.k-ticket').count()) >= 1, `[${tag}] docs: a doc with picked sections is a ticket card + Change sections`);
+				await page.click('#toasts button:has-text("Undo")');
+				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return c.includes('big.md') && !document.querySelector('#dT .dsc'); }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not take the sections back`)); await page.waitForSelector('#toasts :text("docs restored")'); // Undo's reload is done
+			}
+			ok((await page.locator('#dT .dsec.miss summary.strip').first().innerText()).includes("Didn't fit"), `[${tag}] docs: a doc that did not fit gets the strip with Pick sections (UI-72)`);
+			{ // UI-72: a doc with no headings that did not fit says what to do instead; a big doc sent in full gets a quiet Sections button
+				await writeFile(join(root, 'example/docs/plain.txt'), 'plain notes with no headings '.repeat(100));
+				await writeFile(join(root, 'example/docs/mid.md'), ['# Mid', '## One', 'y'.repeat(400), '## Two', 'z'.repeat(400)].join(String.fromCharCode(10)));
+				const nid = JSON.parse(cli('create', '--prefix', 'DOC', '--title', 'sections trigger', '--json', JSON.stringify({ docs: ['docs/mid.md', 'docs/plain.txt'] })).toString()).id;
+				await page.click('[data-drefresh]'); await page.waitForSelector(`[data-dsel="t:${nid}"]`); await page.click(`[data-dsel="t:${nid}"]`);
+				await page.waitForSelector('#dT .dctx .dstrip');
+				ok((await page.locator('#dT .dstrip').innerText()).includes('no headings to pick from'), `[${tag}] docs: a doc with no headings that did not fit says so`);
+				ok((await page.locator('#dT .dsb').count()) === 1 && !(await page.locator('#dT .dsec').count()), `[${tag}] docs: one quiet Sections button (mid.md), its fold closed`);
+				await page.click('#dT .dsb'); await page.waitForSelector('#dT .dsec .dsr');
+				ok((await page.locator('#dT .dsb').getAttribute('aria-expanded')) === 'true' && (await page.locator('#dT .dsec .dsr').count()) === 3, `[${tag}] docs: the Sections button opens mid.md's tree`);
+				await page.click(`[data-dsel="t:${nid}"]`); cli('delete', nid); await page.click('[data-drefresh]'); await page.waitForFunction((id) => !document.querySelector(`[data-dsel="t:${id}"]`), nid);
+				await page.click('[data-dsel="t:UI-2"]'); await page.waitForSelector('#dT .dctx .dcard');
+			}
+			await noOverflow('docs with a preview');
+			await page.keyboard.press('Escape');
+			await page.waitForFunction(() => !document.querySelector('#dT .dctx'));
+			// a server started before this page (no `rules` / `budget` in /knowledge) says "restart it" instead of hanging on "Reading docs"
+			await page.route('**/knowledge', async (r) => { const res = await r.fetch(); const j = await res.json(); delete j.rules; delete j.budget; await r.fulfill({ response: res, json: j }); });
+			await page.click('[data-drefresh]');
+			await page.waitForFunction(() => (document.querySelector('#dT')?.textContent || '').includes('older than this page'));
+			await page.unroute('**/knowledge');
+			await page.click('[data-drefresh]');
+			await visible('#dD .dband[data-band="tag:api"]', 'tag band after a restart');
+			// collapse + search: a collapsed band keeps its header (lines end there), a search opens a collapsed group holding a match, Esc clears it
+			await page.click('[data-dshut="a:tag:api"]');
+			await page.waitForFunction(() => document.querySelector('#dD .dband[data-band="tag:api"]')?.classList.contains('shut'));
+			ok(await page.locator('#dD .dband[data-band="tag:api"] ol').count() === 0, `[${tag}] docs: a collapsed band hides its rows`);
+			ok((await page.locator('#dD .dband[data-band="tag:api"] .dwarn').innerText()) === '1 too big', `[${tag}] docs: a collapsed band keeps its too-big warning`);
+			if (w > 600) ok(await page.locator('#dSvg path').count() > 0, `[${tag}] docs: lines still reach a collapsed band's header`);
+			await page.click('[data-dshut^="p:"]');
+			await page.waitForFunction(() => document.querySelectorAll('#dT .dgrp.shut').length === 1);
+			await page.click('[data-drefresh]');
+			await page.waitForFunction(() => document.querySelectorAll('#dT .dgrp.shut').length === 1 && document.querySelector('#dD .dband.shut'));
+			await page.click('#dShutAll'); // some open -> collapse all
+			await page.waitForFunction(() => !document.querySelector('#dStage [data-dshut][aria-expanded="true"]') && document.querySelector('#dShutAll').textContent === 'Expand all');
+			await page.locator('#dQ').blur();
+			await page.keyboard.press('/');
+			ok(await page.evaluate(() => document.activeElement?.id === 'dQ'), `[${tag}] docs: / focuses the Docs search`);
+			await page.keyboard.type('sec.md');
+			await page.waitForFunction(() => !document.querySelector('#dD .dband[data-band="tag:api"]').classList.contains('shut'));
+			ok((await page.locator('#dQn').innerText()).includes('1 doc'), `[${tag}] docs: the search counts its matches`);
+			ok(!(await page.locator('#dD [data-n="d:docs/sec.md"]').getAttribute('class')).includes('fade') && (await page.locator('#dD [data-n="d:docs/big.md"]').getAttribute('class')).includes('fade'), `[${tag}] docs: a match stays bright, the rest fades`);
+			await noOverflow('docs search');
+			await page.keyboard.press('Escape');
+			await page.waitForFunction(() => document.querySelector('#dQ').value === '' && document.querySelector('#dD .dband[data-band="tag:api"]').classList.contains('shut'));
+			await page.click('#dShutAll'); // all shut -> expand all, so the next pass starts open
+			await page.waitForFunction(() => !document.querySelector('#dStage .shut'));
+		}
 		{ // Roadmap view: example has 2 milestones (v0.1 is next) and one unscheduled ticket; a milestone opens the board filtered to it
 			await page.click('[data-view="roadmap"]');
 			await page.waitForFunction(() => document.querySelectorAll('#roadWrap .rmi:not(.run)').length === 2);
@@ -983,6 +1088,106 @@ try {
 		ok(await note('web') === null && await note('photos') !== null, 'delete removes the note');
 		await noOver('after delete');
 		await page.evaluate(() => fetch('/api/b/zempty/tickets/T-1', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }));
+		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
+		await ctx.close();
+	}
+	// 7b. loading states: slow /tickets and /api/needs (held until released) show skeleton bars, never "No tickets yet" or "Nothing needs you";
+	// a slow write you started shows the top bar; a failed /api/needs says so
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		const tag = `loading/${w}px`, ctx = await browser.newContext({ viewport: { width: w, height: h } }), page = await ctx.newPage(); page.setDefaultTimeout(5000); lastPage = page;
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && !/status of 500/.test(m.text()) && errs.push(m.text()));
+		const ok = (c, msg) => { if (!c) throw new Error(`[${tag}] ${msg}` + (errs.length ? '\n  browser errors:\n  ' + errs.join('\n  ') : '')); };
+		const hold = () => { let go; const p = new Promise((r) => { go = r; }); return { p, go }; };
+		const tk = hold(), nd = hold();
+		await page.route(/\/api\/tickets$/, async (r) => { await tk.p; await r.continue(); });
+		await page.route(/\/api\/needs$/, async (r) => { await nd.p; await r.continue(); });
+		await page.goto(base);
+		await page.waitForSelector('#board .bload .ld');
+		ok(!/No tickets yet/.test(await page.innerText('#board')), 'the board says loading, not "No tickets yet", before the first answer');
+		const sw = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], `loading board: overflow ${sw}`);
+		tk.go(); await page.waitForSelector('#board .card', { state: 'attached' });
+		await page.keyboard.press('i'); await page.waitForSelector('#npList .ld');
+		ok(await page.locator('#npEmpty').isHidden(), 'Needs you says it is checking, not "Nothing needs you", before /api/needs answers');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/loading-needs-${w}.png` });
+		nd.go(); await page.waitForFunction(() => !document.querySelector('#npList .ld'));
+		ok(await page.locator('#npList .nr').count() > 0 || await page.locator('#npEmpty').isVisible(), 'after the answer: rows or the empty sentence');
+		await page.keyboard.press('Escape');
+		if (w === 1400) { // a slow write you started: the top bar, then gone; polls never show it
+			ok(await page.locator('#topbar').isHidden(), 'no top bar while idle');
+			const slow = hold();
+			await page.route(/\/api\/tickets\/[^/]+$/, async (r) => { if (r.request().method() === 'PATCH') await slow.p; await r.continue(); });
+			const id = await page.getAttribute('#board [data-col="todo"] .card', 'data-open');
+			await page.evaluate(() => { const d = document.querySelector('#board [data-col="todo"] .cw details.mv'); d.open = true; });
+			await page.click(`.cw:has([data-open="${id}"]) [data-moveto="doing"]`, { force: true });
+			await page.waitForSelector('#topbar:not([hidden])');
+			slow.go(); await page.waitForSelector('#topbar', { state: 'hidden' });
+			await page.unroute(/\/api\/tickets\/[^/]+$/);
+			await page.evaluate((i) => fetch(`/api/tickets/${i}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }), id);
+			// a failed /api/needs: the panel says so instead of loading forever
+			await page.unroute(/\/api\/needs$/); await ctx.route(/\/api\/needs$/, (r) => r.fulfill({ status: 500, body: '{"error":"x"}' })); // on the context: the new page gets it too
+			const fresh = await ctx.newPage(); lastPage = fresh; fresh.on('pageerror', (e) => errs.push(e.message));
+			await fresh.goto(base); await fresh.waitForSelector('#board .card', { state: 'attached' });
+			await fresh.keyboard.press('i'); await fresh.waitForSelector('#npList .msg.err');
+			ok(/tries again every 15 seconds/.test(await fresh.innerText('#npList')), 'a failed check says so and that it retries');
+			await fresh.close(); lastPage = page;
+		}
+		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
+		await ctx.close();
+	}
+	// 8. branch evidence (branches.py writes tickets/.unblockd/branches.json; written by hand here): a todo ticket with a pushed branch
+	// reads as In progress with the branch line, the drawer lists the branch and its ticket edit, the checkout notice says it is behind,
+	// Move to > To do dismisses the branch, Dismiss hides the notice
+	await mkdir(join(root, 'zgit/tickets/.unblockd'), { recursive: true });
+	await writeFile(join(root, 'zgit/tickets/unblockd.json'), JSON.stringify({ id: 'zgit', title: 'Git board' }));
+	const cliG = (...a) => execFileSync('python3', ['-m', 'unblockd.cli', '--dir', join(root, 'zgit/tickets'), ...a], { cwd: repo, stdio: 'pipe' }).toString();
+	cliG('create', '--prefix', 'G', '--title', 'pushed from a cloud session'); cliG('create', '--prefix', 'G', '--title', 'nobody on it');
+	const brJ = join(root, 'zgit/tickets/.unblockd/branches.json'), now = new Date().toISOString().slice(0, 19) + '+00:00';
+	const long = 'feat/g-1-' + 'a-very-long-branch-name-that-must-wrap-'.repeat(2);
+	await writeFile(brJ, JSON.stringify({ source: 'origin', remote: 'https://example.com/o/r', base: 'main', error: null,
+		checkout: { branch: 'main', upstream: 'main', behind: 226, ahead: 1, missing: ['G-7', 'G-8', 'G-9', 'G-10'], missing_count: 267 },
+		branches: [{ name: long, sha: 'a'.repeat(40), at: now, author: 'Cloud Worker', commits: 3, tickets: { 'G-1': ['name', 'file'] }, edits: { 'G-1': { status: 'doing', notes: 2 } } },
+			{ name: 'refactor', sha: 'b'.repeat(40), at: now, author: 'Cloud Worker', commits: 1, tickets: { 'G-2': ['commit'] }, edits: {} }] }));
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		await rm(join(root, 'zgit/tickets/.unblockd/branches_ignored.json'), { force: true }); // the wide pass dismissed G-1's branch
+		const tag = `branches/${w}px`, ctx = await browser.newContext({ viewport: { width: w, height: h } }), page = await ctx.newPage(); page.setDefaultTimeout(5000); lastPage = page;
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+		const ok = (c, msg) => { if (!c) throw new Error(`[${tag}] ${msg}` + (errs.length ? '\n  browser errors:\n  ' + errs.join('\n  ') : '')); };
+		const noOver = async (what) => { const sw = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]); ok(sw[0] <= sw[1], `${what}: horizontal overflow ${sw[0]} > ${sw[1]}`); };
+		await page.goto(base + '?board=zgit'); await page.waitForSelector('#board .card[data-open="G-1"]', { state: 'attached' });
+		ok(await page.locator('#board [data-col="doing"] .card[data-open="G-1"] .liv.br').count() === 1, 'a todo ticket with a pushed branch is In progress, with the branch line');
+		ok(await page.locator('#board [data-col="todo"] .card[data-open="G-2"]').count() === 1 && await page.locator('.card[data-open="G-2"] .liv.br').count() === 0, 'a commit mention alone leaves it in To do');
+		await page.waitForSelector('#gitNote:not([hidden])');
+		const gn = await page.innerText('#gitNote');
+		ok(/226 commits behind origin/.test(gn) && /1 local commit not pushed/.test(gn) && /267 tickets on origin are missing here \(G-7, G-8, G-9…\)/.test(gn), `checkout notice: ${gn}`);
+		await noOver('board with the notice');
+		await page.evaluate(() => document.querySelector('#board .card[data-open="G-1"]').click()); await page.waitForSelector('#drawer .brl');
+		const dr = await page.innerText('#drawer .brl');
+		ok(dr.includes('3 commits') && dr.includes('Cloud Worker') && /In progress with 2 new notes/.test(dr) && /once the branch is merged/.test(dr), `drawer Branches: ${dr}`);
+		ok(/On branch feat\/g-1-/.test(await page.innerText('#drawer .srow')), 'drawer says why it shows as In progress');
+		await noOver('drawer with a long branch name');
+		if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/branches-${w}.png` });
+		await page.keyboard.press('Escape');
+		if (w === 1400) { // Move to > To do: the branch stops counting for it (a new commit would count again)
+			await page.click('.card[data-open="G-1"] ~ details.mv > summary', { force: true }).catch(() => page.evaluate(() => document.querySelector('.cw:has([data-open="G-1"]) details.mv').open = true));
+			await page.evaluate(() => document.querySelector('.cw:has([data-open="G-1"]) [data-moveto="todo"]').click());
+			await page.waitForSelector('#board [data-col="todo"] .card[data-open="G-1"]', { state: 'attached' });
+			ok(/no longer marks it in progress/.test(await page.innerText('#toasts')), 'the toast says what moving it back did');
+			ok(JSON.parse(await readFile(join(root, 'zgit/tickets/.unblockd/branches_ignored.json'), 'utf8'))['G-1'].length === 1, 'dismissed tip recorded as runtime state');
+			ok(JSON.parse(await readFile(join(root, 'zgit/tickets/G-1.json'), 'utf8')).status === 'todo', 'the ticket file still says todo');
+		}
+		await page.click('#gitNote [data-gitdismiss]'); ok(await page.locator('#gitNote').isHidden(), 'Dismiss hides the notice');
+		await Promise.all([page.waitForResponse((r) => /\/git$/.test(r.url())), page.reload()]);
+		await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r))));
+		ok(await page.locator('#gitNote').isHidden(), 'and it stays hidden until the numbers change');
+		if (w === 1400) { // origin exists but can't be read (a private repo, no token): the notice says so instead of showing nothing
+			const keep = await readFile(brJ, 'utf8');
+			await writeFile(brJ, JSON.stringify({ source: 'local', remote: 'https://example.com/o/private', base: 'main', checkout: null, branches: [],
+				error: "could not read origin, showing this checkout's branches only: git clone: Authentication failed" }));
+			await Promise.all([page.waitForResponse((r) => /\/git$/.test(r.url())), page.reload()]);
+			await page.waitForSelector('#gitNote:not([hidden])');
+			ok(/can't read https:\/\/example.com\/o\/private/.test(await page.innerText('#gitNote')) && /Authentication failed/.test(await page.innerText('#gitNote')), 'unreadable origin: the notice says why and what to set');
+			await writeFile(brJ, keep);
+		}
 		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
 		await ctx.close();
 	}

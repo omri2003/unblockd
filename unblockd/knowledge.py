@@ -20,6 +20,8 @@ from .store import TicketError, _overlap
 
 TEXT_EXT = {".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".csv", ".py", ".gd",
             ".js", ".ts", ".html", ".css", ".sh", ".ps1", ".xml", ".tscn", ".tres", ".gdshader", ""}
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}  # sent as a path (agents open them with their own tools), never inlined
+IMAGE = "image"  # expand()'s marker for an image entry: not an error, not text
 MAX_FILE = 300_000      # bytes: bigger files are listed, never inlined or uploaded
 MAX_FOLDER = 40         # files taken from one folder/glob entry
 BUDGET = 60_000         # characters inlined per context bundle; the rest is listed for read_doc
@@ -84,9 +86,93 @@ def _decode(p: Path | bytes) -> tuple[str, str | None]:
 		              "probably saved as Windows-1252): re-save the file as UTF-8")
 
 
-def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
-	"""One docs entry -> [(display path, file or None, error or None)]."""
+OUTLINE_MAX = 60  # headings listed with a section, so the agent knows what else the doc holds
+SECTION_FILE_MAX = 5_000_000  # bytes: a path#heading entry may cut its section from a file this big (MAX_FILE is for whole files)
+HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
+
+
+def _slug(s: str) -> str:
+	return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+
+
+def _headings(text: str) -> list[tuple[int, int, str]]:
+	"""(line number, level, title) of every markdown heading outside ``` / ~~~ fences."""
+	out, fence = [], None
+	for i, line in enumerate(text.splitlines()):
+		m = re.match(r"^[ ]{0,3}(`{3,}|~{3,})", line)
+		if m:
+			fence = None if fence and m.group(1)[0] == fence else (fence or m.group(1)[0])
+			continue
+		if not fence and (h := HEADING.match(line)):
+			out.append((i, len(h.group(1)), h.group(2)))
+	return out
+
+
+def section(text: str, anchor: str, path: str = "") -> tuple[str, list[str]]:
+	"""The part of a markdown doc under the heading `anchor` (its slug, e.g. `combat` or `combat-timing`, or the heading text),
+	down to the next heading of the same or a higher level, and the doc's outline (`## Combat` lines). Unknown anchor -> TicketError
+	listing the headings, so a docs entry `path#heading` can be fixed from the error alone (AI-14)."""
+	start, end, out = _span(text, anchor, path)
+	return "".join(text.splitlines(keepends=True)[start:end]), out
+
+
+def outline(text: str) -> list[str]:
+	"""The doc's headings as `## Title` lines (at most OUTLINE_MAX): sent with a doc that did not fit, so the agent can
+	read_doc(path#heading) the part it needs instead of skipping the doc (AI-14)."""
+	return [f"{'#' * lv} {t}" for _, lv, t in _headings(text)][:OUTLINE_MAX]
+
+
+def outline_chars(text: str) -> list[int]:
+	"""The size (characters) of each outline() section, in the same order: whether `path#heading` would fit the budget."""
+	hs, lines = _headings(text), text.splitlines(keepends=True)
+	return [sum(map(len, lines[i:next((j for j, l2, _ in hs if j > i and l2 <= lv), len(lines))])) for i, lv, _ in hs][:OUTLINE_MAX]
+
+
+BIG_SHARE = 3  # a doc sent in full is "big" when it takes more than 1/BIG_SHARE of the budget: the Docs view offers to trim it (UI-72)
+
+
+def preview_outlines(store, ctx: dict) -> dict:
+	"""For the Docs view's preview (REST context?content=0) only: a doc SENT in full that takes over a third of the budget gets its
+	`outline` + `outline_chars`, so the page can offer to send only some of its sections. Agents never get these on a sent doc
+	(they have its text). Section entries, attachments and docs without headings are left alone."""
+	budget = int(store.config.get("context_budget") or BUDGET)
 	base = root(store)
+	if base is None:  # a database board has no repo to read docs from
+		return ctx
+	for d in ctx["docs"]:
+		if d.get("sent") != "full" or "#" in d["path"] or "file" in d or "outline" in d or (d.get("chars") or 0) * BIG_SHARE <= budget:
+			continue
+		try:
+			text = _decode(_inside(base, d["path"]))[0]
+		except (TicketError, OSError):
+			continue
+		if (o := outline(text)):
+			d["outline"], d["outline_chars"] = o, outline_chars(text)
+	return ctx
+
+
+def _span(text: str, anchor: str, path: str = "") -> tuple[int, int, list[str]]:
+	"""(first line, end line, outline) of the section under `anchor`; see section()."""
+	hs, want = _headings(text), _slug(anchor)
+	hit = next((h for h in hs if _slug(h[2]) == want), None)
+	if not hit:
+		names = ", ".join(_slug(t) for _, _, t in hs[:20]) or "none"
+		raise TicketError(f"no heading {anchor!r} in {path or 'the doc'} (its headings, as anchors: {names})")
+	start, level, _ = hit
+	end = next((i for i, lv, _ in hs if i > start and lv <= level), len(text.splitlines()))
+	return start, end, [f"{'#' * lv} {t}" for _, lv, t in hs][:OUTLINE_MAX]
+
+
+def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
+	"""One docs entry -> [(display path, file or None, error or None)]. `path#heading` (one markdown file) is kept as the
+	display path: readers cut the text with section() (AI-14)."""
+	base = root(store)
+	entry, _, anchor = entry.partition("#") if not any(c in entry for c in "*?[") else (entry, "", "")
+	if anchor:
+		got = expand(store, entry)
+		if len(got) != 1 or got[0][2] or got[0][1] is None or got[0][1].is_dir():
+			return [(f"{entry}#{anchor}", None, got[0][2] if len(got) == 1 and got[0][2] else "a #heading works on one text file, not a folder")]
+		return [(f"{got[0][0]}#{anchor}", got[0][1], None)]
 	if any(c in entry for c in "*?["):
 		try:
 			_inside(base, entry.split("*")[0] or ".")
@@ -104,6 +190,8 @@ def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
 	if not p.exists():
 		return [(entry, None, "missing")]
 	if not _is_text(p):
+		if p.suffix.lower() in IMAGE_EXT and p.is_file():
+			return [(p.relative_to(base).as_posix(), p, IMAGE)]
 		return [(entry, None, "not a text file")]
 	return [(p.relative_to(base).as_posix(), p, None)]
 
@@ -173,15 +261,21 @@ def read_doc(store, path: str) -> dict:
 		return {"path": PROTOCOL, "content": string.Template(PROTOCOL_FILE.read_text(encoding="utf-8")).safe_substitute(  # generic values; workers get theirs filled in
 			board=store.config.get("id", "this board"), profile_line="", agent_hint="<profile>-<number>, e.g. backend-1", claim_args=""), "links": [], "builtin": True}
 	base = root(store)
+	path, _, anchor = path.partition("#")
 	p = _inside(base, path)
 	if not p.is_file():
 		raise TicketError(f"no file {path} in the project")
 	if not _is_text(p):
 		raise TicketError(f"{path} is not a text file")
-	if p.stat().st_size > MAX_FILE:
-		raise TicketError(f"{path} is too big to read here ({p.stat().st_size} bytes)")
+	if p.stat().st_size > (SECTION_FILE_MAX if anchor else MAX_FILE):  # a section is cut first, so a huge doc can still be read in parts
+		raise TicketError(f"{path} is too big to read here ({p.stat().st_size} bytes)"
+		                  + ("" if anchor else ": read one section with path#heading (the headings are in the doc's outline)"))
 	text, bad = _decode(p)
-	return {"path": p.relative_to(base).as_posix(), "content": text, "links": links_of(text, p, base), **({"warning": bad} if bad else {})}
+	rel = p.relative_to(base).as_posix()
+	if anchor:  # one section + the outline, like context() sends it
+		part, outline = section(text, anchor, rel)
+		return {"path": f"{rel}#{anchor}", "content": part, "outline": outline, "links": links_of(part, p, base), **({"warning": bad} if bad else {})}
+	return {"path": rel, "content": text, "links": links_of(text, p, base), **({"warning": bad} if bad else {})}
 
 
 def sources(store, t: dict, comps: list[tuple[str, str]] = ()) -> list[tuple[str, str]]:
@@ -263,26 +357,49 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 	keys = ticket_components(t, arch)
 	by_key = {c["key"]: c for c in arch["components"]}
 	docs, texts, seen, left = [], [], set(), budget
+	spans = {}  # index in docs -> (file, first line, end line or None = the whole file): finds a section already covered (AI-14)
 	for entry, src in sources(store, t, [(by_key[k]["path"], k) for k in keys]):
 		for rel, p, err in expand(store, entry):
 			if rel in seen:
 				continue
 			seen.add(rel)
 			item, text = {"path": rel, "source": src, "trust": "untrusted" if src == "ticket" or src.startswith("component:") else "trusted"}, None
-			if err:
+			if err == IMAGE:
+				item.update(image=True, chars=p.stat().st_size)
+			elif err:
 				item["error"] = err
 			else:
 				size = p.stat().st_size
 				item["chars"] = size
-				if size > MAX_FILE:
-					item["error"] = "too big to inline; read it in parts in the repo"
+				if size > (SECTION_FILE_MAX if "#" in rel else MAX_FILE):  # a section is cut first, so a huge doc can still send one part
+					item["error"] = "too big to inline: read one section with read_doc(path#heading)"
+					if size <= SECTION_FILE_MAX and (o := outline(big := _decode(p)[0])):
+						item["outline"], item["outline_chars"] = o, outline_chars(big)
 				else:
 					text, bad = _decode(p)
-					item["links"] = links_of(text, p, base)
+					if "#" in rel:  # path#heading: only that section is sent, with the doc's outline
+						try:
+							a, b, item["outline"] = _span(text, rel.partition("#")[2], rel.partition("#")[0])
+							item["outline_chars"] = outline_chars(text)  # the Docs view's picker edits the chosen sections from here
+							text = "".join(text.splitlines(keepends=True)[a:b])
+							item.update(section=rel.partition("#")[2], chars=len(text))
+							spans[len(docs)] = (p, a, b)
+						except TicketError as e:
+							text, item["error"] = None, str(e)
+					else:
+						spans[len(docs)] = (p, 0, None)
+					if text is not None:
+						item["links"] = links_of(text, p, base)
 					if bad:
 						item["warning"] = bad
 			docs.append(item)
 			texts.append(text)
+	# A section is dropped when its whole file, or a section holding it, is in the bundle and small enough to be sent in full;
+	# the same heading twice keeps the first. A whole file too big to send keeps its sections: they are the only way to get its text.
+	cover = [(j, *sp) for j, sp in spans.items() if texts[j] is not None and len(texts[j]) <= budget]
+	drop = {i for i, (p, a, b) in spans.items() if b is not None and any(
+		j != i and q == p and (e is None or (c, e) == (a, b) and j < i or (c, e) != (a, b) and c <= a and b <= e) for j, q, c, e in cover)}
+	docs, texts = [d for i, d in enumerate(docs) if i not in drop], [x for i, x in enumerate(texts) if i not in drop]
 	for f in list_files(store, tid):
 		item = {"path": f"tickets/files/{tid}/{f['name']}", "file": f["name"], "source": "attached", "trust": "untrusted", "chars": f["bytes"]}
 		text = None
@@ -297,6 +414,13 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 		if inline and texts[i] is not None and len(texts[i]) <= left:
 			d["content"] = texts[i] if d["trust"] == "trusted" else wrap(texts[i], f"ticket {tid} " + (f"attachment {d['file']}" if "file" in d else f"doc {d['path']}"))
 			left -= len(texts[i])
+	if inline:  # why a doc came without its text: the Docs view's "what an agent gets" reads this
+		for d, text in zip(docs, texts):
+			n = len(text) if text is not None else d.get("chars")
+			d["sent"] = ("full" if "content" in d else IMAGE if d.get("image") else "too_big" if n is not None and n > budget
+			             else "error" if "error" in d else "budget")
+			if d["sent"] in ("too_big", "budget") and text is not None and "outline" not in d and (o := outline(text)):
+				d["outline"], d["outline_chars"] = o, outline_chars(text)  # a bare path gets skipped; its headings let the agent read_doc(path#heading) the part it needs
 	up = []
 	for b in t.get("blocked_by", []):  # what the tickets this one waited on produced (complete()'s result)
 		try:
@@ -310,6 +434,8 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 			up.append(e)
 	out = {"ticket": tid, "done_when": t.get("done_when", []), "docs": docs, "upstream": up, "protocol": PROTOCOL, "rule": RULE, "inlined_chars": budget - left,
 	       "note": "Read these before working the ticket. Items without content: read_doc(path)."
+	               + (" A doc with `section` is that part only; its `outline` lists the rest: read_doc(path#heading)." if any("section" in d for d in docs) else "")
+               + (" A doc with an `outline` but no content did not fit: read_doc(path#heading) the part you need." if any("outline" in d and "content" not in d for d in docs) else "")
 	               + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
 	if (prof := next((a for a in store.config["agents"] if a["name"] == t.get("agent")), None)):  # committed config: trusted
 		out["profile"] = {"name": prof["name"], "instructions": prof.get("instructions", ""), "model": prof.get("model"), "trust": "trusted"}
@@ -764,49 +890,71 @@ HUBS = 5  # how many hub docs graph() lists
 
 def graph(store) -> dict:
 	"""Who reads what, without inlining anything: every open ticket -> the docs context() would give it.
-	{tickets, docs, reads: [{ticket, doc, via}], links: [{from, to}], no_docs, broken, hubs, orphans}.
-	- `via` = board | tag | profile | ticket | file (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag).
+	{tickets, docs, reads: [{ticket, doc, via, from}], links: [{from, to}], rules, budget, no_docs, broken, hubs, orphans}.
+	- `via` = board | tag | profile | component | ticket | file (component = a note from the Map, `from` = its key) (first source wins per ticket, like context()'s dedupe; tag = docs_by_tag);
+	  `from` = which tag or profile (null for the others).
+	- `rules` = [{via: board|tag|profile, from, docs, tickets}]: each rule in unblockd.json that sends docs, everything it sends (expanded,
+	  the protocol last on the board rule) and the open tickets it reaches. `budget` = the board's context_budget.
 	- doc `kind` = the broadest way anyone reads it (board > tag > profile > ticket > file), or `linked` when
 	  no ticket reads it: such a doc is `linked_only` (an orphan) and is only reached through another doc's link.
 	- `links` = doc -> doc, one hop from the docs tickets read (links_of(): only targets that exist, as text).
 	- `no_docs` = open tickets with no readable doc from their profile, themselves or attachments: only
 	  board-wide docs (or nothing, or only broken refs) means an agent gets no task-specific context.
-	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big.
+	- `broken` = [{path, error, via, tickets}]: refs that are missing / outside the project / not text / too big. An image (IMAGE_EXT) is not
+	  broken: it is a doc node with `image: true` and its size, sent to agents as a path.
 	- `hubs` = the HUBS most-read docs (>= 2 tickets), board-wide docs excluded (everyone reads those by design)."""
 	base, cache, finfo = root(store), {}, {}
-	rank = {"board": 0, "tag": 1, "profile": 2, "ticket": 3, "file": 4}
+	rank = {"board": 0, "tag": 1, "profile": 2, "component": 3, "ticket": 4, "file": 5}
+	arch = components(store)  # a ticket's component notes are part of its context() (from the Map), so they are reads too
+	by_key = {c["key"]: c["path"] for c in arch["components"]}
 	tickets, docs, reads, links, readers = [], {}, [], [], {}
 
-	def info(rel, p):  # size + outgoing links, once per file
+	def info(rel, p):  # size + outgoing links, once per file (per section for path#heading)
 		if rel not in finfo:
 			size = p.stat().st_size
-			text = p.read_text(encoding="utf-8", errors="replace") if size <= MAX_FILE else None
+			text = p.read_text(encoding="utf-8", errors="replace") if size <= (SECTION_FILE_MAX if "#" in rel else MAX_FILE) else None
+			if text is not None and "#" in rel:
+				text = section(text, rel.partition("#")[2], rel.partition("#")[0])[0]  # a bad anchor raises: note() turns it into the doc's error
+				size = len(text)
 			finfo[rel] = (size, None if text is None else links_of(text, p, base))
 		return finfo[rel]
 
-	def add(t, rel, p, err, via):
+	def note(rel, p, err, via):  # one doc's node: size, error, the broadest way it is read
 		d = docs.setdefault(rel, {"path": rel, "kind": via})
 		if rank[via] < rank[d["kind"]]:
 			d["kind"] = via
-		if err:
+		if err == IMAGE:
+			d.update(image=True, size=p.stat().st_size)
+		elif err:
 			d["error"] = err
 		elif p is not None:
-			d["size"], lk = info(rel, p)
+			try:
+				d["size"], lk = info(rel, p)
+			except TicketError as e:  # path#heading whose heading is not in the doc
+				d["error"], lk = str(e), []
 			if lk is None:
 				d["error"] = "too big to inline; read it in parts in the repo"
-		if t["id"] not in readers.setdefault(rel, set()):
+		readers.setdefault(rel, set())
+
+	def add(t, rel, p, err, via, frm=None):
+		note(rel, p, err, via)
+		if t["id"] not in readers[rel]:
 			readers[rel].add(t["id"])
-			reads.append({"ticket": t["id"], "doc": rel, "via": via})
+			reads.append({"ticket": t["id"], "doc": rel, "via": via, "from": frm})
+
+	def exp(entry):
+		if entry not in cache:
+			cache[entry] = expand(store, entry)
+		return cache[entry]
 
 	for t in store.list():
 		if t["status"] == "done":
 			continue
 		tickets.append({k: t.get(k) for k in ("id", "title", "pillar", "agent", "priority")} | {"status": t["effective_status"]})
-		for entry, src in sources(store, t):
-			if entry not in cache:
-				cache[entry] = expand(store, entry)
-			for rel, p, err in cache[entry]:
-				add(t, rel, p, err, src.split(":")[0].replace("agent", "profile"))
+		for entry, src in sources(store, t, [(by_key[k], k) for k in ticket_components(t, arch)]):
+			kind, _, frm = src.partition(":")
+			for rel, p, err in exp(entry):
+				add(t, rel, p, err, kind.replace("agent", "profile"), frm or None)
 		for f in list_files(store, t["id"]):
 			rel = f"tickets/files/{t['id']}/{f['name']}"
 			if store.dir is not None:
@@ -818,11 +966,27 @@ def graph(store) -> dict:
 	if tickets:  # the protocol is every ticket's doc; kind stays "board" so it is never a hub or a gap in no_docs
 		docs[PROTOCOL] = {"path": PROTOCOL, "kind": "board", "builtin": True, "size": PROTOCOL_FILE.stat().st_size}
 		readers[PROTOCOL] = {t["id"] for t in tickets}
-		reads += [{"ticket": t["id"], "doc": PROTOCOL, "via": "board"} for t in tickets]
+		reads += [{"ticket": t["id"], "doc": PROTOCOL, "via": "board", "from": None} for t in tickets]
+	# the rules in unblockd.json that send docs, with everything each one sends (a doc no open ticket reads yet still shows, readers 0)
+	# and the open tickets it reaches: a rule's list is the config, not the reads, where a doc two rules send is recorded once per ticket
+	cfg, opn = store.config, [t for t in store.list() if t["status"] != "done"]
+	rules = []
+	for via, frm, entries, who in ([("board", None, cfg.get("docs", []), opn)]
+	                               + [("tag", g, e, [t for t in opn if g in t.get("tags", [])]) for g, e in (cfg.get("docs_by_tag") or {}).items()]
+	                               + [("profile", a["name"], a.get("docs", []), [t for t in opn if t.get("agent") == a["name"]]) for a in cfg["agents"] if a.get("docs")]):
+		paths = []
+		for entry in entries:
+			for rel, p, err in exp(entry):
+				note(rel, p, err, via)
+				if rel not in paths:
+					paths.append(rel)
+		if via == "board" and tickets:
+			paths.append(PROTOCOL)
+		rules.append({"via": via, "from": frm, "docs": paths, "tickets": [t["id"] for t in who]})
 	for rel in list(docs):
 		d = docs[rel]
 		d["readers"] = len(readers[rel])
-		if "error" in d or d.get("builtin"):
+		if "error" in d or d.get("builtin") or d.get("image"):
 			continue
 		for to in finfo[rel][1] or []:
 			if to not in docs:
@@ -834,7 +998,8 @@ def graph(store) -> dict:
 	good = {r["ticket"] for r in reads if r["via"] != "board" and "error" not in docs[r["doc"]]}
 	broken = [{"path": r, "error": d["error"], "via": d["kind"], "tickets": sorted(readers[r])} for r, d in docs.items() if d.get("error")]
 	hubs = sorted((d for d in docs.values() if d["kind"] != "board" and d["readers"] >= 2), key=lambda d: (-d["readers"], d["path"]))[:HUBS]
-	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links,
+	return {"tickets": tickets, "docs": sorted(docs.values(), key=lambda d: d["path"]), "reads": reads, "links": links, "rules": rules,
+	        "budget": int(cfg.get("context_budget") or BUDGET),
 	        "no_docs": [t["id"] for t in tickets if t["id"] not in good], "broken": broken,
 	        "hubs": [{"path": d["path"], "readers": d["readers"]} for d in hubs],
 	        "orphans": sorted(r for r, d in docs.items() if d.get("linked_only"))}

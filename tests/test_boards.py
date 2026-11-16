@@ -376,6 +376,9 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.call("GET", "/api/b/a/tickets/CMB-1/files/spec.md")[1]["content"], "window 0.2")
 		ctx = self.call("GET", "/api/b/a/tickets/CMB-1/context")[1]
 		self.assertIn("window 0.2", ctx["docs"][0]["content"])
+		lean = self.call("GET", "/api/b/a/tickets/CMB-1/context?content=0")[1]  # the Docs view's preview: what is sent, without the text
+		self.assertEqual((lean["docs"][0]["sent"], "content" in lean["docs"][0]), ("full", False))
+		self.assertIn("rules", self.call("GET", "/api/b/a/knowledge")[1])
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=tickets/unblockd.json")[0], 200)
 		self.assertEqual(self.call("GET", "/api/b/a/doc?path=../b/tickets/unblockd.json")[0], 400)
 		g = self.call("GET", "/api/b/a/knowledge")[1]

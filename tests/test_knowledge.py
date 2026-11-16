@@ -102,7 +102,7 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertNotIn("docs/MAP.md", [d["path"] for d in kn.context(s, "CMB-1")["docs"]])  # no tag, no brief
 		g = kn.graph(s)
 		self.assertEqual(next(d for d in g["docs"] if d["path"] == "docs/MAP.md")["kind"], "tag")
-		self.assertIn({"ticket": "CMB-5", "doc": "docs/MAP.md", "via": "tag"}, g["reads"])
+		self.assertIn({"ticket": "CMB-5", "doc": "docs/MAP.md", "via": "tag", "from": "map"}, g["reads"])
 		for bad, msg in (({"Map": ["x.md"]}, "is not a tag"), ({"map": []}, "non-empty list"), ({"map": ["../x.md"]}, "no \.\."), (["x"], "object of tag")):
 			cfg["docs_by_tag"] = bad
 			(self.s.dir / "unblockd.json").write_text(json.dumps(cfg), encoding="utf-8")
@@ -207,6 +207,140 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(g["broken"], [{"path": "nope.md", "error": "missing", "via": "ticket", "tickets": ["CMB-1"]}])
 		self.assertEqual(g["no_docs"], ["CMB-3"])  # CMB-1/2 have profile docs, CMB-4 an attachment
 		self.assertEqual(g["hubs"][0], {"path": "docs/HANDOFF.md", "readers": 2})  # AGENTS.md (board) is not a hub
+
+	def test_graph_rules_and_from(self):
+		"""Docs view (UI-59): each read says which tag / profile sent it; each rule lists all it sends, from the config, not the reads."""
+		(self.repo / "docs" / "SEC.md").write_text("security", encoding="utf-8")
+		(self.repo / "docs" / "IDLE.md").write_text("no open reader", encoding="utf-8")
+		self.s.config["docs_by_tag"] = {"api": ["docs/SEC.md"], "sec": ["docs/SEC.md"], "idle": ["docs/IDLE.md"]}
+		self.s.create({"title": "two tags", "tags": ["api", "sec"]}, tid="CMB-2")
+		self.s.create({"title": "one tag", "tags": ["sec"]}, tid="CMB-3")
+		g = kn.graph(self.s)
+		reads = {(r["ticket"], r["doc"]): (r["via"], r["from"]) for r in g["reads"]}
+		self.assertEqual(reads[("CMB-2", "docs/SEC.md")], ("tag", "api"))  # first rule wins per ticket, as in context()
+		self.assertEqual(reads[("CMB-3", "docs/SEC.md")], ("tag", "sec"))
+		self.assertEqual(reads[("CMB-1", "docs/MECHANICS.md")], ("profile", "backend"))
+		self.assertEqual(reads[("CMB-1", "AGENTS.md")], ("board", None))
+		rules = {(r["via"], r["from"]): r for r in g["rules"]}
+		self.assertEqual(rules[("tag", "sec")], {"via": "tag", "from": "sec", "docs": ["docs/SEC.md"], "tickets": ["CMB-2", "CMB-3"]})
+		self.assertEqual(rules[("tag", "api")]["tickets"], ["CMB-2"])
+		self.assertEqual(rules[("board", None)]["docs"], ["AGENTS.md", "unblockd://work-loop"])
+		self.assertEqual(rules[("profile", "backend")]["docs"], ["docs/MECHANICS.md", "docs/HANDOFF.md"])
+		self.assertEqual((rules[("tag", "idle")]["tickets"], {d["path"]: d for d in g["docs"]}["docs/IDLE.md"]["readers"]), ([], 0))  # shown, read by nobody yet
+		self.assertEqual(g["budget"], 60000)
+
+	def test_context_says_what_is_sent(self):
+		(self.repo / "docs" / "BIG.md").write_text("x" * 900, encoding="utf-8")
+		(self.repo / "docs" / "MID.md").write_text("y" * 300, encoding="utf-8")
+		(self.repo / "AGENTS.md").write_text("z" * 300, encoding="utf-8")  # the ticket's MID.md is paid for first: 200 left
+		self.s.create({"title": "t", "docs": ["docs/BIG.md", "docs/MID.md", "nope.md"]}, tid="CMB-2")
+		sent = {d["path"]: d["sent"] for d in kn.context(self.s, "CMB-2", budget=500)["docs"]}
+		self.assertEqual(sent, {"AGENTS.md": "budget", "docs/BIG.md": "too_big", "docs/MID.md": "full", "nope.md": "error"})
+		self.assertNotIn("sent", kn.context(self.s, "CMB-2", inline=False)["docs"][0])
+
+	def test_graph_counts_component_notes(self):
+		"""Step 1 (Docs view truth): a ticket's component notes are in its context(), so the graph reads them too and the ticket has docs."""
+		(self.repo / "docs" / "arch").mkdir(parents=True, exist_ok=True)
+		(self.repo / "docs" / "arch" / "store.md").write_text("\n".join(["---", "paths: src/store.py", "---", "# Store", "", "The core.", ""]), encoding="utf-8")
+		self.s.create({"title": "no docs, touches the store", "touches": ["src/store.py"]}, tid="CMB-2")
+		self.s.create({"title": "names the component", "components": ["store"]}, tid="CMB-3")
+		self.s.create({"title": "nothing"}, tid="CMB-4")
+		g = kn.graph(self.s)
+		reads = {(r["ticket"], r["doc"]): (r["via"], r["from"]) for r in g["reads"]}
+		self.assertEqual(reads[("CMB-2", "docs/arch/store.md")], ("component", "store"))
+		self.assertEqual(reads[("CMB-3", "docs/arch/store.md")], ("component", "store"))
+		self.assertNotIn("CMB-2", g["no_docs"])
+		self.assertNotIn("CMB-3", g["no_docs"])
+		self.assertIn("CMB-4", g["no_docs"])
+		self.assertEqual({d["path"]: d["kind"] for d in g["docs"]}["docs/arch/store.md"], "component")
+
+	def test_a_docs_entry_can_name_a_section(self):
+		"""AI-14: `path#heading` sends only that section (down to the next heading of its level) plus the doc's outline."""
+		lines = ["# Mechanics", "intro", "## Combat", "parry", "```", "## not a heading in code", "```", "### Timing", "0.2s", "## Movement", "run"]
+		(self.repo / "docs" / "MECH.md").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")  # LF on Windows too
+		self.s.create({"title": "combat", "docs": ["docs/MECH.md#combat", "docs/MECH.md#nope"]}, tid="CMB-2")
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		combat = c["docs/MECH.md#combat"]
+		self.assertIn("parry", combat["content"])
+		self.assertIn("0.2s", combat["content"])  # a sub-heading stays in the section
+		self.assertNotIn("run", combat["content"])
+		self.assertEqual(combat["section"], "combat")
+		self.assertEqual(combat["outline"], ["# Mechanics", "## Combat", "### Timing", "## Movement"])  # the fenced line is no heading
+		self.assertIn("no heading 'nope'", c["docs/MECH.md#nope"]["error"])
+		self.assertIn("combat", c["docs/MECH.md#nope"]["error"])  # the error lists the anchors
+		self.assertEqual(kn.read_doc(self.s, "docs/MECH.md#timing")["content"], "### Timing\n0.2s\n")
+		g = kn.graph(self.s)
+		node = {d["path"]: d for d in g["docs"]}
+		self.assertEqual(node["docs/MECH.md#combat"]["size"], combat["chars"])  # the section, not the file (content is wrapped: untrusted)
+		self.assertIn("no heading", node["docs/MECH.md#nope"]["error"])
+		self.assertEqual(kn.expand(self.s, "docs#x")[0][2], "a #heading works on one text file, not a folder")
+
+	def test_a_section_is_not_sent_twice(self):
+		"""AI-14: the whole file, or a wider section, already in the bundle covers a section of it; two sections side by side both stay."""
+		md = "\n".join(["# Mech", "## Combat", "parry", "### Timing", "0.2s", "## Movement", "run"]) + "\n"
+		(self.repo / "docs" / "MECH.md").write_text(md, encoding="utf-8", newline="\n")
+		self.s.create({"title": "a", "docs": ["docs/MECH.md#timing", "docs/MECH.md", "docs/MECH.md#combat"]}, tid="CMB-2")
+		self.s.create({"title": "b", "docs": ["docs/MECH.md#combat", "docs/MECH.md#timing", "docs/MECH.md#Combat", "docs/MECH.md#movement"]}, tid="CMB-3")
+		paths = lambda tid: [d["path"] for d in kn.context(self.s, tid)["docs"] if d["path"].startswith("docs/MECH")]
+		self.assertEqual(paths("CMB-2"), ["docs/MECH.md"])  # the whole file covers both sections
+		self.assertEqual(paths("CMB-3"), ["docs/MECH.md#combat", "docs/MECH.md#movement"])  # timing is inside combat; Combat = combat
+
+	def test_a_section_of_a_doc_too_big_to_send(self):
+		"""AI-14: the section is cut before the size check, so a doc over MAX_FILE can still send one part; the whole doc gets its outline."""
+		big = "# Lore\n" + ("filler line\n" * 30000) + "## Combat\nparry\n## Movement\nrun\n"  # ~360 KB > MAX_FILE
+		(self.repo / "docs" / "BIG.md").write_text(big, encoding="utf-8", newline="\n")
+		self.s.create({"title": "big", "docs": ["docs/BIG.md", "docs/BIG.md#combat"]}, tid="CMB-2")
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		self.assertIn("parry", c["docs/BIG.md#combat"]["content"])  # kept: the whole file can't be sent, so it covers nothing
+		self.assertEqual(c["docs/BIG.md"]["outline"], ["# Lore", "## Combat", "## Movement"])
+		self.assertIn("path#heading", c["docs/BIG.md"]["error"])
+		self.assertEqual(kn.read_doc(self.s, "docs/BIG.md#movement")["content"], "## Movement\nrun\n")
+		with self.assertRaisesRegex(TicketError, "path#heading"):
+			kn.read_doc(self.s, "docs/BIG.md")
+
+	def test_the_preview_outlines_big_sent_docs_only(self):
+		"""UI-72: the Docs view's preview gets the outline of a doc sent in full that takes over a third of the budget; the agent's context
+		does not (it has the text), and small docs or docs without headings get none."""
+		(self.repo / "docs" / "BIGOK.md").write_text("# Big\n## One\n" + "x" * 400 + "\n## Two\ny\n", encoding="utf-8", newline="\n")
+		(self.repo / "docs" / "PLAIN.md").write_text("no headings " * 40, encoding="utf-8")
+		self.s.create({"title": "t", "docs": ["docs/BIGOK.md", "docs/PLAIN.md"]}, tid="CMB-2")
+		self.s.config["context_budget"] = 1200
+		ctx = kn.context(self.s, "CMB-2")
+		by = {d["path"]: d for d in ctx["docs"]}
+		self.assertEqual(by["docs/BIGOK.md"]["sent"], "full")
+		self.assertNotIn("outline", by["docs/BIGOK.md"])  # the agent has the text
+		by = {d["path"]: d for d in kn.preview_outlines(self.s, ctx)["docs"]}
+		self.assertEqual(by["docs/BIGOK.md"]["outline"], ["# Big", "## One", "## Two"])
+		self.assertEqual(len(by["docs/BIGOK.md"]["outline_chars"]), 3)
+		self.assertNotIn("outline", by["docs/PLAIN.md"])  # no headings
+		self.assertNotIn("outline", by["AGENTS.md"])  # small: under a third of the budget
+
+	def test_a_doc_that_does_not_fit_sends_its_outline(self):
+		"""AI-14: a doc cut by the budget comes with its headings, so the agent can read the part it needs, not only a path."""
+		(self.repo / "docs" / "LONG.md").write_text("# Long\n## Part one\n" + "x" * 3000 + "\n## Part two\ny\n", encoding="utf-8", newline="\n")
+		self.s.create({"title": "long", "docs": ["docs/LONG.md"]}, tid="CMB-2")
+		ctx = kn.context(self.s, "CMB-2", budget=1000)
+		d = next(d for d in ctx["docs"] if d["path"] == "docs/LONG.md")
+		self.assertEqual((d["sent"], d["outline"]), ("too_big", ["# Long", "## Part one", "## Part two"]))
+		self.assertEqual(d["outline_chars"], [3034, 3013, 14])  # each section's size: whether path#heading would fit
+		self.assertIn("read_doc(path#heading)", ctx["note"])
+		self.assertTrue(all("outline" not in x for x in ctx["docs"] if "content" in x and "section" not in x))  # docs sent whole carry none
+
+	def test_images_are_paths_not_broken(self):
+		"""A picked image (a pick sheet) exists: it is a doc sent as a path, not a broken reference; a missing one stays broken."""
+		(self.repo / "docs" / "pick.png").write_bytes(bytes([0x89, 0x50, 0x4E, 0x47]) + bytes(104))
+		self.s.create({"title": "picked", "docs": ["docs/pick.png", "docs/gone.png"]}, tid="CMB-2")
+		g = kn.graph(self.s)
+		node = {d["path"]: d for d in g["docs"]}["docs/pick.png"]
+		self.assertTrue(node["image"])
+		self.assertEqual(node["size"], 108)
+		self.assertNotIn("error", node)
+		self.assertIn("docs/gone.png", [b["path"] for b in g["broken"]])
+		self.assertNotIn("docs/pick.png", [b["path"] for b in g["broken"]])
+		self.assertNotIn("CMB-2", g["no_docs"])
+		c = {d["path"]: d for d in kn.context(self.s, "CMB-2")["docs"]}
+		self.assertEqual((c["docs/pick.png"]["sent"], c["docs/pick.png"]["image"], "content" in c["docs/pick.png"]), ("image", True, False))
+		self.assertEqual(c["docs/gone.png"]["sent"], "error")
 
 	def test_graph_flags_paths_outside_the_project(self):
 		self.s.config["docs"].append("../secret.md")  # can't be written through the API, but a hand-edited config can

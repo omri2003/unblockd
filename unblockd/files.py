@@ -134,7 +134,7 @@ class FileBackend:
 	# ---------- the board lock ----------
 	def runtime(self) -> Path:
 		d = self.rt
-		if not d.is_dir():
+		if not (d / ".gitignore").is_file():  # also when something else made the folder first: it holds a git mirror too, which must never show in git status
 			d.mkdir(parents=True, exist_ok=True)  # parallel first calls race here
 			(d / ".gitignore").write_text("*\n", encoding="utf-8")
 		return d

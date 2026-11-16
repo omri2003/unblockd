@@ -98,6 +98,11 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dlist button:not(.kdoc):hover .tid{text-decoration:underline}
 /* digest: what happened since you last looked */
 .digest{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--slate);border-radius:8px;padding:8px 12px;margin-bottom:14px}
+.gitnote{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);padding:9px 12px;margin-bottom:12px;font-size:.88rem}
+.gitnote p{margin:0;flex:1;min-width:0;overflow-wrap:anywhere} .gitnote .gi{color:var(--amber);padding-top:2px;display:inline-flex} .gitnote .gl{width:15px;height:15px}
+.liv.br .who{font-weight:600} .liv.br .st{color:var(--muted);font-weight:600}
+.brl{list-style:none;margin:0;padding:0;display:grid;gap:8px} .brl li{display:grid;gap:1px;min-width:0} .brl li.off{opacity:.75} .brl .bn{display:inline-flex;align-items:center;gap:5px;font-weight:600;min-width:0} .brl code{font-size:.85em;overflow-wrap:anywhere}
+.brl .bre{font-size:.82rem;color:var(--amber);font-weight:600}
 .dg-bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:.9rem}
 .dg-bar h2{font-size:.95rem;margin:0} .dg-bar .since{color:var(--muted)}
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
@@ -150,7 +155,12 @@ a.btn{display:inline-block;text-decoration:none}
 .dg-tile.rev{background:var(--plum-soft);color:var(--plum)} .dg-tile.stk{background:color-mix(in srgb,var(--cinnabar) 14%,var(--surface));color:var(--cinnabar)}
 .dg-tile.fin{background:var(--jade-soft);color:var(--jade)} .dg-tile.sta{background:var(--amber-soft);color:var(--amber)} .dg-tile.new{background:var(--slate-soft);color:var(--slate)}
 .dg-l{grid-column:1/-1;display:grid;grid-template-columns:subgrid;list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);overflow:hidden}
-.dg-l li{grid-column:1/-1;display:grid;grid-template-columns:subgrid} .dg-l li+li{border-top:1px solid var(--line)}
+.dg-l li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;position:relative}
+.dg-g .dg-gx{margin-left:auto;font-weight:600} /* Dismiss a whole section */
+.dg-x{position:absolute;right:8px;top:6px;width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:var(--r);background:var(--sunk);color:var(--muted);font:inherit;font-size:1rem;line-height:1;cursor:pointer;opacity:0} /* takes the time's place on hover / focus, like the Done card's Move-to */
+.dg-x:hover{color:var(--ink)} .dg-l li:hover .dg-x,.dg-x:focus-visible{opacity:1} .dg-l li:hover time,.dg-l li:has(.dg-x:focus-visible) time{visibility:hidden}
+@media (hover:none){.dg-x{opacity:1;width:40px;height:40px;top:2px;right:2px;background:none} .dg-l li .dg-r{padding-right:44px}} /* li .dg-r: wins over the <=600px padding */
+.dg-l li+li{border-top:1px solid var(--line)}
 .dg-r{--pc:var(--p-other);position:relative;grid-column:1/-1;display:grid;grid-template-columns:subgrid;align-items:start;width:100%;padding:8px 12px 8px 16px;border:0;background:none;font:inherit;color:var(--ink);text-align:left;cursor:pointer;min-width:0}
 .dg-r::before{content:'';position:absolute;left:5px;top:9px;bottom:9px;width:3px;border-radius:3px;background:var(--pc);pointer-events:none}
 .dg-r:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))} .dg-r:hover .dt{text-decoration:underline;text-underline-offset:2px}
@@ -163,7 +173,7 @@ a.btn{display:inline-block;text-decoration:none}
 .dg-r .o{font-size:.82rem;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dg-r .o.bad{color:var(--cinnabar);font-weight:600}
 .dg-r .w{padding-top:3px;min-width:0;display:flex} .dg-r .w2{display:none}
 .dg-r .own{background:none;padding:0;border-radius:0;color:var(--muted);font-weight:600;font-size:.76rem;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dg-r .own.human{color:var(--ink);font-weight:700} .dg-r .own .gl{opacity:.85;flex:none} .dg-r .own.hand{font-style:italic;font-weight:500}
+.dg-r .own.human{color:var(--ink);font-weight:700} .dg-r .own .gl{opacity:.85;flex:none}
 .dg-r time{padding-top:4px;color:var(--muted);font-size:.8rem;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
 .dg-more{grid-column:1/-1;justify-self:start;margin:4px 0 0;padding:3px 0;border:0;background:none;font:inherit;font-size:.84rem;color:var(--jade);cursor:pointer}
 .dg-more:hover{text-decoration:underline}
@@ -463,6 +473,15 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .toast button{background:none;border:0;border-bottom:1px solid currentColor;padding:0;font-weight:800;cursor:pointer;color:inherit}
 @keyframes toastin{from{opacity:0;transform:translateY(8px)}}
 .dots::after{content:'…';animation:dots 1.2s steps(3) infinite}
+/* Loading, one look everywhere: ldHtml() = skeleton bars + a sentence (a panel or view waiting for its first data); #topbar = a thin bar while a request you started is in flight */
+.ld{display:grid;gap:9px;padding:14px 2px;color:var(--muted);font-size:.86rem;list-style:none}
+.ld i{display:block;height:10px;border-radius:5px;background:linear-gradient(90deg,var(--sunk) 25%,var(--line) 50%,var(--sunk) 75%);background-size:300% 100%;animation:ldsh 1.4s ease-in-out infinite}
+.ld i:nth-child(2){width:78%} .ld i:nth-child(3){width:58%} .ld i:nth-child(4){width:70%}
+@keyframes ldsh{from{background-position:100% 0}to{background-position:0 0}}
+.bload{grid-column:1/-1;width:min(460px,100%);margin:40px auto} .bload .ld{width:100%}
+.topbar{position:fixed;inset:0 0 auto;height:3px;z-index:100;overflow:hidden;pointer-events:none}
+.topbar::before{content:'';position:absolute;inset:0 auto 0 0;width:35%;background:var(--jade);border-radius:0 2px 2px 0;animation:tbar 1.1s ease-in-out infinite}
+@keyframes tbar{from{transform:translateX(-100%)}to{transform:translateX(290%)}}
 @keyframes dots{0%{content:'.'}33%{content:'..'}66%{content:'...'}}
 /* Docs view: tickets left, docs right, lines between. Plain DOM + one SVG: CSS tokens resolve natively, no JS colour reads. */
 .dprob{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
@@ -478,7 +497,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .rmb{font-size:.7rem;font-weight:700;border-radius:999px;padding:0 7px;border:1px solid currentColor} .rmb.rnext{color:var(--jade)} .rmb.rclosed{color:var(--muted)} .rmb.rall{color:var(--amber)} .tgt{font-size:.78rem;color:var(--muted)} .tgt.late{color:var(--cinnabar);font-weight:600}
 .rbar{display:flex;height:8px;border-radius:4px;overflow:hidden;background:var(--sunk)} .rbar i{display:block;height:100%}
 .rmn{font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap} .rmrow .chev{transition:transform .15s ease-out;margin-right:2px} .rmi.open .chev{transform:translateY(.1em) rotate(-135deg)}
-.c-done{background:var(--jade)} .c-review{background:var(--plum)} .c-doing{background:var(--amber)} .c-ready{background:color-mix(in srgb,var(--muted) 45%,transparent)} .c-waiting{background:var(--slate)} .c-blocked{background:var(--cinnabar)}
+i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{background:var(--amber)} i.c-ready{background:color-mix(in srgb,var(--muted) 45%,transparent)} i.c-waiting{background:var(--slate)} i.c-blocked{background:var(--cinnabar)}
 .rmx{padding:0 14px 12px;display:grid;gap:8px} .rmx .goal{color:var(--muted)} .rmc{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:.84rem;color:var(--muted)} .rmc b{color:var(--ink);font-variant-numeric:tabular-nums}
 .rgrp{display:grid;gap:5px} .rgrp h5{margin:4px 0 0;display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;color:var(--muted)} .rgrp h5 i{width:8px;height:8px;border-radius:50%} .rgrp h5 span{font-weight:400;font-variant-numeric:tabular-nums}
 .linkbtn{background:none;border:0;padding:0 2px;font:inherit;font-weight:600;color:var(--jade);cursor:pointer} .linkbtn:hover{text-decoration:underline}
@@ -490,7 +509,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .dtools{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:10px;font-size:.82rem;color:var(--muted)}
 .dtools .sw{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
 .dstage{position:relative;background:var(--sunk);border-radius:8px;padding:12px 12px}
-.dcols{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,22%) minmax(0,1.1fr) 56px;align-items:start}
+.dcols{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,14%) minmax(0,1.25fr) 56px;align-items:start}
 .dcols ol{list-style:none;margin:0;padding:0;display:grid;gap:3px}
 .dcols h2{font-size:.82rem;color:var(--muted);margin:0 0 6px;font-weight:700}
 .dcols>div{min-width:0} .dcols ol{grid-template-columns:minmax(0,1fr)}
@@ -507,17 +526,91 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .tk .mk{border-radius:50%} .tk .mk.doing{background:var(--amber);border-color:var(--amber)} .tk .mk.pending{background:var(--slate);border-color:var(--slate)} .tk .mk.review{background:var(--plum);border-color:var(--plum)}
 .dk .mk{border-radius:3px;border-color:var(--muted)} .dk.orph .mk{border-style:dashed} .dk.bad .mk{border-color:var(--cinnabar);background:var(--cinnabar)}
 .dk.hub .mk{background:var(--jade);border-color:var(--jade)}
+.dk.img .mk,.sw.img{border-radius:50%;border-color:var(--slate);background:var(--slate-soft)} .dk .imgt{color:var(--slate);font-size:.74rem;white-space:nowrap}
+.dwarn{align-self:center;font-size:.72rem;font-weight:700;color:var(--cinnabar);background:color-mix(in srgb,var(--cinnabar) 12%,transparent);border-radius:4px;padding:0 6px;white-space:nowrap} .dwarn.soft{color:var(--amber);background:var(--amber-soft)}
 .dk.brd .mk,.sw.brd{border-color:var(--ink);background:var(--ink);box-shadow:inset 0 0 0 2px var(--surface)} .sw.brd{box-shadow:inset 0 0 0 1px var(--surface)} /* nested square: outline + solid centre */
 .dk .pth{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:.82rem} .dk .pth i{font-style:normal;color:var(--muted)}
 .dn .tag{flex:none;font-size:.74rem;color:var(--muted);white-space:nowrap} .dn .tag.bad,.dn .tag.warn{color:var(--cinnabar);font-weight:700}
 .dn .tag.bad{flex:0 1 auto;min-width:0;max-width:45%;overflow:hidden;text-overflow:ellipsis}
 .dn.fade{opacity:.3} .dn.fade:hover{opacity:1}
+/* Docs view bands (UI-59): a band = one rule that sends docs; tag / profile bands have a port the tickets' lines end in */
+.dgrp{display:block} .dgrp+.dgrp{margin-top:10px} .dgrp h3,.dband h3{margin:0 0 4px;font-size:.76rem;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dgrp>ol,.dband>ol{list-style:none;margin:0;padding:0;display:grid;gap:3px;grid-template-columns:minmax(0,1fr)}
+.dic{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round} .dic .f{fill:currentColor;stroke:none}
+.dband{display:block;background:var(--paper);border-radius:10px;padding:6px 8px 8px;margin-bottom:8px;transition:opacity .15s ease-out}
+.dband.board{background:repeating-linear-gradient(135deg,var(--paper) 0 8px,var(--sunk) 8px 9px)} .dband.fade{opacity:.35}
+.dband h3{margin:0 0 5px}
+.dchev{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;padding:0;border:0;border-radius:6px;background:none;cursor:pointer} .dchev:hover{background:var(--sunk)}
+.dchev .chev{transition:transform .15s ease-out} .dchev[aria-expanded=false] .chev{transform:translateY(0) rotate(-45deg)} .dband h3 .dbh{flex:1}
+.dgrp.shut h3,.dband.shut h3{margin-bottom:0} .dhit{font-style:normal;font-weight:700;color:var(--jade)} .dgh .dhit{margin-left:auto;font-size:.74rem}
+.dq{flex:1 1 220px;max-width:340px;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--ink);font:inherit;box-shadow:var(--sh1)} .dqn{font-variant-numeric:tabular-nums;min-width:0}
+.dbh{position:relative;display:flex;align-items:center;gap:7px;width:100%;min-height:26px;padding:2px 4px;border:0;border-radius:6px;background:none;color:var(--ink);font:inherit;font-size:.84rem;font-weight:700;text-align:left;cursor:pointer;min-width:0}
+.dbh:hover,.dbh.on{background:var(--surface)} .dbh.sel{box-shadow:0 0 0 1.5px var(--ink)}
+.dbh em{font-style:normal;font-weight:400;color:var(--muted);font-size:.78rem;white-space:nowrap} .dbh .bn{white-space:nowrap}
+.dbh .rule{margin-left:auto;font:400 .72rem var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.dbh .port{position:absolute;left:-18px;top:50%;width:10px;height:10px;margin-top:-5px;border-radius:50%;border:2px solid var(--ink);background:var(--surface)}
+.dn.tk.sel{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.dtg{flex:none;font:.7rem var(--mono);color:var(--muted);background:var(--sunk);border-radius:4px;padding:0 4px}
+.dn.ghost{background:transparent;border-style:dashed;color:var(--muted);font-size:.8rem} .dn.ghost .tag{margin-left:auto}
+.dk .rc{min-width:28px;text-align:right}
+.szw{flex:none;display:inline-flex;align-items:center;gap:6px;font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.szm{position:relative;display:block;width:46px;height:5px;border-radius:3px;background:var(--sunk)}
+.szm i{position:absolute;left:0;top:0;bottom:0;max-width:100%;border-radius:3px;background:var(--muted);opacity:.55}
+.szm b{position:absolute;left:50%;top:-3px;bottom:-3px;width:1.5px;background:var(--ink)}
+.szw.big{color:var(--cinnabar);font-weight:700} .szw.big .szm i{opacity:1;background:repeating-linear-gradient(135deg,var(--cinnabar) 0 3px,transparent 3px 5px)}
+.dbud{margin-left:auto;font-size:.82rem;color:var(--muted)} .dbud b{color:var(--ink)}
+.dctx{margin:4px 0 8px 10px;padding:8px 10px;border-left:2px solid var(--ink);background:var(--surface);border-radius:0 8px 8px 0;font-size:.78rem;box-shadow:var(--sh1)}
+.dctx h3{margin:0 0 6px;font-size:.8rem;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline;color:var(--ink)} .dctx h3 span{font-weight:400;color:var(--muted)} .dctx h3 b{color:var(--cinnabar)}
+.cbar{display:flex;height:8px;border-radius:4px;background:var(--sunk);overflow:hidden;margin:0 0 7px}
+.cbar i{display:block;height:100%;border-right:1px solid var(--surface)} .cbar i.t{background:var(--jade)} .cbar i.p{background:var(--slate)} .cbar i.g{background:var(--plum)} .cbar i.b{background:var(--muted)}
+.dctx ol{list-style:none;margin:0;padding:0;display:grid;gap:6px;grid-template-columns:minmax(0,1fr)}
+/* AI-14 design A (owner pick 2026-11-14 of 3 + 4 mockups): one card per doc; a coloured From badge; the name opens the file; status = dot + word */
+/* A1 Soft (owner pick 2026-11-14): no borders; white cards float on the preview's grey tray and lift on hover; a doc not sent in full gets a red left edge */
+.dctx:has(.dcard){background:var(--sunk);box-shadow:none} .dctx:has(.dcard) .cbar{background:var(--surface)} .dcard{border-radius:var(--rc);background:var(--surface);box-shadow:var(--sh1);transition:box-shadow .15s ease-out} .dcard:hover{box-shadow:var(--sh2)} .dcard.bad{box-shadow:inset 3px 0 0 var(--cinnabar),var(--sh1)} .dcard.bad:hover{box-shadow:inset 3px 0 0 var(--cinnabar),var(--sh2)}
+.dch{display:grid;grid-template-columns:max-content minmax(0,1fr) auto auto;gap:10px;align-items:center;padding:7px 10px}
+.dsrc{justify-self:start;font-size:.66rem;font-weight:700;border-radius:999px;padding:1px 8px;white-space:nowrap;background:var(--slate-soft);color:var(--slate)}
+.dsrc.k-tag{background:var(--amber-soft);color:var(--amber)} .dsrc.k-profile{background:var(--plum-soft);color:var(--plum)} .dsrc.k-ticket,.dsrc.k-attached{background:var(--jade-soft);color:var(--jade)}
+.dctx .pw{display:flex;flex-wrap:wrap;gap:3px 6px;align-items:center;min-width:0}
+.dctx .dl{display:inline-flex;align-items:center;min-width:0;max-width:100%;border:0;background:none;padding:0;cursor:pointer;color:var(--ink);font:.76rem var(--mono);text-align:left}
+.dctx .dl span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .dl i{font-style:normal;color:var(--muted)} .dctx .dl svg{width:12px;height:12px;flex:none;margin-left:5px;opacity:.55}
+.dctx .dl:hover{color:var(--jade)} .dctx .dl:hover span{text-decoration:underline;text-underline-offset:3px} .dctx .dl:hover svg{opacity:1}
+.dctx .pth{font:.76rem var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dctx .pth i{font-style:normal;color:var(--muted)}
+.dctx .z{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.dctx .s{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:600;white-space:nowrap} .dctx .s::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.dctx .s.in{color:var(--jade)} .dctx .s.out{color:var(--cinnabar)} .dctx .s.wl{color:var(--muted)} .dctx .s.wl::before{background:none;border:1.5px solid currentColor} .dctx .s.img{color:var(--slate)}
+.dsc{font-size:.7rem;font-weight:600;border-radius:999px;padding:0 7px;white-space:nowrap} .dsc.in{background:var(--jade-soft);color:var(--jade)} .dsc.out{background:color-mix(in srgb,var(--cinnabar) 13%,var(--surface));color:var(--cinnabar)} /* a picked section: sent or not */
+/* the fold: a tree of the doc's headings with guide lines, a size bar each against the budget, then ONE bar for the whole budget */
+.dch.wb{grid-template-columns:max-content minmax(0,1fr) auto auto auto}
+.dsb{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:2px 8px;font-size:.72rem;font-weight:600;color:var(--jade);cursor:pointer;box-shadow:var(--sh1);white-space:nowrap}
+.dsb:hover{border-color:var(--jade)} .dsb[aria-expanded=true]{background:var(--jade-soft);box-shadow:none} .dsb svg,.dpk svg{width:12px;height:12px;flex:none}
+/* a doc that did not fit: the strip says so and holds the fix (UI-72) */
+.dsec.miss{background:var(--surface);border-top:1px dashed color-mix(in srgb,var(--cinnabar) 30%,var(--line))} .dsec>summary.strip{display:flex;align-items:center;gap:10px;width:auto;color:var(--muted);font-weight:400;list-style:none} .dsec>summary.strip::-webkit-details-marker{display:none}
+.dsec>summary.strip strong,.dstrip strong{color:var(--ink);font-weight:600} .dsec>summary.strip>span:first-child{flex:1}
+.dpk{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh1);border-radius:var(--r);padding:4px 11px;font-weight:600;color:var(--jade);white-space:nowrap} .dsec>summary.strip:hover .dpk{box-shadow:var(--sh2);border-color:var(--jade)}
+.dsec.miss[open] .dpk{background:var(--jade-soft);box-shadow:none}
+.dstrip{padding:7px 12px;border-top:1px dashed color-mix(in srgb,var(--cinnabar) 30%,var(--line));font-size:.76rem;color:var(--muted)}
+.dsec{padding:6px 10px 8px;background:color-mix(in srgb,var(--sunk) 35%,var(--surface));border-radius:0 0 var(--rc) var(--rc)} .dsec>summary{cursor:pointer;color:var(--jade);font-weight:600;font-size:.76rem;width:fit-content;padding:2px 0} .dsec>summary[hidden]{display:none} .dsec .hint{margin:4px 0 6px}
+.dtree,.dtree ul{list-style:none;margin:0;padding:0} .dtree ul{margin-left:9px;padding-left:14px;border-left:1.5px solid var(--line)}
+.dsr{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(60px,130px) 3.2rem;gap:10px;align-items:center;font-size:.76rem;cursor:pointer;border-radius:var(--r);padding:4px 8px;margin:1px 0}
+.dtree ul .dsr::before{content:"";position:absolute;left:-14px;top:50%;width:12px;border-top:1.5px solid var(--line)}
+.dsr:hover{background:var(--sunk)} .dsr:has(input:checked:not(:disabled)){box-shadow:inset 3px 0 0 var(--jade);border-radius:0 var(--r) var(--r) 0} .dsr:has(input:checked:not(:disabled)) .dst>span{font-weight:600} /* ticked: a jade edge + bold, no fill */ .dsr.big,.dsr.cov{color:var(--muted)} .dsr.big{cursor:default} .dsr.big:hover{background:none}
+.dst{display:flex;gap:8px;align-items:center;min-width:0} .dst span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .dst small{color:var(--muted)} .dst input{margin:0;width:16px;height:16px;accent-color:var(--jade);flex:none}
+.dsr .mb{position:relative;height:6px;background:var(--sunk);border-radius:3px;margin-right:2px} .dsr .mb i{position:absolute;inset:0 auto 0 0;border-radius:3px;background:color-mix(in srgb,var(--jade) 45%,var(--sunk))}
+.dsr:has(input:checked) .mb i{background:var(--jade)} .dsr .mb.over i{background:repeating-linear-gradient(45deg,var(--cinnabar) 0 4px,transparent 4px 7px)}
+.dsr .mb::after{content:"";position:absolute;top:-3px;bottom:-3px;right:-2px;width:2px;border-radius:1px;background:var(--ink)} /* the budget */
+.dsr .n{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.dbud{position:relative;height:14px;border-radius:7px;background:var(--sunk);margin:10px 2px 0} .dbud i{position:absolute;top:0;bottom:0} .dbud .o{background:var(--slate)} .dbud .p{background:var(--jade)}
+.dbud .x{background:repeating-linear-gradient(45deg,var(--cinnabar) 0 4px,color-mix(in srgb,var(--cinnabar) 30%,transparent) 4px 7px)} .dbud .tk{top:-4px;bottom:-4px;width:2px;border-radius:1px;background:var(--ink)}
+.dbl{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:.72rem;color:var(--muted);margin:4px 2px 0} .dbl b{color:var(--ink);font-weight:600} .dbl b.over{color:var(--cinnabar)}
+.dsf{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 0;padding-top:8px;border-top:1px solid var(--line);color:var(--muted);font-size:.76rem} .dsf>span{flex:1 1 14rem} .dsf .warn{color:var(--cinnabar);font-weight:600} .dsf .btn{white-space:nowrap}
+.dcb{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin:8px 0 0}
 .dempty{padding:18px 4px;color:var(--muted)}
 .dh3{font-size:.85rem;margin:14px 0 4px;color:var(--muted)}
 .dlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .dlist li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
+  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dch,.dch.wb{grid-template-columns:max-content minmax(0,1fr);row-gap:4px} .dch .dsb{grid-column:2;justify-self:start} .dsec>summary.strip{flex-wrap:wrap} .dsf>span{flex-basis:100%} .dsf .btn:first-of-type{margin-left:auto} .dch .z{display:none} .dch .s{grid-column:2} .dsr{grid-template-columns:minmax(0,1fr) 3.5rem 2.8rem;gap:6px} .dtree ul{margin-left:6px;padding-left:10px} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0}  .dbud{margin-left:0}
 }
 /* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
 .mapstage{position:relative;overflow:hidden;height:calc(100dvh - 360px);min-height:340px;background:var(--sunk);border-radius:8px;touch-action:none;user-select:none;cursor:grab}
@@ -577,7 +670,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
 }
 /* touch: 44px targets (UX-5); desktop and the compact density keep their sizes */
-@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip{min-height:44px;min-width:44px} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
+@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip,.dchev,.dsr,.dsb{min-height:44px;min-width:44px} .dsec>summary{min-height:44px;display:inline-flex;align-items:center} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
 /* Elevated surfaces (dev/premium-look trial): white raised cards and controls on a quiet page, hairline borders, soft shadows,
    rounder corners; segmented controls are a grey track with a raised white pill. Overrides only, so the trial reverts as one block. */
 .bar{border-block:0;padding:10px 0;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px)}
@@ -679,7 +772,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.ld i,.topbar::before{animation:none} .topbar::before{width:100%;opacity:.55} .dcard{transition:none} body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -715,6 +808,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
     <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
   </div>
 
+  <section class="gitnote" id="gitNote" hidden aria-label="This board's checkout"></section>
   <section class="digest" id="digest" hidden aria-label="While you were away"></section>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
@@ -722,15 +816,15 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   <section class="roadwrap" id="roadWrap" hidden aria-label="Roadmap"></section>
   <section class="docswrap" id="docsWrap" hidden aria-label="What agents read">
     <div class="dprob" id="dProb" role="group" aria-label="Problems"></div>
-    <div class="dtools"><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
-      <span><i class="sw" style="border:2px solid var(--ink);border-radius:50%"></i>Ticket</span>
-      <span><i class="sw" style="border:2px solid var(--muted);border-radius:3px"></i>Doc</span>
-      <span><i class="sw" style="border:2px dashed var(--muted);border-radius:3px"></i>Only linked from another doc</span>
-      <span><i class="sw" style="background:var(--cinnabar);border-radius:3px"></i>Broken reference</span>
+    <div class="dtools"><input type="search" id="dQ" class="dq" placeholder="Search tickets and docs (/)" aria-label="Search tickets and docs" autocomplete="off"><span class="dqn" id="dQn" aria-live="polite"></span><button type="button" class="btn ghost sm" id="dShutAll" data-dshutall>Collapse all</button><button type="button" class="btn ghost sm" data-drefresh>Refresh</button>
+      <span><i class="sw" style="border:2px solid var(--ink);border-radius:50%"></i>A band is one rule in unblockd.json: one line per ticket it reaches (two tags, two lines)</span>
+      <span><i class="sw" style="border:1px dashed var(--muted);border-radius:3px"></i>Also in this band, listed above</span>
       <span><i class="sw" style="background:var(--jade);border-radius:3px"></i>Hub</span>
-      <span><i class="sw brd" style="border:2px solid;border-radius:3px"></i>Board-wide (every ticket reads it)</span>
-      <span class="hint">Dashed lines: doc links to doc. Board-wide docs are every ticket's; their lines show on hover.</span></div>
-    <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs they will read</h2><ol id="dD"></ol></div></div></div>
+      <span><i class="sw" style="background:var(--cinnabar);border-radius:3px"></i>Broken</span>
+      <span><i class="sw" style="border:2px dashed var(--muted);border-radius:3px"></i>Only linked from another doc</span>
+      <span><i class="sw img" style="border:2px solid var(--slate)"></i>Image: sent as a path</span>
+      <span class="hint">Sizes are estimated tokens (characters ÷ 4). Size bar: the tick is the context budget; red hatching = too big to send. Click a ticket to see what its agent gets.</span></div>
+    <div class="dstage" id="dStage"><svg id="dSvg" aria-hidden="true"></svg><div class="dcols"><div id="dTw"><h2>Open tickets, by profile</h2><ol id="dT"></ol></div><div></div><div id="dDw"><h2>Docs, grouped by the rule that sends them</h2><ol id="dD"></ol></div></div></div>
   </section>
   <section class="mapwrap" id="mapWrap" hidden aria-label="Component map">
     <div class="dprob" id="mProb" role="group" aria-label="Problems"></div>
@@ -802,7 +896,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   <h2 id="kbT">Keyboard shortcuts</h2>
   <dl>
     <dt><kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>k</kbd></dt><dd>Command palette: jump to a ticket, new ticket, switch view or board, set the status or priority of the open ticket</dd>
-    <dt><kbd>/</kbd></dt><dd>Search</dd>
+    <dt><kbd>/</kbd></dt><dd>Search (in the Docs view: its tickets and docs)</dd>
     <dt><kbd>l</kbd></dt><dd>Board as columns or as a list (one line per ticket)</dd>
     <dt><kbd>g</kbd></dt><dd>Switch between Board and Graph</dd>
     <dt><kbd>d</kbd></dt><dd>Switch between Board and Docs (what agents read, and what is broken)</dd>
@@ -844,6 +938,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   <p style="margin:14px 0 0"><button type="button" class="btn ghost" data-kbclose>Close</button></p>
 </div>
 <aside id="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dTitle"></aside>
+<div id="topbar" class="topbar" hidden role="progressbar" aria-label="Working on it"></div>
 <aside id="npanel" class="npanel" hidden role="dialog" aria-modal="true" aria-labelledby="npT"><div class="nphead"><div class="dhead"><h2 id="npT">Needs you</h2><span class="sp"><button type="button" class="btn ghost" data-nclose>Close</button></span></div><p class="npsum" id="npSum"></p></div><ul class="nl" id="npList"></ul><p class="none" id="npEmpty" hidden>Nothing needs you right now. Questions from agents and work waiting for review show up here.</p></aside>
 
 <script>
@@ -974,6 +1069,15 @@ document.addEventListener('keydown',e=>{
 const SEL=new Set(); // Shift/Ctrl/Cmd-click selects cards for bulk edit
 let T=[], BY=new Map(), raw='', openId=null, editing=false;
 
+// Top bar: a request started within 1.5 s of a click or key press (or while one is already showing, e.g. the reload after a save) is one
+// the person is waiting on; it shows the bar after 250 ms (fast ones never flash it). Polls start on timers, so they never show it.
+const BUSY={n:0,t:null,at:0};
+addEventListener('pointerdown',()=>{BUSY.at=Date.now();},true); addEventListener('keydown',()=>{BUSY.at=Date.now();},true);
+const rawFetch=window.fetch.bind(window);
+window.fetch=(...a)=>{ if(!BUSY.n&&Date.now()-BUSY.at>1500) return rawFetch(...a);
+  if(BUSY.n++===0) BUSY.t=setTimeout(()=>{$('topbar').hidden=false;},250);
+  return rawFetch(...a).finally(()=>setTimeout(()=>{ if(--BUSY.n===0){clearTimeout(BUSY.t);$('topbar').hidden=true;} },0)); }; // after the caller's next step, so a chained reload counts
+const ldHtml=(what,rows=3,tag='div')=>`<${tag} class="ld" role="status">${'<i aria-hidden="true"></i>'.repeat(rows)}<span>${esc(what)}…</span></${tag}>`; // a panel or view waiting for its first data
 async function jf(url, method='GET', body, hdr){ // JSON in, JSON out; throws Error(server's message) on a non-2xx
   const r=await fetch(url,{method,cache:'no-store',headers:method==='GET'||method==='DELETE'?undefined:{'Content-Type':'application/json',...hdr},body:body?JSON.stringify(body):undefined});
   const j=await r.json().catch(()=>({error:'bad response'}));
@@ -988,14 +1092,15 @@ function authFail(text){ // 401: say how to get in, once (the 4 s poll must not 
   toast(m||'Unauthorized: open the board once with ?token=...',{err:1});
   authMsg=m||'Unauthorized: open the board once with ?token=...'; renderBoard(); // the board says why it is empty, not "No tickets yet"
 }
+let LOADED=false, LERR=''; // the first /tickets answer arrived / why it failed: until then the board shows loading, not "No tickets yet"
 let etag=null; // ETag of the last /tickets response; sent back so an unchanged board costs a 304
 async function load(force){
   let text, msg404; // msg404: the server's "no board 'x'. Boards: ..."
   try{ const r=await fetch(API+'/tickets',{cache:'no-store',headers:etag&&!force?{'If-None-Match':etag}:{}}); if(r.status===304) return; // unchanged since the last ETag
     text=await r.text(); if(r.status===401){ authFail(text); return; } if(r.status===404){ try{ msg404=JSON.parse(text).error; }catch{} } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
-  catch{ toast(msg404||'Cannot load tickets: is the server running, and does this board exist?',{err:1}); return; }
+  catch{ const m=msg404||'Cannot load tickets: is the server running, and does this board exist?'; toast(m,{err:1}); if(!LOADED){LERR=m; if(state.view==='board') render();} return; }
   if(text===raw && !force) return;
-  raw=text; T=JSON.parse(text); setCols(); loadNeeds(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
+  raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
   if(prev.size&&!reduce.matches) noteFinished(prev);
   paint=()=>{ paint=null;
     renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(state.view==='map'||CFG.architecture)loadMap(); if(!$('chat').hidden&&!CH.busy) renderChat();
@@ -1171,10 +1276,13 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
   if(m){try{state.rx=new RegExp(m[1],'i');}catch(e){state.rx=/(?!)/;state.rxErr=e.message;}}
   $('q').classList.toggle('err',!!state.rxErr);$('q').title=state.rxErr||'Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/';
 }
-const GL={human:'<circle cx="8" cy="5.5" r="2.5"/><path d="M3 14c0-3 2.2-4.5 5-4.5s5 1.5 5 4.5"/>',agent:'<rect x="3" y="5.5" width="10" height="7.5" rx="2"/><path d="M8 5.5V3"/><circle cx="6" cy="9" r=".7"/><circle cx="10" cy="9" r=".7"/>'}; // person / bot, stroke only: who is a human or an agent is a shape + a word, not colour
+const GL={human:'<circle cx="8" cy="5.5" r="2.5"/><path d="M3 14c0-3 2.2-4.5 5-4.5s5 1.5 5 4.5"/>',agent:'<rect x="3" y="5.5" width="10" height="7.5" rx="2"/><path d="M8 5.5V3"/><circle cx="6" cy="9" r=".7"/><circle cx="10" cy="9" r=".7"/>',branch:'<circle cx="5" cy="3.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/><circle cx="11" cy="5.5" r="1.5"/><path d="M5 5v6M11 7c0 2.5-6 2-6 4"/>'};
+const onBr=t=>t.status==='todo'&&t.effective_status==='doing'?(t.branches||[]).filter(b=>b.active):[]; // in progress only because of a pushed branch nobody claimed here (server: Store._on_branch)
+const brVia=v=>v.map(x=>({name:'its name',commit:'a commit message',file:"an edit to this ticket's file"}[x]||x)).join(', '); // person / bot, stroke only: who is a human or an agent is a shape + a word, not colour
 const glyph=k=>`<svg class="gl" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${GL[k]}</svg>`;
 const ownHtml=n=>{if(!n)return '';const h=HUMAN.has(n);return `<span class="own ${h?'human':'agent'}" title="${h?'Human owner':'Agent owner'}">${glyph(h?'human':'agent')}${esc(n)}</span>`;};
 const doneTip=r=>{const w=whoLine(r,1);return w.main+(w.muted?` (${w.muted})`:'');};
+const brLine=b=>`<span class="liv br" title="${esc(`Work on branch ${b.name}, not claimed on this board: ${b.commits} commit${b.commits===1?'':'s'}, last ${b.at}${b.author?' by '+b.author:''}. Linked by ${brVia(b.via)}.`)}"><span class="who">${glyph('branch')}${esc(b.name)}</span><span class="st"><time data-since="${esc(b.at)}">${esc(ago(b.at))}</time></span></span>`;
 function card(t){
   const s=t.effective_status; let why='';
   const onp=BV.mode==='paths'&&!BV.M.has(t.id),dm=BV.mode==='dim'&&!BV.M.has(t.id);
@@ -1193,7 +1301,7 @@ function card(t){
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
   if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
-  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${warn}</button>${mvMenu(t)}</div>`;
+  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${!t.claim&&onBr(t).length?brLine(onBr(t)[0]):''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
@@ -1212,7 +1320,7 @@ async function bulk(field,val){ // one PATCH per ticket through api(); failures 
   if(ok.length) toast(`${ok.length} updated`,{undo:async()=>{for(const id of ok)try{await api('PATCH','/'+id,{[field]:was.get(id)});}catch{} await load(true);toast('Reverted');}});
 }
 document.addEventListener('change',e=>{const f=e.target.dataset?.bulk,v=e.target.value.trim();if(f&&v)bulk(f,v);});
-const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==t.status&&k!=='pending').map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;
+const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==(onBr(t).length?'doing':t.status)&&k!=='pending').map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;
 const ord=t=>[t.pillar?PILLARS.indexOf(t.pillar):9, t.pillar_step||99, prioIdx(t.priority)];
 function cmp(a,b){const x=ord(a),y=ord(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0;}
 const hm=d=>d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -1222,32 +1330,46 @@ const LSK='unblockd.lastSeen.'+(BOARD||'default'); let DG=null, dgOpen=false; //
 async function loadDigest(){
   const since=store.get(LSK,null); if(!since){store.set(LSK,new Date().toISOString());return;} // first visit: start counting now
   try{DG={since,ev:(await jf(API+'/activity?limit=2000&since='+encodeURIComponent(since))).reverse()};}catch{return;}
-  renderDigest();
+  renderDigest(); renderGit();
 }
 // ONE row per ticket: its latest event decides the section (a ticket claimed then finished is Finished, never also Started).
 // Sections in the order a person acts on them: review (waits on you), stuck, finished, in progress, new.
 // Each row reads as a ticket (UI-55, design C): status tile, pillar spine, seal, id, title, byline, and ONE outcome line under the title.
 const DGS=[['rev','●','Ready for review'],['stk','⚠','Stuck'],['fin','✓','Finished'],['sta','▶','In progress'],['new','＋','New']];
+const DGH='unblockd.dgHide.'+(BOARD||'default'); // rows dismissed one by one or a section at a time: {id: ts of the event dismissed}; newer activity on that ticket brings it back
+const dgHid=(id,ts)=>{const h=store.get(DGH,{})[id]; return !!h&&h>=ts;};
+function dgHide(rows,what){ // rows = [{e,t}]; Undo puts the old map back
+  const old=store.get(DGH,{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH,h); renderDigest();
+  toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH,old);renderDigest();}});
+}
 const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
 const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
 function digestGroups(){
-  const last=new Map();
-  for(const e of DG.ev) if(BY.has(e.ticket)&&['complete','done','claim','expired','release','created'].includes(e.event)) last.set(e.ticket,e); // oldest first: the latest wins
+  const last=new Map(), made=new Map(); // made: the ticket's created event in this window, the fallback row when its latest event no longer fits
+  for(const e of DG.ev) if(BY.has(e.ticket)&&['complete','done','claim','expired','release','question','created'].includes(e.event)) {last.set(e.ticket,e); if(e.event==='created') made.set(e.ticket,e);} // oldest first: the latest wins; question ends a claim too
   const rows={rev:[],stk:[],fin:[],sta:[],new:[]};
-  for(const e of last.values()){
-    const t=BY.get(e.ticket), k=e.event==='created'?'new':e.event==='claim'?'sta':['expired','release'].includes(e.event)?'stk':t.status==='review'?'rev':'fin'; // a complete still in review waits on a human
-    const who=e.agent||'', out=k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
+  const sec=t=>({done:'fin',review:'rev',doing:'sta'})[t.status]||''; // the section the ticket's status alone points at
+  for(const l of last.values()){
+    const t=BY.get(l.ticket), ev=l.event;
+    // The latest event picks the section, but only while the ticket's status still says so (UI-68, UI-69): a claim ended by an ask or a hand move,
+    // a release followed by a hand move, a ticket created and then finished in its file or by a git pull: none of these log an event here.
+    let e=l, k=ev==='created'?(sec(t)||'new'):ev==='claim'?(t.status==='doing'?'sta':''):['expired','release'].includes(ev)?(t.status==='todo'?'stk':'')
+      :ev==='question'?'':t.status==='review'?'rev':t.status==='done'?'fin':''; // a question waits in Needs you, not here
+    if(!k){ e=made.get(l.ticket)||l; k=sec(t)||(made.has(l.ticket)?'new':''); if(!k) continue; } // then the status decides; created while you were away and still open = New
+    const hand=(k==='fin'||k==='rev')&&!['complete','done'].includes(e.event); // got there by a move no event recorded
+    const who=hand?'':e.agent||'', out=hand?(k==='fin'?'Moved to Done by hand':'Moved to review by hand'):k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
       :k==='new'?'':k==='sta'?(t.claim?.note?`“${dgFirst(t.claim.note)}”`:''):e.note?dgFirst(e.note):e.event==='done'?'Moved to Done by hand':'';
-    rows[k].push({e,t,who,out,full:(e.note||'').trim()});
+    if(dgHid(t.id,e.ts)) continue; // dismissed by hand, nothing newer since
+    rows[k].push({e,t,who,out,full:hand?'':(e.note||'').trim()});
   }
   return DGS.map(([c,i,n])=>[c,i,n,rows[c].reverse()]).filter(g=>g[3].length); // newest first inside a section
 }
 const dgTime=ts=>{const d=new Date(ts); return d.toDateString()===new Date().toDateString()?hm(d):d.toLocaleDateString([],{weekday:'short'})+' '+hm(d);}; // a list that spans days says which day
-const dgBy=n=>n?`<span class="own ${HUMAN.has(n)||n==='human'?'human':'agent'}">${glyph(HUMAN.has(n)||n==='human'?'human':'agent')}${esc(n)}</span>`:'<span class="own hand">by hand</span>'; // ownHtml's byline, for who acted (not the owner)
+const dgBy=n=>n?`<span class="own ${HUMAN.has(n)||n==='human'?'human':'agent'}">${glyph(HUMAN.has(n)||n==='human'?'human':'agent')}${esc(n)}</span>`:''; // nobody acted (a hand move, a file edit): the outcome line already says "by hand" (UI-70); ownHtml's byline, for who acted (not the owner)
 function dgRow(c,i,n,{e,t,who,out,full}){
   const seal=t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'', by=c==='new'&&!who?'':dgBy(who), p0=t.priority==='P0'&&t.status!=='done';
   const tip=`${t.id} ${t.title}\n${n} ${dgTime(e.ts)}${who?' by '+who:''}`+(full&&full!==out?'\n\n'+full:out?'\n\n'+out:'');
-  return `<li><button type="button" class="dg-r${p0?' p0':''}"${PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:''} data-open="${esc(t.id)}" title="${esc(tip)}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i><span class="idc"><span class="tid">${esc(t.id)}</span>${seal}</span><span class="m"><span class="dt">${inline(t.title)}</span>${out?`<span class="o${c==='stk'?' bad':''}">${esc(out)}</span>`:''}<span class="w2"><span class="tid">${esc(t.id)}</span>${seal}${by}</span></span><span class="w">${by}</span><time datetime="${esc(e.ts)}">${esc(dgTime(e.ts))}</time></button></li>`;
+  return `<li><button type="button" class="dg-r${p0?' p0':''}"${PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:''} data-open="${esc(t.id)}" title="${esc(tip)}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i><span class="idc"><span class="tid">${esc(t.id)}</span>${seal}</span><span class="m"><span class="dt">${inline(t.title)}</span>${out?`<span class="o${c==='stk'?' bad':''}">${esc(out)}</span>`:''}<span class="w2"><span class="tid">${esc(t.id)}</span>${seal}${by}</span></span><span class="w">${by}</span><time datetime="${esc(e.ts)}">${esc(dgTime(e.ts))}</time></button><button type="button" class="dg-x" data-dghide="${esc(t.id)}" title="Dismiss ${esc(t.id)}" aria-label="Dismiss ${esc(t.id)} from this list">×</button></li>`;
 }
 function renderDigest(){
   const el=$('digest'); if(!DG||SET.digest==='off'||state.view!=='board'){el.hidden=true;dgHtml='';return;}
@@ -1258,7 +1380,7 @@ function renderDigest(){
   const since=sameDay?hm(d):d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm(d);
   const head=`<h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}`;
   const body=`<div class="dg-body"><div><div class="dg-grid">`+gs.map(([c,i,n,r])=>{const all=dgMore.has(c)||r.length<=DG_CAP+1, shown=all?r:r.slice(0,DG_CAP);
-     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
+     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span><button type="button" class="btn ghost sm dg-gx" data-dghidesec="${c}" aria-label="Dismiss all ${r.length} ${esc(n.toLowerCase())}">${r.length>1?'Dismiss all':'Dismiss'}</button></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
   if(head+body===dgHtml) return; dgHtml=head+body; // same items, statuses, titles and times: keep the DOM (no hover or focus flicker on the 4 s poll); the toggle edits its own button, so it is not in the key
   const sc=el.querySelector('.dg-grid')?.scrollTop||0;
   el.innerHTML=`<div class="dg-bar">${head}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}"><span>${dgOpen?'Collapse':'Expand'}</span> <i class="chev" aria-hidden="true"></i></button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`+body; const g=el.querySelector('.dg-grid'); if(g) g.scrollTop=sc;
@@ -1266,7 +1388,7 @@ function renderDigest(){
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
 let NMARK=''; // ids of this board's failed-N-times cards; a change repaints the board (the cards read NEEDS)
-const DRAFTS={}; let NEEDS=[], NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
+const DRAFTS={}; let NEEDS=[], nLoaded=false, nErr='', NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
 const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
 const noteLine=n=>{const k=n.kind; return k==='answer'?`Answer to “${n.q}”: ${n.text}`:k==='question'?'Question: '+n.text:k==='rejected'?'Rejected: '+n.text:k==='released'?'Released: '+n.text:k==='complete'?(n.status==='review'?'Finished, for review: ':'Finished: ')+n.text:k==='decision'?'Decision: '+n.text:k==='finding'?'Finding: '+n.text:k==='warning'?'Warning: '+n.text:n.text;}; // a ticket's notes ({by, at, kind, text}, the store's _append_note) in words; claim notes and attempts have text only
 const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: the panel already shows the question
@@ -1275,9 +1397,24 @@ function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
   return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.pinned&&!n.superseded_by?' <span class="hint" title="Always sent to the next agent">· pinned</span>':''}${n.superseded_by?` <span class="hint">· replaced by note ${esc(n.superseded_by)}</span>`:''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
 async function loadNeeds(){ // ETag: an idle poll costs headers only
   if(!BOARDS.length) return; const tok=++nTok;
-  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||!r.ok||tok!==nTok) return; const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
-  catch{ return; }
+  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||tok!==nTok) return; if(!r.ok){ nErr='the server answered '+r.status; if(!$('npanel').hidden) renderNeedsPanel(); return; } const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nLoaded=true; nErr=''; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
+  catch{ if(tok===nTok){ nErr='the server did not answer'; if(!$('npanel').hidden) renderNeedsPanel(); } return; }
   paintNeeds();
+}
+// The board shows the files of its checkout; branches.py tells how far that checkout is behind origin (GET git, polled with Needs you).
+const BRDAYS=14; let GIT=null, gEtag=null, gTok=0, gHtml=null;
+async function loadGit(){ const tok=++gTok;
+  try{ const r=await fetch(API+'/git',{cache:'no-store',headers:gEtag?{'If-None-Match':gEtag}:{}}); if(r.status===304||!r.ok||tok!==gTok) return; const j=await r.json(); if(tok!==gTok) return; GIT=j; gEtag=r.headers.get('ETag'); } // the tag moves WITH the data
+  catch{ return; }
+  renderGit();
+}
+function gitKey(){ const c=GIT?.checkout; return c?`${c.behind}/${c.ahead}/${c.missing_count}`:GIT?.error||''; }
+function renderGit(){
+  const el=$('gitNote'),c=GIT?.checkout,late=c&&(c.behind>0||c.missing_count>0),blind=GIT?.source==='local'&&!!GIT.remote&&!!GIT.error, // origin exists but can't be read: pushed branches are invisible
+    show=!!(state.view==='board'&&(late||blind)&&store.get('unblockd.gitSeen.'+(BOARD||'default'),'')!==gitKey());
+  const n=(x,w)=>`<b>${x}</b> ${w}${x===1?'':'s'}`;
+  const h=!show?'':blind?`<span class="gi">${glyph('branch')}</span><p>This board can't read <code>${esc(GIT.remote)}</code>, so branches pushed from other machines don't show here (${esc(GIT.error.replace(/^could not read origin, showing this checkout's branches only: /,''))}). For a private repo, set <code>UNBLOCKD_GIT_TOKEN</code> on the server.</p><button type="button" class="btn ghost sm" data-gitdismiss>Dismiss</button>`:`<span class="gi">${glyph('branch')}</span><p>This board reads your checkout of <code>${esc(c.branch)}</code>${c.behind>0?`, ${n(c.behind,'commit')} behind origin`:''}${c.ahead>0?` (${n(c.ahead,'local commit')} not pushed)`:''}.${c.missing_count>0?` ${n(c.missing_count,'ticket')} on origin ${c.missing_count===1?'is':'are'} missing here (${esc(c.missing.slice(0,3).join(', '))}${c.missing_count>3?'…':''}).`:''} Pull to see merged work.</p><button type="button" class="btn ghost sm" data-gitdismiss>Dismiss</button>`;
+  if(h===gHtml) return; gHtml=h; el.innerHTML=h; el.hidden=!show;
 }
 const NSEEN='unblockd.nseen'; // {board: [ids]} the badge has shown; an id not in there pulses it once
 function needMark(t){ const n=NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id&&i.kind==='stuck')?.attempts?.length; return n?`<span class="wl fail" title="Failed claims since a human last touched it; a note clears this">Failed ${n} times</span>`:''; }
@@ -1310,7 +1447,7 @@ function needsMotion(ul,old){ // rows that arrived fade in; rows that left (answ
 const bLink=(g,i)=>`?board=${encodeURIComponent(g.id)}#${encodeURIComponent(i.id)}`;
 const RQ={}; // review forms whose "Request changes…" is open, by draft key (a re-render keeps it open; a typed reason keeps it open too)
 const reviewForm=(dk,B,tag)=>`<form class="nd-f rv" data-nform="reject" ${B}><button type="button" class="btn" data-approve ${B}>Approve</button><details class="rqd" data-rq="${esc(dk)}"${RQ[dk]||DRAFTS[dk]?' open':''}><summary>Request changes…</summary>${draftField(dk,'','What needs to change…',tag)}<button class="btn ghost sm" type="submit">Send back</button></details></form>`; // Approve is the one primary action; sending back is quiet and goes through the same form[data-nform=reject] handler
-document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.rq){RQ[d.dataset.rq]=d.open; if(d.open)d.querySelector('[data-draft]')?.focus();}},true);
+document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.dsk){d.open?dSecOpen.add(d.dataset.dsk):dSecOpen.delete(d.dataset.dsk);return;} if(d.dataset?.rq){RQ[d.dataset.rq]=d.open; if(d.open)d.querySelector('[data-draft]')?.focus();}},true);
 function needsRow(g,i){
   const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
@@ -1336,6 +1473,8 @@ function renderNeedsPanel(){
   const cur=curBoard(),gs=NEEDS.filter(g=>g.id===cur),all=gs.flatMap(g=>g.items),multi=false; // this board only
   if(NX&&!gs.some(g=>g.items.some(i=>nkey(g,i)===NX))) NX=null;
   const c=k=>all.filter(i=>i.kind===k).length;
+  if(!nLoaded){ $('npSum').textContent=''; $('npEmpty').hidden=true; npSig=''; npShown=false; // nothing to say "nothing needs you" about yet
+    $('npList').innerHTML=nErr?`<li class="ld" role="status"><span class="msg err">Could not check for questions and reviews: ${esc(nErr)}. It tries again every 15 seconds.</span></li>`:ldHtml('Checking every board for questions and reviews',3,'li'); return; }
   $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&(l==='question'||l==='proposal')?'s':''}`).join(', '):'';
   $('npEmpty').hidden=!!all.length;
   const sig=JSON.stringify([NX,cur,multi,gs]); if(sig===npSig){tickAges();return;} npSig=sig;
@@ -1415,7 +1554,7 @@ async function loadAgents(){
 }
 function renderAgents(){
   const rows=AP.ev?agentStats(AP.ev):[], seg=`<div class="seg" id="apRange" data-l="Range" role="group" aria-label="Range">${chipsHtml([[7,'7 days'],[30,'30 days']],AP.days,'aprange')}</div>`;
-  const body=AP.err?`<p class="hint">Could not load activity: ${esc(AP.err)}</p>`:!AP.ev?'<p class="hint">Loading…</p>':!rows.length?`<p class="hint">No agent activity in the last ${AP.days} days. Claims, completions and splits by agents show up here once they happen.</p>`
+  const body=AP.err?`<p class="hint">Could not load activity: ${esc(AP.err)}</p>`:!AP.ev?ldHtml('Reading agent activity'):!rows.length?`<p class="hint">No agent activity in the last ${AP.days} days. Claims, completions and splits by agents show up here once they happen.</p>`
     :`<table class="astat"><thead><tr><th>Profile</th><th>Finished</th><th title="Claim to complete, same ticket and agent">Median to finish</th><th title="(expired + released) / claims. 30% or more: tickets too big or instructions weak">Stuck rate</th><th>Splits</th><th>Working now</th></tr></thead><tbody>${rows.map(([p,r])=>{
       const rate=r.claims?r.stuck/r.claims:null, bad=rate!=null&&rate>=.3;
       return `<tr><td><b>${esc(p)}</b><span class="nm" title="${esc([...r.names].sort().join(', '))}">${r.names.size} ${r.names.size===1?'worker':'workers'}</span></td><td>${r.fin}</td><td>${dur(median(r.d))}</td><td${bad?' class="warn" title="30% or more of claims ended stuck: split the tickets or tighten the instructions"':''}>${rate==null?'–':(bad?'⚠ ':'')+Math.round(rate*100)+'%'}<span class="sub2">${r.stuck} of ${r.claims}</span></td><td>${r.split}</td><td>${r.now}</td></tr>`;}).join('')}</tbody></table>`;
@@ -1427,7 +1566,7 @@ async function loadTools(){ try{AP.tl=await jf(API+'/tools');AP.draft=null;AP.te
 const tdraft=()=>AP.draft??={base:[...AP.tl.base],profiles:Object.fromEntries(AP.tl.profiles.map(p=>[p.name,{tools:[...p.tools],tools_off:[...p.tools_off]}]))};
 function toolsHtml(){
   if(AP.terr) return `<p class="hint">Could not load the tools: ${esc(AP.terr)}</p>`;
-  if(!AP.tl) return '<p class="hint">Loading…</p>';
+  if(!AP.tl) return ldHtml('Reading profiles and tools');
   const d=tdraft(),all=AP.tl.all,shown=AP.more?all:[...new Set([...AP.tl.default,...d.base,...Object.values(d.profiles).flatMap(p=>[...p.tools])])];
   const btn=(attr,t,on,cls='')=>`<button type="button" class="tl${cls}" ${attr} data-t="${esc(t)}" aria-pressed="${on}">${on?'✓ ':''}${esc(t)}</button>`;
   const baseBox=`<div class="tlbox"><h4>Every worker <span>${d.base.length} tools</span></h4><div class="tls">${shown.map(t=>btn('data-tb',t,d.base.includes(t))).join('')}</div></div>`;
@@ -1485,6 +1624,7 @@ async function quickAdd(f,again){
   qaBusy=false; const n=document.querySelector('.qa-t'); if(again) n?.focus(); else n?.blur();
 }
 function emptyState(){
+  if(!LOADED) return LERR?`<div class="empty"><h2>Can't load this board</h2><p>${esc(LERR)}</p><p>It tries again every 4 seconds.</p></div>`:`<div class="bload">${ldHtml('Loading tickets',4)}</div>`;
   if(authMsg&&!T.length) return `<div class="empty"><h2>Not signed in</h2><p>${esc(authMsg)}</p></div>`;
   if(!T.length) return '<div class="empty"><h2>No tickets yet</h2><p>Each ticket is a JSON file in this board\'s folder.</p><button type="button" class="btn" data-new>Create your first ticket</button><p>or press <kbd>n</kbd></p></div>';
   const fl=[...activeFilters().map(x=>x[1]),state.view==='graph'&&state.dep!=='ALL'&&(state.dep==='FREE'?'Free':'Blocked'),state.q&&`“${state.q}”`].filter(Boolean);
@@ -1513,6 +1653,7 @@ function lwhy(t){ // the card's reason line, as plain words
   const s=t.effective_status;
   if(s==='pending') return t.proposed_by?'Proposal by '+t.proposed_by:t.open_blockers.length?'Blocked by '+t.open_blockers.join(', '):t.waiting_on?(t.asked_by?'Question from '+t.asked_by:'Parked: '+t.waiting_on):'';
   if(t.claim) return t.claim.agent+(t.claim.principal?' for '+t.claim.principal:'');
+  if(onBr(t).length) return 'On branch '+onBr(t)[0].name;
   return s!=='done'&&t.unblocks?'Unblocks '+t.unblocks:'';
 }
 function lrow(t,st){
@@ -1629,11 +1770,15 @@ async function submitSplit(f){
     toast(msg);
   }catch(e){m.className='msg err';m.textContent=e.message;}
 }
+function brList(bs){ // the drawer's Branches row: every unmerged branch linked to the ticket, and why it counts (or not)
+  const why=b=>b.active?'':(b.via.includes('name')||b.via.includes('file')?` · not counted: no commit for ${BRDAYS} days, or moved back to To do`:' · a mention only: not counted as work on it');
+  return `<ul class="brl">${bs.map(b=>`<li${b.active?'':' class="off"'}><span class="bn">${glyph('branch')}<code>${esc(b.name)}</code></span><span class="hint">${b.commits} commit${b.commits===1?'':'s'} · last <time data-since="${esc(b.at)}">${esc(ago(b.at))}</time>${b.author?' by '+esc(b.author):''} · linked by ${esc(brVia(b.via))}${why(b)}</span>${b.edit?`<span class="bre">On that branch this ticket is ${esc(NAME[b.edit.status]||b.edit.status||'changed')}${b.edit.notes?` with ${b.edit.notes} new note${b.edit.notes===1?'':'s'}`:''}. You see that here once the branch is merged and this checkout pulls.</span>`:''}</li>`).join('')}</ul>`;
+}
 function showTicket(id,refresh){
   const t=BY.get(id); if(!t) return; openId=id; editing=false; if(SPLIT&&SPLIT!==id) SPLIT=null;
   if(location.hash!=='#'+id) history.replaceState(null,'','#'+id);
   const s=t.effective_status,DB=`data-board="${esc(curBoard())}" data-id="${esc(t.id)}"`;
-  const why=s==='pending'?(t.proposed_by?`Proposal by ${t.proposed_by}`:t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):'';
+  const why=s==='pending'?(t.proposed_by?`Proposal by ${t.proposed_by}`:t.open_blockers.length?`Blocked by ${t.open_blockers.join(', ')}`:t.waiting_on?(t.asked_by?`Question from ${t.asked_by}`:`Parked: ${t.waiting_on}`):''):onBr(t).length?`On branch ${onBr(t)[0].name}, not claimed here`:'';
   const ms=mentions(t), dw=(t.done_when||[]).length?`<h3>Done when</h3><ul class="dw">${t.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const par=t.parent&&BY.get(t.parent),
   dm=[ // structured Details (UI-51): one label / value row per field that is set
@@ -1647,6 +1792,7 @@ function showTicket(id,refresh){
     (t.mcp||[]).length&&['MCP',t.mcp.map(x=>`<span class="tag">${esc(x)}</span>`).join('')],
     (t.tags||[]).length&&['Tags',t.tags.map(x=>`<span class="tag">#${esc(x)}</span>`).join('')],
     t.waiting_on&&!why&&[t.asked_by?'Question from':'Parked',esc(t.asked_by||t.waiting_on)],
+    (t.branches||[]).length&&['Branches',brList(t.branches)],
     ['Updated',esc(t.updated)+(t.created&&t.created!==t.updated?` <span class="hint">· created ${esc(t.created)}</span>`:'')]].filter(Boolean);
   if(!MV.data&&!MV.tried)loadMap().then(()=>{if(openId===t.id&&!editing&&!$('drawer').hidden)showTicket(t.id,true);}); // so "Show on map" knows whether this ticket has a component
   openDrawer(`<div class="dhead"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}<span class="sp"><span class="pstep" role="group" aria-label="Step through tickets"><button type="button" class="btn ghost sm" data-pstep="-1" title="Previous ticket (k)" aria-label="Previous ticket">↑</button><button type="button" class="btn ghost sm" data-pstep="1" title="Next ticket (j)" aria-label="Next ticket">↓</button></span><button type="button" class="btn" data-edit>Edit</button><button type="button" class="btn ghost" data-close>Close</button><details class="ovf"><summary class="btn ghost" aria-label="More actions">⋯</summary><div class="ovm">${t.status!=='done'?'<button type="button" data-split>Split…</button>':''}<button type="button" data-ask-about="${esc(t.id)}">Ask about this</button><button type="button" data-ingraph>Show in graph</button>${!MV.data||MV.data.ticket_map[t.id]?'<button type="button" data-onmap>Show on map</button>':''}<button type="button" class="dz" data-delete>Delete</button></div></details></span></div>
@@ -1669,9 +1815,9 @@ function showTicket(id,refresh){
     <h3>Blocks</h3>${linkList(t.blocks)}
     ${ms.length?`<h3>Mentioned</h3>${linkList(ms)}`:''}
     <details class="kn" id="kn"${t.status==='review'||store.get('knOpen',false)?' open':''}><summary>Knowledge and agent activity</summary>
-    <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul>
+    <h3>Knowledge <span class="hint">what an agent reads before working this</span></h3><ul class="know" id="know" data-for="${esc(t.id)}">${ldHtml('Reading what an agent gets',2,'li')}</ul>
     <div class="formrow" style="margin-top:6px"><button type="button" class="btn ghost sm" data-attach>Attach files</button><span class="hint">or drop text files here</span><input type="file" id="kfile" multiple hidden accept=".md,.txt,.json,.yaml,.yml,.toml,.csv,.py,.gd,.js,.ts,.html,.css,.sh,.xml"></div>
-    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}"><li class="none">Loading…</li></ul></details>`, refresh);
+    <h3>Agent activity</h3><ul class="acts" id="acts" data-for="${esc(t.id)}">${ldHtml('Reading the activity log',2,'li')}</ul></details>`, refresh);
   peek(true); loadActs(id); loadKnowledge(id);
 }
 // Peek (UI-51): a ticket's drawer is not modal. No scrim, the board stays clickable (another card swaps the ticket) and on wide
@@ -1784,7 +1930,10 @@ document.addEventListener('click',async e=>{
   if(g('[data-new]')){openId=null;editForm(null);return;}
   if(b=g('[data-dgmore]')){dgMore.add(b.dataset.dgmore);renderDigest();return;}
   if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
-  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());const el=$('digest'),done=()=>{DG=null;renderDigest();};
+  if(g('[data-gitdismiss]')){store.set('unblockd.gitSeen.'+(BOARD||'default'),gitKey());renderGit();return;} // it comes back when the numbers change
+  if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
+  if(b=g('[data-dghidesec]')){const s=digestGroups().find(x=>x[0]===b.dataset.dghidesec); if(s) dgHide(s[3],`${s[3].length} ${s[2].toLowerCase()}`); return;}
+  if(g('[data-dgdismiss]')){store.set(LSK,new Date().toISOString());store.set(DGH,{}); /* everything up to now is seen: the per-row list is no longer needed */ const el=$('digest'),done=()=>{DG=null;renderDigest();};
     if(reduce.matches) done(); else el.animate([{opacity:1,transform:'none'},{opacity:0,transform:'translateY(-6px)'}],{duration:180,easing:'ease-out',fill:'forwards'}).onfinish=done;return;}
   if(g('[data-nexttoggle]')){nextCycle();return;}
   if(b=g('[data-pstep]')){peekStep(+b.dataset.pstep);return;}
@@ -1803,9 +1952,15 @@ document.addEventListener('click',async e=>{
   if(g('#kbBtn')){toggleKb();return;}
   if(b=g('[data-ask-about]')){const id=b.dataset.askAbout;closeDrawer();openChat('#'+id);return;}
   if(g('[data-kbclose]')||e.target===$('kbScrim')){toggleKb(false);return;}
+  if(b=g('[data-dsecopen]')){const k=b.dataset.dsecopen;dSecOpen.has(k)?dSecOpen.delete(k):dSecOpen.add(k);renderDocs();document.querySelector(`#dT [data-dsecopen="${CSS.escape(k)}"]`)?.focus();return;}
+  if(b=g('[data-dsecgo]')){dSecApply(b.dataset.dsecgo);return;}
+  if(b=g('[data-dsecreset]')){delete dPick[b.dataset.dsecreset];renderDocs();return;}
+  if(b=g('[data-dsel]')){dSelect(b.dataset.dsel);return;}
   if(b=g('[data-dnode]')){openDocNode(b.dataset.dnode);return;}
   if(b=g('[data-dprob]')){DV.f=DV.f===b.dataset.dprob?null:b.dataset.dprob;renderDocs();return;}
   if(g('[data-drefresh]')){loadDocs();return;}
+  if(b=g('[data-dshut]')){dShut(b.dataset.dshut);document.querySelector(`#dStage [data-dshut="${CSS.escape(b.dataset.dshut)}"]`)?.focus();return;}
+  if(g('[data-dshutall]')){dShutAll();return;}
   if(g('[data-anew]')){mapNew();return;}
   if(g('[data-aedit]')){const c=MV.data.components.find(x=>x.key===MV.foc);MV.ui=ui0();MV.ui.mode='edit';DRAFTS[`ae:${c.key}:title`]=c.title;DRAFTS[`ae:${c.key}:summary`]=c.summary;DRAFTS[`ae:${c.key}:paths`]=c.paths.join('\n');openMapPanel(true);$('drawer').querySelector('[data-draft$=":title"]')?.focus();return;}
   if(b=g('[data-acancel]')){mapUiCancel(b.dataset.acancel);return;}
@@ -1848,7 +2003,11 @@ document.addEventListener('click',async e=>{
 });
 // one status move for drag-drop and the drawer's menu; Undo = one PATCH back to the old status
 async function moveTo(id,to,undoable=true){
-  const t=BY.get(id),from=t?.status; if(!t||from===to) return;
+  const t=BY.get(id),from=t?.status; if(!t) return;
+  if(from===to&&to==='todo'&&onBr(t).length){ const b=onBr(t)[0].name; // dismiss the branch evidence (Store._ignore_branches)
+    try{ await api('PATCH','/'+id,{status:'todo'}); await load(true); toast(`${id} back in To do: branch ${b} no longer marks it in progress. A new commit on it will.`); }catch(er){ toast('Move failed: '+er.message,{err:1}); }
+    return; }
+  if(from===to) return;
   if(to==='pending') return toast('Waiting is derived: add a blocker (Blocked by) or a Waiting on note and the ticket shows there.',{err:1});
   if(to==='doing'&&t.open_blockers.length) return toast(`${id} is blocked by ${t.open_blockers.join(', ')}: it can't start yet.`,{err:1});
   try{ await api('PATCH','/'+id,{status:to}); await load(true);
@@ -1944,7 +2103,7 @@ document.addEventListener('keydown',e=>{
     else if(menuBusy()) closeMenus();
     else if(!$('npanel').hidden) closeNeeds();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
-    else if(state.view==='docs'&&DV.f){DV.f=null;renderDocs();}
+    else if(state.view==='docs'&&(DV.f||DV.sel||DV.q)){DV.f=DV.sel=null;DV.q=$('dQ').value='';renderDocs();}
     else if(state.view==='map'&&(MV.foc||MV.multi||MV.f)) mapClear();
     else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
     else if(cancelGraphGesture()){}
@@ -1965,7 +2124,7 @@ document.addEventListener('keydown',e=>{
   if(state.view==='map'&&'+=-0'.includes(e.key)&&$('mapStage').offsetParent&&$('kb').hidden&&$('npanel').hidden){ e.preventDefault(); e.key==='0'?mapFit(1):mapZoom(e.key==='-'?1/1.25:1.25,1); return; } // zoom the Map (the panel may be open)
   if(!$('drawer').hidden&&openId&&!editing&&$('kb').hidden&&(e.key==='j'||e.key==='k')){ e.preventDefault(); peekStep(e.key==='j'?1:-1); return; }
   if(!$('drawer').hidden||!$('kb').hidden) return;
-  if(e.key==='/'){ e.preventDefault(); if(state.view!=='board') setView('board'); $('q').focus(); }
+  if(e.key==='/'){ e.preventDefault(); if(state.view==='docs'){$('dQ').focus();return;} if(state.view!=='board') setView('board'); $('q').focus(); }
   else if(e.key==='g') viewTo(state.view==='board'?'graph':'board');
   else if(e.key==='d') viewTo(state.view==='docs'?'board':'docs');
   else if(e.key==='m') viewTo(state.view==='map'?'board':'map');
@@ -2342,65 +2501,234 @@ readColors();
 
 // ---------- docs view: what will agents read, and where is that broken? ----------
 // GET /knowledge once on entering and on Refresh, and again when the tickets JSON changes (paint). Never on every poll.
-// Layout: tickets left, docs right (most-read first), lines between. Chosen over the canvas force layout: a bipartite
-// graph reads best in two columns, rows are real buttons (keyboard, a11y, mobile list), and no second engine is needed.
-const DV={data:null,f:null,hl:null,busy:false,err:''};
-const DPROB=[['nodocs',['ticket without docs','tickets without docs'],'no_docs','bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
-  ['broken',['broken reference','broken references'],'broken','bad','A docs entry that is missing, outside the project, not text, or too big.'],
-  ['hubs',['hub doc','hub docs'],'hubs','','Docs read by the most tickets (2 or more; board-wide docs excluded). Changing one affects many tickets.'],
-  ['orphans',['orphan doc','orphan docs'],'orphans','','Docs that only another doc links to. No ticket makes an agent read them.']];
+// Layout (UI-59, owner pick 2026-11-11, "audience bands"): tickets left, grouped by profile; docs right, grouped into BANDS, one per rule in
+// unblockd.json that sends docs (board, each docs_by_tag tag, each profile), then the ticket's own docs, attachments, linked-only docs.
+// A ticket draws ONE line into each tag / profile band it reaches (two tags = two lines), to the doc itself for its own docs. A band lists
+// everything its rule sends (graph()'s `rules`, from the config): a doc an earlier band already lists is a dashed "also here" row, never drawn twice.
+// Clicking a ticket shows what its agent gets (GET tickets/<id>/context?content=0: each doc's `sent`, against the budget). DOM + SVG on purpose:
+// rows are real buttons (keyboard, a11y, the <=700px list), tokens resolve in CSS.
+const DV={data:null,f:null,hl:null,sel:null,ctx:{},busy:false,err:'',q:'',shut:null};
+const DPROB=[['nodocs',['ticket without docs','tickets without docs'],g=>g.no_docs,'bad',"Open tickets whose agent would get no task-specific doc: only board-wide docs, or nothing, or broken references. Profile docs, ticket docs and attached files count."],
+  ['broken',['broken reference','broken references'],g=>g.broken,'bad','A docs entry that is missing, outside the project, not text, or too big.'],
+  ['big',['doc too big to send','docs too big to send'],g=>dBig(g),'bad','Docs bigger than the context budget: agents get the path only, never the text. Split or shorten them.'],
+  ['hubs',['hub doc','hub docs'],g=>g.hubs,'','Docs read by the most tickets (2 or more; board-wide docs excluded). Changing one affects many tickets.'],
+  ['orphans',['orphan doc','orphan docs'],g=>g.orphans,'','Docs that only another doc links to. No ticket makes an agent read them.']];
+const dBig=g=>g.docs.filter(d=>!d.builtin&&!d.image&&d.size>g.budget).map(d=>d.path);
 async function loadDocs(){
+  if(!DV.shut)DV.shut=new Set(store.get('docsShut.'+curBoard(),[]));
   if(DV.busy)return;DV.busy=true;DV.err='';
-  try{DV.data=await jf(API+'/knowledge');}
+  try{DV.data=await jf(API+'/knowledge');DV.ctx={};if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));}
   catch(e){DV.err=e.message||'Could not load';}
   DV.busy=false;if(state.view==='docs')renderDocs();
 }
 const dBase=p=>p.split('/').pop(),dDir=p=>p.includes('/')?p.slice(0,p.lastIndexOf('/')+1):'';
-const dKind={board:'board',builtin:'built-in',tag:'by tag',profile:'profile',ticket:'ticket',file:'attached',linked:'linked only'};
-function dSets(f){ // the nodes a problem filter points at: {t:Set of tickets, d:Set of docs}
-  const g=DV.data,t=new Set(),d=new Set();if(!f)return null;
-  if(f==='nodocs')g.no_docs.forEach(x=>t.add(x));
-  if(f==='broken')g.broken.forEach(b=>{d.add(b.path);b.tickets.forEach(x=>t.add(x));});
-  if(f==='hubs')g.hubs.forEach(h=>{d.add(h.path);g.reads.forEach(r=>{if(r.doc===h.path)t.add(r.ticket);});});
-  if(f==='orphans')g.orphans.forEach(x=>{d.add(x);g.links.forEach(l=>{if(l.to===x)d.add(l.from);});});
-  return {t,d};
+const dKind={board:'board',builtin:'built-in',tag:'by tag',profile:'profile',component:'from the Map',ticket:'ticket',file:'attached',linked:'linked only'};
+const dK=x=>x.via==='tag'||x.via==='profile'?x.via+':'+x.from:x.via; // a read's / rule's band key
+const dTk=n=>{const t=n/4;return '≈'+(t<1000?Math.max(10,Math.round(t/10)*10):t<9950?(Math.round(t/100)/10)+'k':Math.round(t/1000)+'k');}; // characters -> estimated tokens (chars / 4); the budget itself is counted in characters
+const dCh=n=>Number(n).toLocaleString('en-US')+' characters';
+const DIC={board:'<rect x="2" y="2" width="12" height="12" rx="2"/><rect x="5.5" y="5.5" width="5" height="5" rx="1" class="f"/>',
+  tag:'<path d="M6 2.5 4.5 13.5M11.5 2.5 10 13.5M2.5 6h11M2 10.5h11"/>',profile:'<rect x="3" y="5" width="10" height="8" rx="2"/><path d="M8 2.5V5"/><circle cx="6" cy="9" r=".9" class="f"/><circle cx="10" cy="9" r=".9" class="f"/>',
+  ticket:'<path d="M3 3h10v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z"/>',file:'<path d="M10.5 5 6 9.5a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4l-5 5a4.2 4.2 0 0 0 6 6l4-4"/>',
+  linked:'<path d="M7 9a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-.8.8M9 7a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l.8-.8"/>',
+  component:'<rect x="2" y="3" width="5" height="4" rx="1"/><rect x="9" y="9" width="5" height="4" rx="1"/><path d="M7 5h2.5v4"/>'};
+const dIc=k=>`<svg class="dic" viewBox="0 0 16 16" aria-hidden="true">${DIC[k]}</svg>`;
+function dBands(g){ // [{key, via, from, docs: [home paths], also: [paths an earlier band lists], tickets}] in context() output order
+  const out=g.rules.map(r=>({key:dK(r),via:r.via,from:r.from,all:r.docs,tickets:r.tickets}));
+  for(const via of ['component','ticket','file']){const rs=g.reads.filter(r=>r.via===via);out.push({key:via,via,from:null,all:[...new Set(rs.map(r=>r.doc))],tickets:[...new Set(rs.map(r=>r.ticket))]});}
+  out.push({key:'linked',via:'linked',from:null,all:g.orphans,tickets:[]});
+  const home=new Set(),rd=p=>(g.docs.find(d=>d.path===p)||{}).readers||0;
+  for(const b of out){b.docs=[];b.also=[];for(const p of b.all){if(home.has(p))b.also.push(p);else{home.add(p);b.docs.push(p);}}
+    if(b.via!=='board')b.docs.sort((x,y)=>rd(y)-rd(x)||x.localeCompare(y));}
+  return out.filter(b=>b.docs.length||b.also.length);
 }
+function dSets(f){ // what a problem filter, a selected ticket / band or a hovered row lights: {t, d, a (band keys), k, id}
+  const g=DV.data,t=new Set(),d=new Set(),a=new Set();if(!f||!g)return null;
+  const k=f.slice(0,2),id=f.slice(2);
+  if(k==='t:'){t.add(id);g.reads.forEach(r=>{if(r.ticket===id){d.add(r.doc);a.add(dK(r));}});g.rules.forEach(r=>{if(r.via!=='board'&&r.tickets.includes(id))a.add(dK(r));});}
+  else if(k==='d:'){d.add(id);g.reads.forEach(r=>{if(r.doc===id){t.add(r.ticket);a.add(dK(r));}});g.links.forEach(l=>{if(l.from===id)d.add(l.to);if(l.to===id)d.add(l.from);});}
+  else if(k==='a:'){a.add(id);const r=g.rules.find(x=>dK(x)===id);if(r){r.tickets.forEach(x=>t.add(x));r.docs.forEach(x=>d.add(x));}
+    else g.reads.forEach(r=>{if(dK(r)===id){t.add(r.ticket);d.add(r.doc);}});}
+  else if(f==='nodocs')g.no_docs.forEach(x=>t.add(x));
+  else if(f==='broken')g.broken.forEach(b=>{d.add(b.path);b.tickets.forEach(x=>t.add(x));});
+  else if(f==='big')dBig(g).forEach(p=>{d.add(p);g.reads.forEach(r=>{if(r.doc===p)t.add(r.ticket);});});
+  else if(f==='hubs')g.hubs.forEach(h=>{d.add(h.path);g.reads.forEach(r=>{if(r.doc===h.path)t.add(r.ticket);});});
+  else if(f==='orphans')g.orphans.forEach(x=>{d.add(x);g.links.forEach(l=>{if(l.to===x)d.add(l.from);});});
+  return {t,d,a,k,id};
+}
+function dMeter(d,B){ // size bar: the tick is the context budget; too big = hatched cinnabar plus the words
+  if(d.error)return `<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`;
+  if(d.image)return `<span class="imgt" title="An image: agents get its path and open it with their own file tools (a model that cannot read images cannot use it). Not counted in the budget.">image · path sent</span>`;
+  if(d.size==null)return '';
+  const big=!d.builtin&&d.size>B,w=Math.min(100,d.size/B*50);
+  return `<span class="szw${big?' big':''}" title="${dCh(d.size)} (${dTk(d.size)} tokens) of a ${dCh(B)} budget${big?': too big to send, agents get the path only':''}"><span class="szm"><i style="width:${w}%"></i><b></b></span><span class="szt">${dTk(d.size)}<span class="u"> tokens</span>${big?' · too big':''}</span></span>`;}
+const dPath=p=>`<span class="pth" title="${esc(p)}"><i>${esc(dDir(p))}</i>${esc(dBase(p))}</span>`;
+const bandName=b=>b.via==='tag'?`Tag <code>${esc(b.from)}</code>`:b.via==='profile'?`Profile <code>${esc(b.from)}</code>`:{board:'Every open ticket',component:'From the Map',ticket:'Picked per ticket',file:'Attached to a ticket',linked:'Linked from a doc only'}[b.via];
+const bandShort=b=>b.via==='tag'?'#'+b.from:b.via==='profile'?b.from:{board:'every ticket',component:'from the Map',ticket:'picked per ticket',file:'attached',linked:'linked only'}[b.via];
+const bandRule=b=>b.via==='tag'?'docs_by_tag.'+b.from:b.via==='profile'?`agents[${b.from}].docs`:{board:'docs in unblockd.json',component:"the ticket's components (or what it touches)",ticket:"the ticket's docs field",file:'tickets/files/<ID>/',linked:''}[b.via];
+function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s own budget pass
+  const c=DV.ctx[id],g=DV.data;
+  if(!c||c.busy)return `<div class="dctx">${ldHtml(`Reading what ${id}'s agent gets`,2)}</div>`;
+  if(c.err)return `<div class="dctx"><p class="msg err">${esc(c.err)}</p></div>`;
+  const B=g.budget, SW={full:['in','Sent'],too_big:['out','Too big: path only'],budget:['out','Budget spent: path only'],image:['img','Image: path sent']};
+  const cut=c.docs.filter(d=>d.sent!=='full'&&d.sent!=='image').length,used=c.inlined_chars||0;
+  const seg=c.docs.filter(d=>d.sent==='full').map(d=>{const s=d.source.split(':')[0];return `<i class="${s==='board'?'b':s==='tag'?'g':s==='agent'?'p':'t'}" style="width:${Math.max(.4,(d.chars||0)/B*100)}%" title="${esc(d.path)} ${dTk(d.chars||1)} tokens (${dCh(d.chars||0)})"></i>`;}).join('');
+  return `<div class="dctx"><h3>What an agent gets for ${esc(id)}<span title="${dCh(used)} of ${dCh(B)}">${dTk(used)} of ${dTk(B)} tokens sent${cut?` · <b>${cut} not sent</b>`:''}</span></h3>
+    <div class="cbar" role="img" aria-label="About ${dTk(used).slice(1)} of the ${dTk(B).slice(1)} token budget used">${seg}</div>
+    <ol>${dRows(c.docs).map((r,i,all)=>{const f=r.f||r.path.split('#')[0], last=!all.slice(i+1).some(x=>(x.f||x.path.split('#')[0])===f), fold=last?dSecHtml(id,f,c.docs):'';
+      if(r.f){const n=r.secs.filter(d=>d.sent==='full').length, tot=r.secs.reduce((a,d)=>a+(d.chars||0),0), S=dSecState(id,r.f,c.docs);
+        const chip=d=>{const a=d.path.split('#')[1], h=S.hs.find(x=>x.a===a), [k,w]=SW[d.sent]||['out','not sent'];return `<span class="dsc ${k}" title="${esc(d.path)}: ${esc(w)} (${dCh(d.chars||0)})">${esc(h?h.t:a)}</span>`;};
+        return `<li class="dcard${n<r.secs.length?' bad':''}"><div class="dch">${dSrc('ticket')}<span class="pw">${dLink(r.f)}${r.secs.map(chip).join('')}</span><span class="z" title="${dCh(tot)}">${dTk(tot)}</span><span class="s ${n===r.secs.length?'in':'out'}">${n===r.secs.length?(n>1?'All sections sent':'Section sent'):n?`${n} of ${r.secs.length} sections sent`:'Sections not sent'}</span></div>${fold}</li>`;}
+      const d=r,[k,w]=SW[d.sent]||['out','Not sent: '+(d.error||'broken')], sb=dSecBtn(id,d,c.docs);return `<li class="dcard${k==='out'?' bad':''}"><div class="dch${sb?' wb':''}">${dSrc(d.source)}<span class="pw">${dLink(d.path)}</span><span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span>${sb}</div>${fold}</li>`;}).join('')}
+      <li class="dcard"><div class="dch">${dSrc('board')}${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">Sent by the MCP prompt</span></div></li></ol>
+    <p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
+// AI-14 (owner pick: option C + a fold per doc + several sections): under the last row of a doc that is not sent in full (too big, budget
+// spent) or whose sections this ticket picked, a fold lists the doc's headings with a size bar against the budget (the tick = the budget)
+// and a checkbox each. Ticking a heading covers its sub-headings (they are inside it); Send writes the ticked ones as `path#heading` in the
+// ticket's Docs, in place of the path and of the sections picked before (nothing ticked = the sections go; the whole path comes back when
+// nothing else sends it). The ticks are a draft (DV-independent `dPick`) until Send, so the 4 s poll keeps them. Undo = the old Docs.
+const dSlug=s=>s.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); // = knowledge._slug
+const dSecOpen=new Set(), dPick={}; // "id|file" of the open folds; "id|file" -> Set of ticked anchors (unsent draft)
+function dSecState(id,f,all){ // headings with size, anchor, ticked, covered; what the ticket has now
+  const rows=all.filter(x=>x.path.split('#')[0]===f), whole=rows.find(x=>x.path===f), src=rows.find(x=>x.outline_chars?.length);
+  const have=(BY.get(id)?.docs||[]).filter(x=>x.startsWith(f+'#')).map(x=>x.slice(f.length+1)), k=id+'|'+f, sel=dPick[k]||new Set(have);
+  let cov=Infinity; const hs=(src?.outline||[]).map((l,i)=>{const m=l.match(/^(#+)\s+(.*)$/);return m&&{lv:m[1].length,t:m[2],n:src.outline_chars[i],a:dSlug(m[2])};}).filter(Boolean)
+    .map(h=>{if(h.lv<=cov)cov=Infinity;h.cov=cov!==Infinity;h.on=sel.has(h.a);if(h.on&&!h.cov)cov=h.lv;return h;});
+  return {rows,whole,src,have,k,sel,hs,total:hs.reduce((s,h)=>s+(h.on&&!h.cov?h.n:0),0),changed:sel.size!==have.length||have.some(a=>!sel.has(a))};
+}
+// The preview's rows: the sections a ticket picked of one doc are ONE row (the doc's name, then the sections as chips: jade = sent, cinnabar =
+// not), not one row each; the name opens the file (data-doc -> viewDoc; a lone path#heading opens that section).
+function dRows(docs){const out=[],grp={};for(const d of docs){const f=d.path.split('#')[0];
+  if(d.path.includes('#')&&d.source==='ticket'){if(!grp[f]){grp[f]={f,secs:[]};out.push(grp[f]);}grp[f].secs.push(d);}else out.push(d);}return out;}
+const dLink=p=>`<button type="button" class="dl" data-doc="${esc(p)}" title="Open ${esc(p)}"><span><i>${esc(dDir(p))}</i>${esc(dBase(p))}</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M13 3 7 9"/></svg></button>`;
+// Why a doc is sent, as a coloured badge: the rule's kind (board, tag, profile, Map) or the ticket itself (its Docs field, or a file attached
+// to it); the tag / profile / component name and the config key are in the tooltip.
+function dSrc(src){const [k,x]=[src.split(':')[0],src.slice(src.indexOf(':')+1)];
+  const [c,l,t]=k==='tag'?['tag','tag',`Tickets tagged #${x} get it (docs_by_tag.${x} in unblockd.json)`]:k==='agent'?['profile','profile',`The ${x} profile's docs (agents[${x}].docs)`]
+    :k==='component'?['map','Map',`The ticket changes ${x}: its architecture note`]:k==='ticket'?['ticket','ticket',"Picked in this ticket's Docs field"]:k==='attached'?['attached','attached','A file attached to this ticket']
+    :['board','board','Every ticket gets it (docs in unblockd.json)'];
+  return `<span class="dsrc k-${c}" title="${esc(t)}">${l}</span>`;}
+// A big doc sent in full (the preview gave it an outline: knowledge.preview_outlines) whose sections the ticket has not picked: a quiet button.
+const dSecBtn=(id,d,all)=>d.sent==='full'&&!d.path.includes('#')&&d.outline?.length&&!all.some(x=>x.path.startsWith(d.path+'#'))
+  ?`<button type="button" class="dsb" data-dsecopen="${esc(id+'|'+d.path)}" aria-expanded="${dSecOpen.has(id+'|'+d.path)}" title="Send only some sections of ${esc(dBase(d.path))}, to leave room for other docs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>Sections</button>`:'';
+function dSecHtml(id,f,all){ // the fold, under the doc's last row
+  const S=dSecState(id,f,all), B=DV.data?.budget||Infinity, picked=S.rows.some(x=>x!==S.whole&&x.source==='ticket');
+  // UI-72 (owner pick of 3 options in 3 situations, "middle ground"): a doc that did not fit gets a strip saying so, with Pick sections (or, with
+  // no headings, what to do instead); a big doc sent in full (over a third of the budget, so the preview has its outline) gets a quiet Sections
+  // button in its card head (dSecBtn) that opens the same fold; picked sections keep "Change sections".
+  const miss=S.whole&&['too_big','budget'].includes(S.whole.sent), big=!miss&&!picked&&S.whole?.sent==='full';
+  if(miss&&!S.src&&!picked) return `<div class="dstrip"><span><strong>Didn't fit,</strong> and it has no headings to pick from. Split the doc or raise the budget.</span></div>`;
+  if(!S.src||!(miss||picked||big)) return '';
+  if(big&&!dSecOpen.has(S.k)) return ''; // the card head's Sections button opens it
+  const n=S.hs.filter(h=>h.on&&!h.cov).length, w=x=>Math.min(100,x/B*100).toFixed(1);
+  const node=h=>{const big=h.n>B, dis=h.cov||big&&!h.on;
+    return `<label class="dsr${big?' big':''}${h.cov?' cov':''}" title="${esc(h.cov?`${h.t} is inside a section you ticked`:big?`${h.t} is bigger than the whole budget (${dCh(h.n)})`:`${f}#${h.a} (${dCh(h.n)})`)}"><span class="dst"><input type="checkbox" data-dsbox="${esc(S.k)}" value="${esc(h.a)}"${h.on||h.cov?' checked':''}${dis?' disabled':''}><span>${esc(h.t)}${h.cov?' <small>in it</small>':big&&h.lv===Math.min(...S.hs.map(x=>x.lv))?' <small>whole doc</small>':''}</span></span><span class="mb${big?' over':''}"><i style="width:${w(h.n)}%"></i></span><span class="n">${dTk(h.n)}</span></label>`;};
+  let tree='', depth=0; const lv0=Math.min(...S.hs.map(h=>h.lv)); // nested lists from the heading levels, so the guide lines show what is under what
+  S.hs.forEach((h,i)=>{const d=h.lv-lv0; if(i){ if(d>depth) tree+='<ul>'.repeat(d-depth); else { tree+='</li>'; if(d<depth) tree+='</ul></li>'.repeat(depth-d); } } tree+='<li>'+node(h); depth=d;});
+  tree+='</li>'+'</ul></li>'.repeat(depth);
+  const other=all.filter(d=>d.sent==='full'&&d.path.split('#')[0]!==f).reduce((a,d)=>a+(d.chars||0),0), tot=other+S.total, sc=Math.max(tot,B), pc=x=>(x/sc*100).toFixed(1)+'%';
+  const bud=`<div class="dbud" role="img" aria-label="Other docs about ${dTk(other).slice(1)}, these sections about ${dTk(S.total).slice(1)}, of a ${dTk(B).slice(1)} token max"><i class="o" style="left:0;width:${pc(other)};border-radius:7px 0 0 7px"></i><i class="p" style="left:${pc(other)};width:${pc(Math.min(S.total,Math.max(0,B-other)))}"></i><i class="x" style="left:${pc(Math.max(B,other))};width:${pc(Math.max(0,tot-Math.max(B,other)))};border-radius:0 7px 7px 0"></i><i class="tk" style="left:calc(${pc(B)} - 1px)"></i></div>
+    <div class="dbl"><span>Other docs <b>${dTk(other)}</b> · these sections <b${tot>B?' class="over"':''}>${n?dTk(S.total):'none'}</b></span><span>of <b>${dTk(B)}</b> max</span></div>`;
+  const msg=!n?'Nothing ticked':S.total>B?'The sections alone are over the max: the last ones will go as paths':tot>B?"Over the max: the ticket's own docs are paid first, so other docs will go as paths":`${dTk(B-tot)} left`;
+  const sum=S.have.length?'<summary>Change sections</summary>':miss?`<summary class="strip"><span><strong>Didn't fit.</strong> Send only the parts this ticket needs.</span><span class="dpk"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>Pick sections</span></summary>`:'<summary hidden>Sections</summary>';
+  return `<details class="dsec${miss&&!S.have.length?' miss':''}" data-dsk="${esc(S.k)}"${dSecOpen.has(S.k)?' open':''}>${sum}
+    <p class="hint">Tick the parts ${esc(id)} needs. Its agent gets those sections and the list of headings, and can read the rest itself.</p>
+    <ul class="dtree">${tree}</ul>${bud}
+    <p class="dsf"><span${tot>B&&n?' class="warn"':''}>${msg}</span>${S.changed?`<button type="button" class="btn sm ghost" data-dsecreset="${esc(S.k)}">Reset</button><button type="button" class="btn sm" data-dsecgo="${esc(S.k)}">${n?`Send ${n} section${n>1?'s':''}`:S.whole?'Send no sections':'Send the whole doc'}</button>`:''}</p></details>`;
+}
+async function dSecApply(k){
+  const [id,f]=[k.slice(0,k.indexOf('|')),k.slice(k.indexOf('|')+1)], t=BY.get(id), c=DV.ctx[id]; if(!t||!c?.docs) return;
+  const S=dSecState(id,f,c.docs), old=[...(t.docs||[])], keep=S.hs.filter(h=>h.on&&!h.cov).map(h=>f+'#'+h.a);
+  const nw=[...old.filter(x=>x!==f&&!x.startsWith(f+'#')),...(keep.length?keep:S.whole?[]:[f])];
+  try{ await api('PATCH','/'+encodeURIComponent(id),{docs:nw}); delete dPick[k]; await load(true); loadDocs();
+    toast(keep.length?`${id} now gets ${keep.length} section${keep.length>1?'s':''} of ${dBase(f)}`:`${id} no longer picks sections of ${dBase(f)}`,{undo:async()=>{try{await api('PATCH','/'+encodeURIComponent(id),{docs:old}); await load(true); loadDocs(); toast(`${id}'s docs restored`);}catch(e){toast('Undo failed: '+e.message,{err:1});}}});
+  }catch(e){ toast('Could not change the docs: '+e.message,{err:1}); }
+}
+document.addEventListener('change',e=>{const b=e.target; if(!b.dataset?.dsbox) return; const k=b.dataset.dsbox, c=DV.ctx[k.slice(0,k.indexOf('|'))];
+  const S=dSecState(k.slice(0,k.indexOf('|')),k.slice(k.indexOf('|')+1),c?.docs||[]), s=new Set([...S.sel].filter(a=>S.hs.some(h=>h.a===a&&!h.cov)));
+  b.checked?s.add(b.value):s.delete(b.value); dPick[k]=s; renderDocs();
+  document.querySelector(`#dT [data-dsbox="${CSS.escape(k)}"][value="${CSS.escape(b.value)}"]`)?.focus();});
+async function dLoadCtx(id){
+  if(DV.ctx[id])return;DV.ctx[id]={busy:1};
+  try{DV.ctx[id]=await jf(API+'/tickets/'+encodeURIComponent(id)+'/context?content=0');}catch(e){DV.ctx[id]={err:e.message||'Could not load'};}
+  if(state.view==='docs'&&DV.sel==='t:'+id)renderDocs();
+}
+function dSelect(n){DV.sel=DV.sel===n?null:n;if(DV.sel&&DV.sel.startsWith('t:'))dLoadCtx(DV.sel.slice(2));renderDocs();
+  document.querySelector(`#dStage [data-n="${CSS.escape(n)}"]`)?.focus({preventScroll:true});}
+// Collapse + search (UI-60): a profile group ("p:<profile|->") or a band ("a:<key>") can be collapsed (DV.shut, per board in the browser:
+// store `docsShut.<board>`); a collapsed group keeps its header and counts, and the lines of its rows end at that header. The search box (#dQ,
+// `/` in this view) lights tickets (id + title) and docs (path) that match and fades the rest; a collapsed group holding a match opens while
+// the search lasts, so a search never hides a result. Collapse all / Expand all = every group at once.
+const dShutSave=()=>store.set('docsShut.'+curBoard(),[...DV.shut]);
+function dShut(k){DV.shut.has(k)?DV.shut.delete(k):DV.shut.add(k);dShutSave();renderDocs();}
+function dShutAll(){const ks=[...document.querySelectorAll('#dStage [data-dshut]')].map(b=>b.dataset.dshut),open=ks.filter(k=>!DV.shut.has(k));
+  DV.shut=new Set(open.length?ks:[]);dShutSave();renderDocs();}
+const dQm=()=>{const q=DV.q.trim().toLowerCase();return {q,tm:t=>!!q&&(t.id+' '+t.title).toLowerCase().includes(q),dm:p=>!!q&&p.toLowerCase().includes(q)};};
+const dWarn=a=>a.filter(([n])=>n).map(([n,w,soft])=>`<span class="dwarn${soft?' soft':''}">${n} ${w}</span>`).join(''); // a collapsed header keeps the problems its rows had
+const dChev=(k,open,name)=>`<button type="button" class="dchev" data-dshut="${esc(k)}" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} ${esc(name)}" title="${open?'Collapse':'Expand'}"><i class="chev" aria-hidden="true"></i></button>`;
 function renderDocs(){
   const g=DV.data,P=$('dProb'),T_=$('dT'),D_=$('dD');
   if(!g){P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
-    T_.innerHTML=`<li class="dempty">${DV.err?`<span class="msg err">${esc(DV.err)}</span>`:'Reading docs<span class="dots"></span>'}</li>`;return;}
-  P.innerHTML=DPROB.map(([k,l,key,bad,tip])=>{const n=g[key].length;
-    return `<button type="button" class="${bad&&n?'bad':''}${n?'':' zero'}" data-dprob="${k}" aria-pressed="${DV.f===k}" ${n?'':'disabled'} title="${esc(tip)}">${bad&&n?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('');
-  const hubs=new Set(g.hubs.map(h=>h.path)),bad=new Set(g.broken.map(b=>b.path)),nod=new Set(g.no_docs);
-  const docs=[...g.docs].sort((a,b)=>b.readers-a.readers||a.path.localeCompare(b.path));
-  T_.innerHTML=g.tickets.length?g.tickets.map(t=>`<li><button type="button" class="dn tk" data-open="${esc(t.id)}" data-n="t:${esc(t.id)}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}<i class="mk ${t.status}"></i></button></li>`).join('')
+    T_.innerHTML=`<li class="dempty">${DV.err?`<span class="msg err">${esc(DV.err)}</span>`:ldHtml('Reading docs')}</li>`;return;}
+  if(!Array.isArray(g.rules)||typeof g.budget!=='number'){ // a server started before this page's code (the page is served live, Python loads once): say so, never hang
+    P.innerHTML=D_.innerHTML='';$('dSvg').replaceChildren();
+    T_.innerHTML=`<li class="dempty"><span class="msg err">This server is older than this page, so it cannot group the docs. Restart the server (<code>docker compose restart</code>), then reload the page.</span></li>`;return;}
+  if(DV.sel&&DV.sel.startsWith('t:')&&!g.tickets.some(t=>t.id===DV.sel.slice(2)))DV.sel=null;
+  P.innerHTML=DPROB.map(([k,l,get,bad,tip])=>{const n=get(g).length;
+    return `<button type="button" class="${bad&&n?'bad':''}${n?'':' zero'}" data-dprob="${k}" aria-pressed="${DV.f===k}" ${n?'':'disabled'} title="${esc(tip)}">${bad&&n?'⚠ ':''}${n} ${l[n===1?0:1]}</button>`;}).join('')
+    +`<span class="dbud" title="${dCh(g.budget)} (context_budget in unblockd.json). Tokens are estimated as characters ÷ 4.">Context budget <b>${dTk(g.budget)} tokens</b> per ticket</span>`;
+  const hubs=new Set(g.hubs.map(h=>h.path)),bad=new Set(g.broken.map(b=>b.path)),nod=new Set(g.no_docs),B=g.budget,byP=new Map(g.docs.map(d=>[d.path,d]));
+  const bands=dBands(g),tagRules=g.rules.filter(r=>r.via==='tag'),{q,tm,dm}=dQm();
+  DV.home=new Map();bands.forEach(b=>b.docs.forEach(p=>DV.home.set(p,b.key)));
+  const bandsOf=id=>g.rules.filter(r=>r.via!=='board'&&r.tickets.includes(id)).map(dK).join(',');
+  const own=id=>[...new Set(g.reads.filter(r=>r.ticket===id&&r.via!=='board'&&!(byP.get(r.doc)||{}).image&&(byP.get(r.doc)||{}).size>B).map(r=>r.doc))]; // too big among the docs its OWN rules send; board-wide ones are flagged once at the top
+  const groups=[...new Set(g.tickets.map(t=>t.agent||''))].sort((a,b)=>!a-!b||a.localeCompare(b));
+  T_.innerHTML=g.tickets.length?groups.map(p=>{const ts=g.tickets.filter(t=>(t.agent||'')===p).sort((a,b)=>bandsOf(a.id).localeCompare(bandsOf(b.id))||a.id.localeCompare(b.id,undefined,{numeric:true}));
+    const key='p:'+(p||'-'),name=p?'Profile '+p:'No profile',hit=ts.filter(tm).length,open=!DV.shut.has(key)||hit>0||ts.some(t=>DV.sel==='t:'+t.id);
+    return `<li class="dgrp${open?'':' shut'}"><h3 class="dgh" data-n="${esc(key)}">${dChev(key,open,name)}${p?dIc('profile'):''}<span>${esc(name)} · ${ts.length}</span>${open?'':dWarn([[ts.filter(t=>nod.has(t.id)).length,'no docs',1],[ts.filter(t=>own(t.id).length).length,'with a doc too big']])}${q&&hit?`<em class="dhit">${hit} match${hit>1?'es':''}</em>`:''}</h3>${open?`<ol>${ts.map(t=>{const n='t:'+t.id,on=DV.sel===n,c=own(t.id),cn=c.length;
+      const tg=tagRules.filter(r=>r.tickets.includes(t.id)).map(r=>r.from);
+      return `<li><button type="button" class="dn tk${on?' sel':''}" data-dsel="${esc(n)}" data-n="${esc(n)}" aria-expanded="${on}" title="Show what ${esc(t.id)}'s agent gets"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${tg.map(x=>`<span class="dtg">#${esc(x)}</span>`).join('')}${nod.has(t.id)?'<span class="tag warn">no docs</span>':''}${cn?`<span class="tag warn" title="${esc(c.join(', '))} ${cn>1?'are':'is'} bigger than the context budget, so the agent gets the path only. Board-wide docs that are too big are counted once, at the top.">${cn} too big</span>`:''}<i class="mk ${t.status}"></i></button>${on?dCtxHtml(t.id):''}</li>`;}).join('')}</ol>`:''}</li>`;}).join('')
     :'<li class="dempty">No open tickets.</li>';
-  D_.innerHTML=docs.length?docs.map(d=>`<li><button type="button" class="dn dk${bad.has(d.path)?' bad':''}${hubs.has(d.path)?' hub':''}${d.linked_only?' orph':''}${d.kind==='board'&&!bad.has(d.path)?' brd':''}" data-dnode="${esc(d.path)}" data-n="d:${esc(d.path)}"><i class="mk" title="${bad.has(d.path)?'Broken reference':d.kind==='board'?'Board-wide: every ticket reads it':hubs.has(d.path)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':'Doc'}"></i><span class="pth" title="${esc(d.path)}"><i>${esc(dDir(d.path))}</i>${esc(dBase(d.path))}</span>${d.error?`<span class="tag bad" title="${esc(d.error)}">${esc(d.error)}</span>`:`<span class="tag">${dKind[d.builtin?'builtin':d.kind]}</span>`}<span class="tag">${d.readers?'×'+d.readers:''}</span></button></li>`).join('')
-    :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board or an agent profile in unblockd.json, or to a ticket.</li>`;
+  const dRow=(p,b)=>{const d=byP.get(p)||{path:p};return `<li><button type="button" class="dn dk${bad.has(p)?' bad':''}${hubs.has(p)?' hub':''}${d.linked_only?' orph':''}${d.image?' img':''}${b.via==='board'&&!bad.has(p)?' brd':''}" data-dnode="${esc(p)}" data-n="d:${esc(p)}"><i class="mk" title="${bad.has(p)?'Broken reference':b.via==='board'?'Board-wide: every ticket reads it':hubs.has(p)?'Hub: read by '+d.readers+' tickets':d.linked_only?'Only linked from another doc':d.image?'Image: sent as a path':'Doc'}"></i>${dPath(p)}${d.builtin?'<span class="tag">built-in</span>':''}${p.includes('#')&&!d.builtin?'<span class="tag" title="Only this section is sent, with the doc&#39;s outline (its headings)">section</span>':''}${dMeter(d,B)}<span class="tag rc">${d.readers?'×'+d.readers:''}</span></button></li>`;};
+  const gRow=(p,b)=>{const h=bands.find(x=>x.docs.includes(p));return `<li><button type="button" class="dn dk ghost" data-dnode="${esc(p)}" data-n="g:${esc(b.key)}|${esc(p)}">${dPath(p)}<span class="tag">also here · listed under ${esc(h?bandShort(h):'')} ↑</span></button></li>`;};
+  D_.innerHTML=bands.length?bands.map(b=>{const n=b.via==='board'?g.tickets.length:b.tickets.length,m=b.docs.length+b.also.length,an='a:'+b.key,port=b.via==='tag'||b.via==='profile';
+    const hit=[...b.docs,...b.also].filter(dm).length,open=!DV.shut.has(an)||hit>0,name=bandName(b).replace(/<[^>]+>/g,'');
+    return `<li class="dband ${b.via}${open?'':' shut'}" data-band="${esc(b.key)}"><h3><button type="button" class="dbh${DV.sel===an?' sel':''}" data-dsel="${esc(an)}" data-n="${esc(an)}" aria-pressed="${DV.sel===an}">${port?'<i class="port"></i>':''}${dIc(b.via)}<span class="bn">${bandName(b)}</span><em>${b.via==='board'?`all ${n} tickets, lines on hover`:b.via==='linked'?'no ticket reads it':`${n} ticket${n===1?'':'s'} · ${m} doc${m===1?'':'s'}`}${q&&hit?` · <b class="dhit">${hit} match${hit>1?'es':''}</b>`:''}</em>${bandRule(b)?`<span class="rule">${esc(bandRule(b))}</span>`:''}${open?'':dWarn([[b.docs.filter(p=>bad.has(p)).length,'broken'],[b.docs.filter(p=>{const d=byP.get(p)||{};return !d.builtin&&!d.image&&d.size>B;}).length,'too big']])}</button>${dChev(an,open,name)}</h3>
+      ${open?`<ol>${b.docs.map(p=>dRow(p,b)).join('')}${b.also.map(p=>gRow(p,b)).join('')}</ol>`:''}</li>`;}).join('')
+    :`<li class="dempty">Nothing linked yet. Add <code>docs</code> to the board, a tag (<code>docs_by_tag</code>) or an agent profile in unblockd.json, or to a ticket.</li>`;
+  const nt=q?g.tickets.filter(tm).length:0,nd=q?g.docs.filter(d=>dm(d.path)).length:0;
+  $('dQn').textContent=q?(nt||nd?`${nt} ticket${nt===1?'':'s'}, ${nd} doc${nd===1?'':'s'}`:'No match'):'';
+  const anyOpen=[...document.querySelectorAll('#dStage [data-dshut]')].some(b=>b.getAttribute('aria-expanded')==='true');
+  $('dShutAll').textContent=anyOpen?'Collapse all':'Expand all';
   markDocs();
 }
 function markDocs(){ // classes + lines only; cheap, runs on hover
-  const g=DV.data;if(!g)return;
-  const sel=DV.hl?(()=>{const [k,id]=[DV.hl[0],DV.hl.slice(2)],t=new Set(),d=new Set();
-      if(k==='t'){t.add(id);g.reads.forEach(r=>{if(r.ticket===id)d.add(r.doc);});}
-      else{d.add(id);g.reads.forEach(r=>{if(r.doc===id)t.add(r.ticket);});g.links.forEach(l=>{if(l.from===id)d.add(l.to);if(l.to===id)d.add(l.from);});}
-      return {t,d,hover:k};})():dSets(DV.f);
-  for(const b of document.querySelectorAll('#dStage .dn')){const [k,id]=[b.dataset.n[0],b.dataset.n.slice(2)];
-    b.classList.toggle('fade',!!sel&&!(k==='t'?sel.t:sel.d).has(id));b.classList.toggle('on',DV.hl===b.dataset.n);}
+  const g=DV.data;if(!g||!Array.isArray(g.rules))return;
+  const hv=DV.hl&&DV.hl.startsWith('g:')?'d:'+DV.hl.split('|')[1]:DV.hl&&DV.hl.startsWith('p:')?null:DV.hl;
+  let sel=dSets(hv||DV.sel||DV.f);
+  if(!sel&&DV.q.trim()){const {tm,dm}=dQm(),t=new Set(g.tickets.filter(tm).map(x=>x.id)),d=new Set(g.docs.filter(x=>dm(x.path)).map(x=>x.path)),a=new Set();
+    d.forEach(p=>{if(DV.home&&DV.home.has(p))a.add(DV.home.get(p));});sel={t,d,a,k:'q'};}
+  for(const b of document.querySelectorAll('#dStage .dn')){const n=b.dataset.n,id=n.slice(2);
+    b.classList.toggle('fade',!!sel&&!(n[0]==='t'?sel.t.has(id):sel.d.has(n[0]==='g'?id.split('|')[1]:id)));b.classList.toggle('on',DV.hl===n);}
+  for(const b of document.querySelectorAll('#dStage .dband'))b.classList.toggle('fade',!!sel&&!sel.a.has(b.dataset.band)&&![...b.querySelectorAll('[data-dnode]')].some(x=>sel.d.has(x.dataset.dnode)));
   const svg=$('dSvg'),st=$('dStage').getBoundingClientRect(),pos=new Map();
   if(getComputedStyle(svg).display==='none'){svg.innerHTML='';return;}
-  for(const b of document.querySelectorAll('#dStage .dn')){const m=b.querySelector('.mk').getBoundingClientRect();pos.set(b.dataset.n,[m.left+m.width/2-st.left,m.top+m.height/2-st.top,b.getBoundingClientRect().right-st.left]);}
-  const strong=(a,b)=>!!sel&&(sel.hover?(sel.hover==='t'?a.slice(2)===DV.hl.slice(2):(a.slice(2)===DV.hl.slice(2)||b.slice(2)===DV.hl.slice(2))):sel.t.has(a.slice(2))&&sel.d.has(b.slice(2)));
-  const board=new Set(g.docs.filter(d=>d.kind==='board').map(d=>d.path));
-  let out='';
-  for(const r of g.reads){const a='t:'+r.ticket,b='d:'+r.doc,A=pos.get(a),B=pos.get(b);if(!A||!B)continue;
-    const s=strong(a,b);if(r.via==='board'&&!s)continue; // everyone reads these: lines only on demand
-    const x1=A[0],x2=B[0],mx=(x1+x2)/2;
-    out+=`<path class="${s?'s':''}${g.broken.some(x=>x.path===r.doc)?' x':''}" d="M${x1},${A[1]}C${mx},${A[1]} ${mx},${B[1]} ${x2},${B[1]}"/>`;}
-  for(const l of g.links){const a='d:'+l.from,b='d:'+l.to,A=pos.get(a),B=pos.get(b);if(!A||!B)continue;
-    const s=!!sel&&(sel.hover?(sel.hover==='d'&&(l.from===DV.hl.slice(2)||l.to===DV.hl.slice(2))):sel.d.has(l.from)&&sel.d.has(l.to));
-    const x=Math.max(A[2],B[2]),bulge=14+Math.min(34,Math.abs(A[1]-B[1])/8);
-    out+=`<path class="l ${s?'s':''}" d="M${A[2]},${A[1]}C${x+bulge},${A[1]} ${x+bulge},${B[1]} ${B[2]},${B[1]}"/>`;}
+  for(const b of document.querySelectorAll('#dStage .dn,#dStage .dbh,#dStage .dgh')){const m=(b.querySelector('.port,.mk,.dchev')||b).getBoundingClientRect(),r=b.getBoundingClientRect();
+    pos.set(b.dataset.n,[b.classList.contains('dgh')?r.right-st.left-6:b.classList.contains('dbh')&&!b.querySelector('.port')?r.left-st.left:m.left+m.width/2-st.left,m.top+m.height/2-st.top,r.right-st.left]);}
+  const grp=new Map(g.tickets.map(t=>['t:'+t.id,'p:'+(t.agent||'-')]));
+  const at=(...ks)=>{for(const k of ks)if(k&&pos.has(k))return [k,pos.get(k)];return [null,null];}; // a row, else its collapsed group's header
+  const C=(A,B)=>{const mx=(A[0]+B[0])/2;return `M${A[0]},${A[1]}C${mx},${A[1]} ${mx},${B[1]} ${B[0]},${B[1]}`;};
+  const bad=new Set(g.broken.map(b=>b.path)),done=new Set();let out='';
+  for(const r of g.reads){const [ak,A]=at('t:'+r.ticket,grp.get('t:'+r.ticket));if(!A)continue;const k=dK(r);
+    const s=!!sel&&(sel.k==='d:'?r.doc===sel.id:sel.k==='t:'?r.ticket===sel.id:sel.k==='a:'?k===sel.id:sel.k==='q'?sel.t.has(r.ticket)||sel.d.has(r.doc):sel.t.has(r.ticket)&&sel.d.has(r.doc));
+    if(r.via==='board'&&!s)continue; // everyone reads these: lines only on demand
+    const toDoc=r.via==='board'||r.via==='ticket'||r.via==='file'||(s&&sel.k==='d:');
+    const [bk,B_]=toDoc?at('d:'+r.doc,'a:'+(DV.home&&DV.home.get(r.doc))):at('a:'+k);if(!B_)continue;
+    const key=ak+'>'+bk;if(done.has(key))continue;done.add(key);
+    out+=`<path class="${s?'s':''}${bad.has(r.doc)?' x':''}" d="${C(A,B_)}"/>`;}
+  for(const l of g.links){const A=pos.get('d:'+l.from),B_=pos.get('d:'+l.to);if(!A||!B_)continue;
+    const s=!!sel&&(sel.k==='d:'?[l.from,l.to].includes(sel.id):sel.d.has(l.from)&&sel.d.has(l.to));
+    const x=Math.max(A[2],B_[2]),bulge=14+Math.min(34,Math.abs(A[1]-B_[1])/8);
+    out+=`<path class="l${s?' s':''}" d="M${A[2]},${A[1]}C${x+bulge},${A[1]} ${x+bulge},${B_[1]} ${B_[2]},${B_[1]}"/>`;}
   svg.innerHTML=out;
 }
 function openDocNode(path){ // side panel for one doc: who reads it, what it links to, why it is broken
@@ -2411,13 +2739,14 @@ function openDocNode(path){ // side panel for one doc: who reads it, what it lin
     <p class="hint">${dKind[d.builtin?'builtin':d.kind]}${d.builtin?' (the worker protocol, shipped with unblockd; every ticket reads it through the MCP prompt)':''}${d.size!=null?`, ${Math.max(1,Math.round(d.size/1000))}k`:''}${d.linked_only?'. No ticket reads it; only another doc links here.':''}</p>
     ${d.error?`<p class="msg err">Broken: ${esc(d.error)}. Fix the path in the docs list of the ticket, profile or board that names it.</p>`:`<p><button type="button" class="btn sm" data-doc="${esc(path)}">View file</button></p>`}
     <h3 class="dh3">Read by ${rd.length} ticket${rd.length===1?'':'s'}</h3>
-    ${rd.length?`<ul class="dlist">${rd.map(r=>{const t=g.tickets.find(x=>x.id===r.ticket);return `<li><button type="button" data-open="${esc(r.ticket)}"><span class="tid">${esc(r.ticket)}</span> ${inline(t?t.title:'')}</button><span class="ksrc">${esc(dKind[r.via]||r.via)}</span></li>`;}).join('')}</ul>`:'<p class="hint">No open ticket.</p>'}
+    ${rd.length?`<ul class="dlist">${rd.map(r=>{const t=g.tickets.find(x=>x.id===r.ticket);return `<li><button type="button" data-open="${esc(r.ticket)}"><span class="tid">${esc(r.ticket)}</span> ${inline(t?t.title:'')}</button><span class="ksrc">${esc(r.via==='tag'?'tag #'+r.from:r.via==='profile'?'profile '+r.from:dKind[r.via]||r.via)}</span></li>`;}).join('')}</ul>`:'<p class="hint">No open ticket.</p>'}
     <h3 class="dh3">Links to</h3>${dl(to)}<h3 class="dh3">Linked from</h3>${dl(from)}`);
 }
+$('dQ').addEventListener('input',e=>{DV.q=e.target.value;if(DV.data)renderDocs();});
 {const st=$('dStage');
- st.addEventListener('pointerover',e=>{const b=e.target.closest('.dn');const n=b?b.dataset.n:null;if(n!==DV.hl){DV.hl=n;markDocs();}});
+ st.addEventListener('pointerover',e=>{const b=e.target.closest('.dn,.dbh');const n=b?b.dataset.n:null;if(n!==DV.hl){DV.hl=n;markDocs();}});
  st.addEventListener('pointerleave',()=>{if(DV.hl){DV.hl=null;markDocs();}});
- st.addEventListener('focusin',e=>{const b=e.target.closest('.dn');if(b){DV.hl=b.dataset.n;markDocs();}});
+ st.addEventListener('focusin',e=>{const b=e.target.closest('.dn,.dbh');if(b){DV.hl=b.dataset.n;markDocs();}});
  st.addEventListener('focusout',()=>{DV.hl=null;markDocs();});
  addEventListener('resize',()=>{if(state.view==='docs')markDocs();if(state.view==='map'&&MV.data)renderMap();});}
 
@@ -2536,7 +2865,7 @@ function renderMap(){
     'Set <code>"architecture": "docs/arch"</code> in <code>tickets/unblockd.json</code>.'],
     how=skip=>`<p><b>The map shows how your app's components connect and where the open tickets are.</b> It is drawn from short markdown notes in your repo.</p><ol>${steps.filter((_,i)=>i!==skip).map(x=>`<li>${x}</li>`).join('')}</ol>`;
   const say=h=>{msg.innerHTML=h;msg.hidden=!h;$('mapStage').hidden=$('mapList').hidden=!!h;$('mProb').hidden=$('mTools').hidden=!!h;if(h){$('mNote').hidden=true;}};
-  if(!d)return say(MV.err?`<span class="msg err">${esc(MV.err)}</span>`:'Reading the map<span class="dots"></span>');
+  if(!d)return say(MV.err?`<span class="msg err">${esc(MV.err)}</span>`:ldHtml('Reading the map'));
   if(d.error)return say(`<p class="msg err">${esc(d.error)}</p><p>Check <code>architecture</code> in <code>tickets/unblockd.json</code>.</p>`);
   if(!d.folder)return say(how(-1));
   if(!d.components.length)return say(`<p><button type="button" class="btn" data-anew>Add your first component</button></p><p>${esc(d.folder)} has no component notes yet.</p>`+how(2));
@@ -3046,7 +3375,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('docv').hidden){
 if(store.get('chatOpen',false)) openChat();
 setInterval(()=>{ if(document.visibilityState==='visible') load(false); },4000);
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){ load(false); loadNeeds(); } }); // back on the tab: fresh at once, not up to 4 s later
-setInterval(()=>{ if(document.visibilityState==='visible') loadNeeds(); },15000); // other boards' questions: no tickets poll covers them // picks up edits made through the MCP
+setInterval(()=>{ if(document.visibilityState==='visible'){ loadNeeds(); loadGit(); } },15000); // other boards' questions: no tickets poll covers them // picks up edits made through the MCP
 })();
 </script>
 </body>

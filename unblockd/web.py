@@ -33,8 +33,8 @@ POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
-GET    tickets/<id>/context              docs + attached files to read before working it
-GET    knowledge                         who reads what: tickets, docs, ticket->doc and doc->doc edges, plus no_docs / broken / hubs / orphans
+GET    tickets/<id>/context              docs + attached files to read before working it (?content=0: each doc's `sent` without its text; a sent doc over a third of the budget also gets `outline` + `outline_chars`)
+GET    knowledge                         who reads what: tickets, docs, ticket->doc (with the tag / profile it came from) and doc->doc edges, the rules that send docs, plus no_docs / broken / hubs / orphans
 GET    files                             project file paths (no .git / node_modules / tickets/, capped at 3000): what the form suggests for docs and touches
 GET    tools                             worker tool sets: {all, default, base, profiles: [{name, tools, tools_off, effective}]}
 PUT    tools                             {"base": [...], "profiles": {name: {"tools", "tools_off"}}, "by"?}  save them to unblockd.json -> the same
@@ -69,6 +69,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 from . import boards as bd
 from . import chat
+from . import branches
 from . import connectors
 from . import github
 from . import knowledge as kn
@@ -256,6 +257,9 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and rest == ["meta"]:
 				return self._send(200, {"statuses": st.STATUSES, "priorities": st.PRIORITIES, "fields": list(st.FIELDS),
 				                        "config": store.config, "board": board or next(iter(BOARDS.all()))})
+			if method == "GET" and rest == ["git"]:  # how the board's checkout compares with origin (branches.py); {} fields when git evidence is off
+				d = branches.load(store.rt) if store.rt else {}
+				return self._send(200, {k: d.get(k) for k in ("source", "remote", "base", "checkout", "error", "since")})
 			if method == "GET" and rest == ["next"]:
 				return self._send(200, store.next_ready(owner=q.get("owner"), pillar=q.get("pillar"), agent=q.get("agent"),
 				                                        tag=q.get("tag"), limit=_num(q, "limit", 5)))
@@ -286,7 +290,12 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":
-				return self._send(200, kn.context(store, rest[1], inline=q.get("inline") != "0"))
+				c = kn.context(store, rest[1], inline=q.get("inline") != "0")
+				if q.get("content") == "0":  # what would be sent, without the text (the Docs view's preview)
+					for d in c["docs"]:
+						d.pop("content", None)
+					kn.preview_outlines(store, c)  # a big doc sent in full can be trimmed to sections (UI-72)
+				return self._send(200, c)
 			if rest[:1] == ["tickets"] and len(rest) in (3, 4) and rest[2] == "files":
 				tid = rest[1]
 				if method == "POST" and len(rest) == 3:
@@ -375,6 +384,8 @@ def main():
 		print("notifications: webhook on", flush=True)
 	if github.start(BOARDS):
 		print("github: syncing PRs of tickets in review", flush=True)
+	if branches.start(BOARDS):
+		print("branches: reading unmerged branches from git (UNBLOCKD_GIT=0 turns it off)", flush=True)
 	ThreadingHTTPServer((host, port), Handler).serve_forever()
 
 
