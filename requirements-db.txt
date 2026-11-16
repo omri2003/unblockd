@@ -1,0 +1,4 @@
+# Optional: database connectors. Files and SQLite need nothing; a board on Postgres needs psycopg, one on MongoDB pymongo
+# (each imported only when such a board is opened). The Docker image and CI install both.
+psycopg[binary]>=3.2,<4
+pymongo>=4.6,<5

@@ -24,7 +24,7 @@
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
---dir defaults to $TICKETS_DIR, then ./tickets. With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
+--dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
 command goes to that server's REST API instead of a local folder, so agents on other machines share one board and one lock. Settings come from
 <dir>/unblockd.json (see README); extra legacy numbering files from $UNBLOCKD_LEGACY.
 Prints JSON. Exit code 1 + message on bad input.
@@ -40,6 +40,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from . import connectors
 from . import knowledge as kn
 from . import store as st
 
@@ -218,11 +219,23 @@ def main(argv: list[str] | None = None) -> int:
 		if name not in ("accept", "approve"):
 			x.add_argument("text")
 		x.add_argument("--by", default="human")
+	mg = sub.add_parser("migrate", help="copy a board to another place: a folder, sqlite:///x.db#board, postgres://...#board, mongodb://...#board")
+	mg.add_argument("--from", dest="src", required=True, help="where the board is now (a folder or a database URL + #board)")
+	mg.add_argument("--to", dest="dst", required=True, help="where it goes; must be empty unless --force")
+	mg.add_argument("--force", action="store_true", help="REPLACE whatever board is at --to")
 	a = ap.parse_args(argv)
 
+	if a.cmd == "migrate":  # needs no board of its own (--dir is not used)
+		try:
+			out = connectors.migrate(a.src, a.dst, force=a.force)
+		except st.TicketError as e:
+			print(f"error: {e}", file=sys.stderr)
+			return 1
+		print(json.dumps(out, indent=2, ensure_ascii=False))
+		return 0
 	try:
 		url = os.environ.get("UNBLOCKD_URL")
-		if not url and not Path(a.dir).is_dir():  # creating it would hand a worker an empty board (e.g. in a git worktree where tickets/ is not committed)
+		if not url and not connectors.is_db(a.dir) and not Path(a.dir).is_dir():  # creating it would hand a worker an empty board (e.g. in a git worktree where tickets/ is not committed)
 			raise st.TicketError(f"no board at {Path(a.dir).resolve()}: run from the project root, or pass --dir / set TICKETS_DIR to the tickets folder "
 			                     "(in a git worktree, the main checkout's). To start a new board, create the folder first.")
 		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
@@ -237,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "roadmap":
 			out = s.roadmap()
 		elif a.cmd == "health":
-			out = s.health() if url else {"status": "ok", "dir": Path(a.dir).resolve().as_posix(), "tickets": len(s.list())}
+			out = s.health() if url else {"status": "ok", "dir": connectors.describe(a.dir) if connectors.is_db(a.dir) else Path(a.dir).resolve().as_posix(), "tickets": len(s.list())}
 		elif a.cmd == "migrate-milestones":
 			pairs = [p.split("=", 1) for p in a.pairs]
 			if not all(len(p) == 2 and p[0] and p[1] for p in pairs):

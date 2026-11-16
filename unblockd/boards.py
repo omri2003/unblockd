@@ -4,9 +4,12 @@ Where boards come from (both may be used, both are rescanned on every call):
 - UNBLOCKD_ROOT: folder(s) of projects, os.pathsep separated. Every <root>/tickets/ and
   <root>/<project>/tickets/ that has an unblockd.json is a board. Opt-in on purpose: a random
   "tickets" folder in some repo is not a board until you put the config there.
-- TICKETS_DIR / UNBLOCKD_BOARDS: explicit tickets folders (os.pathsep separated), config optional.
+- TICKETS_DIR / UNBLOCKD_BOARDS: explicit tickets folders (os.pathsep separated), config optional, or database locations
+  (`sqlite:///x.db#payments`, `postgres://u:p@host:5432/db#payments`, `mongodb://...#payments`; see connectors). A
+  database board is listed even before it has a row: its row is created on first use, like a folder's config is optional.
 
-A board's id is the config's "id", else its project folder's name. The first board is the default.
+A folder board's id is the config's "id", else its project folder's name; a database board's id is its #board. The first
+board is the default.
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ import os
 import re
 from pathlib import Path
 
+from . import connectors as cn
 from . import store as st
 
 
@@ -50,11 +54,11 @@ def _slug(s: str) -> str:
 class Boards:
 	def __init__(self, roots: list[str] | None = None, dirs: list[str] | None = None, legacy: list[str] | None = None):
 		self.roots = [Path(r) for r in (roots or []) if r]
-		self.dirs = [Path(d) for d in (dirs or []) if d]
+		self.dirs = [d if cn.is_db(d) else Path(d) for d in (dirs or []) if d]  # a Path, or a database location (str)
 		self.legacy = legacy or []
 
-	def _scan(self) -> list[Path]:
-		found = [d for d in self.dirs if d.is_dir()]
+	def _scan(self) -> list:
+		found = [d for d in self.dirs if isinstance(d, str) or d.is_dir()]
 		for r in self.roots:
 			if not r.is_dir():
 				continue
@@ -62,24 +66,29 @@ class Boards:
 			found += [c for c in cands if (c / st.CONFIG_FILE).is_file()]
 		uniq, seen = [], set()
 		for p in found:
-			k = p.resolve()
+			k = p if isinstance(p, str) else p.resolve()
 			if k not in seen:
 				seen.add(k)
 				uniq.append(p)
 		return uniq
 
-	def all(self) -> dict[str, Path]:
-		"""id -> tickets folder, in discovery order."""
-		out: dict[str, Path] = {}
+	def all(self) -> dict:
+		"""id -> tickets folder (Path) or database location (str), in discovery order. Never connects to a database."""
+		out: dict = {}
 		for p in self._scan():
 			bid = None
-			cfg = p / st.CONFIG_FILE
-			if cfg.is_file():
+			if isinstance(p, str):
+				try:
+					bid = cn.split(p)[1]
+				except st.TicketError:  # no #board: listed under a placeholder id, opening it says what is missing
+					bid = "board"
+			cfg = None if isinstance(p, str) else p / st.CONFIG_FILE
+			if cfg is not None and cfg.is_file():
 				try:
 					bid = json.loads(cfg.read_text(encoding="utf-8")).get("id")
 				except (json.JSONDecodeError, AttributeError):
 					bid = None
-			bid = _slug(bid or p.resolve().parent.name)
+			bid = _slug(bid or p.resolve().parent.name)  # bid is always set for a database location
 			base, n = bid, 2
 			while bid in out:
 				bid, n = f"{base}-{n}", n + 1
@@ -91,22 +100,26 @@ class Boards:
 		if not boards:
 			raise st.TicketError("no boards: set UNBLOCKD_ROOT to a folder of projects or TICKETS_DIR to a tickets folder")
 		if board is None:
-			return st.Store(next(iter(boards.values())), self.legacy)
+			return self.open(next(iter(boards.values())))
 		if board not in boards:
 			raise st.NotFound(f"no board {board!r}. Boards: {', '.join(boards)}")
-		return st.Store(boards[board], self.legacy)
+		return self.open(boards[board])
+
+	def open(self, where) -> st.Store:
+		"""The Store for one entry of all(): a folder or a database location."""
+		return st.Store(where, self.legacy)
 
 	def summary(self) -> list[dict]:
 		out = []
 		for bid, p in self.all().items():
 			try:
-				s = st.Store(p, self.legacy)
+				s = self.open(p)
 				ts = s.list()
-				out.append({"id": bid, "title": s.config["title"], "path": str(p), "tickets": len(ts),
+				out.append({"id": bid, "title": s.config["title"], "path": cn.describe(str(p)), "tickets": len(ts),
 				            "open": sum(t["status"] != "done" for t in ts),
 				            "ready": sum(t["effective_status"] == "todo" for t in ts)})
 			except st.TicketError as e:  # a broken config shouldn't hide the other boards
-				out.append({"id": bid, "title": bid, "path": str(p), "error": str(e)})
+				out.append({"id": bid, "title": bid, "path": cn.describe(str(p)), "error": str(e)})
 		return out
 
 	def create(self, board_id: str, title: str = "", root: str | None = None) -> dict:
@@ -148,10 +161,26 @@ class Boards:
 		return out
 
 
+def entries(value: str, sep: str = os.pathsep) -> list[str]:
+	"""Split a list of board locations. On Linux/macOS the separator is ":", which database URLs contain
+	(postgres://u:p@host:5432/db#b): a piece that starts a URL is joined with the next ones up to the one holding its #board."""
+	parts, out, i = value.split(sep), [], 0
+	while i < len(parts):
+		cur = parts[i]
+		if sep == ":" and i + 1 < len(parts) and cur + ":" in cn.DB_SCHEMES_NAMES and parts[i + 1].startswith("//"):
+			while "#" not in cur and i + 1 < len(parts):
+				i += 1
+				cur += ":" + parts[i]
+		if cur:
+			out.append(cur)
+		i += 1
+	return out
+
+
 def from_env() -> Boards:
 	sep = os.pathsep
 	env = os.environ
-	dirs = [d for d in env.get("UNBLOCKD_BOARDS", "").split(sep) if d]
+	dirs = entries(env.get("UNBLOCKD_BOARDS", ""))
 	if env.get("TICKETS_DIR"):
 		dirs.insert(0, env["TICKETS_DIR"])
 	roots = [r for r in env.get("UNBLOCKD_ROOT", "").split(sep) if r]

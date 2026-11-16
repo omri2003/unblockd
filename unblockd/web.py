@@ -70,6 +70,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from . import boards as bd
 from . import chat
 from . import branches
+from . import connectors
 from . import github
 from . import knowledge as kn
 from . import notify
@@ -98,11 +99,11 @@ def _needs() -> list[dict]:
 	out = []
 	for bid, path in BOARDS.all().items():
 		try:
-			s = st.Store(path, BOARDS.legacy)
+			s = BOARDS.open(path)
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), github.load(s.rt)
+		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), s.backend.get_doc("prs")
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -257,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, {"statuses": st.STATUSES, "priorities": st.PRIORITIES, "fields": list(st.FIELDS),
 				                        "config": store.config, "board": board or next(iter(BOARDS.all()))})
 			if method == "GET" and rest == ["git"]:  # how the board's checkout compares with origin (branches.py); {} fields when git evidence is off
-				d = branches.load(store.rt)
+				d = branches.load(store.rt) if store.rt else {}
 				return self._send(200, {k: d.get(k) for k in ("source", "remote", "base", "checkout", "error", "since")})
 			if method == "GET" and rest == ["next"]:
 				return self._send(200, store.next_ready(owner=q.get("owner"), pillar=q.get("pillar"), agent=q.get("agent"),
@@ -378,7 +379,7 @@ def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
 	st.refuse_open_bind(host, os.environ.get("UNBLOCKD_TOKEN"))
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
-	      + (", ".join(f"{k} ({v})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
+	      + (", ".join(f"{k} ({connectors.describe(str(v))})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	if notify.start(BOARDS):
 		print("notifications: webhook on", flush=True)
 	if github.start(BOARDS):

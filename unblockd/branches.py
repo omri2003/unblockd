@@ -243,6 +243,8 @@ class Syncer:
 			except Exception as e:  # noqa: BLE001  one broken board must not stop the others
 				print(f"branches: {bid}: {e}", flush=True)
 				continue
+			if getattr(store, "dir", None) is None:  # a database board: no git checkout to read
+				continue
 			try:
 				data = self.scanner.scan(store)
 			except NotRepo:

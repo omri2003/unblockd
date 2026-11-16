@@ -12,12 +12,31 @@ concurrency:  # a new push to a PR cancels its outdated run
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:  # the connector contract and cases (tests/test_contract.py, test_sql.py, test_mongo.py) run on real databases too
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      UNBLOCKD_TEST_PG: postgres://postgres:test@127.0.0.1:5432/postgres
+      UNBLOCKD_TEST_MONGO: mongodb://127.0.0.1:27018/
+      UNBLOCKD_TEST_MONGO_RS: mongodb://127.0.0.1:27017/?directConnection=true
     steps:
       - uses: actions/checkout@v4
+      - name: MongoDB, standalone and a one-node replica set  # a service container can't take --replSet
+        run: |
+          docker run -d --name mongo-rs -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          docker run -d --name mongo-one -p 27018:27017 mongo:7
+          for i in $(seq 1 60); do docker exec mongo-rs mongosh --quiet --eval 'db.runCommand({ping:1}).ok' && break; sleep 1; done
+          docker exec mongo-rs mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 60); do docker exec mongo-rs mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true && break; sleep 1; done
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -r requirements.txt  # the same as the Docker image, so the MCP tests run instead of skipping
+      - run: pip install -r requirements.txt -r requirements-db.txt  # the same as the Docker image, so the MCP, Postgres and MongoDB tests run instead of skipping
       - run: python -m unittest -v
 
   ui:
