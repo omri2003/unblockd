@@ -437,6 +437,10 @@ def context(store, tid: str, budget: int | None = None, inline: bool = True) -> 
 	               + (" A doc with `section` is that part only; its `outline` lists the rest: read_doc(path#heading)." if any("section" in d for d in docs) else "")
                + (" A doc with an `outline` but no content did not fit: read_doc(path#heading) the part you need." if any("outline" in d and "content" not in d for d in docs) else "")
 	               + (" done_when is the bar for done: answer each item in complete()'s summary." if t.get("done_when") else "")}
+	rules = store.rules()  # committed config: trusted; so a worker needs no board_info call before it creates or splits (AI-41)
+	if arch["components"]:
+		rules["components"] = [{"key": c["key"], "title": c["title"]} for c in arch["components"]]
+	out["rules"] = {**rules, "trust": "trusted"}
 	if (prof := next((a for a in store.config["agents"] if a["name"] == t.get("agent")), None)):  # committed config: trusted
 		out["profile"] = {"name": prof["name"], "instructions": prof.get("instructions", ""), "model": prof.get("model"), "trust": "trusted"}
 	if (caps := capabilities(store, t)):
