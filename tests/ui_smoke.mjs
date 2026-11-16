@@ -131,6 +131,25 @@ try {
 			ok(q.length === 1 && /^quiet · \d+ min$/.test(q[0]), `[${tag}] one stale claim should read "quiet · N min", got ${q}`);
 			ok(/^\d+ of 15 min lease used$/.test(await page.locator('.col.doing .liv.quiet + .lbar').getAttribute('aria-label')), `[${tag}] lease bar reads N of 15 min`);
 		}
+		{ // UI-73: a heartbeat changes only claim.heartbeat_at: no /needs, /git or /architecture refetch, the liveness line still moves;
+			// a component change refetches the architecture (Component filter) and Needs you, git stays on its own poll.
+			// Waits for the real 4 s poll (refresh() fires visibilitychange, which asks for needs itself); a 15 s poll in the window asks for needs AND git, so needs is counted beyond git
+			const hits = { needs: 0, git: 0, architecture: 0 }; const onReq = (r) => { const m = /\/api\/(?:b\/[^/]+\/)?(needs|git|architecture)(\?|$)/.exec(r.url()); if (m) hits[m[1]]++; }; page.on('request', onReq);
+			const poll = async () => { await page.waitForResponse((r) => /\/api\/tickets$/.test(r.url()) && r.status() === 200, { timeout: 8000 }); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 50)))); };
+			const mine = (await page.evaluate(() => fetch('/api/tickets').then((r) => r.json()))).find((t) => t.claim?.agent === 'backend-1');
+			await new Promise((r) => setTimeout(r, 1100)); // the stamp has 1 s resolution
+			const hb = JSON.parse(cli('heartbeat', mine.id, '--agent', 'backend-1').toString()).claim.heartbeat_at;
+			await poll();
+			await page.waitForFunction(([i, h]) => document.querySelector(`#board .card[data-open="${i}"] time[data-hb]`)?.dataset.hb === h, [mine.id, hb]);
+			ok(!hits.architecture && hits.needs === hits.git, `[${tag}] a heartbeat-only change refetched ${JSON.stringify(hits)}`);
+			const comp = (await page.evaluate(() => fetch('/api/architecture').then((r) => r.json()))).components[0].key; hits.architecture = 0;
+			const arch = page.waitForResponse((r) => /\/api\/architecture$/.test(r.url()), { timeout: 8000 });
+			cli('update', mine.id, '--component', comp, '--agent', 'backend-1');
+			await poll(); await arch;
+			ok(hits.architecture >= 1 && hits.needs > hits.git, `[${tag}] a component change should refetch architecture + needs, not git: ${JSON.stringify(hits)}`);
+			page.off('request', onReq);
+			cli('update', mine.id, '--json', JSON.stringify({ components: mine.components || [] }), '--agent', 'backend-1'); await refresh();
+		}
 		ok(await page.evaluate(() => /unblockd/.test(document.title) && !!document.querySelector('link[rel=icon]')), `[${tag}] title / favicon missing`);
 		await noOverflow('board');
 		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
