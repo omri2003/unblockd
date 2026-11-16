@@ -1100,16 +1100,30 @@ async function load(force){
     text=await r.text(); if(r.status===401){ authFail(text); return; } if(r.status===404){ try{ msg404=JSON.parse(text).error; }catch{} } if(!r.ok) throw 0; etag=r.headers.get('ETag'); }
   catch{ const m=msg404||'Cannot load tickets: is the server running, and does this board exist?'; toast(m,{err:1}); if(!LOADED){LERR=m; if(state.view==='board') render();} return; }
   if(text===raw && !force) return;
-  raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t]));
+  if(LOADED&&!force&&hbOnly(text,raw)){ raw=text; T=JSON.parse(text); BY=new Map(T.map(t=>[t.id,t])); paintBeats(); return; } // UI-73: only heartbeats moved: no refetch, no re-render
+  const first=!LOADED; raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); if(first) loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t])); // git: its own 15 s poll after the first answer
+  const as=sigOf(T,ARCHF), ds=sigOf(T,DOCF); if(as!==archSig){archSig=as;archDue=true;} if(ds!==docSig){docSig=ds;docDue=true;} // what the Map / Docs fetch reads changed: due until the next paint
   if(prev.size&&!reduce.matches) noteFinished(prev);
   paint=()=>{ paint=null;
-    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs')loadDocs(); if(state.view==='map'||CFG.architecture)loadMap(); if(!$('chat').hidden&&!CH.busy) renderChat();
+    renderBar(); DATA=live; try{render();}finally{DATA=false;live=true;} if(state.view==='docs'&&docDue){docDue=false;loadDocs();} if((state.view==='map'||CFG.architecture)&&archDue){archDue=false;loadMap();} if(!$('chat').hidden&&!CH.busy) renderChat();
     if(openId && !editing){ BY.has(openId) ? showTicket(openId,true) : closeDrawer(); }
   };
   if(!force&&menuBusy()) return; // a re-render would destroy the open menu: keep the data, paint when it closes
   paint();
 }
 let paint=null; // the deferred render, if any
+// UI-73: a heartbeat changes claim.heartbeat_at (and the inbox mark `seen`) and nothing else, but every worker beats every few minutes:
+// that must not refetch /api/needs, /git and /architecture in every open tab. hbOnly = the two texts differ only there;
+// sigOf = the fields a server view reads, so the Map and Docs refetch only when one of those changed (archDue/docDue survive a deferred paint).
+const hbStrip=s=>s.replace(/"(?:heartbeat_at|seen)": ?(?:"[^"]*"|\d+)/g,'');
+const hbOnly=(a,b)=>a.length>0&&b.length>0&&hbStrip(a)===hbStrip(b);
+const ARCHF=['id','status','effective_status','touches','components'], DOCF=['id','title','status','tags','pillar','agent','docs','components','touches','files'];
+const sigOf=(ts,f)=>JSON.stringify(ts.map(t=>f.map(k=>t[k])));
+let archSig=null, docSig=null, archDue=false, docDue=false;
+function paintBeats(){ // the liveness line (time + lease bar) of every card, and the open drawer's "last heard": nothing else reads a heartbeat
+  document.querySelectorAll('time[data-hb]').forEach(e=>{ const hb=BY.get(e.closest('[data-open]')?.dataset.open)?.claim?.heartbeat_at; if(hb) e.dataset.hb=hb; });
+  tickAges(); if(openId&&!editing&&!$('drawer').hidden&&BY.has(openId)&&!paint) showTicket(openId,true);
+}
 let DATA=false, live=false, DROP=null; // DATA: true only while paint() renders fresh ticket data (not the first paint: `live`). Only those renders animate (cards slide, Needs rows fade); a filter, search, group, view or board change just redraws. DROP: where the last drag ended, so that card slides from the pointer
 const MENUS='.mv[open],.ovf[open],#fpanel[open],#spanel[open],#apanel[open],#bpanel[open],#gmore[open]'; // the popovers: at most one is open at a time
 const menuBusy=()=>!!document.querySelector(MENUS);
