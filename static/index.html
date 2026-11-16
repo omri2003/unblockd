@@ -1395,9 +1395,9 @@ const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: t
 const ntime=at=>at.length>10?new Date(at).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):at; // old complete() notes carry a date only
 function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
   return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.pinned&&!n.superseded_by?' <span class="hint" title="Always sent to the next agent">· pinned</span>':''}${n.superseded_by?` <span class="hint">· replaced by note ${esc(n.superseded_by)}</span>`:''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
-async function loadNeeds(){ // ETag: an idle poll costs headers only
+async function loadNeeds(){ // ETag: an idle poll costs headers only; ?board= = this board only (API-18: every board cost ~1 s per call)
   if(!BOARDS.length) return; const tok=++nTok;
-  try{ const r=await fetch('/api/needs',{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||tok!==nTok) return; if(!r.ok){ nErr='the server answered '+r.status; if(!$('npanel').hidden) renderNeedsPanel(); return; } const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nLoaded=true; nErr=''; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
+  try{ const r=await fetch('/api/needs?board='+encodeURIComponent(curBoard()),{cache:'no-store',headers:nEtag?{'If-None-Match':nEtag}:{}}); if(r.status===304||tok!==nTok) return; if(!r.ok){ nErr='the server answered '+r.status; if(!$('npanel').hidden) renderNeedsPanel(); return; } const j=await r.json(); if(tok!==nTok) return; NEEDS=j; nLoaded=true; nErr=''; nEtag=r.headers.get('ETag'); } // the tag moves WITH the data: a superseded request must not leave a tag whose data was dropped (later polls would 304 forever)
   catch{ if(tok===nTok){ nErr='the server did not answer'; if(!$('npanel').hidden) renderNeedsPanel(); } return; }
   paintNeeds();
 }

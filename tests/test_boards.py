@@ -483,6 +483,27 @@ class ApiTest(unittest.TestCase):
 		self.assertNotIn("WEB-4", {i["id"] for i in self.call("GET", "/api/needs")[1][1]["items"]})
 		self.assertEqual(self.call("POST", "/api/needs", {})[0], 405)
 
+	def test_needs_for_one_board_lists_only_that_board(self):
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
+		for b, tid, agent in (("a", "CMB-1", "backend-1"), ("b", "WEB-1", "w-1")):
+			self.call("POST", f"/api/b/{b}/tickets/{tid}/claim", {"agent": agent})
+			self.call("POST", f"/api/b/{b}/tickets/{tid}/ask", {"agent": agent, "question": "which?"})
+		listed = []
+		real = Store.list
+		def counting(s, *a, **k):
+			listed.append(s.dir.parent.name)
+			return real(s, *a, **k)
+		with mock.patch.object(Store, "list", counting):
+			code, n = self.call("GET", "/api/needs?board=b")
+		self.assertEqual((code, [g["id"] for g in n], [i["id"] for i in n[0]["items"]]), (200, ["b"], ["WEB-1"]))
+		self.assertEqual(listed, ["b"])  # board a is not even read
+		self.assertEqual([g["id"] for g in self.call("GET", "/api/needs")[1]], ["a", "b"])  # no param: every board, as before
+		self.assertEqual(self.call("GET", "/api/needs?board=a")[1][0]["id"], "a")
+		code, err = self.call("GET", "/api/needs?board=nope")
+		self.assertEqual(code, 404)
+		self.assertIn("no board 'nope'", err["error"])
+
 	def test_needs_stuck_after_three_failed_attempts(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "flaky", "pillar": "COMBAT"})
 		def fail(agent):
