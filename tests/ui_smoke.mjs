@@ -713,8 +713,11 @@ try {
 		await page.waitForSelector('#npanel .none:not([hidden])'); // the panel stays open and says so
 		// the other board's question shows on that board
 		await page.keyboard.press('Escape');
+		const nreq = []; const onReq = (r) => /\/api\/needs/.test(r.url()) && nreq.push(r.url()); page.on('request', onReq);
 		await page.goto(base + '?board=zsecond'); await page.waitForSelector('.card', { state: 'attached' });
 		await page.waitForFunction(() => document.querySelector('#needsBadge .n')?.textContent === '1');
+		page.off('request', onReq); // API-18: the UI asks for its own board only, never every board
+		ok(nreq.length > 0 && nreq.every((u) => new URL(u).searchParams.get('board') === 'zsecond'), `[${tag}] /api/needs should carry board=zsecond: ${nreq}`);
 		await page.keyboard.press('i');
 		const orow = `#npList .nr[data-key="zsecond/${oid}"]`;
 		await page.fill(`${orow} input[data-draft]`, 'Teal'); await page.keyboard.press('Enter');
@@ -1100,7 +1103,7 @@ try {
 		const hold = () => { let go; const p = new Promise((r) => { go = r; }); return { p, go }; };
 		const tk = hold(), nd = hold();
 		await page.route(/\/api\/tickets$/, async (r) => { await tk.p; await r.continue(); });
-		await page.route(/\/api\/needs$/, async (r) => { await nd.p; await r.continue(); });
+		await page.route(/\/api\/needs(\?|$)/, async (r) => { await nd.p; await r.continue(); });
 		await page.goto(base);
 		await page.waitForSelector('#board .bload .ld');
 		ok(!/No tickets yet/.test(await page.innerText('#board')), 'the board says loading, not "No tickets yet", before the first answer');
@@ -1124,7 +1127,7 @@ try {
 			await page.unroute(/\/api\/tickets\/[^/]+$/);
 			await page.evaluate((i) => fetch(`/api/tickets/${i}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"status":"todo"}' }), id);
 			// a failed /api/needs: the panel says so instead of loading forever
-			await page.unroute(/\/api\/needs$/); await ctx.route(/\/api\/needs$/, (r) => r.fulfill({ status: 500, body: '{"error":"x"}' })); // on the context: the new page gets it too
+			await page.unroute(/\/api\/needs(\?|$)/); await ctx.route(/\/api\/needs(\?|$)/, (r) => r.fulfill({ status: 500, body: '{"error":"x"}' })); // on the context: the new page gets it too
 			const fresh = await ctx.newPage(); lastPage = fresh; fresh.on('pageerror', (e) => errs.push(e.message));
 			await fresh.goto(base); await fresh.waitForSelector('#board .card', { state: 'attached' });
 			await fresh.keyboard.press('i'); await fresh.waitForSelector('#npList .msg.err');

@@ -500,6 +500,7 @@ GET    /api/needs                     every board's tickets waiting on a person,
                                       "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result",
                                       "body" (last 6000 chars); stuck items also "open_blockers": [{"id", "effective_status", "title"}] and "claim_note": {"by", "at", "text"}|null, "attempts": [...] and "failed": "Failed 3 times (expired ×2, rejected ×1)" (empty unless failing)}]}], boards with items only.
                                       Stuck = a missing blocker, a doing ticket with an open blocker (immediately), or a doing ticket stale for stale_days
+GET    /api/needs?board=<id>          the same for one board only (the UI sends its own board; the others are not read); unknown id = 404
 GET    /api/chat                      {"enabled", "model"}
 POST   /api/chat                      {"board", "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
 POST   /api/boards                    {"id": "my-game", "title": "My game", "root"?: one of UNBLOCKD_ROOT}  -> the board + "path" (+ "host_path" in Docker);
