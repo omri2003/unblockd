@@ -6,7 +6,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from unblockd import files
 from unblockd.store import Store
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -84,6 +86,66 @@ class CacheTest(unittest.TestCase):
 		with open(log, "a", encoding="utf-8") as f:
 			f.write('{"ts": "2026-01-01T00:00:00+00:00", "event": "note", "note": "half')  # a writer mid-line
 		self.assertEqual(self.s.activity(limit=1)[0]["note"], "three")
+
+
+class ScanReuseTest(unittest.TestCase):
+	"""CORE-60: inside the window a read outside the lock reuses the last stat pass; a write by this process, or the lock, stats again."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.d = Path(self.tmp.name) / "tickets"
+		self.s = Store(self.d)
+		self.s.create({"title": "aaaa"}, tid="A-1")
+		self.knob = mock.patch.object(files, "SCAN_REUSE_S", 60.0)  # a window no test run outlasts
+		self.knob.start()
+		self.scans = 0
+		real = os.scandir
+		def counting(path=".", *a):
+			if Path(path) == self.d:
+				self.scans += 1
+			return real(path, *a)
+		self.spy = mock.patch.object(files.os, "scandir", counting)
+		self.spy.start()
+
+	def tearDown(self):
+		self.spy.stop()
+		self.knob.stop()
+		self.tmp.cleanup()
+
+	def hand_edit(self, title):  # another process / a git pull: this process's write counter does not move
+		p = self.d / "A-1.json"
+		t = json.loads(p.read_text(encoding="utf-8"))
+		t["title"] = title
+		(tmp := p.with_suffix(".x")).write_text(json.dumps(t), encoding="utf-8")
+		os.replace(tmp, p)
+
+	def test_two_reads_in_the_window_stat_once(self):
+		self.s.list()
+		Store(self.d).get("A-1")  # another Store (the web server makes one per request) shares the pass
+		self.assertEqual(self.scans, 1)
+
+	def test_a_write_from_this_process_is_seen_by_the_next_read(self):
+		self.s.list()
+		Store(self.d).update("A-1", {"title": "bbbb"})
+		self.assertEqual(self.s.get("A-1")["title"], "bbbb")
+		self.s.create({"title": "new"}, tid="A-2")
+		self.assertEqual([t["id"] for t in self.s.list()], ["A-1", "A-2"])
+		self.s.delete("A-2")
+		self.assertEqual([t["id"] for t in self.s.list()], ["A-1"])
+
+	def test_the_lock_never_reuses_a_stale_pass(self):
+		self.s.list()
+		self.hand_edit("bbbb")
+		self.assertEqual(self.s.get("A-1")["title"], "aaaa")  # outside the lock: the window's pass (what the 1 s web reuse allows)
+		self.assertEqual(self.s._locked(lambda: self.s.get("A-1")["title"]), "bbbb")
+		self.hand_edit("cccc")
+		claimed = self.s.claim("w", tid="A-1")  # claim reads under the lock
+		self.assertEqual(claimed["title"], "cccc")
+
+	def test_after_the_window_a_hand_edit_is_seen(self):
+		self.s.list()
+		self.hand_edit("bbbb")
+		with mock.patch.object(files, "SCAN_REUSE_S", 0.0):
+			self.assertEqual(self.s.get("A-1")["title"], "bbbb")
 
 
 if __name__ == "__main__":

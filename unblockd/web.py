@@ -71,6 +71,7 @@ from . import boards as bd
 from . import chat
 from . import branches
 from . import connectors
+from . import files
 from . import github
 from . import knowledge as kn
 from . import notify
@@ -385,6 +386,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
 	st.refuse_open_bind(host, os.environ.get("UNBLOCKD_TOKEN"))
+	files.SCAN_REUSE_S = 1.0  # one page load reads a files board ~4 times: share one stat pass (CORE-60); a write by this server drops it at once
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
 	      + (", ".join(f"{k} ({connectors.describe(str(v))})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	if notify.start(BOARDS):
