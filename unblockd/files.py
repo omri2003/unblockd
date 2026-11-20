@@ -28,6 +28,13 @@ LOCK_STALE = 30  # seconds: a lock file older than this was left by a crash
 # changed, so another process's write, a git pull or a hand edit is seen on the next call. Never written back.
 _RAW: dict[tuple, dict] = {}  # (tickets folder, parse) -> {stem: (stamp, parsed ticket)}: a raw reader never shares a parsed cache
 _LOG: dict[str, tuple] = {}  # activity file -> (inode, bytes parsed, [events oldest first])
+# Reuse of a fresh stat pass (CORE-60): one page load reads the same board ~4 times. A read OUTSIDE the lock may reuse the
+# folder's last stat pass while it is younger than SCAN_REUSE_S and this process wrote no ticket since; under the lock every
+# read stats again (claims and read-modify-writes must see other processes' writes). 0 = always stat (CLI, MCP, tests);
+# web.main sets 1 s, so a git pull, hand edit or another process's write shows at most that much later in the web UI.
+SCAN_REUSE_S = 0.0
+_SCANNED: dict[tuple, tuple] = {}  # _RAW key -> (time.monotonic() when its last stat pass started, _WROTE count then)
+_WROTE: dict[str, int] = {}  # tickets folder -> ticket writes / locked steps by this process (any one drops the reuse)
 
 
 class FileBackend:
@@ -39,6 +46,7 @@ class FileBackend:
 		self.dir.mkdir(parents=True, exist_ok=True)
 		self.parse = parse
 		self.key = str(self.dir.resolve())
+		self._held = False  # inside lock(): every _scan stats (CORE-60)
 		# runtime state: <tickets>/.unblockd, except in a linked git worktree, where it is the MAIN checkout's copy of the same
 		# folder: every worktree then shares one lock and one claims.json (ticket files stay per branch)
 		wt = linked_worktree(self.dir.resolve())
@@ -80,6 +88,10 @@ class FileBackend:
 
 	def _scan(self) -> dict[str, tuple]:
 		ck = (self.key, self.parse)
+		gen, last = _WROTE.get(self.key, 0), _SCANNED.get(ck)
+		if last and last[1] == gen and not self._held and time.monotonic() - last[0] < SCAN_REUSE_S and ck in _RAW:
+			return _RAW[ck]  # fresh enough, and nothing written by this process since (outside the lock only)
+		started = time.monotonic()  # taken before the pass: a file changed during it is not older than the stamp says
 		old, new = _RAW.get(ck, {}), {}
 		with os.scandir(self.dir) as it:
 			for e in it:
@@ -90,7 +102,11 @@ class FileBackend:
 				hit = old.get(stem)
 				new[stem] = hit if hit and hit[0] == stamp else (stamp, self.read_file(Path(e.path)))
 		_RAW[ck] = dict(sorted(new.items()))
+		_SCANNED[ck] = (started, gen)  # gen read before the pass: a write during it drops the reuse
 		return _RAW[ck]
+
+	def _wrote(self) -> None:
+		_WROTE[self.key] = _WROTE.get(self.key, 0) + 1  # the next read stats again (CORE-60)
 
 	def version(self):
 		"""Changes whenever a ticket, a claim or an attachment changed (read after tickets()): the derived board is rebuilt only then."""
@@ -120,10 +136,12 @@ class FileBackend:
 			json.dump(t, f, indent=2, ensure_ascii=False)
 			f.write("\n")
 		os.replace(tmp, self.path(t["id"]))  # atomic: a reader never sees half a file
+		self._wrote()
 
 	def delete(self, tid: str) -> None:
 		"""The ticket and its attachments."""
 		self.path(tid).unlink()
+		self._wrote()
 		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)
 
 	def numbers(self, prefix: str) -> list[int]:
@@ -164,9 +182,12 @@ class FileBackend:
 				if time.monotonic() > deadline:
 					raise TicketError("another claim is in progress; try again")
 				time.sleep(0.05)
+		self._held = True
 		try:
 			yield
 		finally:
+			self._held = False
+			self._wrote()  # a locked step may have written or deleted a ticket: drop the reuse (CORE-60)
 			os.close(fd)
 			lock.unlink(missing_ok=True)
 
