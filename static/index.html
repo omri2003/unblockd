@@ -148,6 +148,7 @@ a.btn{display:inline-block;text-decoration:none}
 .nr.open .nd-f textarea{flex-basis:100%;order:-1;background:var(--surface)}
 .prb{display:inline-block;margin:6px 0;padding:1px 8px;border:1px solid var(--line);border-radius:10px;font-size:12px} .prb.bad{color:var(--cinnabar);border-color:var(--cinnabar)}
 .rbox{border:1px solid var(--line);border-left:3px solid var(--plum);border-radius:6px;padding:6px 10px;margin:8px 0} .rbox p{margin:0 0 4px;overflow-wrap:anywhere} .rbox ul{margin:0 0 4px;padding-left:1.2em} .rbox li{overflow-wrap:anywhere} .rbox a{color:var(--jade)} .rbox h5{margin:4px 0 2px;font-size:.75rem;font-weight:600;color:var(--muted)}
+.rsum{margin:2px 0 6px} .rsum ul,.rsum ol{margin:0 0 4px} .rsum.fold{max-height:9.6em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)} .rbox .rmore{margin:0 0 6px} .rbox .rnv{margin:4px 0 6px;padding:4px 8px;border-left:3px solid var(--amber);background:var(--amber-soft);border-radius:4px} .rnv b{color:var(--amber)} /* UI-79 */
 /* digest rows (UI-55, design C "Outcome rows"): every row is a flattened ticket. ONE grid for the whole list (subgrid), so
    tile / id + seal / title + outcome / who / time line up down every section. Tile = the section's icon on its soft status token. */
 .dg-grid{display:grid;grid-template-columns:max-content max-content minmax(0,1fr) fit-content(11rem) max-content;column-gap:12px;max-height:52vh;overflow:auto;margin-top:6px;padding:2px}
@@ -1439,7 +1440,7 @@ const lateLine=(late,by)=>late.length?`<p class="nd-q lt"><b>${late.length===1?'
 const lateBtns=(late,B)=>`<button type="button" class="btn sm" data-reopen ${B} title="Back to To do: the next worker gets the note (a person's note is pinned)">Reopen</button><button type="button" class="btn ghost sm" data-dismissnotes="${late.map(n=>n.n).join(',')}" ${B} title="Nothing to do: stop listing this note">Dismiss</button>`;
 const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: the panel already shows the question
 const ntime=at=>at.length>10?new Date(at).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):at; // old complete() notes carry a date only
-function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
+function notesHtml(t){const ns=(t.notes||[]).filter(n=>!sameAsResult(n,t.result)); if(!ns.length) return '';
   return `<h3>Notes <span class="hint">${ns.length}</span></h3><ol class="nn">${ns.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.pinned&&!n.superseded_by?' <span class="hint" title="Always sent to the next agent">· pinned</span>':''}${n.superseded_by?` <span class="hint">· replaced by note ${esc(n.superseded_by)}</span>`:''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ol>`;}
 async function loadNeeds(){ // ETag: an idle poll costs headers only; ?board= = this board only (API-18: every board cost ~1 s per call)
   if(!BOARDS.length) return; const tok=++nTok;
@@ -1498,7 +1499,7 @@ document.addEventListener('toggle',e=>{const d=e.target; if(d.dataset?.dsk){d.op
 function needsRow(g,i){
   const k=nkey(g,i),open=NX===k,here=g.id===curBoard(),f=(dk,ph)=>draftField(dk+k,'',ph,open?'textarea':'input'),B=`data-board="${esc(g.id)}" data-id="${esc(i.id)}"`;
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
-  const notes=(i.notes||[]).filter(n=>!(i.kind==='question'&&isAsk(n,i.waiting_on))).slice(-3);
+  const notes=(i.notes||[]).filter(n=>!(i.kind==='question'&&isAsk(n,i.waiting_on))&&!sameAsResult(n,i.result)).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
   const late=i.late||[],lby=i.kind==='review'?i.result?.by||'the agent':'',lx=lateHtml(late,lby); // a done ticket: "after it was done" (it may have been approved since)
   const x=open?`<div class="nr-x">${lx}${i.kind==='late_note'?`<h4>Result</h4>${resultHtml(i.result,1)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`${dw}<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length&&i.kind!=='late_note'?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(noteLine(n).length>900?noteLine(n).slice(0,900)+'…':noteLine(n))}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'||i.kind==='late_note'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
@@ -1583,7 +1584,16 @@ const whoLine=(r,done)=>{ // "Done by backend-1 for Omri · approved by Dana"; m
   const main=[r.by&&(r.principal||r.approved_by||(done&&HUMAN.size>1))?`Done by ${r.by}${r.principal?' for '+r.principal:''}`:'',r.approved_by?`approved by ${r.approved_by}`:''].filter(Boolean).join(' · ');
   return {main,muted:r.approved_by&&r.approved_by===r.principal?'self-approved':done&&!r.principal&&!r.approved_by&&HUMAN.size>1&&r.by&&!HUMAN.has(r.by)?'no human recorded':''};
 };
-const resultHtml=(r,done)=>!r?'':`<div class="rbox">${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<h5>Files changed</h5><ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<h5>References</h5><ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<h5>Handoff</h5><p>${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
+// UI-79: the summary leads the Result box (markdown, folded past RFOLD chars; RMORE = unfolded ones, key by|at, kept across the 4 s refresh);
+// a trailing "NOT verified: ..." is its own warning line (what the person should check)
+const RMORE=new Set(), RFOLD=600;
+const splitNV=s=>{s=String(s||''); const m=[...s.matchAll(/(^|[\s.;(])NOT verified\s*:\s*/gi)].pop(); return m?[s.slice(0,m.index+m[1].length).trim().replace(/[;,(]$/,'').trim(),s.slice(m.index+m[0].length).trim()]:[s.trim(),''];};
+const sumHtml=r=>{if(!r.summary) return ''; const [main,nv]=splitNV(r.summary),k=(r.by||'')+'|'+(r.at||''),long=main.length>RFOLD,open=RMORE.has(k);
+  return `${main?`<div class="rsum${long&&!open?' fold':''}">${bodyHtml(main)}</div>${long?`<button type="button" class="btn ghost sm rmore" data-rmore="${esc(k)}" aria-expanded="${open}">${open?'Show less':'Show more'}</button>`:''}`:''}${nv?`<p class="rnv"><b>NOT verified:</b> ${md(nv)}</p>`:''}`;};
+const sameAsResult=(n,r)=>n.kind==='complete'&&!!r?.summary&&n.text===r.summary; // the complete note repeats the summary the Result box already shows
+document.addEventListener('click',e=>{const b=e.target.closest?.('[data-rmore]'); if(!b) return; const k=b.dataset.rmore,on=!RMORE.has(k); on?RMORE.add(k):RMORE.delete(k);
+  b.previousElementSibling?.classList.toggle('fold',!on); b.textContent=on?'Show less':'Show more'; b.setAttribute('aria-expanded',on);});
+const resultHtml=(r,done)=>!r?'':`<div class="rbox">${sumHtml(r)}${(w=>w.main||w.muted?`<p class="hint">${esc(w.main)}${w.muted?`${w.main?' ':''}<span>(${w.muted})</span>`:''}</p>`:'')(whoLine(r,done))}${r.files?.length?`<h5>Files changed</h5><ul>${r.files.map(f=>`<li><code>${esc(f)}</code></li>`).join('')}</ul>`:''}${r.refs?.length?`<h5>References</h5><ul>${r.refs.map(x=>/^https?:\/\//.test(x)?`<li><a href="${esc(x)}" target="_blank" rel="noopener">${esc(x)}</a></li>`:`<li><code>${esc(x)}</code></li>`).join('')}</ul>`:''}${r.handoff?`<h5>Handoff</h5><p>${md(r.handoff)}</p>`:''}<span class="hint">${esc(r.by||'')} ${esc(r.at?hm(new Date(r.at)):'')}</span></div>`;
 // Agent stats (#apanel): fetched when the panel opens or the range changes, never on the 4 s poll. One row per profile.
 let AP={days:store.get('agentDays',7),ev:null,err:'',tab:pickOf(store.get('agentTab','stats'),['stats','tools'],'stats'),tl:null,draft:null,terr:'',more:false}, apTok=0;
 const profOf=a=>(CFG.agents||[]).map(p=>p.name).filter(p=>a===p||a.startsWith(p+'-')).sort((x,y)=>y.length-x.length)[0]||'Not in a profile';
@@ -1860,10 +1870,9 @@ function showTicket(id,refresh){
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='done'&&lateFor(curBoard(),t.id).length?`${lateHtml(lateFor(curBoard(),t.id),'','h3')}<div class="nd-f">${lateBtns(lateFor(curBoard(),t.id),DB)}</div>`:''}
-    ${t.status==='review'?`${lateHtml(lateFor(curBoard(),t.id),t.result?.by||'the agent','h3')}<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:dw}
+    ${t.status==='review'?`${lateHtml(lateFor(curBoard(),t.id),t.result?.by||'the agent','h3')}<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${notesHtml(t)}
-    ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}`:''}
     ${partsHtml(t)}
     <h3>Add note</h3><form class="nd-f" data-nform="notes" data-id="${esc(t.id)}">${draftField('dn:'+curBoard()+'/'+t.id,'','A note for the ticket…','textarea')}<button class="btn ghost sm" type="submit">Add note</button></form>
     <h3>Blocked by</h3>${linkList(t.blocked_by)}
