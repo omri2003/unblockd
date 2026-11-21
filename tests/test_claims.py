@@ -438,7 +438,7 @@ class ClaimTest(unittest.TestCase):
 		                 ("CMB-2", "touches overlap CMB-1, claimed by backend-1")):
 			with self.assertRaisesRegex(TicketError, pat):
 				self.s.claim("backend-2", tid=tid)
-		with self.assertRaisesRegex(TicketError, r"or pass profile=<name>"):
+		with self.assertRaisesRegex(TicketError, r"name workers <profile>-N .*backend-1\)$"):
 			self.s.claim("claude-1")
 
 	def test_unknown_worker_name_is_refused_on_a_board_with_profiles(self):

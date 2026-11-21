@@ -137,6 +137,11 @@ class ApiTest(unittest.TestCase):
 		self.srv.server_close()
 		self.tmp.cleanup()
 
+	def to_review(self, tid, board="a"):  # review needs a result (CORE-19): finish it, then move it back to review as a person would
+		self.call("POST", f"/api/b/{board}/tickets/{tid}/claim", {"agent": "backend-1"})
+		self.call("POST", f"/api/b/{board}/tickets/{tid}/complete", {"agent": "backend-1", "summary": "did it"})
+		self.assertEqual(self.call("PATCH", f"/api/b/{board}/tickets/{tid}", {"status": "review"})[1]["status"], "review")
+
 	def call(self, method, path, body=None, headers=None):
 		req = urllib.request.Request(self.base + path, method=method, data=json.dumps(body).encode() if body else None,
 		                             headers={"Content-Type": "application/json", **(headers or {})})
@@ -275,7 +280,8 @@ class ApiTest(unittest.TestCase):
 			return r.status, r.getheader("ETag"), r.read()
 		for b in ("a", "s"):
 			with self.subTest(board=b):
-				self.assertEqual(self.call("POST", f"/api/b/{b}/tickets", {"prefix": "BUG", "title": "x", "status": "review"})[0], 201)
+				self.assertEqual(self.call("POST", f"/api/b/{b}/tickets", {"prefix": "BUG", "title": "x"})[0], 201)
+				self.to_review("BUG-1", b)  # a new ticket can't start in review (CORE-19)
 				n = {"dumps": 0, "md5": 0}
 				fake_json = mock.Mock(wraps=json, dumps=lambda *a, **k: n.__setitem__("dumps", n["dumps"] + 1) or json.dumps(*a, **k))
 				real_md5 = web.hashlib.md5
@@ -454,7 +460,7 @@ class ApiTest(unittest.TestCase):
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual((code, t["waiting_on"]), (200, ""))
 		self.assertEqual({k: t["notes"][-1][k] for k in ("by", "kind", "q", "text")}, {"by": "human", "kind": "answer", "q": "which?", "text": "this one"})
-		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
+		self.to_review("CMB-1")
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/reject", {"by": "ana", "reason": "redo"})
 		self.assertEqual((code, t["status"]), (200, "todo"))
 		self.assertEqual((t["notes"][-1]["by"], t["notes"][-1]["kind"]), ("ana", "rejected"))
@@ -464,11 +470,12 @@ class ApiTest(unittest.TestCase):
 		for t in ("one", "two"):
 			self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": t, "pillar": "COMBAT"})
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})[0], 400)  # not in review
-		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
+		f = Path(self.tmp.name) / "a" / "tickets" / "CMB-1.json"  # an old file moved to review by hand before CORE-19: no result
+		f.write_text(json.dumps({**json.loads(f.read_text(encoding="utf-8")), "status": "review"}), encoding="utf-8")
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})
 		self.assertEqual((code, t["status"], t["result"]), (200, "done", None))  # moved to review by hand: no result is invented
 		self.assertEqual(t["notes"][-1]["kind"], "approved")
-		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
+		self.to_review("CMB-2")
 		code, t = self.cli("approve", "CMB-2", "--by", "ana")
 		self.assertEqual((code, t["status"]), (0, "done"))
 		self.assertEqual(t["notes"][-1]["text"], "Approved by ana")
@@ -482,7 +489,7 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
 		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "backend-1"})
 		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "backend-1", "question": "which?"})
-		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
+		self.to_review("CMB-2")
 		self.call("POST", "/api/b/b/tickets/WEB-1/claim", {"agent": "w-1"})
 		self.call("POST", "/api/b/b/tickets/WEB-1/ask", {"agent": "w-1", "question": "colour?"})
 		code, n = self.call("GET", "/api/needs")
@@ -550,8 +557,10 @@ class ApiTest(unittest.TestCase):
 		"""CORE-65 + API-18: /needs?board=a and ?board=b are cached apart (one board's body never answers the other's request),
 		and an unchanged ?board=a poll does no json.dumps / md5."""
 		from unblockd import web
-		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT", "status": "review"})
-		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page", "status": "review"})
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
+		self.to_review("CMB-1", "a")  # a new ticket can't start in review (CORE-19)
+		self.to_review("WEB-1", "b")
 
 		def get(path, etag=None):
 			c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)

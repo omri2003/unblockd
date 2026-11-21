@@ -117,7 +117,7 @@ class Scanner:
 		url = _git(top, "remote", "get-url", "origin", ok=(0, 2)).strip()
 		if url and "://" not in url and not re.match(r"^[\w.-]+@[\w.-]+:", url):  # a local path, maybe relative to the repo
 			url = str((top / url).resolve())
-		out = {"source": "local", "remote": _clean_url(url) if url else None, "base": None, "checkout": None, "error": None, "branches": []}
+		out = {"source": "local", "remote": _clean_url(url) if url else None, "base": None, "checkout": None, "error": None, "branches": [], "id_max": {}}
 		repo, prefixes = top, ("refs/heads", "refs/remotes/origin")
 		if url:
 			env = git_env(url, self.token, self.github_token)
@@ -142,6 +142,7 @@ class Scanner:
 			raise GitError(f"no branch {base} to compare with")
 		if out["source"] == "origin" and cur:
 			out["checkout"] = self._checkout(repo, top, cur, base, rel, store.dir)
+		taken = _tree_ids(repo, base_ref, rel)  # ids on origin's default branch: a checkout that is behind must not hand them out again (CORE-76)
 		known = {t["id"] for t in store._all_raw()}
 		fmt = "%(refname)%09%(objectname)%09%(committerdate:unix)%09%(authorname)"
 		rows = _git(repo, "for-each-ref", f"--no-merged={base_sha}", f"--format={fmt}", *prefixes).splitlines()
@@ -157,6 +158,7 @@ class Scanner:
 		for name, (sha, ts, author) in sorted(seen.items(), key=lambda kv: -int(kv[1][1] or 0))[:MAX_BRANCHES]:
 			keep.add(sha)  # memo kept for every branch seen, linked or not, so an unlinked branch is not re-read each poll
 			d = self._details(repo, env, sha, base_sha, rel, known)
+			taken.update(d["new_ids"])  # ticket files another session made on its unmerged branch
 			links: dict[str, list[str]] = {}
 			for tid in ids_in(name, known):
 				links.setdefault(tid, []).append("name")
@@ -169,6 +171,7 @@ class Scanner:
 			out["branches"].append({"name": name, "sha": sha, "at": datetime.fromtimestamp(int(ts or 0), timezone.utc).isoformat(timespec="seconds"),
 			                        "author": author, "commits": d["commits"], "tickets": links, "edits": d["edits"]})
 		self.memo = {k: v for k, v in self.memo.items() if k.split("|")[1] in keep or not k.startswith(str(repo) + "|")}
+		out["id_max"] = id_max(taken)
 		return out
 
 	def _mirror(self, rt: Path, url: str, env: dict) -> Path:
@@ -206,19 +209,22 @@ class Scanner:
 		if key not in self.memo:  # cached with every id-shaped name, filtered per call: a ticket created later still links
 			self.memo[key] = self._read(repo, env, sha, base, rel)
 		d = self.memo[key]
-		return {**d, "commit_ids": [x for x in d["commit_ids"] if x in known], "edits": {k: v for k, v in d["edits"].items() if k in known}}
+		return {**d, "commit_ids": [x for x in d["commit_ids"] if x in known], "edits": {k: v for k, v in d["edits"].items() if k in known},
+		        "new_ids": d.get("new_ids", [])}
 
 	def _read(self, repo: Path, env, sha: str, base: str, rel: str) -> dict:
 		commits = int(_git(repo, "rev-list", "--count", f"{base}..{sha}").strip() or 0)
 		subjects = _git(repo, "log", "--format=%s", f"-n{MAX_COMMITS}", f"{base}..{sha}")
 		ids = ids_in(subjects)
-		edits = {}
+		edits, new_ids = {}, []
 		try:
 			names = _git(repo, "diff", "--name-only", "--no-renames", f"{base}...{sha}", "--", rel + "/").splitlines()
 		except GitError:
 			names = []  # no merge base (unrelated history): no file evidence
 		for p in names:
 			stem = p[len(rel) + 1:-5] if p.startswith(rel + "/") and p.endswith(".json") and "/" not in p[len(rel) + 1:] else ""
+			if ID_RE.match(stem):
+				new_ids.append(stem)  # every ticket file the branch touches, read or not: its id is taken (CORE-76)
 			if not ID_RE.match(stem) or len(edits) >= MAX_EDITS:
 				continue
 			try:
@@ -229,7 +235,27 @@ class Scanner:
 				continue  # a blob we could not fetch, or a file that isn't JSON on the branch: the link stays, without details
 			n0, n1 = len(was.get("notes") or []), len(now.get("notes") or [])
 			edits[stem] = {"status": now.get("status"), "notes": max(0, n1 - n0)}
-		return {"commits": commits, "commit_ids": ids, "edits": edits}
+		return {"commits": commits, "commit_ids": ids, "edits": edits, "new_ids": new_ids}
+
+
+def _tree_ids(repo: Path, ref: str, rel: str) -> set[str]:
+	"""Ticket ids with a file in `ref`'s tickets folder (tree objects only: nothing is fetched in a blob-less mirror)."""
+	try:
+		names = _git(repo, "ls-tree", "--name-only", ref, "--", rel + "/").splitlines()
+	except GitError:
+		return set()
+	return {Path(p).name[:-5] for p in names if p.endswith(".json") and ID_RE.match(Path(p).name[:-5])}
+
+
+def id_max(ids) -> dict[str, int]:
+	"""{prefix: highest number} over ticket ids (UI-53a counts as 53)."""
+	out: dict[str, int] = {}
+	for tid in ids:
+		pre, _, num = tid.partition("-")
+		n = int(re.sub(r"\D", "", num) or 0)
+		if n > out.get(pre, 0):
+			out[pre] = n
+	return out
 
 
 class Syncer:

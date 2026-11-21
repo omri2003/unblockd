@@ -3,8 +3,9 @@
 GET    /api/boards                       every board: id, title, ticket counts
 POST   /api/boards                       {"id": "my-game", "title": "My game", "root"?}  (needs UNBLOCKD_ROOT)
 GET    /api/needs                        every board's tickets that wait on a person (read-only, for the UI's Needs you panel):
-                                         [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck, "title", "priority", "score", "unblocks",
-                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars), "notes" (newest 10)}]}], boards with items only,
+                                         [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck|late_note, "title", "priority", "score", "unblocks",
+                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars), "notes" (newest 10),
+                                         "late"? (review / late_note: notes that came after the work was finished, Store.late_notes)}]}], boards with items only,
                                          items: score desc, then oldest first
 GET    /api/chat                         {"enabled": bool, "model": ...}
 POST   /api/chat                         {"board": id, "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
@@ -17,7 +18,8 @@ POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id"
 POST   tickets/batch                     {"tickets": [{prefix|id, ...fields}, ...], "agent"?}  up to 50, all or nothing; blocked_by / parent may say "#N" (the Nth item) -> {"tickets", "ids": {"#1": id}, "warnings"?}
 POST   tickets/<id>/accept               {"by"?}  accept an agent's proposal (400 unless proposed_by is set)
 POST   tickets/<id>/approve              {"by"?}  review -> done, recording result.approved_by / approved_at (400 unless status is review; not the completer, not a worker)
-PATCH  tickets/<id>                      {...fields to change}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it
+PATCH  tickets/<id>                      {...fields to change, "by"?}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it; to done with no result = `warnings` (finish with complete)
+POST   tickets/<id>/report               {"by"?, "summary", "files"?, "refs"?}  a person adds the summary a done ticket was closed without (400 unless done with no summary)
 DELETE tickets/<id>                      ?agent= (holder rule), ?reason= (a human rejecting a proposal; logged)
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
 GET    agents                            who is working what right now + recent activity
@@ -25,11 +27,12 @@ GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expir
                                          since=<ISO time> keeps only newer events (the "While you were away" digest)
 POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner}  best claimable ticket, or null
 POST   tickets/<id>/claim                {"agent", "note"?, "principal"?}
-POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?}
+POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?, "until"? (ISO: keep the claim alive until then, capped at lease_max_minutes)}
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply_to"?, "supersedes"?}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
+POST   tickets/<id>/dismiss              {"by"?, "notes": [n, ...], "undo"?}  a person read late notes on a finished ticket: Needs you stops listing them
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
@@ -165,9 +168,12 @@ def _needs(boards: list | None = None) -> list[dict]:
 		items, by_id, failing = [], {t["id"]: t for t in ts}, s.failing()
 		prs = s.backend.get_doc("prs") if prs is None else prs
 		for t in ts:
+			late = s.late_notes(t) if t["status"] in ("review", "done") else []
 			if t["status"] == "done":
-				continue
-			if t["status"] == "review":
+				if not late:
+					continue
+				kind, at = "late_note", late[-1].get("at")  # a person wrote on finished work: reopen it or dismiss the note
+			elif t["status"] == "review":
 				kind, at = "review", (t.get("result") or {}).get("at")
 			elif t.get("proposed_by"):
 				kind, at = "proposal", None
@@ -186,6 +192,7 @@ def _needs(boards: list | None = None) -> list[dict]:
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
 			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
 			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
+			              **({"late": late} if late else {}),
 			              **({"needs": t["needs"]} if stuck and t.get("needs") else {}),
 			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
@@ -380,17 +387,17 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal")))
 				if act == "heartbeat":
 					box = store.inbox(agent, mark=True)
-					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"))
+					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None)
 					return self._send(200, {**t, **({"inbox": box} if box else {})})
 				if act == "release":
-					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or "")))
+					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or ""), request_id=b.get("request_id")))
 				if act == "ask":
-					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal")))
+					return self._send(200, store.ask(tid, agent, str(b.get("question", "")), request_id=b.get("request_id")))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text"), kind=b.get("kind") or "note", pin=bool(b.get("pin")),
-				                                        reply_to=b.get("reply_to"), supersedes=b.get("supersedes")))
+				                                        reply_to=b.get("reply_to"), supersedes=b.get("supersedes"), request_id=b.get("request_id")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject", "accept", "approve"):
 				b = self._body()
 				by = str(b.get("by") or "human")
@@ -399,6 +406,12 @@ class Handler(BaseHTTPRequestHandler):
 				if rest[2] == "approve":
 					return self._send(200, store.approve(rest[1], by))
 				return self._send(200, store.answer(rest[1], by, b.get("text")) if rest[2] == "answer" else store.reject(rest[1], by, b.get("reason")))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "dismiss":
+				b = self._body()
+				return self._send(200, store.dismiss_notes(rest[1], str(b.get("by") or "human"), b.get("notes"), undo=bool(b.get("undo"))))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "report":
+				b = self._body()
+				return self._send(200, store.report(rest[1], str(b.get("by") or "human"), b.get("summary"), files=b.get("files"), refs=b.get("refs")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
@@ -417,13 +430,13 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.with_blockers(store.get(tid)))
 			if method == "POST" and tid is None:
 				b = self._body()
-				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None)))  # agent: the creating worker (cli.Remote); none = a human
+				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None), request_id=b.pop("request_id", None)))  # agent: the creating worker (cli.Remote); none = a human
 			if method == "PATCH" and tid:
 				b = self._body()
 				m = (self.headers.get("If-Match") or "").strip().strip('"')  # the rev the client last saw; none = last write wins, as before
 				if m and not m.isdigit():
 					raise st.TicketError("If-Match must be the ticket's rev (a number)")
-				return self._send(200, store.update(tid, b, agent=b.pop("agent", None), expected_rev=int(m) if m else None))  # agent: a remote worker's name (cli.Remote)
+				return self._send(200, store.update(tid, b, agent=b.pop("agent", None), expected_rev=int(m) if m else None, by=b.pop("by", None)))  # agent: a remote worker's name (cli.Remote); by: who (logged on done)
 			if method == "DELETE" and tid:
 				return self._send(200, store.delete(tid, agent=q.get("agent"), reason=q.get("reason", "")))
 			return self._send(405, {"error": "method not allowed"})

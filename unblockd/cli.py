@@ -4,12 +4,13 @@
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
-    python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
+    python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
     python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"]
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
     python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
+    python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
     python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli context ID              # docs + attached files to read before working ID
     python -m unblockd.cli doc PATH                # one file from the project repo
@@ -19,6 +20,7 @@
     python -m unblockd.cli create-many --file plan.json|- [--agent A]   # a JSON array, all or nothing; blocked_by / parent may say "#N" = the Nth item
     python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
     python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
+    python -m unblockd.cli report ID "summary" [--by NAME] [--file PATH]... [--ref URL]...   # a person adds the summary a done ticket was closed without
     python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
@@ -40,6 +42,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from . import boards as bd
 from . import connectors
 from . import knowledge as kn
 from . import store as st
@@ -94,26 +97,28 @@ class Remote:
 	def work_plan(self, per_agent=3): return self._call("GET", "/plan", per_agent=per_agent)
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
-	def create(self, data, tid=None, prefix=None, agent=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {})})
+	def create(self, data, tid=None, prefix=None, agent=None, request_id=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {}), **({"request_id": request_id} if request_id else {})})
 	def create_many(self, items, agent=None): return self._call("POST", "/tickets/batch", {"tickets": items, **({"agent": agent} if agent else {})})
 	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
 	def approve(self, tid, by): return self._call("POST", f"/tickets/{tid}/approve", {"by": by})
-	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
+	def update(self, tid, changes, agent=None, by=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
+	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
 	def claim(self, agent, tid=None, profile=None, note="", principal=None):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal})
 	def claim_next(self, agent, profile=None, note="", principal=None): return self.claim(agent, profile=profile, note=note, principal=principal)  # the server answers with the reason when empty
-	def heartbeat(self, tid, agent, note="", principal=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal})
-	def release(self, tid, agent, reason="", principal=None, missing="", why=""):
-		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why})
-	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
+	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
+	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None):
+		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id})
+	def ask(self, tid, agent, question, request_id=None): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question, "request_id": request_id})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
-	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None):
-		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes})
-	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None):
-		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal})
+	def dismiss_notes(self, tid, by, ns, undo=False): return self._call("POST", f"/tickets/{tid}/dismiss", {"by": by, "notes": ns, "undo": undo})
+	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None, request_id=None):
+		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes, "request_id": request_id})
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None):
+		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
@@ -158,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
 	cr.add_argument("--milestone", help="the roadmap milestone key (milestones in unblockd.json)")
 	cr.add_argument("--skill", action="append", help="a skill name from the board's registry (repeatable)")
 	cr.add_argument("--mcp", action="append", help="an MCP server name from the board's registry (repeatable)")
+	cr.add_argument("--request-id", help="a fresh id for this create: a retry with the same id returns the ticket it made (already: true)")
 	cm = sub.add_parser("create-many", help='several tickets in one all-or-nothing step: a JSON array of ticket objects (prefix or id + fields); blocked_by / parent may say "#N" = the Nth item')
 	cm.add_argument("--file", required=True, help="path to the JSON array, or - for stdin")
 	cm.add_argument("--agent", help="the worker creating them (strict schema, proposal gate), as for create")
@@ -169,6 +175,13 @@ def main(argv: list[str] | None = None) -> int:
 	up.add_argument("--skill", action="append", help="set the ticket's skills to these registry names (repeatable)")
 	up.add_argument("--mcp", action="append", help="set the ticket's MCP servers to these registry names (repeatable)")
 	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
+	up.add_argument("--by", help="who a human change is by (recorded when it moves the ticket to done)")
+	rp = sub.add_parser("report", help="a person adds the summary a done ticket was closed without (moved to done by hand, not with complete)")
+	rp.add_argument("id")
+	rp.add_argument("summary")
+	rp.add_argument("--by", default="human")
+	rp.add_argument("--file", action="append", help="a path that changed (repeatable)")
+	rp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
@@ -181,11 +194,15 @@ def main(argv: list[str] | None = None) -> int:
 		x.add_argument("id")
 		x.add_argument("--agent", required=True)
 		x.add_argument(extra, required=name in ("ask", "complete"), default="")
+		if name == "heartbeat":
+			x.add_argument("--until", help="UTC ISO time a long run ends: the claim stays alive until then (capped at lease_max_minutes)")
 		if name == "release":
 			x.add_argument("--missing", default="", help="a tool you need and do not have")
 			x.add_argument("--why", default="", help="with --missing: one line on what you needed it for")
 		if name != "ask":
 			x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)")
+		if name != "heartbeat":
+			x.add_argument("--request-id", help="a fresh id for this write: a retry with the same id changes nothing and answers already: true")
 	cp = sub.choices["complete"]
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
@@ -213,12 +230,21 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("--pin", action="store_true", help="pin it: always sent to the next worker")
 	no.add_argument("--reply-to", type=int, help="the note number this answers")
 	no.add_argument("--supersedes", type=int, help="the pinned note number this one replaces")
+	no.add_argument("--request-id", help="a fresh id for this note: a retry with the same id adds nothing (already: true)")
+	dm = sub.add_parser("dismiss", help="a person read late notes on a finished ticket (Needs you lists a person's note on a done ticket): stop listing them")
+	dm.add_argument("id")
+	dm.add_argument("notes", nargs="+", type=int, metavar="N")
+	dm.add_argument("--by", default="human")
+	dm.add_argument("--undo", action="store_true")
 	for name in ("answer", "reject", "accept", "approve"):
 		x = sub.add_parser(name)
 		x.add_argument("id")
 		if name not in ("accept", "approve"):
 			x.add_argument("text")
 		x.add_argument("--by", default="human")
+	am = sub.add_parser("agents-md", help="print the short block for a project's CLAUDE.md / AGENTS.md that tells every agent session to claim, heartbeat and complete")
+	am.add_argument("--board", help="board id to name (default: the board's own id)")
+	am.add_argument("--write", metavar="FILE", help="append the block to FILE between markers (refused when they are already there; the rest of FILE is untouched)")
 	mg = sub.add_parser("migrate", help="copy a board to another place: a folder, sqlite:///x.db#board, postgres://...#board, mongodb://...#board")
 	mg.add_argument("--from", dest="src", required=True, help="where the board is now (a folder or a database URL + #board)")
 	mg.add_argument("--to", dest="dst", required=True, help="where it goes; must be empty unless --force")
@@ -269,15 +295,22 @@ def main(argv: list[str] | None = None) -> int:
 			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
-			out = s.heartbeat(a.id, a.agent, a.note, a.principal)
+			out = s.heartbeat(a.id, a.agent, a.note, a.principal, until=a.until)
 			if box:
 				out = {**out, "inbox": box}
 		elif a.cmd == "release":
-			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why)
+			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why, request_id=a.request_id)
 		elif a.cmd == "ask":
-			out = s.ask(a.id, a.agent, a.question)
+			out = s.ask(a.id, a.agent, a.question, request_id=a.request_id)
 		elif a.cmd == "complete":
-			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal)
+			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id)
+		elif a.cmd == "agents-md":
+			board = a.board or (os.environ.get("UNBLOCKD_BOARD") or "default" if url else s.config["id"])
+			text = bd.agents_md(board, a.dir)
+			if not a.write:
+				print(text, end="")
+				return 0
+			out = bd.write_agents_md(a.write, text)
 		elif a.cmd == "agents":
 			out = s.agents_now()
 		elif a.cmd == "context":
@@ -297,19 +330,23 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.accept(a.id, a.by)
 		elif a.cmd == "approve":
 			out = s.approve(a.id, a.by)
+		elif a.cmd == "dismiss":
+			out = s.dismiss_notes(a.id, a.by, a.notes, undo=a.undo)
 		elif a.cmd == "delete":
 			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":
 			out = s.get(a.id) if url else s.with_blockers(s.get(a.id))  # remote: GET tickets/<id> already adds them
 		elif a.cmd == "create":
-			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent)
+			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent, request_id=a.request_id)
 		elif a.cmd == "create-many":
 			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
-			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent)
+			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent, by=a.by)
+		elif a.cmd == "report":
+			out = s.report(a.id, a.by, a.summary, files=a.file, refs=a.ref)
 		else:
-			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes)
+			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
 	except (st.TicketError, json.JSONDecodeError) as e:
 		print(f"error: {e}", file=sys.stderr)
 		return 1

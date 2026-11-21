@@ -110,7 +110,9 @@ class NotifyTest(unittest.TestCase):
 		n = self.notifier()
 		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")
 		self.s.create({"title": "a", "owner": "Claude"}, tid="BUG-2")
-		self.s.update("BUG-2", {"status": "review"})
+		self.s.claim("w-1", tid="BUG-2")
+		self.s.complete("BUG-2", "w-1", "did it")
+		self.s.update("BUG-2", {"status": "review"})  # review needs a result (CORE-19)
 		n.poll()
 		Receiver.got = []
 		self.s.approve("BUG-2", "Omri")

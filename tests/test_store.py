@@ -37,6 +37,22 @@ class StoreTest(unittest.TestCase):
 		self.s.update("E-2", {"parent": None})
 		self.assertEqual(self.s.get("E-1")["progress"], {"done": 1, "total": 1})
 
+	def test_review_needs_a_result(self):  # CORE-19: a reviewer must have something to check; the rule is about the data, not the caller
+		t = self.s.create({"title": "x"}, prefix="R")
+		with self.assertRaisesRegex(TicketError, "has no result.*complete"):
+			self.s.update(t["id"], {"status": "review"})
+		with self.assertRaisesRegex(TicketError, "has no result"):
+			self.s.update(t["id"], {"status": "review"}, agent="claude")
+		self.assertEqual(self.s.get(t["id"])["status"], "todo")
+		with self.assertRaisesRegex(TicketError, "has no result"):
+			self.s.create({"title": "y", "status": "review"}, prefix="R")
+		with self.assertRaisesRegex(TicketError, "#1: .*has no result"):
+			self.s.create_many([{"title": "z", "prefix": "R", "status": "review"}])
+		self.s.claim("w-1", tid=t["id"])
+		self.s.complete(t["id"], "w-1", "did it")  # done, with a result
+		self.assertEqual(self.s.update(t["id"], {"status": "review"})["status"], "review")  # Undo of a move / of Approve: still works
+		self.assertEqual(self.s.update(t["id"], {"priority": "P1"})["status"], "review")  # already in review: other edits fine
+
 	def test_rev_counts_writes_and_guards_updates(self):
 		t = self.s.create({"title": "x"}, tid="R-1")
 		self.assertEqual(t["rev"], 1)
@@ -412,7 +428,7 @@ class ConfigTest(unittest.TestCase):
 
 	def test_agent_profile_keys_and_owner_kind_are_validated(self):
 		owners = [{"name": "Omri", "kind": "human"}]
-		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*effort.*Allowed: docs, instructions, mcp, model, name, pillars, skills, tags"):
+		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*effort.*Allowed: docs, instructions, lease_minutes, mcp, model, name, pillars, skills, tags"):
 			self._store({"owners": owners, "agents": [{"name": "backend", "effort": "x"}]})
 		for kind in ("Human", None):
 			with self.assertRaisesRegex(TicketError, "owner Omri: kind must be"):
@@ -431,3 +447,38 @@ class ConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class FileModeTest(unittest.TestCase):
+	"""CORE-75: tickets were written through mkstemp (0600) and os.replace kept that, so a root server left files other users couldn't read."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.s = Store(Path(self.tmp.name) / "tickets")
+		self.addCleanup(self.tmp.cleanup)
+
+	def test_new_ticket_gets_the_default_mode_and_a_rewrite_keeps_the_old_one(self):
+		import os
+		from unblockd import files
+		modes = []
+		real = os.chmod
+		with mock.patch.object(files.os, "chmod", side_effect=lambda p, m: (modes.append(m), real(p, m))):
+			self.s.create({"title": "x"}, tid="BUG-1")
+		self.assertEqual(modes, [0o666 & ~files._UMASK])  # what open() gives a new file (0644 under umask 022)
+		p = Path(self.tmp.name) / "tickets" / "BUG-1.json"
+		old = os.stat(p).st_mode & 0o777
+		modes.clear()
+		with mock.patch.object(files.os, "chmod", side_effect=lambda p, m: (modes.append(m), real(p, m))):
+			self.s.update("BUG-1", {"title": "y"})
+		self.assertEqual(modes, [old])
+
+	@unittest.skipUnless(hasattr(__import__("os"), "geteuid"), "POSIX modes (Windows has only a read-only flag)")
+	def test_posix_modes(self):
+		import os
+		from unblockd import files
+		self.s.create({"title": "x"}, tid="BUG-1")
+		p = Path(self.tmp.name) / "tickets" / "BUG-1.json"
+		self.assertEqual(os.stat(p).st_mode & 0o777, 0o666 & ~files._UMASK)
+		os.chmod(p, 0o640)
+		self.s.update("BUG-1", {"title": "y"})
+		self.assertEqual(os.stat(p).st_mode & 0o777, 0o640)
+		self.assertEqual(self.s.get("BUG-1")["title"], "y")

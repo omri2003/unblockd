@@ -108,7 +108,7 @@ class GuardrailTest(unittest.TestCase):
 		s.claim("backend-1", tid="T-2")
 		s.complete("T-2", "backend-1", "done")  # review gate
 		s.reject("T-2", "omri", "redo")
-		for st in ("doing", "review", "done"):
+		for st in ("doing", "done"):  # review needs a result (CORE-19), which reject() cleared: refused for everyone, see test_store
 			self.assertEqual(s.update("T-2", {"status": st}, agent="claude")["status"], st)
 		s.delete("T-1", agent="claude")
 

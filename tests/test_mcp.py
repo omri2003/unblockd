@@ -61,6 +61,23 @@ class WorkLoopTest(unittest.TestCase):
 		with self.assertRaisesRegex(ToolError, "matches no agent profile"):
 			m.next_ready(agent="nobody")
 
+	def test_claim_refusal_names_only_real_arguments(self):
+		"""API-21: the refusal said 'or pass profile=<name>', but claim_ticket has no profile argument."""
+		import inspect
+		from unblockd import mcp_server as m
+		from mcp.server.mcpserver.exceptions import ToolError
+		(Path(self.tmp.name) / "unblockd.json").write_text(json.dumps({"agents": [{"name": "builder", "tags": ["be"]}]}), encoding="utf-8")
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		m.BOARDS.get(None).create({"title": "x", "tags": ["be"]}, tid="B-1")
+		for call in (lambda: m.claim_ticket(id="B-1", agent="nobody"), lambda: m.next_ready(agent="nobody")):
+			with self.assertRaises(ToolError) as e:
+				call()
+			self.assertIn("builder-1", str(e.exception))
+			self.assertNotIn("profile=", str(e.exception))
+		self.assertNotIn("profile", inspect.signature(m.claim_ticket).parameters)  # if it gains one, the hint may name it again
+		self.assertEqual(m.claim_ticket(id="B-1", agent="builder-1")["id"], "B-1")
+
 	def test_server_instructions_point_workers_at_claim_next(self):
 		from unblockd import mcp_server as m
 		self.assertNotIn("next_ready(agent", m.mcp.instructions)
@@ -88,7 +105,7 @@ class WorkLoopTest(unittest.TestCase):
 		m.claim_ticket("B-1", "w-1")
 		for r in (m.heartbeat("B-1", "w-1", "testing"), m.add_note("B-1", "w-1", "found it", kind="finding"),
 		          m.update_ticket("B-1", {"priority": "P1"}, "w-1"), m.complete("B-1", "w-1", "done")):
-			self.assertEqual(set(r) - {"note", "lease_left_s", "warnings"}, {"ok", "id", "status", "effective_status", "rev"})
+			self.assertEqual(set(r) - {"note", "lease_left_s", "expires_at", "warnings"}, {"ok", "id", "status", "effective_status", "rev"})
 			self.assertLess(len(json.dumps(r)), 200)
 
 	def test_board_docs_are_sent_once_per_session(self):

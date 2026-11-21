@@ -154,11 +154,57 @@ class Boards:
 		d.mkdir(parents=True, exist_ok=True)
 		cfg = {"id": board_id, "title": (title or board_id).strip()[:80]}
 		(d / st.CONFIG_FILE).write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8", newline="\n")
-		out = {**next(b for b in self.summary() if b["id"] == board_id), "path": d.as_posix()}
+		out = {**next(b for b in self.summary() if b["id"] == board_id), "path": d.as_posix(),
+		       "agents_md": agents_md(board_id, d.as_posix()),
+		       "agents_md_hint": "paste agents_md into the project's CLAUDE.md / AGENTS.md (or run `python -m unblockd.cli --dir <path> agents-md --write CLAUDE.md`) so every agent session claims, heartbeats and completes"}
 		if vol:
 			rel = d.absolute().as_posix()[len(vol[0].rstrip("/")):]
 			out["host_path"] = vol[1].rstrip("/") + rel  # where the mount's source has it (on Docker Desktop a /run/desktop/... style path)
 		return out
+
+
+AGENTS_MD_START = "<!-- unblockd:agents-md start -->"
+AGENTS_MD_END = "<!-- unblockd:agents-md end -->"
+# The tools named here are WORK_LOOP.md's own steps (tests/test_agents_md.py fails when one is not in WORK_LOOP.md or the MCP tool set):
+# this block is the short pointer every session reads (CLAUDE.md / AGENTS.md), the protocol stays in unblockd://work-loop.
+NL, LF, CRLF = chr(10), bytes([10]), bytes([13, 10])
+AGENTS_MD_TOOLS = ("claim_next", "claim_ticket", "heartbeat", "complete", "ask_human", "release")
+
+
+def agents_md(board: str, location: str = "tickets") -> str:
+	"""The <= 15-line block for a project's CLAUDE.md / AGENTS.md (AI-55): which board, claim -> heartbeat -> complete / ask_human,
+	the CLI form for agents without MCP. `location` = the --dir the CLI takes (folder or database URL + #board, password hidden)."""
+	loc = cn.describe(location) if cn.is_db(location) else location
+	cli = f"python -m unblockd.cli --dir {loc}"
+	return NL.join((
+		AGENTS_MD_START,
+		f"## Tickets: unblockd board `{board}`",
+		"Work on this repo is tracked as tickets. Follow the worker protocol (MCP prompt `work_loop`, resource unblockd://work-loop); in short:",
+		"1. Claim before you start: `claim_next(agent=<profile>-<n>)` or `claim_ticket(id, agent)`. Never build on a ticket you did not claim.",
+		"2. Read the ticket, ALL its notes and its `context` first; `done_when` is the bar for done.",
+		"3. `heartbeat(id, agent, note)` at least every 5 minutes: a silent claim expires and the ticket goes back to todo.",
+		"4. Finish with `complete(id, agent, summary, files, refs)`: cause -> fix -> tests; NOT verified: ... Never move a ticket to done with update.",
+		"5. A decision only a human can make: `ask_human(id, agent, question)`. Can't finish: `release(id, agent, reason)`.",
+		f"Without MCP: `{cli} claim --agent NAME [--id ID]`, `heartbeat ID --agent NAME --note ...`,",
+		"`complete ID --agent NAME --summary ... --file PATH --ref PR`, `ask ID --agent NAME --question ...` (other machine: set UNBLOCKD_URL).",
+		AGENTS_MD_END,
+	)) + NL
+
+
+def write_agents_md(path: str | Path, block: str) -> dict:
+	"""Append `block` to a CLAUDE.md / AGENTS.md. Refused when the start marker is already there; every existing byte stays as it was
+	(only bytes are appended, matching the file's CRLF line endings when it uses them). A missing file is created."""
+	p = Path(path)
+	old = p.read_bytes() if p.exists() else b""
+	if AGENTS_MD_START.encode() in old:
+		raise st.TicketError(f"{p.as_posix()} already has the unblockd block (between {AGENTS_MD_START} and {AGENTS_MD_END}): edit or delete it there, then run again")
+	nl = CRLF if CRLF in old else LF
+	add = block.encode("utf-8").replace(LF, nl)
+	if old:
+		add = (b"" if old.endswith(LF) else nl) + nl + add
+	with open(p, "ab") as f:
+		f.write(add)
+	return {"written": p.as_posix(), "lines": block.count(NL)}
 
 
 def entries(value: str, sep: str = os.pathsep) -> list[str]:

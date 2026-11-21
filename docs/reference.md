@@ -44,6 +44,7 @@ The board shows the ticket files of the checkout it was started on. Work pushed 
 - **Linking**: a branch is linked to a ticket by its **name** (`wear-34`, `feat/WEAR-34-login`, `nut_85`), by a **commit subject** that names it, or by an **edit to the ticket's file** on the branch. Only branches not merged into origin's default branch count; a ticket that is done shows none.
 - **In progress**: a `todo` ticket with a linked branch (by name or file edit) that has a commit in the last 14 days reads as **In progress** (`effective_status` doing) and its card shows the branch instead of a claim. Nothing is written: the ticket file still says todo. A commit subject alone is a mention, listed in the drawer but not counted. `claim_next` skips such a ticket (someone is already on it elsewhere); `claim_ticket` by id takes it, with a warning to build on that branch.
 - **Not it after all**: move the card back to To do (Move to, drag, or `update status todo`). That branch tip stops counting for the ticket; a new commit on it counts again. Kept in `tickets/.unblockd/branches_ignored.json`.
+- **No duplicate ids across clones**: the board lock only works on one filesystem, so two clones used to pick the same next number. A board with branch evidence picks the next number above every id that origin's default branch, or an unmerged branch, already has a ticket file for (`id_max` in `branches.json`): a checkout that is behind makes `WEAR-9`, not a second `WEAR-6`. A clone with no branch scan (no web server running there) still counts only its own files: pull before creating.
 - **Ticket edits on a branch** (a note or a status a worker committed there) are reported in the drawer: "On that branch this ticket is In progress with 2 new notes. You see that here once the branch is merged and this checkout pulls."
 - **Behind origin**: when the checkout is behind origin (or has unpushed commits) the board shows a notice with the counts and how many tickets origin has that the checkout doesn't. Dismiss hides it until the numbers change. Pulling is yours to do: the server never changes your checkout.
 - **Private repos**: set `UNBLOCKD_GIT_TOKEN` for an https remote (a `GITHUB_TOKEN` that can read contents also works, for github.com only: it is never sent to another host). The notice says when origin can't be read; an ssh remote uses the keys of the user the server runs as. The Docker image ships `git`.
@@ -98,6 +99,11 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
   (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
+- **Longer leases for slow work** (AI-58): a profile may set its own `lease_minutes` (`agents: [{"name": "artist", "lease_minutes": 30}]`);
+  its claims, their expiry and every reply use it. For one long run, `heartbeat(id, agent, note, until=<UTC ISO>)` (CLI `heartbeat --until`,
+  REST body `until`) keeps the claim alive until that time with no more heartbeats; it is capped at `lease_max_minutes` (default 240)
+  from now (the reply warns when it was capped), so a worker that died mid-run still frees its ticket. Replies carry `expires_at` and
+  `lease_left_s` counting the longer of the two.
 - **Lease left, and a lapsed claim taken back** (AI-35): the claim result and every write reply to the holder (`heartbeat`, `add_note`,
   `update_ticket` with `agent`, MCP short replies too) carry `lease_left_s`, plus a `warnings` line when less than 3 min is left.
   A worker whose claim expired gets `warnings: ["you no longer hold X ..."]` on `add_note` (the note is kept). `heartbeat` and
@@ -107,6 +113,15 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Workers are told what failed before**: a claim result (`claim_next`, `claim_ticket`, CLI `claim`, `POST claim`) also has
   `lease_minutes`, `expires_at` and `previous_attempts`: up to 5 `{agent, outcome: expired|released|rejected, at, note}`, newest first, read from the activity log.
 - Moving a claimed ticket off *doing* by hand ends the claim.
+- **Retries are safe** (CORE-74): `complete`, `release`, `add_note`, `ask_human` / `ask` and `create` take an optional `request_id`
+  (MCP arg, CLI `--request-id`, REST body key, `Remote`; 1-100 of `A-Z a-z 0-9 . _ : -`). A repeat by the same agent with the same id
+  changes nothing and returns the ticket with `already: true`, `first_at` and `request_id` (create: the ticket it made); the same id
+  on another write or ticket is refused. The last 500 ids per board are kept (runtime doc `requests`). Without an id, the same agent
+  repeating its own complete, release or question (nobody holds the ticket now and its newest transition is that agent's) also gets
+  `already: true` instead of "isn't claimed".
+- **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (whole text,
+  flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
+  numbers as `result.unread` for the reviewer.
 - **Notes reach the holder**: a `heartbeat` reply (MCP, REST, CLI) carries `inbox` {count, notes: [{ticket, n, by, kind, at, text}]} when
   someone else added notes to a ticket the worker holds since it was last shown them (first line each; `get_ticket` has the rest). To ask
   another worker for a change in a file its ticket touches, `add_note` on THAT ticket: its holder sees it within one heartbeat.
@@ -126,13 +141,13 @@ ignores itself in git.
 
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
-and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; reported, never claimable). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
+and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; `claim_next` never hands it out, but `claim_ticket(id)` takes it over with a warning, since nobody else could ever finish it). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
 
 ### Teams
 
 Run ONE shared server (`python -m unblockd.web`, plus `mcp_server --http` or the Remote CLI for agents on other machines): claims live in
 `tickets/.unblockd/` and are not in git, so two clones of the same repo can both claim a ticket. List each person as a `kind: human` owner and have
-each person's agents claim with their `principal`; the Done ticket then reads "Done by backend-1 for Omri". On a board with `review: true`, **Approve** (Needs you, `approve_ticket`, `approve ID`, `POST tickets/<id>/approve`) records who looked: `result.approved_by` / `approved_at`, shown as "Done by backend-1 for Omri · approved by Dana" (muted "self-approved" when they are the same person; "no human recorded" on a board with 2+ humans when a done ticket has neither). A plain move to Done records no approver, because nobody approved. So "who took responsibility" means the approver on a review board and the principal otherwise. It is a label, not proof, until per-user
+each person's agents claim with their `principal`; the Done ticket then reads "Done by backend-1 for Omri". On a board with `review: true`, **Approve** (Needs you, `approve_ticket`, `approve ID`, `POST tickets/<id>/approve`) records who looked: `result.approved_by` / `approved_at`, shown as "Done by backend-1 for Omri · approved by Dana" (muted "self-approved" when they are the same person; "no human recorded" on a board with 2+ humans when a done ticket has neither). A plain move to Done records no approver, because nobody approved. A ticket can only be moved INTO review when it has a result (the error says to finish it with `complete`, which records summary, files and PR link), and a new ticket can't be created in review; moving a finished ticket back to review (Undo of Approve, Undo of a move) still works. **Done without a summary:** moving a ticket to done by hand (drag, `update`, `create` with status done) when it has no result answers with a warning (finish with `complete()`: it records the summary, files and PR) and logs `done` with who moved it (PATCH body / CLI `--by`, else `human`). Tickets done that way from 2026-11-21 on read `unreported: true` (older ones are left alone); a person adds the summary afterwards with `report` (`report_ticket`, `python -m unblockd.cli report ID "summary" [--by NAME] [--file PATH] [--ref URL]`, `POST tickets/<id>/report {by?, summary, files?, refs?}`), which sets `result` with `by` = that person. So "who took responsibility" means the approver on a review board and the principal otherwise. It is a label, not proof, until per-user
 tokens exist: anyone with the shared token can name any principal or approver.
 
 ## Knowledge: tickets come with their instructions
@@ -265,7 +280,8 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `stale_days` | A `doing` ticket untouched this long is flagged. |
 | `wip_limit` | More than this many `doing` tickets shows a WIP badge on the column (default `null` = none). |
 | `done_window_days` | The board's Done column shows only tickets done within this many days (default 7, whole number > 0), newest first, at most 20 cards, with `+N more → view all`. UI only: the API, MCP and CLI still list every done ticket. Edited in `unblockd.json` like every other board setting. |
-| `lease_minutes` | A claim with no heartbeat this long expires (default 15). |
+| `lease_minutes` | A claim with no heartbeat this long expires (default 15). A profile can set its own (`agents[].lease_minutes`). |
+| `lease_max_minutes` | How far ahead `heartbeat(until=)` may keep a claim alive (default 240, at most 1440). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
 | `id` | Board id (default: the project folder's name). |
 | `agents` | Agent profiles, see below (each may have its own `docs`). |
@@ -342,7 +358,9 @@ Every ticket comes back with derived fields: `effective_status`,
 
 ![Needs you panel with a review row expanded](screenshots/needs-dark.webp)
 
-**Needs you**: the purple `! N need you` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review, agent-proposed tickets waiting for Accept / Reject and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted, or an unclaimed ticket that failed 3 or more times (expired / released / rejected) since a human last touched it: the row says why and has an *Add a note for the next attempt* box, and posting it clears the row; *Release to To do* or open it), for the board you are on (another board's items show when you open that board). It opens a side panel, ordered by score, then oldest. Each row has a one-line answer (or a primary Approve with a quiet "Request changes…" that opens the reason box) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). A `waiting_on` you set by hand is *Parked*, not listed. Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
+**Needs you**: the purple `! N need you` badge next to the Board / Graph / Docs switch (any view, any board; hidden at 0; `i` opens it) counts questions agents asked (`ask_human`), work in review, agent-proposed tickets waiting for Accept / Reject and stuck work (a `doing` ticket with open blockers, with no update for `stale_days`, or whose blocker was deleted, or an unclaimed ticket that failed 3 or more times (expired / released / rejected) since a human last touched it: the row says why and has an *Add a note for the next attempt* box, and posting it clears the row; *Release to To do* or open it), for the board you are on (another board's items show when you open that board). It opens a side panel, ordered by score, then oldest. Each row has a one-line answer (or a primary Approve with a quiet "Request changes…" that opens the reason box) and expands (click it) to the full question, the result, Done when and the last 3 notes, with a multi-line box (Enter = newline, Ctrl/Cmd+Enter sends). A `waiting_on` you set by hand is *Parked*, not listed. **Notes after the work was finished** (AI-50): a review row says `A note after backend-1 finished: <the latest>` and, expanded (and in the drawer), lists them above the result, marking the ones that came before it finished but that the agent never read (`result.unread`). A *person's* note on a **done** ticket (written after it was done; an agent's note there stays a plain note) is listed as *Note after done* with **Reopen** (back to To do: the next worker gets the note, pinned) or **Dismiss** (nothing to do; Undo lists it again; REST `POST tickets/<id>/dismiss {notes: [n], by?, undo?}`, CLI `dismiss ID N... [--by] [--undo]`). Data: `GET /api/needs`. Motion (card slides, view cross-fade, panel rows) is short and switched off by `prefers-reduced-motion`.
+
+**Result box** (a ticket in review or done, the review row in Needs you): the agent's `complete` summary comes first, as markdown, folded past about 600 characters (Show more); a trailing `NOT verified: ...` is pulled out as its own warning line, so you see what to check; then who did it, Files changed, References, Handoff. A done ticket's drawer opens on its Result (above Details), as a review ticket does, and the notes list does not repeat the summary. A ticket moved to Done by hand with no summary says *Finished without a summary* there, with a box to add one (Add summary); its Done card carries a small `no summary` mark and the digest counts them under Finished. Needs you does not list them.
 
 **Priority** means: P0 breaks things or blocks people now; P1 must happen for the goal; P2 should happen; P3 nice to have; none counts like P3. The pickers (new/edit ticket, bulk bar) and the `?` sheet show these lines. Keyboard: `p` then `0`-`3` (or `-` to clear) sets the priority of the open ticket, else the focused card, with an Undo toast.
 
@@ -416,6 +434,8 @@ The server is shared, so the agent must say which board: a repo's board id is it
 Tickets for this repo live on the unblockd board `<repo>`; pass board=<repo> to every unblockd tool.
 ```
 
+Better: let unblockd write it. `python -m unblockd.cli --dir <repo>/tickets agents-md` prints a block of at most 15 lines (between `<!-- unblockd:agents-md start -->` / `end -->` markers) naming the board and the steps every session must take: claim before you start, heartbeat, `complete(summary, files, refs)` (never `update` to done), `ask_human` / `release`, plus the CLI form for agents without MCP; it points at `unblockd://work-loop` for the rest. `--board ID` names another board; `--write CLAUDE.md` appends it to that file (created if missing; refused when the markers are already there; every existing byte kept, CRLF files get CRLF). `create_board` (MCP, `POST /api/boards`) replies carry the same block as `agents_md` plus an `agents_md_hint`. The tools it names are checked against `WORK_LOOP.md` by tests/test_agents_md.py, so the two cannot drift.
+
 **Without Docker / per client (stdio).** Each client spawns its own server; the Docker form uses the built image, so tools stay as old as the last `docker compose build`:
 
 ```sh
@@ -471,6 +491,7 @@ python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1 [--principal
 python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 --note "running tests"
 python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests"
 python -m unblockd.cli --dir <repo>/tickets list --status todo
+python -m unblockd.cli --dir <repo>/tickets agents-md [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md (see Connect the MCP server)
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store --skill pytest-runner --mcp postgres   # names from the board's registry
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent backend-1   # as a worker: strict schema, may park as a proposal

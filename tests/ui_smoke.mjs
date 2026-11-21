@@ -119,6 +119,14 @@ try {
 			await visible('#drawer #dTitle', 'drawer');
 			await noOverflow('drawer');
 			await page.keyboard.press('Escape');
+			const fin = await page.evaluate(() => [...document.querySelectorAll('#board .card.dn[data-open]')].find((c) => c.textContent.includes('finished with a long summary'))?.dataset.open);
+			ok(fin, `[${tag}] UI-79: the light pass's done ticket is not on the board`);
+			{ // UI-79's done ticket from the light pass: its Result box in dark, no overflow
+				await page.evaluate((i) => document.querySelector(`#board [data-open="${i}"]`).click(), fin);
+				await visible('#drawer .rbox .rnv', 'done result in dark');
+				await noOverflow('done drawer');
+				await page.keyboard.press('Escape');
+			}
 			ok(!errs.length, `[${tag}] browser errors:\n  ` + errs.join('\n  '));
 			await ctx.close();
 			continue;
@@ -798,6 +806,8 @@ try {
 		await page.click(`#npList .nr:has(.nb.r) .nid`);
 		await visible('#drawer .rbox a[href^="https://example.com"]', 'review result with link');
 		ok((await page.locator('#drawer .rbox h5').allInnerTexts()).join('|') === 'Files changed|References|Handoff', `[${tag}] result box labels`);
+		ok(await page.locator('#drawer .rbox > .rsum:first-child strong').innerText() === 'thing', `[${tag}] UI-79: the result box leads with the summary, as markdown`);
+		ok(!(await page.locator('#drawer ol.nn').count()) || !(await page.innerText('#drawer ol.nn')).includes('Did the'), `[${tag}] UI-79: the complete note equal to the summary is not repeated in Notes`);
 		ok((await page.locator('#drawer .rbox a').first().evaluate((e) => getComputedStyle(e).color)) !== 'rgb(0, 0, 238)', `[${tag}] result link should use the app link colour`);
 		ok(await page.locator('#npanel').isHidden(), `[${tag}] opening a ticket should close the panel`);
 		ok(await page.locator('#drawer details.kn[open]').count(), `[${tag}] review drawer should open Knowledge and activity`);
@@ -821,6 +831,42 @@ try {
 		await page.click(`${rrow} [data-approve]`);
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${rid}`);
 		ok(await page.locator('.col.done .card:has-text("review me")').count(), `[${tag}] approved ticket should be in Done`);
+		{ // UI-79: a done ticket opens on its outcome: Result (summary first, folded past ~600 chars, NOT verified as its own line) above Details
+			const fid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'finished with a long summary', '--json', '{"owner":"Claude","body":"The brief."}')).id;
+			cli('claim', '--agent', 'backend-1', '--id', fid);
+			cli('complete', fid, '--agent', 'backend-1', '--summary', 'Cause: the **cache** kept a stale entry. ' + 'Fix: re-read the row when its version moved, and drop it on delete. '.repeat(10) + 'Tests: 4 new. NOT verified: real Docker, touch devices.', '--file', 'unblockd/sql.py');
+			await refresh();
+			await page.waitForFunction((i) => document.querySelector(`[data-open="${i}"]`), fid);
+			await page.evaluate((i) => document.querySelector(`#board [data-open="${i}"]`).click(), fid);
+			await visible('#drawer .rbox .rnv', 'done result NOT verified line');
+			ok((await page.innerText('#drawer .rbox .rnv')) === 'NOT verified: real Docker, touch devices.', `[${tag}] UI-79: NOT verified line: ${await page.innerText('#drawer .rbox .rnv')}`);
+			ok(!(await page.innerText('#drawer .rsum')).includes('NOT verified'), `[${tag}] UI-79: NOT verified is not repeated in the summary`);
+			ok(await page.evaluate(() => { const h = [...document.querySelectorAll('#drawer h3')].map((x) => x.textContent); return h.indexOf('Result') >= 0 && h.indexOf('Result') < h.indexOf('Details'); }), `[${tag}] UI-79: a done ticket's Result sits above Details`);
+			ok(await page.locator('#drawer .rsum.fold').count() === 1, `[${tag}] UI-79: a long summary is folded`);
+			await page.click('#drawer [data-rmore]');
+			ok(await page.locator('#drawer .rsum.fold').count() === 0 && (await page.innerText('#drawer [data-rmore]')) === 'Show less', `[${tag}] UI-79: Show more unfolds it`);
+			await refresh(); // the 4 s poll keeps it unfolded
+			ok(await page.locator('#drawer .rsum.fold').count() === 0, `[${tag}] UI-79: the poll folded the summary again`);
+			await noOverflow('done drawer with a long result');
+			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/ui79-done-${w}-${theme}.png` });
+			await page.keyboard.press('Escape');
+			// moved to done by hand (CORE-68 `unreported`): a card mark, the drawer says so and takes the missing summary
+			const uid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'closed by hand')).id;
+			cli('update', uid, '--json', '{"status":"done"}');
+			await refresh();
+			await page.waitForFunction((i) => document.querySelector(`#board [data-open="${i}"] .unr`), uid);
+			await page.evaluate((i) => document.querySelector(`#board [data-open="${i}"]`).click(), uid);
+			await visible('#drawer .unrep form[data-nform=report] textarea', 'unreported done ticket: Add summary');
+			ok((await page.innerText('#drawer .unrep .rnv')).startsWith('Finished without a summary.'), `[${tag}] UI-79: unreported done ticket says so`);
+			await noOverflow('unreported done drawer');
+			await page.fill('#drawer .unrep textarea', 'Moved the check into the store. NOT verified: Docker');
+			await page.click('#drawer .unrep [type=submit]');
+			await page.waitForFunction(() => document.querySelector('#drawer .rbox .rnv')?.textContent === 'NOT verified: Docker' && !document.querySelector('#drawer .unrep'));
+			const rep = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), uid);
+			ok(rep.result?.summary === 'Moved the check into the store. NOT verified: Docker' && rep.result.by === 'human' && !rep.unreported, `[${tag}] UI-79: Add summary should record it: ${JSON.stringify(rep.result)}`);
+			ok(!(await page.locator(`#board [data-open="${uid}"] .unr`).count()), `[${tag}] UI-79: the card mark goes once the summary is there`);
+			await page.keyboard.press('Escape');
+		}
 		{ // a done card is one compact row: id + title + age, no seal / owner chip, still opens the drawer, still has its Move-to menu
 			const d = page.locator('.col.done .card.dn').first(), td = page.locator('.col.todo .card').first();
 			ok(await d.getAttribute('data-open') && await d.getAttribute('title'), `[${tag}] done card keeps data-open and the full title`);
@@ -899,6 +945,26 @@ try {
 		ok(rel.status === 'todo' && !rel.claim, `[${tag}] Release to To do should drop the claim: ${rel.status}`);
 		cli('delete', did); cli('delete', bk);
 		cli('delete', mid); // the other one goes when its ticket does
+		{ // AI-50: a person's note on a done ticket is listed (Note after done) until Dismiss (Undo lists it again) or Reopen (back to To do)
+			const lid = JSON.parse(cli('create', '--prefix', 'LN', '--title', 'finished then noted', '--json', '{"owner":"Claude"}')).id;
+			cli('claim', '--agent', 'backend-1', '--id', lid); cli('complete', lid, '--agent', 'backend-1', '--summary', 'done it');
+			await age(lid, { done_at: '2020-01-01T00:00:00+00:00' });
+			cli('note', lid, 'this broke the login page', '--by', 'omri');
+			await refresh();
+			const lrow = `#npList .nr[data-key="${boardId}/${lid}"]`;
+			await page.waitForSelector(`${lrow} [data-dismissnotes]`);
+			ok(/after it was done: omri: this broke the login page/.test(await page.locator(`${lrow} .nd-q.lt`).innerText()) && (await page.locator(`${lrow} .nb`).innerText()) === 'Note after done', `[${tag}] late note row: ${await page.locator(`${lrow} .nd-q.lt`).innerText()}`);
+			await noOverflow('late note row');
+			await page.click(`${lrow} [data-dismissnotes]`);
+			await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"] [data-dismissnotes]`), `${boardId}/${lid}`);
+			await page.locator('#toasts > *', { hasText: 'note dismissed' }).locator('button:has-text("Undo")').click(); // not an older toast's Undo
+			await page.waitForSelector(`${lrow} [data-reopen]`);
+			await page.click(`${lrow} [data-reopen]`);
+			await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${lid}`);
+			const lt = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), lid);
+			ok(lt.status === 'todo' && lt.notes.at(-1).pinned && !lt.notes.at(-1).dismissed_by, `[${tag}] Reopen: back to To do, the note pinned for the next worker`);
+			cli('delete', lid);
+		}
 		await refresh();
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		await page.keyboard.press('Escape');
