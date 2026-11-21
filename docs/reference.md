@@ -589,6 +589,24 @@ Tables are prefixed `ub_` and can share a database with other apps.
 Tests: `python -m unittest`. UI changes show on a browser reload; Python
 changes after `docker compose restart`.
 
+## Docker Desktop (Windows / macOS): bind mounts are slow
+
+unblockd reads the board from files, so a request stats files in the mounted project. On Docker Desktop a bind mount of a Windows or macOS folder costs about 0.6 ms per file stat, roughly 75-100x a native disk. Same code, same board (a 527-ticket project), on Windows:
+
+| Request | Native Python | Container over the bind mount |
+|---|---|---|
+| `list()` (the board's tickets) | 4 ms | 300 ms |
+| `GET /architecture` | 80 ms | 1.3-3.3 s |
+| `GET /files` | 56 ms | 2.1 s |
+
+What to do:
+
+- **On Docker Desktop, prefer running the server natively**: `python -m unblockd.web` with `UNBLOCKD_ROOT` = your projects folder (the README's "Without Docker").
+- **Or keep the repos inside the WSL filesystem** (e.g. `~/projects` in your distro) and mount that, not a `C:\` folder.
+- **Linux bind mounts are fine**: there the mount is the native disk.
+
+**Branch evidence needs `git` in the image.** The Dockerfile installs `git` for [branch evidence](#branch-evidence-work-that-lives-on-branches). An image built before branch evidence existed has no `git`, and the feature is silently off. Rebuild: `docker compose build`, then `docker compose up -d`. After that the scan runs `git` every 120 s per board on the mounted repo (its bare mirror lives in `tickets/.unblockd/git`), so on a Docker Desktop bind mount it pays the same per-file cost.
+
 ## Deploying the image (Kubernetes / OpenShift)
 
 - **User**: the image runs as uid 1001 and `/app`, `/data`, `/projects` are owned by group 0 with group = owner permissions, so it also runs under OpenShift's random UID (restricted SCC). compose.yaml sets `user: "0"` only because Linux bind mounts of your own projects are not writable by 1001; don't copy that to a cluster.
