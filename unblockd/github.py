@@ -50,9 +50,7 @@ class Syncer:
 	def _board(self, bid: str, tdir) -> None:
 		store = self.boards.get(bid)
 		old, new = store.backend.get_doc("prs"), {}
-		for t in store.list():
-			if t["status"] != "review":
-				continue
+		for t in store.list(status="review"):  # filtered before list() copies: only review tickets are copied (CORE-65)
 			m = next((m for r in (t.get("result") or {}).get("refs") or [] if (m := PR_URL.match(r))), None)
 			if not m:
 				continue

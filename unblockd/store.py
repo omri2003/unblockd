@@ -891,6 +891,15 @@ class Store:
 		return {**t, "blockers": [{"id": b, "effective_status": board[b]["effective_status"], "title": board[b].get("title", "")} if b in board
 		                          else {"id": b, "effective_status": "missing", "title": ""} for b in t.get("blocked_by", [])]}
 
+	def board_sig(self) -> tuple:
+		"""(signature, board): the key _board() caches the decorated board under (backend.version(), the date, the config, a files
+		board's branch stamps) and that board, read in one go, so a caller can cache what it derives from the board (web: the GET
+		tickets body and its ETag, CORE-65). Works on every connector: a database board's version is its board row's counter.
+		signature None = another thread replaced the cache meanwhile, or a transaction is open: don't cache. Read only: never mutate."""
+		b = self._board()
+		hit = _DEC.get(self._key)
+		return (hit[0] if hit and hit[1] is b else None), b
+
 	def next_id(self, prefix: str) -> str:
 		if not PREFIX_RE.match(prefix or ""):
 			raise TicketError(f"bad prefix {prefix!r}: expected like BUG or ART")
