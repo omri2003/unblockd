@@ -89,27 +89,79 @@ def _num(q: dict, key: str, default: int) -> int:
 	return int(v)
 
 
+# CORE-65: an unchanged 4 s poll used to json.dumps the whole board (1.2 MB on a 527-ticket board) and md5 it just to answer 304.
+# The body and its ETag are kept per board, keyed by Store.board_sig() (what _board() caches under, so a database board works
+# too); what an idle poll still costs is the board read (files: the stat pass; databases: the version query).
+_BODY: dict[str, tuple] = {}  # board key -> (board signature, body bytes, ETag)
+_NEEDS: dict = {}  # requested board (None = every board) -> (key, body, ETag) of the last /api/needs for it; entries replaced whole
+TICKET_FILTERS = ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent", "milestone")
+
+
+def _etag(data: bytes) -> str:
+	return f'"{hashlib.md5(data).hexdigest()}"'
+
+
+def _tickets_body(store) -> tuple[bytes, str]:
+	"""GET tickets with no filter = store.list(), serialized once per board change."""
+	sig, board = store.board_sig()
+	hit = _BODY.get(store._key)
+	if sig is not None and hit and hit[0] == sig:
+		return hit[1], hit[2]
+	data = json.dumps(list(board.values()), ensure_ascii=False).encode()  # what list() returns, without its copies
+	etag = _etag(data)
+	if sig is not None:
+		_BODY[store._key] = (sig, data, etag)  # the ETag stored WITH the data it describes
+	return data, etag
+
+
 NEEDS_BODY = 6000  # chars of body (the description) sent per item
 NEEDS_NOTES = 10  # the newest notes sent per item: the panel shows the last 3 that are not the question itself
 
 
-def _needs(board: str | None = None) -> list[dict]:
-	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
-	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
-	`board` = that board only (the UI shows just its own board: API-18, every board cost ~1 s); None = every board.
-	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does."""
-	out, boards = [], BOARDS.all()
+def _needs_body(board: str | None = None) -> tuple[bytes, str]:
+	"""/api/needs, serialized again only when its inputs changed: per board the board signature, the activity log's cursor
+	(failing(); files: activity.jsonl's size, databases: the event counter) and the PR cache (github). Any connector. A board
+	whose signature can't be read (a racing writer) means no reuse. `board` = that board only (API-18; unknown = NotFound),
+	None = every board; each request kind has its own entry, so one board's body never answers another's request."""
+	boards, key, every = [], [], BOARDS.all()
 	if board is not None:
-		if board not in boards:
-			raise st.NotFound(f"no board {board!r}. Boards: {', '.join(boards)}")
-		boards = {board: boards[board]}
-	for bid, path in boards.items():
+		if board not in every:
+			raise st.NotFound(f"no board {board!r}. Boards: {', '.join(every)}")
+		every = {board: every[board]}
+	for bid, path in every.items():
 		try:
 			s = BOARDS.open(path)
+			sig, _ = s.board_sig()
+			prs = s.backend.get_doc("prs")
+			key.append(None if sig is None else (bid, sig, s.backend.events_after(None)[1], prs))
+		except st.TicketError:
+			key.append((bid, "broken"))
+			continue
+		boards.append((bid, s, prs))
+	key = None if None in key else tuple(key)
+	hit = _NEEDS.get(board)
+	if key is not None and hit and hit[0] == key:
+		return hit[1], hit[2]
+	data = json.dumps(_needs(boards), ensure_ascii=False).encode()
+	etag = _etag(data)
+	_NEEDS[board] = (key, data, etag)  # key None = never matches; the ETag stored WITH its data
+	return data, etag
+
+
+def _needs(boards: list | None = None) -> list[dict]:
+	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
+	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
+	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does.
+	boards = [(board id, Store, PR cache)] already opened by _needs_body; None = every board."""
+	out = []
+	for bid, s, prs in boards if boards is not None else ((b, p, None) for b, p in BOARDS.all().items()):
+		try:
+			s = s if isinstance(s, st.Store) else BOARDS.open(s)
 			ts = s.list()
 		except st.TicketError:
 			continue  # a broken config hides only its own board
-		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), s.backend.get_doc("prs")
+		items, by_id, failing = [], {t["id"]: t for t in ts}, s.failing()
+		prs = s.backend.get_doc("prs") if prs is None else prs
 		for t in ts:
 			if t["status"] == "done":
 				continue
@@ -146,9 +198,11 @@ def _needs(board: str | None = None) -> list[dict]:
 class Handler(BaseHTTPRequestHandler):
 	server_version = "unblockd"
 
-	def _send(self, code: int, payload, ctype="application/json; charset=utf-8"):
+	def _send(self, code: int, payload, ctype="application/json; charset=utf-8", etag: str | None = None):
+		"""etag = already computed with the body (a cached one, see _tickets_body); else md5 of the body for a 200 GET."""
 		data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode()
-		etag = f'"{hashlib.md5(data).hexdigest()}"' if code == 200 and self.command == "GET" else None
+		if etag is None and code == 200 and self.command == "GET":
+			etag = _etag(data)
 		if etag and etag in [x.strip() for x in (self.headers.get("If-None-Match") or "").split(",")]:
 			code, data = 304, b""  # unchanged: the 4 s poll costs headers, not the whole board
 		self.send_response(code)
@@ -247,7 +301,10 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(201, BOARDS.create(str(b.get("id", "")), str(b.get("title", "")), b.get("root") or None))
 				return self._send(405, {"error": "method not allowed"})
 			if parts == ["api", "needs"]:
-				return self._send(200, _needs(q.get("board") or None)) if method == "GET" else self._send(405, {"error": "method not allowed"})
+				if method != "GET":
+					return self._send(405, {"error": "method not allowed"})
+				data, etag = _needs_body(q.get("board") or None)  # API-18: ?board= = that board; reused while no board, activity log or PR cache changed (CORE-65)
+				return self._send(200, data, etag=etag)
 			if parts == ["api", "chat"]:
 				if method == "GET":
 					return self._send(200, chat.enabled())
@@ -350,7 +407,10 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None
 			if method == "GET" and tid is None:
-				return self._send(200, store.list(**{k: q.get(k) for k in ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent", "milestone")}))
+				if not any(q.get(k) for k in TICKET_FILTERS):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
+					data, etag = _tickets_body(store)
+					return self._send(200, data, etag=etag)
+				return self._send(200, store.list(**{k: q.get(k) for k in TICKET_FILTERS}))
 			if method == "GET":
 				return self._send(200, store.with_blockers(store.get(tid)))
 			if method == "POST" and tid is None:
