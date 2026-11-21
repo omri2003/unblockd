@@ -230,6 +230,20 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
 - `<input value>` drops newlines: multi-line draft collapsed back to one-line input shows them stripped, so `submitNeeds` sends `DRAFTS[key]`, not field's value.
 - **"Waiting on <first word>" bug**: question's `waiting_on` is free text (question), never person. Cards and drawer show `Question from <asked_by>` for agent question and `Parked: <waiting_on>` for hand-set one; never split `waiting_on`.
 
+## Speed rules
+
+Each found by hand on slow Docker board (CORE-58); mechanics in "The cache" above and code comments.
+- Read board ONCE per request or locked step; build reply from that read (CORE-61: `_claim` read every ticket 3 times).
+- Know what changed from stamp (name + `mtime_ns` + size); re-parse only changed files (files cache; `knowledge` `_COMPS` CORE-59, `_EXP` / `_INFO` CORE-63).
+- Own write drops cache at once (`FileBackend._wrote`, `_HAS.clear()`); time-based reuse only for what may lag (`SCAN_REUSE_S` 1 s, web only; `DEAD_TTL` 60 s), never under lock (`_held`: locked reads always stat) (CORE-60, CORE-59).
+- One `os.scandir` walk using DirEntry type bits, not stat / `resolve()` per path (CORE-62, `knowledge.repo_files`).
+- Request reads only board it is about: `GET /api/needs?board=` (API-18).
+- Idle polls answer from cached body + ETag, rebuilt only when `Store.board_sig()` / stamps change; ticket JSON stable while idle (CORE-65; see Conventions).
+- New GET route gets filesystem-call budget in tests/test_perf.py (counts, not wall clock; ~1.5x measured) (CORE-64).
+- Measure slow case: ~500 tickets on Docker Desktop bind mount (~0.6 ms per stat, 75-100x native; docs/reference.md) (DOCS-16).
+- Keep LF line endings: worktree `core.autocrlf false`, `git diff --stat` must equal `git diff --ignore-cr-at-eol --stat` (CRLF flip made 52-line PR #82 show 2,500 lines).
+- Claim before you start, even in your own worktree; pass `--branch` / `UNBLOCKD_BRANCH` so touches overlapping claim on another branch warn, not refuse (CORE-80).
+
 ## Not built yet (ideas, in rough priority)
 
 1. Shared chat between people: needs server-side threads + some identity (there's no auth).
