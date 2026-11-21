@@ -103,7 +103,7 @@ Put project rules (tests, commits, when to ask a human) in a doc such as `AGENT_
 
 ## More
 
-- [docs/reference.md](docs/reference.md): all env vars, boards, profiles and claims, knowledge docs, chat, `unblockd.json` keys, ticket format, UI features, MCP tools (incl. Docker and Claude Desktop), deploying the image (non-root / OpenShift, `/healthz`, one replica), CLI, REST API, notifications, GitHub PR sync (experimental).
+- [docs/reference.md](docs/reference.md): all env vars, boards, profiles and claims, knowledge docs, chat, `unblockd.json` keys, ticket format, UI features, MCP tools (incl. Docker and Claude Desktop), deploying the image (non-root / OpenShift, `/healthz`, one replica; on Docker Desktop bind mounts are ~75x slower, run natively), CLI, REST API, notifications, GitHub PR sync (experimental).
 - [AGENTS.md](AGENTS.md): internals and design decisions for contributors.
 - [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) (report privately), [CHANGELOG.md](CHANGELOG.md).
 - Tests: `python -m unittest`. MIT.
