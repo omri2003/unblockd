@@ -109,7 +109,7 @@ def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
-	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
+	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox", "followup", "hint") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
@@ -332,23 +332,26 @@ def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
 
 @tool
 def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False,
-               board: str | None = None) -> dict:
+               branch: str | None = None, board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
 	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
 	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim).
-	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted)."""
+	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted).
+	branch = the git branch you work on, when you have your own worktree: a ticket whose touches overlap a claim on ANOTHER branch is then
+	yours with a warning (expect a merge conflict in those files), tickets with no overlap first; without it (one shared folder) an overlap refuses."""
 	store = BOARDS.get(board)
-	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal)), fresh)
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal, branch=branch)), fresh)
 
 
 @tool
-def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, board: str | None = None) -> dict:
-	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh: see claim_next."""
+def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, branch: str | None = None,
+                 board: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh, branch: see claim_next."""
 	store = BOARDS.get(board)
-	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal)), fresh)
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal, branch=branch)), fresh)
 
 
 @tool
@@ -423,13 +426,16 @@ def release(id: str, agent: str, reason: str = "", principal: str | None = None,
 
 @tool
 def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
-             handoff: str | None = None, principal: str | None = None, request_id: str | None = None, board: str | None = None) -> dict:
+             handoff: str | None = None, principal: str | None = None, request_id: str | None = None, followup: dict | None = None,
+             board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
 	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with.
 	A write that timed out may still have landed: get_ticket before retrying, or retry with the same request_id (any fresh id you pick
-	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true."""
-	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal, request_id=request_id))
+	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true.
+	Part done, rest waiting on another ticket: followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?} completes this one AND
+	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing."""
+	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal, request_id=request_id, followup=followup))
 
 
 @tool

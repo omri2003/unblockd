@@ -143,7 +143,9 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread"}  # unread = note numbers the worker had not seen when it completed (AI-50)
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup"}  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
+FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
+_ID_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Z][A-Z0-9]*-\d+(?![A-Za-z0-9_-])")  # a ticket id in free text (release reason)
 
 # The limits of the FIELDS validators above, in numbers: what an error names and what board_info returns as `limits`, so an agent can
 # check before it writes. Keep them equal to the validators (tests/test_tool_docs.py checks each one at its edge).
@@ -761,7 +763,8 @@ class Store:
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
 			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []), "branches": br,
-			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None,
+			            "claim": {**{k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")},  # expires_at: profile lease or heartbeat(until=) (CORE-83)
+			                      "expires_at": _iso(self._expires(live[t["id"]]))} if t["id"] in live else None,
 			            **({"unreported": True} if _unreported(t) else {})})
 		return out
 
@@ -817,6 +820,19 @@ class Store:
 			if set(tags) & set(ag.get("tags", [])) or (t.get("pillar") and t["pillar"] in ag.get("pillars", [])):
 				return ag["name"]
 		return None
+
+	def unroutable(self, t: dict) -> list[str]:
+		"""CORE-82: a warning when no agent profile will take this open ticket (board with profiles, not owned by a person):
+		claim_next never offers it to anyone, so the creator is told what to set. [] otherwise (profile-less boards: nothing)."""
+		ags = self.config["agents"]
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		if not ags or t.get("status") == "done" or t.get("owner") in humans or self.route(t):
+			return []
+		pil = list(dict.fromkeys(p for a in ags for p in a.get("pillars", [])))
+		tags = list(dict.fromkeys(x for a in ags for x in a.get("tags", [])))
+		how = ", ".join(x for x in (f"set pillar {'/'.join(pil)}" if pil else "", f"a tag {'/'.join(tags)}" if tags else "",
+		                                f"tag agent:<{'|'.join(a['name'] for a in ags)}>") if x)
+		return [f"no agent profile takes {t.get('id')}: {how}, or owner a person (claim_next never offers it)"]
 
 	def is_agent(self, name: str, tid: str | None = None) -> bool:
 		"""Is this author a worker rather than a person? A name that resolves to a profile, an agent owner, the holder of
@@ -959,7 +975,7 @@ class Store:
 				raise TicketError(self._schema_refusal(problems))
 			t = self._create(data, tid, pre, proposed_by=agent if strict and self.config["agent_tickets"] == "propose" else "", agent=agent)
 			self._record_request(agent, request_id, "create", t["id"])
-			problems = problems + ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else [])  # a new ticket never has a result
+			problems = problems + ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else []) + self.unroutable(t)  # a new ticket never has a result
 			return {**t, "warnings": problems} if problems else t
 		got = self._locked(run)
 		return self._already(got) if "already" in got else got
@@ -1141,6 +1157,9 @@ class Store:
 				if proposed:
 					self._log("proposed", t["id"], proposed, t["title"])
 			out = {"tickets": [self.get(x) for x in done], "ids": {f"#{i + 1}": x for i, x in enumerate(done)}}
+			for i, t in enumerate(out["tickets"]):
+				if (w := ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else []) + self.unroutable(t)):  # done = no summary, as in create() (CORE-83)
+					warns.setdefault(f"#{i + 1}", []).extend(w)
 			return {**out, "warnings": warns} if warns else out
 		return self._locked(run)
 
@@ -1262,7 +1281,8 @@ class Store:
 			self._log("done", tid, agent or (str(by).strip() if by and str(by).strip() else "human"))  # who moved it (CORE-68)
 			if not (t.get("result") or {}).get("summary"):
 				return {**self.get(tid), "warnings": [_NO_REPORT.format(id=tid)]}
-		return self.get(tid)
+		got = self.get(tid)
+		return {**got, "warnings": w} if (w := self.unroutable(got)) else got
 
 	def _holder_only(self, tid: str, agent: str | None) -> None:
 		"""An agent that is not the live holder of tid may not change, split or delete it. agent None = a human: unchanged."""
@@ -1433,19 +1453,37 @@ class Store:
 		"""The active branches that make a todo ticket read as doing (none when it is doing for another reason)."""
 		return [b for b in t.get("branches", []) if b["active"]] if t.get("status") == "todo" and t["effective_status"] == "doing" else []
 
-	def _claimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None, explicit: bool = False) -> bool:
+	def _claimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None, explicit: bool = False, branch: str | None = None) -> bool:
 		"""explicit = claimed by id: a ticket that reads as doing only because of a branch may be taken that way (to continue
 		that branch's work), and so may an orphaned one (doing, nobody holds it: CORE-79); claim_next never hands either out,
-		so two clones don't do the same work and a ticket a person moved to doing by hand is not grabbed."""
+		so two clones don't do the same work and a ticket a person moved to doing by hand is not grabbed.
+		branch = where the claimer works (CORE-80): touches overlapping a live claim on ANOTHER known branch do not refuse (they
+		only meet at merge: _overlaps reports them as a warning); same branch, or either side unknown, refuses as before."""
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		if (t["effective_status"] != "todo" and not (explicit and (self._on_branch(t) or self._orphaned(t, live)))) or t.get("owner") in humans or t["id"] in live or self._lacks(t, profile):
 			return False
-		mine = t.get("touches", [])
-		if mine:
-			for other in live:
-				if any(_overlap(a, b) for a in mine for b in by_id.get(other, {}).get("touches", [])):
-					return False
-		return True
+		return not any(not o["apart"] for o in self._overlaps(t, live, by_id, branch))
+
+	def _where(self, tid: str, c: dict, by_id: dict) -> str | None:
+		"""The branch a live claim works on: the one it named, else the one active branch the board links to its ticket (branch evidence)."""
+		if c.get("branch"):
+			return c["branch"]
+		act = [b["name"] for b in by_id.get(tid, {}).get("branches", []) if b.get("active")]
+		return act[0] if len(act) == 1 else None
+
+	def _overlaps(self, t: dict, live: dict, by_id: dict, branch: str | None = None) -> list[dict]:
+		"""Live claims whose touches overlap t's: [{id, agent, files: t's touches it meets, branch, apart}]. apart = both sides name a
+		branch and they differ (two worktrees: the edits only meet at merge, CORE-80)."""
+		mine, out = t.get("touches", []), []
+		if not mine:
+			return out
+		for other, c in live.items():
+			theirs = by_id.get(other, {}).get("touches", [])
+			files = [a for a in mine if any(_overlap(a, b) for b in theirs)]
+			if files:
+				where = self._where(other, c, by_id)
+				out.append({"id": other, "agent": c["agent"], "files": files, "branch": where, "apart": bool(branch and where and branch != where)})
+		return out
 
 	@staticmethod
 	def _orphaned(t: dict, live: dict) -> bool:
@@ -1457,7 +1495,7 @@ class Store:
 		"""Tools this ticket needs that a worker of `profile` reported missing (none = it may take it)."""
 		return [n["tool"] for n in t.get("needs", []) if n.get("profile") == profile]
 
-	def _unclaimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None) -> str:
+	def _unclaimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None, branch: str | None = None) -> str:
 		"""Why _claimable said no, in words."""
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		if (lack := self._lacks(t, profile)):
@@ -1474,9 +1512,10 @@ class Store:
 			return f"it's {t['effective_status']}"
 		if t.get("owner") in humans:
 			return f"it's owned by {t['owner']} (a human)"
-		for other, c in live.items():
-			if any(_overlap(a, b) for a in t.get("touches", []) for b in by_id.get(other, {}).get("touches", [])):
-				return f"its touches overlap {other}, claimed by {c['agent']}"
+		for o in self._overlaps(t, live, by_id, branch):
+			if not o["apart"]:
+				return (f"its touches overlap {o['id']}, claimed by {o['agent']}" + (f" on branch {o['branch']}" if o["branch"] else "")
+				        + ("" if branch else ": if you work in your own git worktree, claim with branch=<your branch> (an overlap on another branch is only a warning)"))
 		return "it isn't ready"
 
 	def worker_profile(self, agent: str) -> str | None:
@@ -1488,17 +1527,21 @@ class Store:
 			                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1)")  # no "pass profile=": claim_ticket / next_ready have none (API-21)
 		return profile
 
-	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None) -> dict | None:
-		return self._claim(agent, tid, profile, note, principal)[0]
+	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None,
+	          branch: str | None = None) -> dict | None:
+		return self._claim(agent, tid, profile, note, principal, branch)[0]
 
-	def _claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None) -> tuple:
+	def _claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None,
+	           branch: str | None = None) -> tuple:
 		"""(claim()'s reply, the decorated board it read): claim_next reports why nothing was claimable from that same read.
 		The step reads the board ONCE (CORE-61: it used to read every ticket 3 times, twice under the lock), on every connector:
 		one backend.tickets() under the lock serves _claimable's touches, next_ready and, with the written ticket patched in,
 		the reply (decorated after the lock is let go).
 		Take a ticket for `agent` (a unique worker name, e.g. backend-1): the given one, or the best
 		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
-		claim overlaps. Sets it to doing. `principal` = the human owner (kind human) the agent works for; stored in the claim. Returns the ticket, or None when nothing is claimable."""
+		claim overlaps. Sets it to doing. `principal` = the human owner (kind human) the agent works for; stored in the claim.
+		`branch` = the git branch the agent works on (its own worktree; CORE-80): stored in the claim; an overlap with a claim on another
+		branch is allowed with a warning, and claim_next takes tickets with no overlap first. Returns the ticket, or None when nothing is claimable."""
 		if not (isinstance(agent, str) and NAME_RE.match(agent)):
 			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. backend-1)")
 		humans = [o["name"] for o in self.config["owners"] if o.get("kind") == "human"]
@@ -1511,7 +1554,11 @@ class Store:
 		elif profile not in profiles:
 			raise TicketError(f"unknown profile {profile!r}: {', '.join(profiles) or 'none configured'}")
 
+		branch = (branch or "").strip() or None
+		if branch and (len(branch) > 200 or any(ch.isspace() for ch in branch)):
+			raise TicketError("branch is a git branch name (no spaces, <= 200 chars), e.g. core-80")
 		orphan: list[bool] = []
+		meets: list[dict] = []
 
 		def take():
 			live = self._live_claims()
@@ -1524,20 +1571,29 @@ class Store:
 				t = _copy(board[tid])
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
-				if not self._claimable(t, live, by_id, profile, explicit=True):
-					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile)}")
+				if not self._claimable(t, live, by_id, profile, explicit=True, branch=branch):
+					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile, branch)}")
 				pick = t
 				orphan.append(self._orphaned(t, live))
 			else:
 				ready = self.next_ready(limit=10_000, agent=profile, board=board)
-				pick = next((t for t in ready if self._claimable(t, live, by_id, profile)), None)
+				ok = (t for t in ready if self._claimable(t, live, by_id, profile, branch=branch))
+				first = None
+				for t in ok:  # best ticket that meets no live claim at all; else the best one that only meets claims on other branches
+					if not self._overlaps(t, live, by_id):
+						pick = t
+						break
+					first = first or t
+				else:
+					pick = first
 				if pick is None:
 					return None, board
+			meets[:] = self._overlaps(pick, live, by_id, branch)
 			claims = self._claims()
 			now = _now()
 			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300],
 			                      "seen": len(pick.get("notes", [])),  # inbox(): notes before the claim came with it, they are not news
-				                      **({"principal": principal} if principal else {})}
+				                      **({"principal": principal} if principal else {}), **({"branch": branch} if branch else {})}
 			self._save_claims(claims)
 			fresh = self._fresh(pick["id"])  # one ticket, read now: the read-modify-write starts from what is stored
 			fresh["status"], fresh["updated"] = "doing", date.today().isoformat()
@@ -1556,6 +1612,9 @@ class Store:
 			t["notes_omitted"] = f"{left} older notes not sent (none of them pinned): get_ticket shows every note"
 		warn = [f"branch {b['name']} already has {b['commits']} commit(s) for {got} (last {b['at']}{', by ' + b['author'] if b['author'] else ''}): "
 		        "fetch it and build on it instead of starting over, unless it is abandoned" for b in t.get("branches", []) if b["active"]]
+		for o in meets:  # only ones on another branch get this far (CORE-80)
+			warn.append(f"expect a merge conflict in {', '.join(o['files'])} with {o['id']} ({o['agent']} on branch {o['branch']}): "
+			            f"both edit it; merge or rebase on {o['id']}'s branch once it lands, and keep your change there small")
 		if orphan and orphan[-1]:
 			warn.append(f"{got} was doing with nobody holding it (a claim that expired or was lost, or a hand move): you took it over. "
 			            "Read previous_attempts and the latest notes first: someone may have left half-done work")
@@ -1564,12 +1623,12 @@ class Store:
 		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": _iso(exp),
 		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}, board
 
-	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None) -> dict:
+	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None, branch: str | None = None) -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
 		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}, "ids": {same keys: [ticket ids]}, "orphaned": [doing ids with no live claim]}.
 		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
 		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
-		got, board = self._claim(agent, profile=profile, note=note, principal=principal)
+		got, board = self._claim(agent, profile=profile, note=note, principal=principal, branch=branch)
 		if got:
 			return got
 		if profile is None:
@@ -1866,7 +1925,15 @@ class Store:
 			self._record_request(agent, request_id, "release", tid)
 		late: list[dict] = []
 		seen = self._locked(rel)
-		return self._already(seen) if seen else self._with_unread(self.get(tid), late, "release")
+		if seen:
+			return self._already(seen)
+		out = self._with_unread(self.get(tid), late, "release")
+		waits = [x for x in dict.fromkeys(_ID_TOKEN.findall(reason or "")) if x != tid and self._exists(x)]
+		if waits:  # AI-60: "waiting on CORE-68" is usually half done, half waiting; release records nothing of the done half
+			out["hint"] = (f"if part of {tid} is done and the rest waits on {', '.join(waits)}: claim it again and "
+			               f"complete({tid}, summary, followup={{title, done_when, blocked_by: {waits}}}) records the done part "
+			               f"and makes the rest its own ticket, ready by itself once {', '.join(waits)} is done")
+		return out
 
 	def ask(self, tid: str, agent: str, question: str, request_id: str | None = None) -> dict:
 		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
@@ -2000,10 +2067,14 @@ class Store:
 		return self.get(tid)
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
-	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None) -> dict:
+	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None,
+	             followup: dict | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
-		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`."""
+		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`.
+		followup = {title, done_when?, blocked_by?, body?, priority?, touches?} (AI-60): the part that could not be done yet becomes its own
+		ticket in the same step (same prefix, parent, pillar, owner, tags, touches, docs, components; body "Rest of <id>."), waiting on
+		blocked_by, so it turns ready by itself when they are done. All or nothing: a bad followup refuses the complete too."""
 		_check_result_input("complete", summary, files, refs, handoff)
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
@@ -2014,6 +2085,9 @@ class Store:
 			if c.get("principal"):
 				result["principal"] = c["principal"]
 			raw = self._fresh(tid)
+			fu = self._followup(raw, followup, agent) if followup is not None else None  # validated before anything changes
+			if fu:
+				result["followup"] = fu["id"]
 			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
 			if late:  # the reviewer is shown them next to the result: the worker finished without reading them
 				result["unread"] = [n["n"] for n in late if isinstance(n.get("n"), int)]
@@ -2025,15 +2099,58 @@ class Store:
 			self._save_claims(claims)
 			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
 			raw["done_at"] = _now() if status == "done" else ""
-			self._write(raw)
+			if fu:
+				self._write(fu)
+			try:
+				self._write(raw)
+			except OSError:  # files: take the follow-up back (a database rolls the lock's transaction back on its own)
+				if fu and self._exists(fu["id"]):
+					self.backend.delete(fu["id"])
+				raise
 			self._log("complete", tid, agent, summary, c.get("principal"))
+			if fu:
+				self._log("created", fu["id"], agent, f"{fu['title']} (rest of {tid})")
+				if fu["proposed_by"]:
+					self._log("proposed", fu["id"], agent, fu["title"])
 			self._record_request(agent, request_id, "complete", tid)
 			return c.get("retaken")
 		late: list[dict] = []
 		retaken = self._locked(done)
 		if isinstance(retaken, dict):  # a repeat: nothing changed
 			return self._already(retaken)
-		return self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
+		out = self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
+		if followup is not None and (fid := (out.get("result") or {}).get("followup")):
+			f = self.get(fid)
+			out["followup"] = {k: f.get(k) for k in ("id", "title", "effective_status", "blocked_by", "open_blockers", "proposed_by")}
+		return out
+
+	def _followup(self, raw: dict, f, agent: str) -> dict:
+		"""Caller holds the lock. complete(followup=) as an unwritten, validated ticket (AI-60): placed where the ticket it continues is;
+		schema and proposal gate as for create_ticket by this agent."""
+		if not (isinstance(f, dict) and isinstance(f.get("title"), str) and f["title"].strip()):
+			raise TicketError("followup needs a title: {title, done_when?, blocked_by?: [ids it waits on], body?, priority?, touches?} = the part left to do")
+		if (bad := set(f) - FOLLOWUP_KEYS):
+			raise TicketError(f"followup takes {', '.join(sorted(FOLLOWUP_KEYS))}, not {', '.join(sorted(bad))} (the rest is copied from {raw['id']})")
+		who, strict = self._creator(agent)
+		keep = ("pillar", "owner", "priority", "tags", "touches", "docs", "components", "skills", "mcp")
+		data = {k: raw[k] for k in keep if raw.get(k) not in (None, "", [])}
+		if raw.get("parent") and self._exists(raw["parent"]):
+			data["parent"] = raw["parent"]
+		if raw.get("milestone") in {m["key"] for m in self.config.get("milestones") or []}:
+			data["milestone"] = raw["milestone"]
+		data.update({k: v for k, v in f.items() if k != "body"})
+		body = f.get("body")
+		data["body"] = f"Rest of {raw['id']}." + (f"\n\n{body.strip()}" if isinstance(body, str) and body.strip() else "")
+		pre = raw["id"].rsplit("-", 1)[0]
+		nid = self.next_id(pre)
+		problems = self._schema_problems(data, pre, strict)
+		if problems and strict:
+			raise TicketError("followup " + self._schema_refusal(problems))
+		try:
+			return self._prepare(data, nid, inherited_caps=raw, inherited_components=raw.get("components", []),
+			                     proposed_by=who if strict and self.config["agent_tickets"] == "propose" else "")
+		except TicketError as e:
+			raise TicketError(f"followup refused, {raw['id']} not completed: {e}")
 
 	def report(self, tid: str, by: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None) -> dict:
 		"""CORE-68: a person writes the summary a done ticket was closed without (moved to done by hand, not finished with complete()).

@@ -130,7 +130,7 @@ class ArchTest(unittest.TestCase):
 			out, err = io.StringIO(), io.StringIO()
 			with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
 				code = cli.main(["--dir", str(self.tdir), *a])
-			return code, (json.loads(out.getvalue()) if code == 0 else err.getvalue())
+			return code, (json.loads(out.getvalue()) if code == 0 else json.loads(out.getvalue())["error"])
 		code, t = call("create", "--prefix", "T", "--title", "cli", "--component", "api", "--component", "s3")
 		self.assertEqual((code, t["components"]), (0, ["api", "s3"]))
 		self.assertEqual(call("update", t["id"], "--component", "database")[1]["components"], ["database"])  # sets, does not add

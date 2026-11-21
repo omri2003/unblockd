@@ -28,7 +28,7 @@ default; the board you last opened is remembered.
 
 ## Notifications
 
-Set `UNBLOCKD_WEBHOOK` and the server posts a batched message every ~30 s when agents finish (✅), a human approves one (✅ `approved by`), get stuck (⚠: expired lease or released) or the board runs dry (🏁). Keep the URL in `.env`, it is a secret.
+Set `UNBLOCKD_WEBHOOK` and the server posts a batched message every ~30 s when agents finish (✅), a human approves one (✅ `approved by`), a person adds the summary a hand-closed ticket lacked (📄 `summary added by`), get stuck (⚠: expired lease or released) or the board runs dry (🏁). Keep the URL in `.env`, it is a secret.
 Slack / Discord: `UNBLOCKD_WEBHOOK=https://hooks.slack.com/services/...` or `https://discord.com/api/webhooks/...` (json is the default; one payload carries both `text` and `content`).
 ntfy: `UNBLOCKD_WEBHOOK=https://ntfy.sh/my-topic UNBLOCKD_WEBHOOK_FORMAT=text`. Only events after startup are sent.
 
@@ -44,7 +44,7 @@ The board shows the ticket files of the checkout it was started on. Work pushed 
 - **Linking**: a branch is linked to a ticket by its **name** (`wear-34`, `feat/WEAR-34-login`, `nut_85`), by a **commit subject** that names it, or by an **edit to the ticket's file** on the branch. Only branches not merged into origin's default branch count; a ticket that is done shows none.
 - **In progress**: a `todo` ticket with a linked branch (by name or file edit) that has a commit in the last 14 days reads as **In progress** (`effective_status` doing) and its card shows the branch instead of a claim. Nothing is written: the ticket file still says todo. A commit subject alone is a mention, listed in the drawer but not counted. `claim_next` skips such a ticket (someone is already on it elsewhere); `claim_ticket` by id takes it, with a warning to build on that branch.
 - **Not it after all**: move the card back to To do (Move to, drag, or `update status todo`). That branch tip stops counting for the ticket; a new commit on it counts again. Kept in `tickets/.unblockd/branches_ignored.json`.
-- **No duplicate ids across clones**: the board lock only works on one filesystem, so two clones used to pick the same next number. A board with branch evidence picks the next number above every id that origin's default branch, or an unmerged branch, already has a ticket file for (`id_max` in `branches.json`): a checkout that is behind makes `WEAR-9`, not a second `WEAR-6`. A clone with no branch scan (no web server running there) still counts only its own files: pull before creating.
+- **No duplicate ids across clones**: the board lock only works on one filesystem, so two clones used to pick the same next number. A board with branch evidence picks the next number above every id that origin's default branch, or an unmerged branch, already has a ticket file for (`id_max` in `branches.json`): a checkout that is behind makes `WEAR-9`, not a second `WEAR-6`. A clone with no branch scan (no web server running there: the CLI or stdio MCP alone never scans) still counts only its own files: pull before creating. The scan runs every 120 s, so a ticket pushed less than two minutes ago is not counted yet; two clones creating in that window can still pick the same number, and the second file then conflicts at merge (rename one).
 - **Ticket edits on a branch** (a note or a status a worker committed there) are reported in the drawer: "On that branch this ticket is In progress with 2 new notes. You see that here once the branch is merged and this checkout pulls."
 - **Behind origin**: when the checkout is behind origin (or has unpushed commits) the board shows a notice with the counts and how many tickets origin has that the checkout doesn't. Dismiss hides it until the numbers change. Pulling is yours to do: the server never changes your checkout.
 - **Private repos**: set `UNBLOCKD_GIT_TOKEN` for an https remote (a `GITHUB_TOKEN` that can read contents also works, for github.com only: it is never sent to another host). The notice says when origin can't be read; an ssh remote uses the keys of the user the server runs as. The Docker image ships `git`.
@@ -63,6 +63,13 @@ gets a derived `agent` (shown on its card, filterable in the bar).
   {"name": "blender", "pillars": ["ART"], "instructions": "Batch-process models in Blender."}
 ]
 ```
+
+A ticket that routes to no profile (no pillar or tag a profile works, no
+`agent:` tag, not owned by a person) is never offered by `claim_next`, so
+create / update / batch create answer with a warning saying what to set, and
+the board shows how many open tickets are like that (Show them = the Unrouted
+filter). The New ticket form and quick add set the pillar from the prefix
+when the prefix is a pillar key.
 
 `work_plan` (MCP, `GET .../plan`, CLI `plan`) returns the ready tickets **not
 owned by a human**, grouped per profile with its `instructions`, `model`, `skills` and `mcp`:
@@ -84,6 +91,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   workers at once.
 - **Never two on the same files**: give tickets `touches` (paths or globs).
   `claim_next` skips a ticket whose `touches` overlap a live claim.
+  **Except across worktrees** (CORE-80): a worker in its own git worktree passes `branch` (MCP `claim_next` / `claim_ticket`
+  arg, CLI `claim --branch` or env `UNBLOCKD_BRANCH`, REST body key); it is kept in the claim. When both claims name a branch and
+  they differ, the edits only meet at merge, so the claim succeeds with a warning ("expect a merge conflict in store.py with
+  CORE-74 (backend-2 on branch core-74)"), and `claim_next` still takes tickets that overlap nothing first. The same branch, or
+  a side with no branch (a holder without one: the board's branch evidence is used when exactly one active branch is linked
+  to its ticket), is refused as before, and the refusal says to pass `branch` if you have your own worktree.
 - **Never a human's ticket**: tickets owned by a `kind: human` owner are skipped.
 - **Git worktrees share one lock**: when the tickets folder is inside a linked worktree (`git worktree add`), its lock, `claims.json`
   and `activity.jsonl` live in the MAIN checkout's copy of that folder (`<main>/tickets/.unblockd/`), so workers in different worktrees
@@ -119,6 +132,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   on another write or ticket is refused. The last 500 ids per board are kept (runtime doc `requests`). Without an id, the same agent
   repeating its own complete, release or question (nobody holds the ticket now and its newest transition is that agent's) also gets
   `already: true` instead of "isn't claimed".
+- **Finish what you can, hand the rest on** (AI-60): when part of a ticket is done and the rest waits on another ticket,
+  `complete(id, agent, summary, followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?})` (MCP arg, CLI
+  `--followup '<json>'`, REST body key) completes the ticket AND creates the rest as a new ticket in one step, all or nothing: same
+  prefix, parent, pillar, owner, tags, touches, docs and components, body `Rest of <id>.`, waiting on `blocked_by`, so it becomes
+  ready by itself when they are done. The reply's `followup` names it; `result.followup` keeps its id. A `release` whose reason names
+  another ticket id answers with a `hint` pointing at this.
 - **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (whole text,
   flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
   numbers as `result.unread` for the reviewer.
@@ -504,7 +523,13 @@ python -m unblockd.cli --dir <repo>/tickets roadmap                          # m
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --milestone v0.2   # - clears it
 python -m unblockd.cli --dir <repo>/tickets migrate-milestones REL-1=v0.1 REL-2=v0.2   # version epics -> milestones
 python -m unblockd.cli health                                               # remote: GET /healthz; local: the folder; exit 1 when down
+python -m unblockd.cli --dir <repo>/tickets update BUG-10 --rev 3 --json '{"title":"..."}'   # refused (conflict) if written since rev 3
 ```
+
+**Errors a program can parse.** Every reply is JSON. Errors too, whenever stdout is not a terminal (an agent or a
+script reading it) or with `--json` before the command (`cli --json claim ...`): ONE object on stdout,
+`{"error": "...", "code": "refused|not_found|conflict|down|usage"}`, exit 1 (`down` = the server did not answer,
+`usage` = a bad command line). At a terminal a person still gets `error: ...` on stderr (argparse's usage errors: exit 2).
 
 **Agents without MCP, and sub-agents** (a supported interface, not a workaround): MCP tools are configured per client, so a
 sub-agent or a cloud session often has none. Set `UNBLOCKD_URL` (+ `UNBLOCKD_TOKEN`, `UNBLOCKD_BOARD`) and every CLI command
