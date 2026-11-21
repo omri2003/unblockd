@@ -12,3 +12,7 @@ compose.override.yaml
 
 # Smoke failure screenshots (DEBUG=<dir>)
 fail.png
+
+# pip install . builds in-tree
+/build/
+*.egg-info/

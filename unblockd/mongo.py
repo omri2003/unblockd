@@ -57,7 +57,7 @@ def _client(url: str):
 			from pymongo.errors import PyMongoError  # noqa: PLC0415
 		except ImportError:
 			raise TicketError("this board is on MongoDB, which needs the pymongo package: pip install pymongo "
-			                  "(the Docker image includes it)") from None
+			                  "or pip install \"unblockd[mongo]\" (the Docker image includes it)") from None
 		def go():
 			cl = None
 			try:
