@@ -208,7 +208,8 @@ unblockd **declares** what a worker should have; the agent harness (Claude Code,
 
 ## Chat: ask about tickets and boards
 
-**Ask** (or `c`) opens a chat beside the board. Claude answers with read-only
+**Ask** (or `c`) opens a chat beside the board (opening a ticket or Needs you
+closes it, and opening it closes them; the conversation is kept). Claude answers with read-only
 tools over the same data (boards, tickets, `next_ready`, `work_plan`), so it
 checks instead of guessing. Link things in a question and they're looked up
 before Claude sees it:
