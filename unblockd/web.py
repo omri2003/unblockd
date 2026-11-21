@@ -25,7 +25,7 @@ GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expir
                                          since=<ISO time> keeps only newer events (the "While you were away" digest)
 POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner}  best claimable ticket, or null
 POST   tickets/<id>/claim                {"agent", "note"?, "principal"?}
-POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?}
+POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?, "until"? (ISO: keep the claim alive until then, capped at lease_max_minutes)}
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply_to"?, "supersedes"?}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
@@ -320,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal")))
 				if act == "heartbeat":
 					box = store.inbox(agent, mark=True)
-					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"))
+					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None)
 					return self._send(200, {**t, **({"inbox": box} if box else {})})
 				if act == "release":
 					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or "")))

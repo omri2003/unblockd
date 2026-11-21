@@ -34,7 +34,8 @@ DEFAULT_CONFIG = {
 	"stale_days": STALE_DAYS,
 	"done_window_days": 7,  # the UI's Done column shows tickets done within this many days (the API still returns all)
 	"wip_limit": None,  # int: the UI warns when more tickets than this are in progress; None = no warning
-	"lease_minutes": 15,  # a claim with no heartbeat for this long expires and the ticket goes back to todo
+	"lease_minutes": 15,  # a claim with no heartbeat for this long expires and the ticket goes back to todo (agents[].lease_minutes overrides per profile)
+	"lease_max_minutes": 240,  # heartbeat(until=) may keep a claim alive this far ahead, no further (AI-58): a dead worker still frees its ticket
 	"legacy_files": [],  # old ticket lists (relative to the tickets folder): new IDs never reuse a number seen there
 	"id": None,  # board id when several boards are served; None = the project folder's name
 	# Agent profiles: who should work a ticket. A ticket goes to the first profile sharing one of its
@@ -208,7 +209,7 @@ def refuse_open_bind(host: str, token: str | None) -> None:
 	                 "or set UNBLOCKD_ALLOW_OPEN=1 if the port is only reachable by you (e.g. published on 127.0.0.1 by Docker).")
 
 
-AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools", "tools_off"}
+AGENT_KEYS = {"name", "tags", "pillars", "model", "instructions", "docs", "skills", "mcp", "tools", "tools_off", "lease_minutes"}
 # what a `--tools worker` server keeps: every tool WORK_LOOP.md tells a worker to call (tests/test_tools.py checks it, AI-41)
 WORKER_TOOLS = ("claim_next", "claim_ticket", "heartbeat", "add_note", "complete", "release", "ask_human", "read_doc", "get_ticket",
                 "create_ticket", "create_tickets", "split_ticket", "update_ticket", "arch_set_edge", "arch_remove_edge", "agents_now")
@@ -260,6 +261,11 @@ def config_from(user: dict | None, where: str, tickets_dir: Path | None) -> dict
 			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: tags, pillars, docs, skills and mcp are lists of strings")
 		if set(ag) - AGENT_KEYS:
 			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: unknown key(s) {', '.join(sorted(set(ag) - AGENT_KEYS))}. Allowed: {', '.join(sorted(AGENT_KEYS))}")
+		if "lease_minutes" in ag and not _minutes(ag["lease_minutes"]):
+			raise TicketError(f"{CONFIG_FILE}: agent {ag['name']}: lease_minutes must be a positive number of minutes (e.g. 30), at most 1440")
+	for k in ("lease_minutes", "lease_max_minutes"):
+		if not _minutes(cfg[k]):
+			raise TicketError(f"{CONFIG_FILE}: {k} must be a positive number of minutes, at most 1440")
 	for o in cfg["owners"]:
 		if o.get("kind") not in ("human", "agent"):
 			raise TicketError(f"{CONFIG_FILE}: owner {o['name']}: kind must be \"human\" or \"agent\" (got {o.get('kind')!r})")
@@ -290,6 +296,10 @@ def config_from(user: dict | None, where: str, tickets_dir: Path | None) -> dict
 		agents = [o["name"] for o in cfg["owners"] if o.get("kind") == "agent"]
 		cfg["default_owner"] = (agents or [cfg["owners"][0]["name"]])[0]
 	return cfg
+
+
+def _minutes(v) -> bool:
+	return type(v) in (int, float) and 0 < v <= 1440
 
 
 def _check_caps(cfg: dict, tickets_dir: Path | None) -> None:
@@ -1281,9 +1291,8 @@ class Store:
 		claims = self._claims()
 		if not claims:
 			return {}
-		lease = float(self.config["lease_minutes"]) * 60
 		now = time.time()
-		dead = [tid for tid, c in claims.items() if now - _ts(c["heartbeat_at"]) > lease]
+		dead = [tid for tid, c in claims.items() if now > self._expires(c)]
 		if dead:
 			def sweep():
 				cur = self._claims()
@@ -1292,18 +1301,29 @@ class Store:
 					if c is None:
 						continue
 					t = self.backend.read(tid)
+					mins = _fmt_min(self.lease_minutes(c.get("profile")))
 					if t is not None:
 						if t.get("status") == "doing":
 							t["status"] = "todo"
 							t["updated"] = date.today().isoformat()
-							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {int(lease // 60)} min)", strict=False, kind="expired")
+							_append_note(t, c["agent"], f"claim by {c['agent']} expired (no heartbeat for {mins} min)", strict=False, kind="expired")
 							self._write(t)
-					self._log("expired", tid, c["agent"], f"no heartbeat for {int(lease // 60)} min; back to todo")
+					self._log("expired", tid, c["agent"], f"no heartbeat for {mins} min; back to todo")
 				self._save_claims(cur)
 			self._locked(sweep)
 			claims = self._claims()
 		return {tid: {**c, "age_s": int(now - _ts(c["claimed_at"])), "quiet_s": int(now - _ts(c["heartbeat_at"]))}
 		        for tid, c in claims.items()}
+
+	def lease_minutes(self, profile: str | None) -> float:
+		"""The lease of a claim by a worker of `profile`: agents[].lease_minutes, else the board's lease_minutes (AI-58)."""
+		ag = next((a for a in self.config["agents"] if a["name"] == profile), None) if profile else None
+		return (ag or {}).get("lease_minutes") or self.config["lease_minutes"]
+
+	def _expires(self, c: dict) -> float:
+		"""When claim c expires: its last heartbeat + its profile's lease, or the `until` a heartbeat promised, whichever is later."""
+		end = _ts(c["heartbeat_at"]) + float(self.lease_minutes(c.get("profile"))) * 60
+		return max(end, _ts(c["until"])) if c.get("until") else end
 
 	def _drop_claim(self, tid: str, why: str) -> None:
 		claims = self._claims()
@@ -1426,7 +1446,7 @@ class Store:
 		if not got:
 			return None
 		t, c = self.get(got), self._claims()[got]
-		lease = self.config["lease_minutes"]
+		lease, exp = self.lease_minutes(c.get("profile")), self._expires(c)
 		t["notes"], left = self.lean_notes(t["notes"])
 		if left:
 			t["notes_omitted"] = f"{left} older notes not sent (none of them pinned): get_ticket shows every note"
@@ -1437,7 +1457,7 @@ class Store:
 			            "Read previous_attempts and the latest notes first: someone may have left half-done work")
 		if not principal and len(humans) > 1:
 			warn.append("no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it")
-		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
+		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": _iso(exp),
 		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None) -> dict:
@@ -1554,13 +1574,14 @@ class Store:
 			return {}
 		c = self._live_claims().get(tid)
 		if c and c["agent"] == agent:
-			left = max(0, int(float(self.config["lease_minutes"]) * 60 - c["quiet_s"]))
+			exp = self._expires(c)
+			left = max(0, int(exp - time.time()))
 			warn = [f"your lease on {tid} ends in {left} s: call heartbeat now, or the ticket goes back to todo"] if left < LEASE_WARN_S else []
-			return {"lease_left_s": left, **({"warnings": warn} if warn else {})}
+			return {"lease_left_s": left, "expires_at": _iso(exp), **({"warnings": warn} if warn else {})}
 		if c:
 			return {"warnings": [f"you don't hold {tid}: {c['agent']} does"]}
 		if self._lapsed(tid, agent):
-			return {"warnings": [f"you no longer hold {tid}: your claim expired (no heartbeat for {self.config['lease_minutes']} min). "
+			return {"warnings": [f"you no longer hold {tid}: your claim expired (no heartbeat for {_fmt_min(self.lease_minutes(self.profile_of(agent)))} min). "
 			                     "heartbeat or complete takes it back while nobody else has claimed it"]}
 		return {}
 
@@ -1594,7 +1615,7 @@ class Store:
 			if self._lapsed(tid, agent):
 				t = self.get(tid)
 				why = self._unclaimable(t, self._live_claims(), {x["id"]: x for x in self._all_raw()}, self.profile_of(agent))
-				raise TicketError(f"you no longer hold {tid}: your claim expired (no heartbeat for {self.config['lease_minutes']} min) "
+				raise TicketError(f"you no longer hold {tid}: your claim expired (no heartbeat for {_fmt_min(self.lease_minutes(self.profile_of(agent)))} min) "
 				                  f"and it can't be taken back: {why}")
 			raise TicketError(f"{tid} isn't claimed (or the claim expired): claim it again")
 		if c["agent"] != agent:
@@ -1603,19 +1624,37 @@ class Store:
 			raise TicketError(f"{tid} is claimed by {agent} for {c['principal']}, not for {principal}")
 		return c
 
-	def heartbeat(self, tid: str, agent: str, note: str = "", principal: str | None = None) -> dict:
-		"""Keep a claim alive and say what you're doing now (shown live on the board)."""
+	def heartbeat(self, tid: str, agent: str, note: str = "", principal: str | None = None, until: str | None = None) -> dict:
+		"""Keep a claim alive and say what you're doing now (shown live on the board). until = an ISO time: the claim stays
+		alive until then even without another heartbeat (a long build or render), capped at lease_max_minutes from now (AI-58)."""
+		cap_warn = []
+		end = None
+		if until:
+			try:
+				end = _ts(until)
+			except (TypeError, ValueError):
+				raise TicketError(f"until must be an ISO time like 2026-11-21T18:30:00+00:00 (got {str(until)[:40]!r})")
+			now, mx = time.time(), float(self.config["lease_max_minutes"])
+			if end <= now:
+				raise TicketError(f"until {until} is in the past: give the time your run ends (UTC ISO), or leave it out")
+			if end > now + mx * 60:
+				end = now + mx * 60
+				cap_warn = [f"until capped to {_iso(end)}: this board allows at most {_fmt_min(mx)} min ahead (lease_max_minutes); heartbeat again before then"]
+
 		def beat():
 			c = self._holder(tid, agent, principal, retake=True)
 			claims = self._claims()
 			claims[tid]["heartbeat_at"] = _now()
+			if end is not None:
+				claims[tid]["until"] = _iso(end)
 			if note:
 				claims[tid]["note"] = note[:300]
 			self._save_claims(claims)
 			self._log("heartbeat", tid, agent, note)
 			return c.get("retaken")
 		retaken = self._locked(beat)
-		return self._with_lease(self.get(tid), agent, retaken)
+		out = self._with_lease(self.get(tid), agent, retaken)
+		return {**out, "warnings": out.get("warnings", []) + cap_warn} if cap_warn else out
 
 	def _with_lease(self, t: dict, agent: str | None, retaken: bool = False) -> dict:
 		"""t plus lease_status(t, agent), and a warning when the claim was just taken back."""
@@ -1915,7 +1954,16 @@ def _now() -> str:
 
 
 def _ts(iso: str) -> float:
-	return datetime.fromisoformat(iso).timestamp()
+	d = datetime.fromisoformat(iso[:-1] + "+00:00" if iso.endswith("Z") else iso)
+	return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()  # a time without offset is UTC, like every stored one
+
+
+def _iso(ts: float) -> str:
+	return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds")
+
+
+def _fmt_min(m: float) -> str:
+	return str(int(m)) if float(m).is_integer() else f"{m:g}"
 
 
 def _overlap(a: str, b: str) -> bool:

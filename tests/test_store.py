@@ -412,7 +412,7 @@ class ConfigTest(unittest.TestCase):
 
 	def test_agent_profile_keys_and_owner_kind_are_validated(self):
 		owners = [{"name": "Omri", "kind": "human"}]
-		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*effort.*Allowed: docs, instructions, mcp, model, name, pillars, skills, tags"):
+		with self.assertRaisesRegex(TicketError, "agent backend: unknown key.*effort.*Allowed: docs, instructions, lease_minutes, mcp, model, name, pillars, skills, tags"):
 			self._store({"owners": owners, "agents": [{"name": "backend", "effort": "x"}]})
 		for kind in ("Human", None):
 			with self.assertRaisesRegex(TicketError, "owner Omri: kind must be"):

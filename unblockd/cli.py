@@ -4,7 +4,7 @@
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
-    python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"]
+    python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
     python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"]
@@ -104,7 +104,7 @@ class Remote:
 	def claim(self, agent, tid=None, profile=None, note="", principal=None):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal})
 	def claim_next(self, agent, profile=None, note="", principal=None): return self.claim(agent, profile=profile, note=note, principal=principal)  # the server answers with the reason when empty
-	def heartbeat(self, tid, agent, note="", principal=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal})
+	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
 	def release(self, tid, agent, reason="", principal=None, missing="", why=""):
 		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why})
 	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
@@ -181,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
 		x.add_argument("id")
 		x.add_argument("--agent", required=True)
 		x.add_argument(extra, required=name in ("ask", "complete"), default="")
+		if name == "heartbeat":
+			x.add_argument("--until", help="UTC ISO time a long run ends: the claim stays alive until then (capped at lease_max_minutes)")
 		if name == "release":
 			x.add_argument("--missing", default="", help="a tool you need and do not have")
 			x.add_argument("--why", default="", help="with --missing: one line on what you needed it for")
@@ -269,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
 			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
-			out = s.heartbeat(a.id, a.agent, a.note, a.principal)
+			out = s.heartbeat(a.id, a.agent, a.note, a.principal, until=a.until)
 			if box:
 				out = {**out, "inbox": box}
 		elif a.cmd == "release":

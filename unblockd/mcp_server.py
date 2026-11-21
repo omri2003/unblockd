@@ -106,7 +106,7 @@ def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
-	        **{k: t[k] for k in ("lease_left_s", "warnings") if k in t}}  # lease left / "you no longer hold this": the worker must see them
+	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings") if k in t}}  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
@@ -347,14 +347,16 @@ def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = No
 
 
 @tool
-def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None, board: str | None = None) -> dict:
+def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None, until: str | None = None, board: str | None = None) -> dict:
 	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
-	least every few minutes. Pass the same principal you claimed with. Returns {ok, id, status} plus `inbox` {count, notes: [{ticket, n,
+	least every few minutes. Pass the same principal you claimed with. until = UTC ISO time a long run (build, render, test suite)
+	ends: the claim then stays alive until that time without more heartbeats (capped at the board's lease_max_minutes; the reply's
+	expires_at says when it ends). Returns {ok, id, status, lease_left_s, expires_at} plus `inbox` {count, notes: [{ticket, n,
 	by, kind, text: first line}]} when someone left notes on a ticket you hold since your last heartbeat: read them (get_ticket) and act
 	on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold)."""
 	s = BOARDS.get(board)
 	box = s.inbox(agent, mark=True)
-	r = _ack(s.heartbeat(id, agent, note, principal))
+	r = _ack(s.heartbeat(id, agent, note, principal, until=until))
 	return {**r, "inbox": box} if box else r
 
 

@@ -98,6 +98,11 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
   (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
+- **Longer leases for slow work** (AI-58): a profile may set its own `lease_minutes` (`agents: [{"name": "artist", "lease_minutes": 30}]`);
+  its claims, their expiry and every reply use it. For one long run, `heartbeat(id, agent, note, until=<UTC ISO>)` (CLI `heartbeat --until`,
+  REST body `until`) keeps the claim alive until that time with no more heartbeats; it is capped at `lease_max_minutes` (default 240)
+  from now (the reply warns when it was capped), so a worker that died mid-run still frees its ticket. Replies carry `expires_at` and
+  `lease_left_s` counting the longer of the two.
 - **Lease left, and a lapsed claim taken back** (AI-35): the claim result and every write reply to the holder (`heartbeat`, `add_note`,
   `update_ticket` with `agent`, MCP short replies too) carry `lease_left_s`, plus a `warnings` line when less than 3 min is left.
   A worker whose claim expired gets `warnings: ["you no longer hold X ..."]` on `add_note` (the note is kept). `heartbeat` and
@@ -264,7 +269,8 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `stale_days` | A `doing` ticket untouched this long is flagged. |
 | `wip_limit` | More than this many `doing` tickets shows a WIP badge on the column (default `null` = none). |
 | `done_window_days` | The board's Done column shows only tickets done within this many days (default 7, whole number > 0), newest first, at most 20 cards, with `+N more → view all`. UI only: the API, MCP and CLI still list every done ticket. Edited in `unblockd.json` like every other board setting. |
-| `lease_minutes` | A claim with no heartbeat this long expires (default 15). |
+| `lease_minutes` | A claim with no heartbeat this long expires (default 15). A profile can set its own (`agents[].lease_minutes`). |
+| `lease_max_minutes` | How far ahead `heartbeat(until=)` may keep a claim alive (default 240, at most 1440). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
 | `id` | Board id (default: the project folder's name). |
 | `agents` | Agent profiles, see below (each may have its own `docs`). |
