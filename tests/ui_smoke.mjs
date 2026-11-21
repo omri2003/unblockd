@@ -896,6 +896,26 @@ try {
 		ok(rel.status === 'todo' && !rel.claim, `[${tag}] Release to To do should drop the claim: ${rel.status}`);
 		cli('delete', did); cli('delete', bk);
 		cli('delete', mid); // the other one goes when its ticket does
+		{ // AI-50: a person's note on a done ticket is listed (Note after done) until Dismiss (Undo lists it again) or Reopen (back to To do)
+			const lid = JSON.parse(cli('create', '--prefix', 'LN', '--title', 'finished then noted', '--json', '{"owner":"Claude"}')).id;
+			cli('claim', '--agent', 'backend-1', '--id', lid); cli('complete', lid, '--agent', 'backend-1', '--summary', 'done it');
+			await age(lid, { done_at: '2020-01-01T00:00:00+00:00' });
+			cli('note', lid, 'this broke the login page', '--by', 'omri');
+			await refresh();
+			const lrow = `#npList .nr[data-key="${boardId}/${lid}"]`;
+			await page.waitForSelector(`${lrow} [data-dismissnotes]`);
+			ok(/after it was done: omri: this broke the login page/.test(await page.locator(`${lrow} .nd-q.lt`).innerText()) && (await page.locator(`${lrow} .nb`).innerText()) === 'Note after done', `[${tag}] late note row: ${await page.locator(`${lrow} .nd-q.lt`).innerText()}`);
+			await noOverflow('late note row');
+			await page.click(`${lrow} [data-dismissnotes]`);
+			await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"] [data-dismissnotes]`), `${boardId}/${lid}`);
+			await page.locator('#toasts > *', { hasText: 'note dismissed' }).locator('button:has-text("Undo")').click(); // not an older toast's Undo
+			await page.waitForSelector(`${lrow} [data-reopen]`);
+			await page.click(`${lrow} [data-reopen]`);
+			await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${lid}`);
+			const lt = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), lid);
+			ok(lt.status === 'todo' && lt.notes.at(-1).pinned && !lt.notes.at(-1).dismissed_by, `[${tag}] Reopen: back to To do, the note pinned for the next worker`);
+			cli('delete', lid);
+		}
 		await refresh();
 		await page.waitForFunction(() => document.getElementById('needsBadge').hidden);
 		await page.keyboard.press('Escape');

@@ -103,7 +103,7 @@ Check AGENTS.md, UI-REFERENCE.md and the `?` sheet first. Already built: Board, 
 ## 5. Patterns that matter
 
 ### 5.1 Needs you (badge + panel)
-- Source is `GET /api/needs`. Kinds in this precedence: review, proposal, question, stuck.
+- Source is `GET /api/needs`. Kinds in this precedence: late_note (a person's note on a done ticket: Reopen / Dismiss), review (with `late` notes that came after complete), proposal, question, stuck.
 - Parked (`waiting_on` with no `asked_by`) is never listed and never counted. Cards and drawer say `Parked: <waiting_on>`.
 - A question is free text. Never split `waiting_on` into a person. Say `Question from <asked_by>`. [AGENTS: "Traps that already bit"]
 - Collapsed row: ID, title, kind badge, `blocks N`, age, one line, a one-line input. Click expands ONE row at a time.
@@ -184,7 +184,7 @@ Mark a check "n/a" when the change cannot touch it.
 28. Every `const` that `chips()`/`slidePill` reads is declared above the first call?
 
 **Needs you, drawer, board**
-29. Needs you precedence (review, proposal, question, stuck), the badge count and "parked is never counted" are unchanged?
+29. Needs you precedence (late_note, review, proposal, question, stuck), the badge count and "parked is never counted" are unchanged?
 30. A `waiting_on` is never parsed as a person?
 31. The drawer opens with what the human must decide, and `knOpen` is untouched?
 32. Panel and drawer share handlers and drafts (`submitNeeds`, `nPatch`, `data-nform`), not copies?

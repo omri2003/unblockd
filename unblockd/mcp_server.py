@@ -106,7 +106,7 @@ def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
-	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id") if k in t}}  # lease left / "you no longer hold this": the worker must see them
+	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
@@ -354,7 +354,9 @@ def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None,
 	ends: the claim then stays alive until that time without more heartbeats (capped at the board's lease_max_minutes; the reply's
 	expires_at says when it ends). Returns {ok, id, status, lease_left_s, expires_at} plus `inbox` {count, notes: [{ticket, n,
 	by, kind, text: first line}]} when someone left notes on a ticket you hold since your last heartbeat: read them (get_ticket) and act
-	on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold)."""
+	on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold). complete, release and
+	ask_human replies carry `inbox` too (whole text, flagged unread_before_complete / _release / _ask) for notes that came after your
+	last heartbeat: read them; a request you could not act on goes in an add_note or a new ticket."""
 	s = BOARDS.get(board)
 	box = s.inbox(agent, mark=True)
 	r = _ack(s.heartbeat(id, agent, note, principal, until=until))

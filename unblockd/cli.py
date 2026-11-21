@@ -110,6 +110,7 @@ class Remote:
 	def ask(self, tid, agent, question, request_id=None): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question, "request_id": request_id})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
+	def dismiss_notes(self, tid, by, ns, undo=False): return self._call("POST", f"/tickets/{tid}/dismiss", {"by": by, "notes": ns, "undo": undo})
 	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None, request_id=None):
 		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes, "request_id": request_id})
 	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None):
@@ -219,6 +220,11 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("--reply-to", type=int, help="the note number this answers")
 	no.add_argument("--supersedes", type=int, help="the pinned note number this one replaces")
 	no.add_argument("--request-id", help="a fresh id for this note: a retry with the same id adds nothing (already: true)")
+	dm = sub.add_parser("dismiss", help="a person read late notes on a finished ticket (Needs you lists a person's note on a done ticket): stop listing them")
+	dm.add_argument("id")
+	dm.add_argument("notes", nargs="+", type=int, metavar="N")
+	dm.add_argument("--by", default="human")
+	dm.add_argument("--undo", action="store_true")
 	for name in ("answer", "reject", "accept", "approve"):
 		x = sub.add_parser(name)
 		x.add_argument("id")
@@ -303,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.accept(a.id, a.by)
 		elif a.cmd == "approve":
 			out = s.approve(a.id, a.by)
+		elif a.cmd == "dismiss":
+			out = s.dismiss_notes(a.id, a.by, a.notes, undo=a.undo)
 		elif a.cmd == "delete":
 			out = s.delete(a.id, agent=a.agent)
 		elif a.cmd == "get":

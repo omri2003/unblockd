@@ -136,6 +136,8 @@ a.btn{display:inline-block;text-decoration:none}
 .nr:not(.open) .nd-q{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;cursor:pointer}
 .nr:not(.open) .nd-q.w{display:block;overflow:visible}
 .nd-ln{font-size:.82rem;color:var(--muted);margin:2px 0 0;overflow-wrap:anywhere}
+.late{border-left:3px solid var(--cinnabar);padding:2px 0 2px 10px;margin:8px 0} .late h4,.late h3{margin-top:0} .late .nn p{white-space:pre-wrap}
+.nd-q.lt{color:var(--ink)} .nd-q.lt b{color:var(--cinnabar)}
 .nr.open .nd-q{white-space:pre-wrap;color:var(--ink);font-size:.95rem;margin:6px 0 4px}
 .nr-x h4{margin:12px 0 4px;font-size:.8rem;color:var(--muted)} .nr-x p{margin:6px 0 0}
 .nn{list-style:none;margin:0;padding:0;display:grid;gap:7px} .nn li{border-left:2px solid var(--line);padding-left:9px}
@@ -1427,9 +1429,14 @@ function renderDigest(){
 // Needs you: a header badge + a side panel (#npanel), fed by GET /api/needs = every board's tickets that wait on a person (kind question | review).
 // Drafts live in DRAFTS (keyed by data-draft, 'a:'|'r:'|'n:' + board/id), so the poll, a collapse/expand and the drawer re-render keep half-typed text.
 let NMARK=''; // ids of this board's failed-N-times cards; a change repaints the board (the cards read NEEDS)
+let DLATE=''; // the open drawer's late notes (AI-50) as last drawn: a change re-renders the drawer
 const DRAFTS={}; let NEEDS=[], nLoaded=false, nErr='', NX=null, npSig='', npShown=false, nTok=0, nEtag=null, lastNFocus=null; // NX = the one expanded row's key
-const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck'}, nkey=(g,i)=>g.id+'/'+i.id;
+const KIND={question:'Question',review:'Review',proposal:'Proposal',stuck:'Stuck',late_note:'Note after done'}, nkey=(g,i)=>g.id+'/'+i.id;
 const noteLine=n=>{const k=n.kind; return k==='answer'?`Answer to “${n.q}”: ${n.text}`:k==='question'?'Question: '+n.text:k==='rejected'?'Rejected: '+n.text:k==='released'?'Released: '+n.text:k==='complete'?(n.status==='review'?'Finished, for review: ':'Finished: ')+n.text:k==='decision'?'Decision: '+n.text:k==='finding'?'Finding: '+n.text:k==='warning'?'Warning: '+n.text:n.text;}; // a ticket's notes ({by, at, kind, text}, the store's _append_note) in words; claim notes and attempts have text only
+const lateFor=(bd,id)=>NEEDS.find(g=>g.id===bd)?.items.find(i=>i.id===id)?.late||[]; // AI-50: notes that came after the work was finished (Store.late_notes)
+const lateHtml=(late,by,h='h4')=>late.length?`<div class="late"><${h}>${late.length===1?'A note':late.length+' notes'} after ${by?esc(by)+' finished':'it was done'}</${h}><ul class="nn">${late.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(ntime(n.at))}</time>${n.unread?' <span class="hint">· came before it finished, never read by the agent</span>':''}<p>${esc(noteLine(n))}</p></li>`).join('')}</ul></div>`:'';
+const lateLine=(late,by)=>late.length?`<p class="nd-q lt"><b>${late.length===1?'A note':late.length+' notes'} after ${by?esc(by)+' finished':'it was done'}:</b> ${esc(late[late.length-1].by)}: ${esc(late[late.length-1].text)}</p>`:'';
+const lateBtns=(late,B)=>`<button type="button" class="btn sm" data-reopen ${B} title="Back to To do: the next worker gets the note (a person's note is pinned)">Reopen</button><button type="button" class="btn ghost sm" data-dismissnotes="${late.map(n=>n.n).join(',')}" ${B} title="Nothing to do: stop listing this note">Dismiss</button>`;
 const isAsk=(n,q)=>n.kind==='question'&&n.text===q; // the note an ask() left: the panel already shows the question
 const ntime=at=>at.length>10?new Date(at).toLocaleString([],{dateStyle:'medium',timeStyle:'short'}):at; // old complete() notes carry a date only
 function notesHtml(t){const ns=t.notes||[]; if(!ns.length) return '';
@@ -1459,6 +1466,7 @@ const NSEEN='unblockd.nseen'; // {board: [ids]} the badge has shown; an id not i
 function needMark(t){ const n=NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id&&i.kind==='stuck')?.attempts?.length; return n?`<span class="wl fail" title="Failed claims since a human last touched it; a note clears this">Failed ${n} times</span>`:''; }
 function paintNeeds(){
   const nm=NEEDS.find(g=>g.id===curBoard())?.items.filter(i=>i.attempts?.length).map(i=>i.id+i.attempts.length).join(); if(nm!==NMARK){ NMARK=nm; if(typeof T!=='undefined'&&T.length) render(); }
+  const dl=openId?JSON.stringify(lateFor(curBoard(),openId)):''; if(dl!==DLATE){ DLATE=dl; if(openId&&!editing&&!$('drawer').hidden&&BY.has(openId)) showTicket(openId,true); } // the drawer reads them from NEEDS, which lands after the tickets
   const b=$('needsBadge'),cur=curBoard(),n=NEEDS.find(g=>g.id===cur)?.items.length||0; b.hidden=!n; // this board only: another board's items show on that board
   if(n){ b.innerHTML=`<i class="bang" aria-hidden="true">!</i><span class="n">${n}</span><span class="w">${n===1?'needs':'need'} you</span>`;
     b.title='Needs you (i)'; b.setAttribute('aria-label',`Needs you: ${n}`); }
@@ -1492,7 +1500,8 @@ function needsRow(g,i){
   const lab=i.kind==='stuck'?'Open':'Open ticket',openBtn=(cls)=>here?`<button type="button" class="${cls}" data-open="${esc(i.id)}">${lab}</button>`:`<a class="${cls}" href="${esc(bLink(g,i))}">${lab}</a>`;
   const notes=(i.notes||[]).filter(n=>!(i.kind==='question'&&isAsk(n,i.waiting_on))).slice(-3);
   const dw=(i.done_when||[]).length?`<h4>Done when</h4><ul class="dw">${i.done_when.map(x=>`<li>${inline(x)}</li>`).join('')}</ul>`:'';
-  const x=open?`<div class="nr-x">${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`${dw}<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(noteLine(n).length>900?noteLine(n).slice(0,900)+'…':noteLine(n))}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
+  const late=i.late||[],lby=i.kind==='review'?i.result?.by||'the agent':'',lx=lateHtml(late,lby); // a done ticket: "after it was done" (it may have been approved since)
+  const x=open?`<div class="nr-x">${lx}${i.kind==='late_note'?`<h4>Result</h4>${resultHtml(i.result,1)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='review'?`<h4>Result</h4>${prHtml(i.pr)}${resultHtml(i.result)||'<p class="none">No result recorded.</p>'}`:''}${i.kind==='proposal'?`${dw}<h4>Details</h4><div class="body">${bodyHtml((i.body||'').slice(0,3000))||'<p class="none">No details.</p>'}</div>`:dw}${notes.length&&i.kind!=='late_note'?`<h4>Latest notes</h4><ul class="nn">${notes.map(n=>`<li><b>${esc(n.by)}</b> <time datetime="${esc(n.at)}">${esc(hm(new Date(n.at)))}</time><p>${esc(noteLine(n).length>900?noteLine(n).slice(0,900)+'…':noteLine(n))}</p></li>`).join('')}</ul>`:''}${i.kind==='stuck'||i.kind==='late_note'?'':`<p>${openBtn('btn ghost sm')}</p>`}</div>`:'';
   const ob=i.open_blockers||[],mb=i.missing_blockers||[],obl=ob.map(b=>`${b.id} (${NAME[b.effective_status]||b.effective_status})`).join(', '),obi=ob.map(b=>b.id).join(', ');
   const why=[ob.length&&`In progress but blocked by ${obl}. Move it back to To do? It will wait for ${obi} automatically.`,
     !ob.length&&i.stale_days!=null&&`In progress for ${i.stale_days} days with no update. Still being worked on? Release it so someone can pick it up.`,
@@ -1502,11 +1511,12 @@ function needsRow(g,i){
   const ln=i.kind==='stuck'&&(i.claim_note||(i.attempts||[])[0]?.note&&{by:i.attempts[0].agent,at:i.attempts[0].at,text:i.attempts[0].note}||(i.notes||[]).filter(n=>!isAsk(n,i.waiting_on)).pop()),lt=ln&&noteLine(ln),
     lnote=ln?`<p class="nd-ln">Last note (${esc(ln.by)}, ${ago(ln.at)}): ${esc(lt.length>140?lt.slice(0,140)+'…':lt)}</p>`:'';
   const form=i.kind==='stuck'&&i.failed?`<form class="nd-f" data-nform="notes" ${B}>${f('n:','Add a note for the next attempt…')}<button class="btn sm" type="submit">Add note</button>${openBtn('btn ghost sm')}</form>`:i.kind==='stuck'?`<div class="nd-f">${(i.needs||[]).length?`<button type="button" class="btn sm" data-clearneeds ${B}>Clear</button>`:''}${i.stale_days!=null||ob.length?`<button type="button" class="btn sm" data-release ${B}>Release to To do</button>`:''}${openBtn('btn ghost sm')}</div>`:i.kind==='question'?`<form class="nd-f" data-nform="answer" ${B}>${f('a:','Your answer…')}<button class="btn sm" type="submit">Send</button></form>`
+    :i.kind==='late_note'?`<div class="nd-f">${lateBtns(late,B)}${openBtn('btn ghost sm')}</div>`
     :i.kind==='proposal'?`<form class="nd-f" data-nform="drop" ${B}><button type="button" class="btn sm" data-accept ${B}>Accept</button>${f('x:','Reject reason (optional)…')}<button class="btn ghost sm" type="submit">Reject</button></form>`
     :reviewForm('r:'+k,B,open?'textarea':'input');
   return `<li class="nr${open?' open':''}" data-key="${esc(k)}"><div class="nd-h">${here?`<button type="button" class="nid" data-open="${esc(i.id)}"><span class="tid">${esc(i.id)}</span></button>`:`<a class="nid" href="${esc(bLink(g,i))}"><span class="tid">${esc(i.id)}</span></a>`}`
-    +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
-    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='proposal'?`<p class="nd-q">Proposed by ${esc(i.proposed_by)}</p>` /* Done when shows when expanded (UI-48): collapsed rows stay one line each */:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:'')+x+form+'</li>';
+    +`<button type="button" class="nttl" data-ntoggle aria-expanded="${open}">${inline(i.title)}</button><span class="nb ${{review:'r',stuck:'s',late_note:'s'}[i.kind]||''}">${KIND[i.kind]}</span>${i.unblocks>0?`<span class="nd-bl">blocks ${i.unblocks}</span>`:''}<time class="nd-age" data-since="${esc(i.since)}"></time></div>`
+    +(i.kind==='question'?`<p class="nd-q">${esc(i.waiting_on)}</p>`:i.kind==='proposal'?`<p class="nd-q">Proposed by ${esc(i.proposed_by)}</p>` /* Done when shows when expanded (UI-48): collapsed rows stay one line each */:i.kind==='stuck'?`<p class="nd-q w">${esc(why)}</p>${lnote}`:open?'':lateLine(late,lby))+x+form+'</li>';
 }
 function renderNeedsPanel(){
   const cur=curBoard(),gs=NEEDS.filter(g=>g.id===cur),all=gs.flatMap(g=>g.items),multi=false; // this board only
@@ -1514,7 +1524,7 @@ function renderNeedsPanel(){
   const c=k=>all.filter(i=>i.kind===k).length;
   if(!nLoaded){ $('npSum').textContent=''; $('npEmpty').hidden=true; npSig=''; npShown=false; // nothing to say "nothing needs you" about yet
     $('npList').innerHTML=nErr?`<li class="ld" role="status"><span class="msg err">Could not check for questions and reviews: ${esc(nErr)}. It tries again every 15 seconds.</span></li>`:ldHtml('Checking every board for questions and reviews',3,'li'); return; }
-  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck']].filter(x=>x[0]).map(([n,l])=>`${n} ${l}${n>1&&(l==='question'||l==='proposal')?'s':''}`).join(', '):'';
+  $('npSum').textContent=all.length?[[c('question'),'question'],[c('review'),'in review'],[c('proposal'),'proposal'],[c('stuck'),'stuck'],[c('late_note'),'note after done']].filter(x=>x[0]).map(([n,l])=>n>1&&l==='note after done'?`${n} notes after done`:`${n} ${l}${n>1&&(l==='question'||l==='proposal')?'s':''}`).join(', '):'';
   $('npEmpty').hidden=!!all.length;
   const sig=JSON.stringify([NX,cur,multi,gs]); if(sig===npSig){tickAges();return;} npSig=sig;
   const ul=$('npList'),old=npShown?[...ul.children]:[];
@@ -1548,6 +1558,11 @@ async function submitNeeds(f){ // panel + drawer forms: POST <board>/tickets/<id
 }
 async function approveTicket(bd,id){ // POST approve (records who); Undo = one PATCH back to review, which drops the approver
   try{ await jf(`/api/b/${bd}/tickets/${id}/approve`,'POST',by()); await refreshAfter(bd); toast(`Approved: ${id}`,{undo:()=>nPatch(bd,id,{status:'review'},{status:'done'},`${id} back in review`)}); }
+  catch(er){ toast(er.message,{err:1}); }
+}
+async function dismissNotes(bd,id,ns,undo){ // a person read the late notes and nothing needs doing; Undo lists them again
+  try{ await jf(`/api/b/${bd}/tickets/${id}/dismiss`,'POST',{notes:ns,...(undo?{undo:true}:{}),...by()}); await refreshAfter(bd); if(openId===id&&!$('drawer').hidden) showTicket(id,true);
+    toast(undo?`${id}: note listed again`:`${id}: note dismissed`,undo?{}:{undo:()=>dismissNotes(bd,id,ns,1)}); }
   catch(er){ toast(er.message,{err:1}); }
 }
 async function acceptTicket(bd,id){
@@ -1844,7 +1859,8 @@ function showTicket(id,refresh){
     ${t.proposed_by?`<h3>Proposal</h3><p class="nd-q">${esc(t.proposed_by)} suggested this ticket. It is not ready, and no agent can claim it, until you accept it. Rejecting deletes it.</p><form class="nd-f" data-nform="drop" ${DB}><button type="button" class="btn sm" data-accept ${DB}>Accept</button>${draftField('x:'+curBoard()+'/'+t.id,'','Reject reason (optional)…','textarea')}<button class="btn ghost sm" type="submit">Reject</button></form>`:''}
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
-    ${t.status==='review'?`<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:dw}
+    ${t.status==='done'&&lateFor(curBoard(),t.id).length?`${lateHtml(lateFor(curBoard(),t.id),'','h3')}<div class="nd-f">${lateBtns(lateFor(curBoard(),t.id),DB)}</div>`:''}
+    ${t.status==='review'?`${lateHtml(lateFor(curBoard(),t.id),t.result?.by||'the agent','h3')}<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${notesHtml(t)}
     ${t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}`:''}
@@ -1982,6 +1998,8 @@ document.addEventListener('click',async e=>{
   if(b=g('[data-accept]')){acceptTicket(b.dataset.board,b.dataset.id);return;}
   if(b=g('[data-approve]')){approveTicket(b.dataset.board,b.dataset.id);return;}
   if(b=g('[data-clearneeds]')){const old=(NEEDS.find(x=>x.id===b.dataset.board)?.items.find(x=>x.id===b.dataset.id)||{}).needs||[];nPatch(b.dataset.board,b.dataset.id,{needs:[]},{needs:old},`${b.dataset.id}: missing tool cleared`);return;}
+  if(b=g('[data-reopen]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'done'},`${b.dataset.id} reopened: back in To do, the note goes to the next worker`);return;}
+  if(b=g('[data-dismissnotes]')){dismissNotes(b.dataset.board,b.dataset.id,b.dataset.dismissnotes.split(',').map(Number));return;}
   if(b=g('[data-release]')){nPatch(b.dataset.board,b.dataset.id,{status:'todo'},{status:'doing'},`${b.dataset.id} released to To do`);return;}
   if(g('#needsBadge')){$('npanel').hidden?openNeeds():closeNeeds();return;}
   if(g('[data-nclose]')||(e.target===$('scrim')&&!$('npanel').hidden)){closeNeeds();return;}

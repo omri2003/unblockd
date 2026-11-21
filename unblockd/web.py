@@ -3,8 +3,9 @@
 GET    /api/boards                       every board: id, title, ticket counts
 POST   /api/boards                       {"id": "my-game", "title": "My game", "root"?}  (needs UNBLOCKD_ROOT)
 GET    /api/needs                        every board's tickets that wait on a person (read-only, for the UI's Needs you panel):
-                                         [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck, "title", "priority", "score", "unblocks",
-                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars), "notes" (newest 10)}]}], boards with items only,
+                                         [{"id", "title", "items": [{"id", "kind": question|review|proposal|stuck|late_note, "title", "priority", "score", "unblocks",
+                                         "since", "waiting_on", "missing_blockers", "stale_days" (only when stale), "done_when", "result", "body" (last 6000 chars), "notes" (newest 10),
+                                         "late"? (review / late_note: notes that came after the work was finished, Store.late_notes)}]}], boards with items only,
                                          items: score desc, then oldest first
 GET    /api/chat                         {"enabled": bool, "model": ...}
 POST   /api/chat                         {"board": id, "messages": [{"role", "content"}]} -> {"reply", "tools", "refs"}
@@ -30,6 +31,7 @@ POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply_to"?, "supersedes"?}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
+POST   tickets/<id>/dismiss              {"by"?, "notes": [n, ...], "undo"?}  a person read late notes on a finished ticket: Needs you stops listing them
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
 POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?}  also stored as the ticket's `result`
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
@@ -110,9 +112,12 @@ def _needs(board: str | None = None) -> list[dict]:
 			continue  # a broken config hides only its own board
 		items, by_id, failing, prs = [], {t["id"]: t for t in ts}, s.failing(), s.backend.get_doc("prs")
 		for t in ts:
+			late = s.late_notes(t) if t["status"] in ("review", "done") else []
 			if t["status"] == "done":
-				continue
-			if t["status"] == "review":
+				if not late:
+					continue
+				kind, at = "late_note", late[-1].get("at")  # a person wrote on finished work: reopen it or dismiss the note
+			elif t["status"] == "review":
 				kind, at = "review", (t.get("result") or {}).get("at")
 			elif t.get("proposed_by"):
 				kind, at = "proposal", None
@@ -131,6 +136,7 @@ def _needs(board: str | None = None) -> list[dict]:
 			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
 			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
 			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
+			              **({"late": late} if late else {}),
 			              **({"needs": t["needs"]} if stuck and t.get("needs") else {}),
 			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
 			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
@@ -339,6 +345,9 @@ class Handler(BaseHTTPRequestHandler):
 				if rest[2] == "approve":
 					return self._send(200, store.approve(rest[1], by))
 				return self._send(200, store.answer(rest[1], by, b.get("text")) if rest[2] == "answer" else store.reject(rest[1], by, b.get("reason")))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "dismiss":
+				b = self._body()
+				return self._send(200, store.dismiss_notes(rest[1], str(b.get("by") or "human"), b.get("notes"), undo=bool(b.get("undo"))))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))

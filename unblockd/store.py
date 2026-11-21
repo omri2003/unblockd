@@ -140,7 +140,7 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at"}
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread"}  # unread = note numbers the worker had not seen when it completed (AI-50)
 
 # The limits of the FIELDS validators above, in numbers: what an error names and what board_info returns as `limits`, so an agent can
 # check before it writes. Keep them equal to the validators (tests/test_tool_docs.py checks each one at its edge).
@@ -1559,13 +1559,7 @@ class Store:
 		for tid, c in mine.items():
 			notes = self.get(tid).get("notes", [])
 			seen[tid] = len(notes)
-			first = c.get("seen")
-			for i, n in enumerate(notes):
-				new = i >= first if isinstance(first, int) else _ts(n.get("at") or "1970-01-01T00:00:00+00:00") > _ts(c["claimed_at"])
-				if new and n.get("by") != agent:
-					text = (n.get("text") or "").strip()
-					out.append({"ticket": tid, "n": n.get("n"), "by": n.get("by"), "kind": n.get("kind"), "at": n.get("at"),
-					            "text": text.splitlines()[0][:200] if text else ""})
+			out += [{**n, "text": n["text"].splitlines()[0][:200] if n["text"] else ""} for n in self._unseen(tid, notes, c, agent)]
 		if mark and mine:
 			def save():
 				claims = self._claims()
@@ -1575,6 +1569,75 @@ class Store:
 				self._save_claims(claims)
 			self._locked(save)
 		return {"count": len(out), "notes": out[-10:]} if out else None
+
+	@staticmethod
+	def _unseen(tid: str, notes: list[dict], c: dict, agent: str) -> list[dict]:
+		"""Notes by others on tid that claim c has not been shown (its `seen` count; an older claim: notes after claimed_at), whole text."""
+		first, out = c.get("seen"), []
+		for i, n in enumerate(notes):
+			new = i >= first if isinstance(first, int) else _ts(n.get("at") or "1970-01-01T00:00:00+00:00") > _ts(c["claimed_at"])
+			if new and n.get("by") != agent:
+				out.append({"ticket": tid, "n": n.get("n", i + 1), "by": n.get("by"), "kind": n.get("kind"), "at": n.get("at"),
+				            "text": (n.get("text") or "").strip()[:2000]})
+		return out
+
+	def _with_unread(self, t: dict, late: list[dict], what: str) -> dict:
+		"""complete / release / ask reply plus `inbox` with the notes others left that the worker had not been shown when its claim
+		ended (a note between its last heartbeat and this call was otherwise never read), flagged unread_before_<what> (AI-50)."""
+		return {**t, "inbox": {"count": len(late), "notes": late[-10:], f"unread_before_{what}": True}} if late else t
+
+	def late_notes(self, t: dict) -> list[dict]:
+		"""Notes that arrived after the work was finished, for the human who looks next (AI-50). A ticket in review: every note
+		after its last `complete` note not by the completer, plus the ones the worker had not read when it completed (`unread: true`,
+		from result.unread). A done ticket: a PERSON's note (add_note kinds; is_agent false) written after done_at (old tickets
+		without it: after the last complete / approved note) that nobody dismissed. Anything else: []."""
+		notes, res = t.get("notes", []), t.get("result") or {}
+		kinds = NOTE_KINDS_ADD
+		if t.get("status") == "review":
+			unread = set(res.get("unread") or [])
+			end = max((i for i, n in enumerate(notes) if n.get("kind") == "complete"), default=None)
+			out = []
+			for i, n in enumerate(notes):
+				if n.get("kind") not in kinds or n.get("by") == res.get("by"):
+					continue
+				if n.get("n") in unread:
+					out.append({**n, "unread": True})
+				elif end is not None and i > end:
+					out.append(dict(n))
+			return out
+		if t.get("status") != "done":
+			return []
+		done_at = _ts(t["done_at"]) if t.get("done_at") else None
+		end = max((i for i, n in enumerate(notes) if n.get("kind") in ("complete", "approved")), default=None)
+		return [dict(n) for i, n in enumerate(notes)
+		        if n.get("kind") in kinds and not n.get("dismissed_by")
+		        and (_ts(n.get("at") or "1970-01-01T00:00:00+00:00") > done_at if done_at is not None else end is not None and i > end)
+		        and not self.is_agent(n.get("by") or "", t["id"])]  # last: it reads claims.json
+
+	def dismiss_notes(self, tid: str, by: str, ns: list[int], undo: bool = False) -> dict:
+		"""A person read the late notes `ns` (note numbers) on a finished ticket and nothing needs doing: each gets `dismissed_by` /
+		`dismissed_at`, so Needs you stops listing it (undo=True takes that back). The notes themselves are kept as written."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("dismiss needs `by`: who read the notes")
+		self._human_only("dismiss", by)
+		if not (isinstance(ns, list) and ns and all(isinstance(x, int) and not isinstance(x, bool) for x in ns)):
+			raise TicketError("dismiss needs `notes`: a list of note numbers, e.g. [4, 5]")
+		def run():
+			raw = self._fresh(tid)
+			notes = raw.get("notes", [])
+			bad = [x for x in ns if not 1 <= x <= len(notes)]
+			if bad:
+				raise TicketError(f"{tid} has notes 1-{len(notes)}, not {', '.join(map(str, bad))}")
+			for x in ns:
+				if undo:
+					notes[x - 1].pop("dismissed_by", None)
+					notes[x - 1].pop("dismissed_at", None)
+				else:
+					notes[x - 1].update(dismissed_by=by.strip(), dismissed_at=_now())
+			self._write(raw)
+			self._log("dismissed", tid, by.strip(), ("undo " if undo else "") + "notes " + ", ".join(map(str, ns)))
+		self._locked(run)
+		return self.get(tid)
 
 	def attempts(self, tid: str, limit: int | None = None) -> list[dict]:
 		"""Failed claims on a ticket, newest first, from the activity log: [{agent, outcome: expired|released|rejected, at, note}]."""
@@ -1735,6 +1798,7 @@ class Store:
 			claims.pop(tid, None)
 			self._save_claims(claims)
 			raw = self._fresh(tid)
+			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
 			if raw.get("status") == "doing":
 				raw["status"], raw["updated"] = "todo", date.today().isoformat()
 			if reason.strip():
@@ -1747,8 +1811,9 @@ class Store:
 			self._write(raw)
 			self._log("release", tid, agent, reason + (f" (missing tool {missing})" if missing else ""), c.get("principal"))
 			self._record_request(agent, request_id, "release", tid)
+		late: list[dict] = []
 		seen = self._locked(rel)
-		return self._already(seen) if seen else self.get(tid)
+		return self._already(seen) if seen else self._with_unread(self.get(tid), late, "release")
 
 	def ask(self, tid: str, agent: str, question: str, request_id: str | None = None) -> dict:
 		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
@@ -1763,8 +1828,9 @@ class Store:
 				return seen
 			if tid not in self._claims() and (cur := self._fresh(tid)) and cur.get("waiting_on") == q and cur.get("asked_by") == agent:
 				return {"already": True, "ticket": tid, "at": cur.get("asked_at", "")}  # the same question again: it is already asked
-			self._holder(tid, agent)
+			c = self._holder(tid, agent)
 			raw = self._fresh(tid)
+			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
 			raw.update(status="todo", waiting_on=q, asked_at=_now(), asked_by=agent, updated=date.today().isoformat())
 			_append_note(raw, agent, q, kind="question")  # refuses before the claim is touched
 			claims = self._claims()
@@ -1773,8 +1839,9 @@ class Store:
 			self._write(raw)
 			self._log("question", tid, agent, q)
 			self._record_request(agent, request_id, "ask", tid)
+		late: list[dict] = []
 		seen = self._locked(run)
-		return self._already(seen) if seen else self.get(tid)
+		return self._already(seen) if seen else self._with_unread(self.get(tid), late, "ask")
 
 	def add_note(self, tid: str, by: str, text: str, kind: str = "note", pin: bool = False, reply_to: int | None = None,
 	             supersedes: int | None = None, request_id: str | None = None) -> dict:
@@ -1902,6 +1969,9 @@ class Store:
 			if c.get("principal"):
 				result["principal"] = c["principal"]
 			raw = self._fresh(tid)
+			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
+			if late:  # the reviewer is shown them next to the result: the worker finished without reading them
+				result["unread"] = [n["n"] for n in late if isinstance(n.get("n"), int)]
 			status = "review" if self.config["review"] else "done"
 			bar = {"done_when": raw["done_when"]} if raw.get("done_when") else {}  # the bar it was finished against, next to the summary
 			_append_note(raw, agent, summary.strip(), kind="complete", status=status, **bar)  # refuses before the claim is touched
@@ -1914,10 +1984,11 @@ class Store:
 			self._log("complete", tid, agent, summary, c.get("principal"))
 			self._record_request(agent, request_id, "complete", tid)
 			return c.get("retaken")
+		late: list[dict] = []
 		retaken = self._locked(done)
 		if isinstance(retaken, dict):  # a repeat: nothing changed
 			return self._already(retaken)
-		return self._with_lease(self.get(tid), None, retaken)
+		return self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
 
 	def activity(self, tid: str | None = None, limit: int = 50, since: str | None = None) -> list[dict]:
 		"""Newest first. `since` (ISO timestamp, naive = UTC) keeps only events at or after it."""
