@@ -11,6 +11,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 import time
 from contextlib import contextmanager
@@ -22,6 +23,9 @@ CONFIG_FILE = "unblockd.json"  # optional, next to the tickets
 ID_RE = re.compile(r"^[A-Z0-9]+-\d+[a-z]?$")  # also the filename: blocks path traversal
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 LOCK_STALE = 30  # seconds: a lock file older than this was left by a crash
+_UMASK = os.umask(0)  # read once at import (os.umask is process-wide: setting it per write would race the web server's threads)
+os.umask(_UMASK)
+NEW_MODE = 0o666 & ~_UMASK  # what open() gives a new file: 0644 under the usual umask 022 (CORE-75)
 
 # Per-process caches keyed by folder / file path, so every Store on the same folder (the web server builds one per request)
 # shares them. Files stay the only truth: every read re-stats the folder and re-parses only files whose (inode, mtime, size)
@@ -115,11 +119,17 @@ class FileBackend:
 			return None
 
 	def write(self, t: dict) -> None:
+		p = self.path(t["id"])
+		try:
+			mode = stat.S_IMODE(os.stat(p).st_mode)  # a rewrite keeps the file's mode
+		except FileNotFoundError:
+			mode = NEW_MODE
 		fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".tmp")
 		with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
 			json.dump(t, f, indent=2, ensure_ascii=False)
 			f.write("\n")
-		os.replace(tmp, self.path(t["id"]))  # atomic: a reader never sees half a file
+		os.chmod(tmp, mode)  # mkstemp makes it 0600 and os.replace keeps that: a root server left tickets other users couldn't read (CORE-75)
+		os.replace(tmp, p)  # atomic: a reader never sees half a file
 
 	def delete(self, tid: str) -> None:
 		"""The ticket and its attachments."""

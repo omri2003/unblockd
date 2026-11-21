@@ -431,3 +431,38 @@ class ConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+
+class FileModeTest(unittest.TestCase):
+	"""CORE-75: tickets were written through mkstemp (0600) and os.replace kept that, so a root server left files other users couldn't read."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.s = Store(Path(self.tmp.name) / "tickets")
+		self.addCleanup(self.tmp.cleanup)
+
+	def test_new_ticket_gets_the_default_mode_and_a_rewrite_keeps_the_old_one(self):
+		import os
+		from unblockd import files
+		modes = []
+		real = os.chmod
+		with mock.patch.object(files.os, "chmod", side_effect=lambda p, m: (modes.append(m), real(p, m))):
+			self.s.create({"title": "x"}, tid="BUG-1")
+		self.assertEqual(modes, [0o666 & ~files._UMASK])  # what open() gives a new file (0644 under umask 022)
+		p = Path(self.tmp.name) / "tickets" / "BUG-1.json"
+		old = os.stat(p).st_mode & 0o777
+		modes.clear()
+		with mock.patch.object(files.os, "chmod", side_effect=lambda p, m: (modes.append(m), real(p, m))):
+			self.s.update("BUG-1", {"title": "y"})
+		self.assertEqual(modes, [old])
+
+	@unittest.skipUnless(hasattr(__import__("os"), "geteuid"), "POSIX modes (Windows has only a read-only flag)")
+	def test_posix_modes(self):
+		import os
+		from unblockd import files
+		self.s.create({"title": "x"}, tid="BUG-1")
+		p = Path(self.tmp.name) / "tickets" / "BUG-1.json"
+		self.assertEqual(os.stat(p).st_mode & 0o777, 0o666 & ~files._UMASK)
+		os.chmod(p, 0o640)
+		self.s.update("BUG-1", {"title": "y"})
+		self.assertEqual(os.stat(p).st_mode & 0o777, 0o640)
+		self.assertEqual(self.s.get("BUG-1")["title"], "y")
