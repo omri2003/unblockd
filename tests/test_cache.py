@@ -111,12 +111,17 @@ class ScanReuseTest(unittest.TestCase):
 		self.knob.stop()
 		self.tmp.cleanup()
 
-	def hand_edit(self, title):  # another process / a git pull: this process's write counter does not move
+	def hand_edit(self, title, in_place=False):  # this process's write counter does not move
 		p = self.d / "A-1.json"
 		t = json.loads(p.read_text(encoding="utf-8"))
-		t["title"] = title
+		t["title"] = title + " " * len(title)  # another size: the file's stamp changes even within one clock tick
+		if in_place:  # an editor saving over the file: the folder's mtime stays
+			with open(p, "r+", encoding="utf-8") as f:
+				f.write(json.dumps(t))
+				f.truncate()
+			return
 		(tmp := p.with_suffix(".x")).write_text(json.dumps(t), encoding="utf-8")
-		os.replace(tmp, p)
+		os.replace(tmp, p)  # what every store write and a git checkout do: the folder's mtime changes
 
 	def test_two_reads_in_the_window_stat_once(self):
 		self.s.list()
@@ -134,18 +139,33 @@ class ScanReuseTest(unittest.TestCase):
 
 	def test_the_lock_never_reuses_a_stale_pass(self):
 		self.s.list()
-		self.hand_edit("bbbb")
-		self.assertEqual(self.s.get("A-1")["title"], "aaaa")  # outside the lock: the window's pass (what the 1 s web reuse allows)
-		self.assertEqual(self.s._locked(lambda: self.s.get("A-1")["title"]), "bbbb")
-		self.hand_edit("cccc")
+		self.hand_edit("bbbb", in_place=True)
+		self.assertEqual(self.s.get("A-1")["title"].strip(), "aaaa")  # outside the lock: the window's pass (what the 1 s web reuse allows)
+		self.assertEqual(self.s._locked(lambda: self.s.get("A-1")["title"]).strip(), "bbbb")
+		self.hand_edit("cccc", in_place=True)
 		claimed = self.s.claim("w", tid="A-1")  # claim reads under the lock
-		self.assertEqual(claimed["title"], "cccc")
+		self.assertEqual(claimed["title"].strip(), "cccc")
 
 	def test_after_the_window_a_hand_edit_is_seen(self):
 		self.s.list()
-		self.hand_edit("bbbb")
+		self.hand_edit("bbbb", in_place=True)
 		with mock.patch.object(files, "SCAN_REUSE_S", 0.0):
-			self.assertEqual(self.s.get("A-1")["title"], "bbbb")
+			self.assertEqual(self.s.get("A-1")["title"].strip(), "bbbb")
+
+	def test_a_replaced_file_is_seen_by_the_next_read(self):
+		self.s.list()
+		self.hand_edit("bbbb")  # os.replace changes the folder's mtime: no window to wait out
+		self.assertEqual(self.s.get("A-1")["title"].strip(), "bbbb")
+
+	def test_another_process_write_is_seen_by_the_next_read(self):
+		# PR #73's CI smoke: the CLI wrote, the page refreshed at once and the web server served its last pass
+		self.s.list()
+		code = "import sys; from unblockd.store import Store; Store(sys.argv[1]).update('A-1', {'title': 'from cli'})"
+		subprocess.run([sys.executable, "-c", code, str(self.d)], cwd=ROOT, check=True)
+		self.assertEqual(self.s.get("A-1")["title"], "from cli")
+		code = "import sys; from unblockd.store import Store; Store(sys.argv[1]).create({'title': 'new one'}, tid='A-2')"
+		subprocess.run([sys.executable, "-c", code, str(self.d)], cwd=ROOT, check=True)
+		self.assertEqual([t["id"] for t in self.s.list()], ["A-1", "A-2"])
 
 
 if __name__ == "__main__":

@@ -30,10 +30,12 @@ _RAW: dict[tuple, dict] = {}  # (tickets folder, parse) -> {stem: (stamp, parsed
 _LOG: dict[str, tuple] = {}  # activity file -> (inode, bytes parsed, [events oldest first])
 # Reuse of a fresh stat pass (CORE-60): one page load reads the same board ~4 times. A read OUTSIDE the lock may reuse the
 # folder's last stat pass while it is younger than SCAN_REUSE_S and this process wrote no ticket since; under the lock every
-# read stats again (claims and read-modify-writes must see other processes' writes). 0 = always stat (CLI, MCP, tests);
-# web.main sets 1 s, so a git pull, hand edit or another process's write shows at most that much later in the web UI.
+# read stats again (claims and read-modify-writes must see other processes' writes). The reuse also needs the folder's own
+# mtime_ns unchanged (ONE stat): os.replace, which every store write and git checkout uses, changes it, so another process's
+# write is seen on the very next read; only an in-place editor save can wait out the window. 0 = always stat (CLI, MCP,
+# tests); web.main sets 1 s.
 SCAN_REUSE_S = 0.0
-_SCANNED: dict[tuple, tuple] = {}  # _RAW key -> (time.monotonic() when its last stat pass started, _WROTE count then)
+_SCANNED: dict[tuple, tuple] = {}  # _RAW key -> (time.monotonic() when its last pass started, _WROTE count then, folder mtime_ns then)
 _WROTE: dict[str, int] = {}  # tickets folder -> ticket writes / locked steps by this process (any one drops the reuse)
 
 
@@ -89,8 +91,10 @@ class FileBackend:
 	def _scan(self) -> dict[str, tuple]:
 		ck = (self.key, self.parse)
 		gen, last = _WROTE.get(self.key, 0), _SCANNED.get(ck)
-		if last and last[1] == gen and not self._held and time.monotonic() - last[0] < SCAN_REUSE_S and ck in _RAW:
-			return _RAW[ck]  # fresh enough, and nothing written by this process since (outside the lock only)
+		mt = os.stat(self.dir).st_mtime_ns if SCAN_REUSE_S else 0  # read before the pass: a write during it changes it
+		if (last and last[1] == gen and last[2] == mt and not self._held and time.monotonic() - last[0] < SCAN_REUSE_S
+				and ck in _RAW):
+			return _RAW[ck]  # fresh, nothing written by this process since, no file added / replaced / removed (outside the lock only)
 		started = time.monotonic()  # taken before the pass: a file changed during it is not older than the stamp says
 		old, new = _RAW.get(ck, {}), {}
 		with os.scandir(self.dir) as it:
@@ -102,7 +106,7 @@ class FileBackend:
 				hit = old.get(stem)
 				new[stem] = hit if hit and hit[0] == stamp else (stamp, self.read_file(Path(e.path)))
 		_RAW[ck] = dict(sorted(new.items()))
-		_SCANNED[ck] = (started, gen)  # gen read before the pass: a write during it drops the reuse
+		_SCANNED[ck] = (started, gen, mt)  # gen and mt read before the pass: a write during it drops the reuse
 		return _RAW[ck]
 
 	def _wrote(self) -> None:
