@@ -106,7 +106,7 @@ def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
-	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings") if k in t}}  # lease left / "you no longer hold this": the worker must see them
+	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id") if k in t}}  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
@@ -257,7 +257,7 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
                   done_when: list[str] | None = None, components: list[str] | None = None,
-                  skills: list[str] | None = None, mcp: list[str] | None = None, milestone: str | None = None) -> dict:
+                  skills: list[str] | None = None, mcp: list[str] | None = None, milestone: str | None = None, request_id: str | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). agent (REQUIRED) = your worker name, or your human's name when you
 	create for them. Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
@@ -267,12 +267,13 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
 	milestone = the roadmap version it ships in (a key of board_info's `milestones`), separate from parent.
 	Read board_info first: its `schema` (allowed prefixes with meanings, required fields, allowed tags, body template) is enforced for you and a
 	break is refused with every problem listed; if no prefix fits, ask_human, do not guess a near one. With `agent_tickets: "propose"` the
-	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now."""
+	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now.
+	request_id: see complete."""
 	store = BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
 	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or [], "skills": skills or [], "mcp": mcp or [], "milestone": milestone}
-	return store.create(data, tid=id, prefix=prefix, agent=agent)
+	return store.create(data, tid=id, prefix=prefix, agent=agent, request_id=request_id)
 
 
 @tool
@@ -361,21 +362,22 @@ def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None,
 
 
 @tool
-def ask_human(id: str, agent: str, question: str, board: str | None = None) -> dict:
+def ask_human(id: str, agent: str, question: str, request_id: str | None = None, board: str | None = None) -> dict:
 	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
-	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket."""
-	return _ack(BOARDS.get(board).ask(id, agent, question))
+	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket. request_id: see complete."""
+	return _ack(BOARDS.get(board).ask(id, agent, question, request_id=request_id))
 
 
 @tool
 def add_note(id: str, agent: str, text: str, kind: str = "note", reply_to: int | None = None, supersedes: int | None = None,
-             board: str | None = None) -> dict:
+             request_id: str | None = None, board: str | None = None) -> dict:
 	"""Record progress or a finding on a ticket: appends a signed, timestamped note to its `notes` ({by, at, kind, text}), safely (never touches
 	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not.
 	kind: note (progress; "progress" is taken as note) | decision (a choice and why) | finding (a cause, an error, a fact you found) | warning (don't do X: it breaks Y).
 	decision / finding / warning are PINNED: every later worker on this ticket gets them, however many notes follow. Notes are numbered
-	(`n`): reply_to = the note you answer (sent along with yours), supersedes = a pinned note yours replaces (e.g. a reversed decision)."""
-	return _ack(BOARDS.get(board).add_note(id, agent, text, kind=kind, reply_to=reply_to, supersedes=supersedes))
+	(`n`): reply_to = the note you answer (sent along with yours), supersedes = a pinned note yours replaces (e.g. a reversed decision).
+	request_id: see complete."""
+	return _ack(BOARDS.get(board).add_note(id, agent, text, kind=kind, reply_to=reply_to, supersedes=supersedes, request_id=request_id))
 
 
 @tool
@@ -399,19 +401,22 @@ def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
 
 @tool
 def release(id: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
-            board: str | None = None) -> dict:
+            request_id: str | None = None, board: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). Say why. Missing a tool you need (a browser, a database, an unblockd tool)?
-	missing = its name, why = one line on what you needed it for: the human is told, and workers like you skip it until it is fixed."""
-	return _ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why))
+	missing = its name, why = one line on what you needed it for: the human is told, and workers like you skip it until it is fixed.
+	request_id: see complete."""
+	return _ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id))
 
 
 @tool
 def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
-             handoff: str | None = None, principal: str | None = None, board: str | None = None) -> dict:
+             handoff: str | None = None, principal: str | None = None, request_id: str | None = None, board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
-	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with."""
-	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal))
+	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with.
+	A write that timed out may still have landed: get_ticket before retrying, or retry with the same request_id (any fresh id you pick
+	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true."""
+	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal, request_id=request_id))
 
 
 @tool

@@ -112,6 +112,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Workers are told what failed before**: a claim result (`claim_next`, `claim_ticket`, CLI `claim`, `POST claim`) also has
   `lease_minutes`, `expires_at` and `previous_attempts`: up to 5 `{agent, outcome: expired|released|rejected, at, note}`, newest first, read from the activity log.
 - Moving a claimed ticket off *doing* by hand ends the claim.
+- **Retries are safe** (CORE-74): `complete`, `release`, `add_note`, `ask_human` / `ask` and `create` take an optional `request_id`
+  (MCP arg, CLI `--request-id`, REST body key, `Remote`; 1-100 of `A-Z a-z 0-9 . _ : -`). A repeat by the same agent with the same id
+  changes nothing and returns the ticket with `already: true`, `first_at` and `request_id` (create: the ticket it made); the same id
+  on another write or ticket is refused. The last 500 ids per board are kept (runtime doc `requests`). Without an id, the same agent
+  repeating its own complete, release or question (nobody holds the ticket now and its newest transition is that agent's) also gets
+  `already: true` instead of "isn't claimed".
 - **Notes reach the holder**: a `heartbeat` reply (MCP, REST, CLI) carries `inbox` {count, notes: [{ticket, n, by, kind, at, text}]} when
   someone else added notes to a ticket the worker holds since it was last shown them (first line each; `get_ticket` has the rest). To ask
   another worker for a change in a file its ticket touches, `add_note` on THAT ticket: its holder sees it within one heartbeat.

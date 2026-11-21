@@ -77,6 +77,9 @@ NOTES_SHORT = 3000  # chars of note text a claim sends whole; past it: every pin
 NOTES_TAIL = 5
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is left
+REQUESTS_MAX = 500  # request_ids remembered per board (runtime doc `requests`), oldest dropped first (CORE-74)
+REQUEST_RE = re.compile(r"^[\w.:-]{1,100}$")
+TRANSITIONS = ("claim", "release", "complete", "question", "expired", "dropped", "rejected", "done", "answered", "deleted", "split")
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
 ACTIVITY_MAX = 5_000_000  # bytes; past this the activity log rotates (files: activity.jsonl -> activity.1.jsonl, one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
@@ -911,7 +914,7 @@ class Store:
 				nums += [int(m) for m in pat.findall(f.read_text(encoding="utf-8", errors="ignore"))]
 		return f"{prefix}-{max(nums, default=0) + 1}"
 
-	def create(self, data: dict, tid: str | None = None, prefix: str | None = None, agent: str | None = None) -> dict:
+	def create(self, data: dict, tid: str | None = None, prefix: str | None = None, agent: str | None = None, request_id: str | None = None) -> dict:
 		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number (a board whose schema lists exactly
 		one prefix needs neither). `agent` = the worker creating it (None = a human). The board's schema is enforced here, not in
 		_create, so split children and existing tickets are exempt: an agent breaking it is refused with every problem listed,
@@ -920,13 +923,65 @@ class Store:
 		no proposal (they could never accept their own) and no strict schema; the `created` event still names them."""
 		agent, strict = self._creator(agent)
 		def run():
+			if (seen := self._seen_request(agent, request_id, "create")):
+				return seen
 			pre = self._pick_prefix(tid, prefix)
 			problems = self._schema_problems(data, tid.split("-")[0] if tid else pre, strict)
 			if problems and strict:
 				raise TicketError(self._schema_refusal(problems))
 			t = self._create(data, tid, pre, proposed_by=agent if strict and self.config["agent_tickets"] == "propose" else "", agent=agent)
+			self._record_request(agent, request_id, "create", t["id"])
 			return {**t, "warnings": problems} if problems else t
-		return self._locked(run)
+		got = self._locked(run)
+		return self._already(got) if "already" in got else got
+
+	# ---------- idempotent writes (CORE-74) ----------
+	def _seen_request(self, agent: str | None, request_id: str | None, op: str, tid: str | None = None) -> dict | None:
+		"""Caller holds the lock. A request_id this agent already used: {already, ticket, at} for the same write, refused for another
+		(an id names ONE write). None = new (or no request_id)."""
+		if request_id is None or request_id == "":
+			return None
+		if not (isinstance(request_id, str) and REQUEST_RE.match(request_id)):
+			raise TicketError("request_id must be 1-100 letters, digits or . _ : - (one fresh id per write, e.g. a uuid)")
+		e = self.backend.get_doc("requests").get(f"{agent or 'human'} {request_id}")
+		if e is None:
+			return None
+		if e["op"] != op or (tid and e["ticket"] != tid):
+			raise TicketError(f"request_id {request_id} was already used for {e['op']} on {e['ticket']}: use a new id for each write")
+		return {"already": True, "ticket": e["ticket"], "at": e["at"], "request_id": request_id}
+
+	def _record_request(self, agent: str | None, request_id: str | None, op: str, tid: str) -> None:
+		"""Caller holds the lock, and has just made the write."""
+		if not request_id:
+			return
+		doc = self.backend.get_doc("requests")
+		doc[f"{agent or 'human'} {request_id}"] = {"op": op, "ticket": tid, "at": _now()}
+		for k in list(doc)[:max(0, len(doc) - REQUESTS_MAX)]:
+			doc.pop(k)
+		self.backend.put_doc("requests", doc)
+
+	def _last_transition(self, tid: str) -> dict | None:
+		"""The newest claim-changing event of tid (a note or heartbeat is not one)."""
+		return next((e for e in self.backend.events_newest_first(ticket=tid) if e.get("ticket") == tid and e.get("event") in TRANSITIONS), None)
+
+	def _repeat(self, tid: str, agent: str, op: str) -> dict | None:
+		"""Caller holds the lock. The same agent repeating the transition it just made (a retry after a timeout that landed):
+		{already, ticket, at} instead of "isn't claimed". Only when nobody holds tid now and its newest transition is that agent's `op`."""
+		if tid in self._claims():
+			return None
+		e = self._last_transition(tid)
+		if not (e and e.get("agent") == agent and e.get("event") == op):
+			return None
+		raw = self._fresh(tid)
+		if op == "complete" and raw.get("status") not in ("review", "done"):
+			return None
+		if op == "release" and raw.get("status") == "doing":
+			return None
+		return {"already": True, "ticket": tid, "at": e["ts"]}
+
+	def _already(self, seen: dict) -> dict:
+		"""The reply to a repeated write: the ticket as it is, marked already (nothing was changed)."""
+		return {**self.get(seen["ticket"]), "already": True, "first_at": seen["at"], **({"request_id": seen["request_id"]} if seen.get("request_id") else {})}
 
 	def _creator(self, agent: str | None) -> tuple[str | None, bool]:
 		"""(agent or None, strict): strict = an agent that is not a `kind: human` owner (schema refuses, proposal gate applies)."""
@@ -1662,7 +1717,8 @@ class Store:
 		warn = ([f"your claim on {t['id']} had expired; nobody claimed it since, so it is yours again. Heartbeat more often"] if retaken else []) + info.pop("warnings", [])
 		return {**t, **info, **({"warnings": t.get("warnings", []) + warn} if warn else {})}
 
-	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "") -> dict:
+	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
+	            request_id: str | None = None) -> dict:
 		"""Give a claimed ticket back: claim ends, ticket returns to todo. missing = a tool the worker needs and does not have (why = one
 		line on what it needed it for): recorded in `needs` with the worker's profile, as a pinned warning note, shown in Needs you; workers
 		of that profile skip the ticket until a human clears `needs`."""
@@ -1672,6 +1728,8 @@ class Store:
 		if len(missing) > 100 or len(why) > 300:
 			raise TicketError("missing is a tool name (<= 100 chars), why one line (<= 300)")
 		def rel():
+			if (seen := self._seen_request(agent, request_id, "release", tid) or self._repeat(tid, agent, "release")):
+				return seen
 			c = self._holder(tid, agent, principal)
 			claims = self._claims()
 			claims.pop(tid, None)
@@ -1688,10 +1746,11 @@ class Store:
 				_append_note(raw, agent, f"Needs tool `{missing}`: {why}", strict=False, kind="warning", pinned=True)
 			self._write(raw)
 			self._log("release", tid, agent, reason + (f" (missing tool {missing})" if missing else ""), c.get("principal"))
-		self._locked(rel)
-		return self.get(tid)
+			self._record_request(agent, request_id, "release", tid)
+		seen = self._locked(rel)
+		return self._already(seen) if seen else self.get(tid)
 
-	def ask(self, tid: str, agent: str, question: str) -> dict:
+	def ask(self, tid: str, agent: str, question: str, request_id: str | None = None) -> dict:
 		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
 		pending (not ready, not claimable) until someone clears it."""
 		q = question.strip() if isinstance(question, str) else ""
@@ -1700,6 +1759,10 @@ class Store:
 		if len(q) > QUESTION_MAX:
 			raise TicketError(f"question is {len(q)} chars, the limit is {QUESTION_MAX}: shorten it, or put the background in add_note and ask the decision")
 		def run():
+			if (seen := self._seen_request(agent, request_id, "ask", tid)):
+				return seen
+			if tid not in self._claims() and (cur := self._fresh(tid)) and cur.get("waiting_on") == q and cur.get("asked_by") == agent:
+				return {"already": True, "ticket": tid, "at": cur.get("asked_at", "")}  # the same question again: it is already asked
 			self._holder(tid, agent)
 			raw = self._fresh(tid)
 			raw.update(status="todo", waiting_on=q, asked_at=_now(), asked_by=agent, updated=date.today().isoformat())
@@ -1709,11 +1772,12 @@ class Store:
 			self._save_claims(claims)
 			self._write(raw)
 			self._log("question", tid, agent, q)
-		self._locked(run)
-		return self.get(tid)
+			self._record_request(agent, request_id, "ask", tid)
+		seen = self._locked(run)
+		return self._already(seen) if seen else self.get(tid)
 
 	def add_note(self, tid: str, by: str, text: str, kind: str = "note", pin: bool = False, reply_to: int | None = None,
-	             supersedes: int | None = None) -> dict:
+	             supersedes: int | None = None, request_id: str | None = None) -> dict:
 		"""Append a signed, timestamped note under the lock: it can't clobber a concurrent complete or answer
 		(update(body=...) replaces the whole body; use this to report progress). Notes are numbered (`n`, from 1).
 		kind: note (progress) | decision (a choice and why) | finding (a cause, an error, a fact found) | warning (don't do X: it breaks Y).
@@ -1729,6 +1793,8 @@ class Store:
 		if kind not in NOTE_KINDS_ADD:
 			raise TicketError(f"note kind must be one of {', '.join(NOTE_KINDS_ADD)} (progress = note)")
 		def run():
+			if (seen := self._seen_request(by.strip(), request_id, "note", tid)):
+				return seen
 			raw = self._fresh(tid)
 			notes, who = raw.get("notes", []), by.strip()
 			for ref, what in ((reply_to, "reply_to"), (supersedes, "supersedes")):
@@ -1744,8 +1810,9 @@ class Store:
 			self._write(raw)
 			self._keepalive(tid, by.strip())
 			self._log("note", tid, by.strip(), text.strip())
-		self._locked(run)
-		return self._with_lease(self.get(tid), by.strip())
+			self._record_request(by.strip(), request_id, "note", tid)
+		seen = self._locked(run)
+		return self._with_lease(self._already(seen) if seen else self.get(tid), by.strip())
 
 	def answer(self, tid: str, by: str, text: str) -> dict:
 		"""A human answers an ask(): appends "Answer to: <question> — <text>" as a note, clears waiting_on (the ticket is ready again), logs `answered`."""
@@ -1813,7 +1880,7 @@ class Store:
 		return self.get(tid)
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
-	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None) -> dict:
+	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
 		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`."""
@@ -1829,6 +1896,8 @@ class Store:
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
+			if (seen := self._seen_request(agent, request_id, "complete", tid) or self._repeat(tid, agent, "complete")):
+				return seen
 			c = self._holder(tid, agent, principal, retake=True)
 			if c.get("principal"):
 				result["principal"] = c["principal"]
@@ -1843,8 +1912,11 @@ class Store:
 			raw["done_at"] = _now() if status == "done" else ""
 			self._write(raw)
 			self._log("complete", tid, agent, summary, c.get("principal"))
+			self._record_request(agent, request_id, "complete", tid)
 			return c.get("retaken")
 		retaken = self._locked(done)
+		if isinstance(retaken, dict):  # a repeat: nothing changed
+			return self._already(retaken)
 		return self._with_lease(self.get(tid), None, retaken)
 
 	def activity(self, tid: str | None = None, limit: int = 50, since: str | None = None) -> list[dict]:

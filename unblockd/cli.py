@@ -94,7 +94,7 @@ class Remote:
 	def work_plan(self, per_agent=3): return self._call("GET", "/plan", per_agent=per_agent)
 	def agents_now(self): return self._call("GET", "/agents")
 	def get(self, tid): return self._call("GET", f"/tickets/{tid}")
-	def create(self, data, tid=None, prefix=None, agent=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {})})
+	def create(self, data, tid=None, prefix=None, agent=None, request_id=None): return self._call("POST", "/tickets", {**data, **({"id": tid} if tid else {}), **({"prefix": prefix} if prefix else {}), **({"agent": agent} if agent else {}), **({"request_id": request_id} if request_id else {})})
 	def create_many(self, items, agent=None): return self._call("POST", "/tickets/batch", {"tickets": items, **({"agent": agent} if agent else {})})
 	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
 	def approve(self, tid, by): return self._call("POST", f"/tickets/{tid}/approve", {"by": by})
@@ -105,15 +105,15 @@ class Remote:
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal})
 	def claim_next(self, agent, profile=None, note="", principal=None): return self.claim(agent, profile=profile, note=note, principal=principal)  # the server answers with the reason when empty
 	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
-	def release(self, tid, agent, reason="", principal=None, missing="", why=""):
-		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why})
-	def ask(self, tid, agent, question): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question})
+	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None):
+		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id})
+	def ask(self, tid, agent, question, request_id=None): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question, "request_id": request_id})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
-	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None):
-		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes})
-	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None):
-		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal})
+	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None, request_id=None):
+		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes, "request_id": request_id})
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None):
+		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
@@ -158,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
 	cr.add_argument("--milestone", help="the roadmap milestone key (milestones in unblockd.json)")
 	cr.add_argument("--skill", action="append", help="a skill name from the board's registry (repeatable)")
 	cr.add_argument("--mcp", action="append", help="an MCP server name from the board's registry (repeatable)")
+	cr.add_argument("--request-id", help="a fresh id for this create: a retry with the same id returns the ticket it made (already: true)")
 	cm = sub.add_parser("create-many", help='several tickets in one all-or-nothing step: a JSON array of ticket objects (prefix or id + fields); blocked_by / parent may say "#N" = the Nth item')
 	cm.add_argument("--file", required=True, help="path to the JSON array, or - for stdin")
 	cm.add_argument("--agent", help="the worker creating them (strict schema, proposal gate), as for create")
@@ -188,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
 			x.add_argument("--why", default="", help="with --missing: one line on what you needed it for")
 		if name != "ask":
 			x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)")
+		if name != "heartbeat":
+			x.add_argument("--request-id", help="a fresh id for this write: a retry with the same id changes nothing and answers already: true")
 	cp = sub.choices["complete"]
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
@@ -215,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
 	no.add_argument("--pin", action="store_true", help="pin it: always sent to the next worker")
 	no.add_argument("--reply-to", type=int, help="the note number this answers")
 	no.add_argument("--supersedes", type=int, help="the pinned note number this one replaces")
+	no.add_argument("--request-id", help="a fresh id for this note: a retry with the same id adds nothing (already: true)")
 	for name in ("answer", "reject", "accept", "approve"):
 		x = sub.add_parser(name)
 		x.add_argument("id")
@@ -275,11 +279,11 @@ def main(argv: list[str] | None = None) -> int:
 			if box:
 				out = {**out, "inbox": box}
 		elif a.cmd == "release":
-			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why)
+			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why, request_id=a.request_id)
 		elif a.cmd == "ask":
-			out = s.ask(a.id, a.agent, a.question)
+			out = s.ask(a.id, a.agent, a.question, request_id=a.request_id)
 		elif a.cmd == "complete":
-			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal)
+			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id)
 		elif a.cmd == "agents":
 			out = s.agents_now()
 		elif a.cmd == "context":
@@ -304,14 +308,14 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "get":
 			out = s.get(a.id) if url else s.with_blockers(s.get(a.id))  # remote: GET tickets/<id> already adds them
 		elif a.cmd == "create":
-			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent)
+			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent, request_id=a.request_id)
 		elif a.cmd == "create-many":
 			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
 			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent)
 		else:
-			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes)
+			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
 	except (st.TicketError, json.JSONDecodeError) as e:
 		print(f"error: {e}", file=sys.stderr)
 		return 1

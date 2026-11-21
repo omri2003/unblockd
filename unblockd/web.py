@@ -323,14 +323,14 @@ class Handler(BaseHTTPRequestHandler):
 					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None)
 					return self._send(200, {**t, **({"inbox": box} if box else {})})
 				if act == "release":
-					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or "")))
+					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or ""), request_id=b.get("request_id")))
 				if act == "ask":
-					return self._send(200, store.ask(tid, agent, str(b.get("question", ""))))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal")))
+					return self._send(200, store.ask(tid, agent, str(b.get("question", "")), request_id=b.get("request_id")))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text"), kind=b.get("kind") or "note", pin=bool(b.get("pin")),
-				                                        reply_to=b.get("reply_to"), supersedes=b.get("supersedes")))
+				                                        reply_to=b.get("reply_to"), supersedes=b.get("supersedes"), request_id=b.get("request_id")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] in ("answer", "reject", "accept", "approve"):
 				b = self._body()
 				by = str(b.get("by") or "human")
@@ -354,7 +354,7 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.with_blockers(store.get(tid)))
 			if method == "POST" and tid is None:
 				b = self._body()
-				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None)))  # agent: the creating worker (cli.Remote); none = a human
+				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None), request_id=b.pop("request_id", None)))  # agent: the creating worker (cli.Remote); none = a human
 			if method == "PATCH" and tid:
 				b = self._body()
 				m = (self.headers.get("If-Match") or "").strip().strip('"')  # the rev the client last saw; none = last write wins, as before
