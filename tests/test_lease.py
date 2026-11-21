@@ -110,3 +110,42 @@ class LeaseTest(unittest.TestCase):
 
 if __name__ == "__main__":
 	unittest.main()
+
+class OrphanTest(unittest.TestCase):
+	"""CORE-79: a ticket left doing with nobody holding it (claim expired or lost, health board FB-1) could not be claimed by anyone."""
+	setUp, tearDown = LeaseTest.setUp, LeaseTest.tearDown
+
+	def orphan(self, tid: str = "CMB-1") -> None:
+		self.s.claim("backend-1", tid=tid)
+		(self.dir / ".unblockd" / "claims.json").write_text("{}")  # the claim is gone, the file still says doing
+
+	def test_explicit_claim_takes_over_with_a_warning(self):
+		self.orphan()
+		self.assertEqual(self.s.get("CMB-1")["status"], "doing")
+		got = self.s.claim("backend-2", tid="CMB-1")
+		self.assertEqual((got["status"], got["claim"]["agent"]), ("doing", "backend-2"))
+		self.assertTrue(any("nobody holding it" in w and "previous_attempts" in w for w in got["warnings"]))
+		self.assertIn("previous_attempts", got)
+		self.s.complete("CMB-1", "backend-2", "done")  # and the new holder can finish it
+		self.assertEqual(self.s.get("CMB-1")["status"], "done")
+
+	def test_claim_next_still_skips_orphans(self):
+		self.orphan()
+		r = self.s.claim_next("backend-2")
+		self.assertIsNone(r["ticket"])
+		self.assertEqual(r["orphaned"], ["CMB-1"])
+		self.assertEqual(self.s.get("CMB-1")["claim"], None)
+
+	def test_live_claim_and_hand_set_doing_with_blockers_still_refused(self):
+		self.s.claim("backend-1", tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "already claimed by backend-1"):
+			self.s.claim("backend-2", tid="CMB-1")
+		self.s.create({"title": "b", "pillar": "COMBAT"}, tid="CMB-2")
+		self.s.create({"title": "q", "pillar": "COMBAT"}, tid="CMB-3")
+		self.s.update("CMB-3", {"status": "doing"})
+		self.s.update("CMB-3", {"waiting_on": "which one?"})
+		with self.assertRaisesRegex(TicketError, "waiting on a human"):
+			self.s.claim("backend-2", tid="CMB-3")
+
+	def test_a_normal_claim_has_no_orphan_warning(self):
+		self.assertNotIn("warnings", self.s.claim("backend-1", tid="CMB-1"))

@@ -126,7 +126,7 @@ ignores itself in git.
 
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
-and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; reported, never claimable). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
+and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; `claim_next` never hands it out, but `claim_ticket(id)` takes it over with a warning, since nobody else could ever finish it). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
 
 ### Teams
 

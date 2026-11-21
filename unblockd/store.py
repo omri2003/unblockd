@@ -1323,9 +1323,10 @@ class Store:
 
 	def _claimable(self, t: dict, live: dict, by_id: dict, profile: str | None = None, explicit: bool = False) -> bool:
 		"""explicit = claimed by id: a ticket that reads as doing only because of a branch may be taken that way (to continue
-		that branch's work); claim_next never hands it out, so two clones don't do the same work."""
+		that branch's work), and so may an orphaned one (doing, nobody holds it: CORE-79); claim_next never hands either out,
+		so two clones don't do the same work and a ticket a person moved to doing by hand is not grabbed."""
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
-		if (t["effective_status"] != "todo" and not (explicit and self._on_branch(t))) or t.get("owner") in humans or t["id"] in live or self._lacks(t, profile):
+		if (t["effective_status"] != "todo" and not (explicit and (self._on_branch(t) or self._orphaned(t, live)))) or t.get("owner") in humans or t["id"] in live or self._lacks(t, profile):
 			return False
 		mine = t.get("touches", [])
 		if mine:
@@ -1333,6 +1334,11 @@ class Store:
 				if any(_overlap(a, b) for a in mine for b in by_id.get(other, {}).get("touches", [])):
 					return False
 		return True
+
+	@staticmethod
+	def _orphaned(t: dict, live: dict) -> bool:
+		"""doing with no live claim (claim expired before the sweep could reset it, claims.json lost, or moved by hand) and nothing else holding it back."""
+		return t.get("status") == "doing" and t["id"] not in live and not (t.get("open_blockers") or t.get("waiting_on") or t.get("proposed_by"))
 
 	@staticmethod
 	def _lacks(t: dict, profile: str | None) -> list[str]:
@@ -1386,6 +1392,8 @@ class Store:
 		elif profile not in profiles:
 			raise TicketError(f"unknown profile {profile!r}: {', '.join(profiles) or 'none configured'}")
 
+		orphan: list[bool] = []
+
 		def take():
 			live = self._live_claims()
 			by_id = {x["id"]: x for x in self._all_raw()}  # read once: _claimable looks up live claims' touches in it
@@ -1396,6 +1404,7 @@ class Store:
 				if not self._claimable(t, live, by_id, profile, explicit=True):
 					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile)}")
 				pick = t
+				orphan.append(self._orphaned(t, live))
 			else:
 				ready = self.next_ready(limit=10_000, agent=profile)
 				pick = next((t for t in ready if self._claimable(t, live, by_id, profile)), None)
@@ -1423,6 +1432,9 @@ class Store:
 			t["notes_omitted"] = f"{left} older notes not sent (none of them pinned): get_ticket shows every note"
 		warn = [f"branch {b['name']} already has {b['commits']} commit(s) for {got} (last {b['at']}{', by ' + b['author'] if b['author'] else ''}): "
 		        "fetch it and build on it instead of starting over, unless it is abandoned" for b in t.get("branches", []) if b["active"]]
+		if orphan and orphan[-1]:
+			warn.append(f"{got} was doing with nobody holding it (a claim that expired or was lost, or a hand move): you took it over. "
+			            "Read previous_attempts and the latest notes first: someone may have left half-done work")
 		if not principal and len(humans) > 1:
 			warn.append("no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it")
 		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
