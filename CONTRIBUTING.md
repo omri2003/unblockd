@@ -20,10 +20,12 @@ CI refuses a `v*` tag that differs from `__version__` (`scripts/check_version.py
 
 ## Release checklist
 
+The exact commands, in order: [docs/releasing.md](docs/releasing.md).
+
 1. CI is green on `main`.
-2. Release notes drafted from merged PRs and ticket results, then edited by hand into the CHANGELOG.
+2. Release notes drafted from merged PRs and ticket results (`python scripts/release_notes.py <last tag>`), then edited by hand into the CHANGELOG.
 3. A release PR bumps `__version__` and moves the CHANGELOG `Unreleased` section under the new version; merged.
 4. The maintainer tags the merge commit (signed) and pushes the tag.
 5. CI builds `ghcr.io/omri2003/unblockd:<version>`; the pulled image's `/healthz` shows the version.
-6. GitHub Release published with the same notes.
+6. GitHub Release published with the same notes (`python scripts/release_notes.py --body <version>`).
 7. The board's milestone for that version is closed.
