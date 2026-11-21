@@ -1367,7 +1367,7 @@ class Store:
 		profiles = [a["name"] for a in self.config["agents"]]
 		if profiles and profile is None:
 			raise TicketError(f"worker {agent!r} matches no agent profile, so its tickets can't be routed: name workers <profile>-N "
-			                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1) or pass profile=<name>")
+			                  f"(profiles: {', '.join(profiles)}; e.g. {profiles[0]}-1)")  # no "pass profile=": claim_ticket / next_ready have none (API-21)
 		return profile
 
 	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None) -> dict | None:
