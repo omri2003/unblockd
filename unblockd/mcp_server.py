@@ -109,7 +109,7 @@ def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
-	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
+	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox", "followup", "hint") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
@@ -423,13 +423,16 @@ def release(id: str, agent: str, reason: str = "", principal: str | None = None,
 
 @tool
 def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
-             handoff: str | None = None, principal: str | None = None, request_id: str | None = None, board: str | None = None) -> dict:
+             handoff: str | None = None, principal: str | None = None, request_id: str | None = None, followup: dict | None = None,
+             board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
 	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with.
 	A write that timed out may still have landed: get_ticket before retrying, or retry with the same request_id (any fresh id you pick
-	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true."""
-	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal, request_id=request_id))
+	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true.
+	Part done, rest waiting on another ticket: followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?} completes this one AND
+	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing."""
+	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal, request_id=request_id, followup=followup))
 
 
 @tool

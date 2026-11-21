@@ -143,7 +143,9 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread"}  # unread = note numbers the worker had not seen when it completed (AI-50)
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup"}  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
+FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
+_ID_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Z][A-Z0-9]*-\d+(?![A-Za-z0-9_-])")  # a ticket id in free text (release reason)
 
 # The limits of the FIELDS validators above, in numbers: what an error names and what board_info returns as `limits`, so an agent can
 # check before it writes. Keep them equal to the validators (tests/test_tool_docs.py checks each one at its edge).
@@ -1883,7 +1885,15 @@ class Store:
 			self._record_request(agent, request_id, "release", tid)
 		late: list[dict] = []
 		seen = self._locked(rel)
-		return self._already(seen) if seen else self._with_unread(self.get(tid), late, "release")
+		if seen:
+			return self._already(seen)
+		out = self._with_unread(self.get(tid), late, "release")
+		waits = [x for x in dict.fromkeys(_ID_TOKEN.findall(reason or "")) if x != tid and self._exists(x)]
+		if waits:  # AI-60: "waiting on CORE-68" is usually half done, half waiting; release records nothing of the done half
+			out["hint"] = (f"if part of {tid} is done and the rest waits on {', '.join(waits)}: claim it again and "
+			               f"complete({tid}, summary, followup={{title, done_when, blocked_by: {waits}}}) records the done part "
+			               f"and makes the rest its own ticket, ready by itself once {', '.join(waits)} is done")
+		return out
 
 	def ask(self, tid: str, agent: str, question: str, request_id: str | None = None) -> dict:
 		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
@@ -2017,10 +2027,14 @@ class Store:
 		return self.get(tid)
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
-	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None) -> dict:
+	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None,
+	             followup: dict | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
-		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`."""
+		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`.
+		followup = {title, done_when?, blocked_by?, body?, priority?, touches?} (AI-60): the part that could not be done yet becomes its own
+		ticket in the same step (same prefix, parent, pillar, owner, tags, touches, docs, components; body "Rest of <id>."), waiting on
+		blocked_by, so it turns ready by itself when they are done. All or nothing: a bad followup refuses the complete too."""
 		_check_result_input("complete", summary, files, refs, handoff)
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
@@ -2031,6 +2045,9 @@ class Store:
 			if c.get("principal"):
 				result["principal"] = c["principal"]
 			raw = self._fresh(tid)
+			fu = self._followup(raw, followup, agent) if followup is not None else None  # validated before anything changes
+			if fu:
+				result["followup"] = fu["id"]
 			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
 			if late:  # the reviewer is shown them next to the result: the worker finished without reading them
 				result["unread"] = [n["n"] for n in late if isinstance(n.get("n"), int)]
@@ -2042,15 +2059,58 @@ class Store:
 			self._save_claims(claims)
 			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
 			raw["done_at"] = _now() if status == "done" else ""
-			self._write(raw)
+			if fu:
+				self._write(fu)
+			try:
+				self._write(raw)
+			except OSError:  # files: take the follow-up back (a database rolls the lock's transaction back on its own)
+				if fu and self._exists(fu["id"]):
+					self.backend.delete(fu["id"])
+				raise
 			self._log("complete", tid, agent, summary, c.get("principal"))
+			if fu:
+				self._log("created", fu["id"], agent, f"{fu['title']} (rest of {tid})")
+				if fu["proposed_by"]:
+					self._log("proposed", fu["id"], agent, fu["title"])
 			self._record_request(agent, request_id, "complete", tid)
 			return c.get("retaken")
 		late: list[dict] = []
 		retaken = self._locked(done)
 		if isinstance(retaken, dict):  # a repeat: nothing changed
 			return self._already(retaken)
-		return self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
+		out = self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
+		if followup is not None and (fid := (out.get("result") or {}).get("followup")):
+			f = self.get(fid)
+			out["followup"] = {k: f.get(k) for k in ("id", "title", "effective_status", "blocked_by", "open_blockers", "proposed_by")}
+		return out
+
+	def _followup(self, raw: dict, f, agent: str) -> dict:
+		"""Caller holds the lock. complete(followup=) as an unwritten, validated ticket (AI-60): placed where the ticket it continues is;
+		schema and proposal gate as for create_ticket by this agent."""
+		if not (isinstance(f, dict) and isinstance(f.get("title"), str) and f["title"].strip()):
+			raise TicketError("followup needs a title: {title, done_when?, blocked_by?: [ids it waits on], body?, priority?, touches?} = the part left to do")
+		if (bad := set(f) - FOLLOWUP_KEYS):
+			raise TicketError(f"followup takes {', '.join(sorted(FOLLOWUP_KEYS))}, not {', '.join(sorted(bad))} (the rest is copied from {raw['id']})")
+		who, strict = self._creator(agent)
+		keep = ("pillar", "owner", "priority", "tags", "touches", "docs", "components", "skills", "mcp")
+		data = {k: raw[k] for k in keep if raw.get(k) not in (None, "", [])}
+		if raw.get("parent") and self._exists(raw["parent"]):
+			data["parent"] = raw["parent"]
+		if raw.get("milestone") in {m["key"] for m in self.config.get("milestones") or []}:
+			data["milestone"] = raw["milestone"]
+		data.update({k: v for k, v in f.items() if k != "body"})
+		body = f.get("body")
+		data["body"] = f"Rest of {raw['id']}." + (f"\n\n{body.strip()}" if isinstance(body, str) and body.strip() else "")
+		pre = raw["id"].rsplit("-", 1)[0]
+		nid = self.next_id(pre)
+		problems = self._schema_problems(data, pre, strict)
+		if problems and strict:
+			raise TicketError("followup " + self._schema_refusal(problems))
+		try:
+			return self._prepare(data, nid, inherited_caps=raw, inherited_components=raw.get("components", []),
+			                     proposed_by=who if strict and self.config["agent_tickets"] == "propose" else "")
+		except TicketError as e:
+			raise TicketError(f"followup refused, {raw['id']} not completed: {e}")
 
 	def report(self, tid: str, by: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None) -> dict:
 		"""CORE-68: a person writes the summary a done ticket was closed without (moved to done by hand, not finished with complete()).

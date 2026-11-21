@@ -126,6 +126,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   on another write or ticket is refused. The last 500 ids per board are kept (runtime doc `requests`). Without an id, the same agent
   repeating its own complete, release or question (nobody holds the ticket now and its newest transition is that agent's) also gets
   `already: true` instead of "isn't claimed".
+- **Finish what you can, hand the rest on** (AI-60): when part of a ticket is done and the rest waits on another ticket,
+  `complete(id, agent, summary, followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?})` (MCP arg, CLI
+  `--followup '<json>'`, REST body key) completes the ticket AND creates the rest as a new ticket in one step, all or nothing: same
+  prefix, parent, pillar, owner, tags, touches, docs and components, body `Rest of <id>.`, waiting on `blocked_by`, so it becomes
+  ready by itself when they are done. The reply's `followup` names it; `result.followup` keeps its id. A `release` whose reason names
+  another ticket id answers with a `hint` pointing at this.
 - **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (whole text,
   flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
   numbers as `result.unread` for the reviewer.

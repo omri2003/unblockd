@@ -7,7 +7,7 @@
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
-    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"]
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}']
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
     python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
     python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
@@ -162,8 +162,9 @@ class Remote:
 	def dismiss_notes(self, tid, by, ns, undo=False): return self._call("POST", f"/tickets/{tid}/dismiss", {"by": by, "notes": ns, "undo": undo})
 	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None, request_id=None):
 		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes, "request_id": request_id})
-	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None):
-		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id})
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None, followup=None):
+		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id,
+		                                                       **({"followup": followup} if followup is not None else {})})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
@@ -256,6 +257,7 @@ def main(argv: list[str] | None = None) -> int:
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
 	cp.add_argument("--handoff", help="what tickets waiting on this one must know")
+	cp.add_argument("--followup", help="JSON {title, done_when?, blocked_by?, body?, priority?, touches?}: the part left to do becomes its own ticket, ready once blocked_by is done")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
 	sub.add_parser("doc").add_argument("path")
@@ -354,7 +356,8 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "ask":
 			out = s.ask(a.id, a.agent, a.question, request_id=a.request_id)
 		elif a.cmd == "complete":
-			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id)
+			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id,
+			                 **({"followup": json.loads(a.followup)} if a.followup else {}))
 		elif a.cmd == "agents-md":
 			board = a.board or (os.environ.get("UNBLOCKD_BOARD") or "default" if url else s.config["id"])
 			text = bd.agents_md(board, a.dir)
