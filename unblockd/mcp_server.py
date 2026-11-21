@@ -31,6 +31,7 @@ try:
 except ImportError as e:  # still an ImportError: the tests skip on it
 	raise ImportError(f"unblockd's MCP server needs the mcp package ({e}): pip install \"unblockd[mcp]\" or pip install -r requirements.txt") from e
 
+from . import __version__
 from . import boards as bd
 from . import knowledge as kn
 from . import store as st
@@ -38,6 +39,7 @@ from . import store as st
 BOARDS = bd.from_env()
 mcp = MCPServer(
 	"unblockd",
+	version=__version__,  # serverInfo.version in the initialize reply
 	instructions=(
 		"unblockd: dependency-aware ticket boards. One ticket = one JSON file; several boards may be "
 		"served (list_boards; every tool takes board=, default = the first). status is "
@@ -195,9 +197,9 @@ def board_info(board: str | None = None) -> dict:
 	"""A board's settings: title, owners, pillars, agent profiles (name, tags, pillars, model,
 	instructions), stale_days, the ticket rules: `schema` (prefixes with meanings, required fields, tags, body template) and `agent_tickets`,
 	`components` [{key, title}] when it has an architecture (the keys `components` on tickets take), the `skills` / `mcp` registries (names `skills` / `mcp` on tickets take),
-	and `limits`: per field {items, chars} plus the note / question / summary / handoff caps, so you can check before writing."""
+	`limits`: per field {items, chars} plus the note / question / summary / handoff caps, so you can check before writing, and `version` (unblockd's)."""
 	store = BOARDS.get(board)
-	info = {**store.config, "limits": store.rules()["limits"]}
+	info = {**store.config, "limits": store.rules()["limits"], "version": __version__}
 	comps = kn.components(store)["components"]
 	if comps:
 		info["components"] = [{"key": c["key"], "title": c["title"]} for c in comps]

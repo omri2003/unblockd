@@ -13,6 +13,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import unblockd
+
 try:
 	import mcp  # noqa: F401
 except ImportError:
@@ -214,7 +216,9 @@ class HttpServerTest(unittest.TestCase):
 		async def go():
 			http = httpx2.AsyncClient(headers={"Authorization": f"Bearer {token}"} if token else {})
 			async with streamable_http_client(url, http_client=http) as (r, w), ClientSession(r, w) as c:
-				await c.initialize()
+				init = await c.initialize()
+				if name == "initialize":
+					return init
 				if name is None:
 					return await c.list_tools()
 				r = await c.call_tool(name, args)
@@ -232,6 +236,8 @@ class HttpServerTest(unittest.TestCase):
 		self.assertEqual(self.call(url, "list_boards", {})["id"], "example")  # one board -> one content block
 		info = self.call(url, "board_info", {"board": "example"})
 		self.assertTrue(info["components"] and {"key", "title"} <= set(info["components"][0]))
+		self.assertEqual(info["version"], unblockd.__version__)  # CORE-84: board_info and serverInfo carry it
+		self.assertEqual(self.call(url, "initialize", None).server_info.version, unblockd.__version__)
 		arch = self.call(url, "architecture_map", {"board": "example"})
 		a, b = arch["edges"][0]["from"], arch["edges"][0]["to"]
 		new = self.call(url, "arch_set_edge", {"frm": a, "to": b, "text": "over http", "agent": "t-1", "board": "example"})

@@ -21,7 +21,7 @@ POST   tickets/<id>/approve              {"by"?}  review -> done, recording resu
 PATCH  tickets/<id>                      {...fields to change, "by"?}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it; to done with no result = `warnings` (finish with complete)
 POST   tickets/<id>/report               {"by"?, "summary", "files"?, "refs"?}  a person adds the summary a done ticket was closed without (400 unless done with no summary)
 DELETE tickets/<id>                      ?agent= (holder rule), ?reason= (a human rejecting a proposal; logged)
-GET    meta                              statuses, priorities, fields, config (unblockd.json)
+GET    meta                              statuses, priorities, fields, config (unblockd.json), version
 GET    agents                            who is working what right now + recent activity
 GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expired / complete / created / done log, newest first;
                                          since=<ISO time> keeps only newer events (the "While you were away" digest)
@@ -54,7 +54,7 @@ POST   tickets/<id>/files                {"name", "content"}  attach a text file
 DELETE tickets/<id>/files/<name>
 
 Writes (POST/PATCH/PUT) must send Content-Type: application/json (else 415); an Origin header, when present, must be this server (else 403).
-GET    /healthz                          (no /api, never needs auth) {"status": "ok"}: container health / k8s probes
+GET    /healthz                          (no /api, never needs auth) {"status": "ok", "version"}: container health / k8s probes
 Auth: none by default (binds to 127.0.0.1; a non-loopback HOST without a token refuses to start unless UNBLOCKD_ALLOW_OPEN=1). With UNBLOCKD_TOKEN set, /api/* needs `Authorization: Bearer <token>`
 or the `unblockd_token` cookie, which any page visited with `?token=<token>` sets. A shared secret, not per-user identity.
 """
@@ -70,6 +70,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from . import __version__
 from . import boards as bd
 from . import chat
 from . import branches
@@ -295,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "GET" and parts in ([], ["index.html"]):
 				return self._send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
 			if method == "GET" and parts == ["healthz"]:  # liveness/readiness probe: no auth, nothing sensitive
-				return self._send(200, {"status": "ok"})
+				return self._send(200, {"status": "ok", "version": __version__})
 			if parts[:1] != ["api"]:
 				return self._send(404, {"error": "not found"})
 			if bad := self._write_refused(method):
@@ -328,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
 			store = BOARDS.get(board)
 			if method == "GET" and rest == ["meta"]:
 				return self._send(200, {"statuses": st.STATUSES, "priorities": st.PRIORITIES, "fields": list(st.FIELDS),
-				                        "config": store.config, "board": board or next(iter(BOARDS.all()))})
+				                        "config": store.config, "board": board or next(iter(BOARDS.all())), "version": __version__})
 			if method == "GET" and rest == ["git"]:  # how the board's checkout compares with origin (branches.py); {} fields when git evidence is off
 				d = branches.load(store.rt) if store.rt else {}
 				return self._send(200, {k: d.get(k) for k in ("source", "remote", "base", "checkout", "error", "since")})
