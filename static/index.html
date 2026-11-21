@@ -106,7 +106,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 .dg-bar{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;font-size:.9rem}
 .dg-bar h2{font-size:.95rem;margin:0} .dg-bar .since{color:var(--muted)}
 .dg-n{display:inline-flex;gap:5px;white-space:nowrap} .dg-n i{font-style:normal;font-weight:800}
-.dg-n.fin i{color:var(--jade)} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
+.dg-n.fin i{color:var(--jade)} .dg-n .dg-u{color:var(--amber);font-weight:700} .dg-n.sta i{color:var(--amber)} .dg-n.stk i,.dg-n.stk{color:var(--cinnabar)} .dg-n.new i{color:var(--slate)} .dg-n.rev i{color:var(--plum)}
 .dg-bar .sp{margin-left:auto;display:flex;gap:6px}
 .dg-body{display:grid;grid-template-rows:0fr;visibility:hidden;transition:grid-template-rows .2s ease-out,visibility .2s} .dg-body>div{min-height:0;overflow:hidden}
 .digest.open .dg-body{grid-template-rows:1fr;visibility:visible}
@@ -257,6 +257,7 @@ a.btn{display:inline-block;text-decoration:none}
 .card.dn{display:flex;align-items:baseline;gap:8px;padding:4px 10px 4px 9px}
 .card.dn .ttl{display:block;-webkit-line-clamp:unset;line-clamp:unset;flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.dn .age{font-size:.76rem;color:var(--muted)}
+.card.dn .unr{flex:none;font-size:.68rem;font-weight:700;color:var(--amber);border:1px solid currentColor;border-radius:3px;padding:0 4px;white-space:nowrap} /* UI-79: done without a summary (CORE-68) */
 .cw.dn .mv{top:50%;bottom:auto;transform:translateY(-50%)}
 .cw.dn:hover .age,.cw.dn:focus-within .age,.cw.dn:has(.mv[open]) .age{visibility:hidden}
 @media (hover:none){.cw.dn .card{padding:4px 84px 4px 9px}}
@@ -1342,7 +1343,7 @@ function card(t){
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:'',needMark(t)].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
-  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
+  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${t.unreported?'<span class="unr" title="Finished without a summary: open it to add what changed">no summary</span>':''}${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
   return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${!t.claim&&onBr(t).length?brLine(onBr(t)[0]):''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
@@ -1400,7 +1401,7 @@ function digestGroups(){
     if(!k){ e=made.get(l.ticket)||l; k=sec(t)||(made.has(l.ticket)?'new':''); if(!k) continue; } // then the status decides; created while you were away and still open = New
     const hand=(k==='fin'||k==='rev')&&!['complete','done'].includes(e.event); // got there by a move no event recorded
     const who=hand?'':e.agent||'', out=hand?(k==='fin'?'Moved to Done by hand':'Moved to review by hand'):k==='stk'?(e.event==='expired'?`Claim by ${who||'an agent'} expired at ${hm(new Date(e.ts))}, back in To do`:`Released by ${who||'an agent'}`+(e.note?': '+dgFirst(e.note):''))
-      :k==='new'?'':k==='sta'?(t.claim?.note?`“${dgFirst(t.claim.note)}”`:''):e.note?dgFirst(e.note):e.event==='done'?'Moved to Done by hand':'';
+      :k==='new'?'':k==='sta'?(t.claim?.note?`“${dgFirst(t.claim.note)}”`:''):k==='fin'&&t.unreported?'Finished without a summary':e.note?dgFirst(e.note):e.event==='done'?'Moved to Done by hand':'';
     if(dgHid(t.id,e.ts)) continue; // dismissed by hand, nothing newer since
     rows[k].push({e,t,who,out,full:hand?'':(e.note||'').trim()});
   }
@@ -1420,7 +1421,7 @@ function renderDigest(){
   el.classList.toggle('open',dgOpen); // the body is always in the DOM; the class runs the grid-rows transition (nextPaint's trick)
   const d=new Date(DG.since), sameDay=d.toDateString()===new Date().toDateString();
   const since=sameDay?hm(d):d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm(d);
-  const head=`<h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}</span>`).join('')}`;
+  const head=`<h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}${(u=>u?`, <b class="dg-u">${u} without a summary</b>`:'')(c==='fin'?r.filter(x=>x.t.unreported).length:0)}</span>`).join('')}`; // UI-79: hand-closed tickets (CORE-68) counted
   const body=`<div class="dg-body"><div><div class="dg-grid">`+gs.map(([c,i,n,r])=>{const all=dgMore.has(c)||r.length<=DG_CAP+1, shown=all?r:r.slice(0,DG_CAP);
      return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span><button type="button" class="btn ghost sm dg-gx" data-dghidesec="${c}" aria-label="Dismiss all ${r.length} ${esc(n.toLowerCase())}">${r.length>1?'Dismiss all':'Dismiss'}</button></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
   if(head+body===dgHtml) return; dgHtml=head+body; // same items, statuses, titles and times: keep the DOM (no hover or focus flicker on the 4 s poll); the toggle edits its own button, so it is not in the key
@@ -1550,7 +1551,7 @@ function closeNeeds(quiet){ // quiet: the drawer is taking over, which keeps the
   if(!quiet) (lastNFocus?.isConnected?lastNFocus:$('needsBadge')).focus?.();
 }
 const by=()=>me()?{by:me()}:{}; // who is clicking: the "I am" name, else the server's default (human)
-const NFORM={answer:['text','Answered'],reject:['reason','Rejected'],notes:['text','Note added'],drop:['reason','Rejected']}; // drop = reject a proposal: DELETE, the reason is optional and only logged
+const NFORM={answer:['text','Answered'],reject:['reason','Rejected'],notes:['text','Note added'],drop:['reason','Rejected'],report:['summary','Summary added']}; // report = a done ticket's missing summary (CORE-68) // drop = reject a proposal: DELETE, the reason is optional and only logged
 const refreshAfter=bd=>Promise.all([(!bd||bd===curBoard())&&load(true),loadNeeds()]);
 async function submitNeeds(f){ // panel + drawer forms: POST <board>/tickets/<id>/<answer|reject|notes>; the panel's carry data-board (any board, no switching)
   const id=f.dataset.id,kind=f.dataset.nform,i=f.elements.t,text=(DRAFTS[i.dataset.draft]??i.value).trim(),bd=f.dataset.board; if(!text&&kind!=='drop') return i.focus(); // text from DRAFTS: it keeps the newlines a collapsed one-line input cannot show
@@ -1870,7 +1871,7 @@ function showTicket(id,refresh){
     ${t.waiting_on&&!t.asked_by?`<h3>Parked</h3><p class="nd-q">${esc(t.waiting_on)}</p><button type="button" class="btn sm" data-resume="${esc(t.id)}">Clear / resume</button>`:''}
     ${t.waiting_on&&t.asked_by?`<h3>Question</h3><p class="nd-q">${esc(t.waiting_on)}</p><form class="nd-f" data-nform="answer" data-id="${esc(t.id)}">${draftField('da:'+curBoard()+'/'+t.id,'','Your answer…','textarea')}<button class="btn sm" type="submit">Send answer</button></form>`:''}
     ${t.status==='done'&&lateFor(curBoard(),t.id).length?`${lateHtml(lateFor(curBoard(),t.id),'','h3')}<div class="nd-f">${lateBtns(lateFor(curBoard(),t.id),DB)}</div>`:''}
-    ${t.status==='review'?`${lateHtml(lateFor(curBoard(),t.id),t.result?.by||'the agent','h3')}<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}${dw}`:dw}
+    ${t.status==='review'?`${lateHtml(lateFor(curBoard(),t.id),t.result?.by||'the agent','h3')}<h3>Result, for review</h3>${prHtml(NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id)?.pr)}${resultHtml(t.result)||'<p class="none">No result recorded.</p>'}${dw}${reviewForm('r:'+curBoard()+'/'+t.id,DB,'textarea')}`:t.status==='done'&&t.result?`<h3>Result</h3>${resultHtml(t.result,1)}${dw}`:t.status==='done'&&t.unreported?`<h3>Result</h3><div class="rbox unrep"><p class="rnv"><b>Finished without a summary.</b> It was moved to Done by hand, so nothing says what changed or how it was checked. Add that for whoever reads this next.</p><form class="nd-f" data-nform="report" ${DB}>${draftField('rp:'+curBoard()+'/'+t.id,'','What changed, and how it was checked…','textarea')}<button class="btn sm" type="submit">Add summary</button></form></div>${dw}`:dw}
     <h3>Details</h3><div class="body">${bodyHtml(t.body)}</div>
     ${notesHtml(t)}
     ${partsHtml(t)}
@@ -2077,7 +2078,7 @@ async function moveTo(id,to,undoable=true){
   if(from===to) return;
   if(to==='pending') return toast('Waiting is derived: add a blocker (Blocked by) or a Waiting on note and the ticket shows there.',{err:1});
   if(to==='doing'&&t.open_blockers.length) return toast(`${id} is blocked by ${t.open_blockers.join(', ')}: it can't start yet.`,{err:1});
-  try{ await api('PATCH','/'+id,{status:to}); await load(true);
+  try{ await api('PATCH','/'+id,{status:to,...by()}); await load(true); // by: who moved it (the done event records it, CORE-68)
     const n=BY.get(id);
     toast(n.effective_status!==to?`${id} is ${NAME[to]} but shows as ${NAME[n.effective_status]}: blocked by ${n.open_blockers.join(', ')}.`:undoable?`${id} moved to ${NAME[to]}`:`${id} back in ${NAME[to]}`,undoable&&from?{undo:()=>moveTo(id,from,false)}:{});
   }catch(er){ toast('Move failed: '+er.message,{err:1}); load(true); }

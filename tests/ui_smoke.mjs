@@ -847,6 +847,22 @@ try {
 			await noOverflow('done drawer with a long result');
 			if (process.env.SHOTS) await page.screenshot({ path: `${process.env.SHOTS}/ui79-done-${w}-${theme}.png` });
 			await page.keyboard.press('Escape');
+			// moved to done by hand (CORE-68 `unreported`): a card mark, the drawer says so and takes the missing summary
+			const uid = JSON.parse(cli('create', '--prefix', 'NY', '--title', 'closed by hand')).id;
+			cli('update', uid, '--json', '{"status":"done"}');
+			await refresh();
+			await page.waitForFunction((i) => document.querySelector(`#board [data-open="${i}"] .unr`), uid);
+			await page.evaluate((i) => document.querySelector(`#board [data-open="${i}"]`).click(), uid);
+			await visible('#drawer .unrep form[data-nform=report] textarea', 'unreported done ticket: Add summary');
+			ok((await page.innerText('#drawer .unrep .rnv')).startsWith('Finished without a summary.'), `[${tag}] UI-79: unreported done ticket says so`);
+			await noOverflow('unreported done drawer');
+			await page.fill('#drawer .unrep textarea', 'Moved the check into the store. NOT verified: Docker');
+			await page.click('#drawer .unrep [type=submit]');
+			await page.waitForFunction(() => document.querySelector('#drawer .rbox .rnv')?.textContent === 'NOT verified: Docker' && !document.querySelector('#drawer .unrep'));
+			const rep = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), uid);
+			ok(rep.result?.summary === 'Moved the check into the store. NOT verified: Docker' && rep.result.by === 'human' && !rep.unreported, `[${tag}] UI-79: Add summary should record it: ${JSON.stringify(rep.result)}`);
+			ok(!(await page.locator(`#board [data-open="${uid}"] .unr`).count()), `[${tag}] UI-79: the card mark goes once the summary is there`);
+			await page.keyboard.press('Escape');
 		}
 		{ // a done card is one compact row: id + title + age, no seal / owner chip, still opens the drawer, still has its Move-to menu
 			const d = page.locator('.col.done .card.dn').first(), td = page.locator('.col.todo .card').first();
