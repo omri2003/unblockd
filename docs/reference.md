@@ -91,6 +91,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   workers at once.
 - **Never two on the same files**: give tickets `touches` (paths or globs).
   `claim_next` skips a ticket whose `touches` overlap a live claim.
+  **Except across worktrees** (CORE-80): a worker in its own git worktree passes `branch` (MCP `claim_next` / `claim_ticket`
+  arg, CLI `claim --branch` or env `UNBLOCKD_BRANCH`, REST body key); it is kept in the claim. When both claims name a branch and
+  they differ, the edits only meet at merge, so the claim succeeds with a warning ("expect a merge conflict in store.py with
+  CORE-74 (backend-2 on branch core-74)"), and `claim_next` still takes tickets that overlap nothing first. The same branch, or
+  a side with no branch (a holder without one: the board's branch evidence is used when exactly one active branch is linked
+  to its ticket), is refused as before, and the refusal says to pass `branch` if you have your own worktree.
 - **Never a human's ticket**: tickets owned by a `kind: human` owner are skipped.
 - **Git worktrees share one lock**: when the tickets folder is inside a linked worktree (`git worktree add`), its lock, `claims.json`
   and `activity.jsonl` live in the MAIN checkout's copy of that folder (`<main>/tickets/.unblockd/`), so workers in different worktrees

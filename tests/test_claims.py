@@ -558,6 +558,50 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(Store(self.dir).get("CMB-1")["claim"]["agent"], "backend-1")  # a fresh read agrees with the reply
 
 
+class WorktreeOverlapTest(unittest.TestCase):
+	"""CORE-80: touches that overlap a claim on ANOTHER branch (own worktree) only meet at merge: a warning, not a refusal."""
+	setUp, tearDown = ClaimTest.setUp, ClaimTest.tearDown
+
+	def test_other_branch_overlap_warns(self):
+		self.s.claim("backend-1", tid="CMB-1", branch="cmb-1")
+		got = self.s.claim("backend-2", tid="CMB-2", branch="cmb-2")
+		self.assertEqual((got["id"], got["claim"]["branch"]), ("CMB-2", "cmb-2"))
+		w = [x for x in got["warnings"] if "merge conflict" in x]
+		self.assertEqual(len(w), 1)
+		self.assertIn("scripts/*.gd with CMB-1 (backend-1 on branch cmb-1)", w[0])
+
+	def test_same_folder_or_unknown_branch_is_refused_as_before(self):
+		self.s.claim("backend-1", tid="CMB-1", branch="cmb-1")
+		with self.assertRaisesRegex(TicketError, "touches overlap CMB-1, claimed by backend-1 on branch cmb-1"):
+			self.s.claim("backend-2", tid="CMB-2", branch="cmb-1")  # the same branch = the same folder
+		with self.assertRaisesRegex(TicketError, "touches overlap CMB-1.*claim with branch=<your branch>"):
+			self.s.claim("backend-2", tid="CMB-2")  # no branch given: refused, and told how
+		self.s.release("CMB-1", "backend-1")
+		self.s.claim("backend-1", tid="CMB-1")  # the holder named none
+		with self.assertRaisesRegex(TicketError, "touches overlap CMB-1, claimed by backend-1$"):
+			self.s.claim("backend-2", tid="CMB-2", branch="cmb-2")
+
+	def test_claim_next_prefers_no_overlap(self):
+		self.s.claim("backend-1", tid="CMB-1", branch="cmb-1")
+		got = self.s.claim_next("backend-2", branch="w2")  # CMB-2 (P2) overlaps, CMB-3 (P3) does not: CMB-3 first
+		self.assertEqual(got["id"], "CMB-3")
+		self.assertNotIn("warnings", got)
+		got = self.s.claim_next("backend-3", branch="w3")  # only overlapping work left: taken, with the warning
+		self.assertEqual(got["id"], "CMB-2")
+		self.assertEqual(len([x for x in got["warnings"] if "merge conflict" in x]), 2)  # meets CMB-1 and CMB-3
+
+	def test_cli_branch_flag(self):
+		import contextlib, io
+		from unblockd import cli
+		self.s.claim("backend-1", tid="CMB-1", branch="cmb-1")
+		out = io.StringIO()
+		with contextlib.redirect_stdout(out):
+			self.assertEqual(cli.main(["--dir", str(self.dir), "claim", "--id", "CMB-2", "--agent", "backend-2", "--branch", "cmb-2"]), 0)
+		self.assertEqual(json.loads(out.getvalue())["claim"]["branch"], "cmb-2")
+		with self.assertRaisesRegex(TicketError, "git branch name"):
+			self.s.claim("backend-3", tid="CMB-3", branch="two words")
+
+
 class PrincipalTest(unittest.TestCase):
 	"""principal = the human an agent works for: validated, stored in the claim, copied to result, part of the holder check."""
 	def setUp(self):

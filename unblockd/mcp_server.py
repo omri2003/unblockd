@@ -332,23 +332,26 @@ def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
 
 @tool
 def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False,
-               board: str | None = None) -> dict:
+               branch: str | None = None, board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
 	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
 	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim).
-	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted)."""
+	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted).
+	branch = the git branch you work on, when you have your own worktree: a ticket whose touches overlap a claim on ANOTHER branch is then
+	yours with a warning (expect a merge conflict in those files), tickets with no overlap first; without it (one shared folder) an overlap refuses."""
 	store = BOARDS.get(board)
-	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal)), fresh)
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal, branch=branch)), fresh)
 
 
 @tool
-def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, board: str | None = None) -> dict:
-	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh: see claim_next."""
+def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, branch: str | None = None,
+                 board: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh, branch: see claim_next."""
 	store = BOARDS.get(board)
-	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal)), fresh)
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal, branch=branch)), fresh)
 
 
 @tool

@@ -3,7 +3,7 @@
     python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
-    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
+    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
@@ -150,9 +150,9 @@ class Remote:
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
-	def claim(self, agent, tid=None, profile=None, note="", principal=None):
-		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal})
-	def claim_next(self, agent, profile=None, note="", principal=None): return self.claim(agent, profile=profile, note=note, principal=principal)  # the server answers with the reason when empty
+	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None):
+		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal, **({"branch": branch} if branch else {})})
+	def claim_next(self, agent, profile=None, note="", principal=None, branch=None): return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch)  # the server answers with the reason when empty
 	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
 	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None):
 		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id})
@@ -239,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
 	cl.add_argument("--note", default="")
 	pr = os.environ.get("UNBLOCKD_PRINCIPAL")
 	cl.add_argument("--principal", default=pr, help="the human owner you work for (default: env UNBLOCKD_PRINCIPAL)")
+	cl.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="the git branch you work on in your own worktree (default: env UNBLOCKD_BRANCH): "
+	                "an overlap with a claim on another branch is then a warning, not a refusal")
 	for name, extra in (("heartbeat", "--note"), ("release", "--reason"), ("ask", "--question"), ("complete", "--summary")):
 		x = sub.add_parser(name)
 		x.add_argument("id")
@@ -344,7 +346,8 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal) if a.id else s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal)
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch) if a.id else \
+				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch)
 			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
