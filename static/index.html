@@ -440,7 +440,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .empty{grid-column:1/-1} .empty h2{color:var(--ink);font-size:1.2rem} .empty p{margin:0}
 .gempty{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);padding:18px 24px;background:var(--surface)}
 .fl{display:flex;flex-wrap:wrap;gap:6px;justify-content:center} .fl span{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:2px 10px;color:var(--ink);font-size:.85rem}
-/* chat: a docked panel on the right. Non-modal, so the board stays usable; a ticket drawer opens over it. */
+/* chat: a docked panel on the right. Non-modal, so the board stays usable. One right-hand panel at a time (UI-58): opening the drawer or Needs you closes it, opening it closes them. */
 .chat{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:15;display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.08)}
 @media (min-width:1100px){body.chat-open .wrap{margin-right:420px}}
 .chead{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
@@ -1530,7 +1530,8 @@ function toggleNX(k){
 }
 function openNeeds(){
   const el=$('npanel'); if(!el.hidden) return; if(!$('drawer').hidden) closeDrawer();
-  lastNFocus=document.activeElement; el.hidden=false; $('scrim').hidden=false; npShown=false; npSig=''; renderNeedsPanel(); loadNeeds();
+  const ch=!$('chat').hidden&&$('chat').contains(document.activeElement); if(!$('chat').hidden) closeChat(true);
+  lastNFocus=ch?$('chatBtn'):document.activeElement; el.hidden=false; $('scrim').hidden=false; npShown=false; npSig=''; renderNeedsPanel(); loadNeeds();
   if(!reduce.matches) el.animate([{transform:'translateX(28px)',opacity:0},{transform:'none',opacity:1}],{duration:200,easing:'ease-out'});
   el.querySelector('[data-nclose]').focus();
 }
@@ -1755,7 +1756,7 @@ function renderBoard(){
 
 // ---------- drawer ----------
 let lastFocus=null;
-function openDrawer(html,keepScroll){document.body.classList.remove('peek');const d=$('drawer'),np=!$('npanel').hidden;if(np)closeNeeds(true);if(d.hidden)lastFocus=np?$('needsBadge'):document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
+function openDrawer(html,keepScroll){document.body.classList.remove('peek');const d=$('drawer'),np=!$('npanel').hidden,ch=!$('chat').hidden&&$('chat').contains(document.activeElement);if(np)closeNeeds(true);if(!$('chat').hidden)closeChat(true);if(d.hidden)lastFocus=np?$('needsBadge'):ch?$('chatBtn'):document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
 function closeDrawer(){if(MV.pan&&openId==null)mapClear(true);SPLIT=null;$('drawer').hidden=true;$('scrim').hidden=true;document.body.classList.remove('peek');openId=null;markCur();editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
@@ -2143,6 +2144,7 @@ document.addEventListener('keydown',e=>{
     else if(menuBusy()) closeMenus();
     else if(!$('npanel').hidden) closeNeeds();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
+    else if(!$('chat').hidden) closeChat();
     else if(state.view==='docs'&&(DV.f||DV.sel||DV.q)){DV.f=DV.sel=null;DV.q=$('dQ').value='';renderDocs();}
     else if(state.view==='map'&&(MV.foc||MV.multi||MV.f)) mapClear();
     else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
@@ -3376,14 +3378,20 @@ async function propAct(mi,pi,act){ // the only write the chat can cause, and it 
   chatSave();renderChat();
 }
 const summTools=ts=>Object.entries(ts.reduce((a,n)=>(a[n]=(a[n]||0)+1,a),{})).map(([n,c])=>c>1?`${n.replace(/_/g,' ')} ×${c}`:n.replace(/_/g,' ')).join(', ');
-async function openChat(prefill){
+let chatFocus=null; // where focus goes back to when the chat closes
+async function openChat(prefill){ // one right-hand panel at a time (UI-58): the drawer and Needs you close first, so they never stack
+  if(!$('drawer').hidden) closeDrawer(); if(!$('npanel').hidden) closeNeeds();
+  if($('chat').hidden) chatFocus=document.activeElement;
   $('chat').hidden=false;document.body.classList.add('chat-open');store.set('chatOpen',true);
   $('chatT').textContent='Ask about '+(CFG.title||'this board');
   if(!CH.on){try{CH.on=await jf('/api/chat')}catch{CH.on={enabled:false}}}
   renderChat();
   const i=$('cin');if(prefill){i.value=prefill+(i.value?' '+i.value:'');}i.focus();i.setSelectionRange(i.value.length,i.value.length);
 }
-function closeChat(){$('chat').hidden=true;document.body.classList.remove('chat-open');store.set('chatOpen',false);hideAc();}
+function closeChat(quiet){ // quiet: the drawer or Needs you is taking over and places the focus itself
+  const had=$('chat').contains(document.activeElement);$('chat').hidden=true;document.body.classList.remove('chat-open');store.set('chatOpen',false);hideAc();
+  if(!quiet&&had) (chatFocus?.isConnected&&chatFocus.offsetParent!==null&&!$('chat').contains(chatFocus)?chatFocus:$('chatBtn')).focus?.();
+}
 async function sendChat(){
   const text=$('cin').value.trim();if(!text||CH.busy)return;
   CH.log.push({role:'user',content:text});$('cin').value='';CH.busy=true;hideAc();renderChat();
@@ -3429,7 +3437,7 @@ $('cin').addEventListener('keydown',e=>{
 });
 $('ac').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac]');if(li){e.preventDefault();pickAc(+li.dataset.ac);}});
 $('cform').addEventListener('submit',e=>{e.preventDefault();sendChat();});
-$('chatClose').addEventListener('click',closeChat);
+$('chatClose').addEventListener('click',()=>closeChat());
 $('chatClear').addEventListener('click',()=>{CH.log=[];chatSave();renderChat();$('cin').focus();});
 $('clog').addEventListener('click',e=>{const pb=e.target.closest('[data-prop]');if(pb){const [mi,pi]=pb.dataset.prop.split(':');propAct(+mi,+pi,pb.dataset.act);return;}
   const c=e.target.closest('[data-ask]');if(c){$('cin').value=c.dataset.ask;sendChat();}});

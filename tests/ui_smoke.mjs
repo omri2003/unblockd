@@ -1047,6 +1047,38 @@ try {
 		ok(!errs.length, `[chat] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
+	// 6a. the chat and the ticket drawer never stack (UI-58): opening one closes the other, in both orders; Esc closes it and focus comes back
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+		const page = await ctx.newPage(); page.setDefaultTimeout(8000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+		await page.route('**/api/chat', (r) => r.request().method() === 'POST'
+			? r.fulfill({ json: { reply: 'Look at API-1 first.', tools: [], refs: [], proposals: [] } })
+			: r.fulfill({ json: { enabled: true, model: 'x' } }));
+		await page.goto(base); await page.waitForSelector('#board .card', { state: 'attached' });
+		const vis = (id) => page.evaluate((i) => !document.getElementById(i).hidden, id);
+		// ticket first, then Ask Claude
+		await page.evaluate(() => document.querySelector('#board .card[data-open="API-1"]').click()); await page.waitForSelector('#drawer:not([hidden])');
+		if (w > 600) { await page.keyboard.press('Control+k'); await page.fill('#cmdQ', 'ask claude'); await page.keyboard.press('Enter'); } // the palette's Ask Claude
+		else await page.evaluate(() => document.querySelector('#drawer [data-ask-about]').click()); // the drawer's own Ask Claude (in its overflow menu)
+		await page.waitForSelector('#chat:not([hidden])');
+		ok(!(await vis('drawer')), `[chat/${w}] opening the chat should close the ticket drawer`);
+		await page.waitForFunction(() => document.activeElement.id === 'cin').catch(() => ok(false, `[chat/${w}] the chat should take the focus`)); // openChat focuses after its first GET /api/chat
+		await page.keyboard.press('Escape'); await page.waitForSelector('#chat', { state: 'hidden' });
+		ok(!(await vis('drawer')), `[chat/${w}] Esc should close the chat and open nothing else`);
+		ok(await page.evaluate(() => { const a = document.activeElement; return a && a !== document.body && !a.closest('#chat') && a.offsetParent !== null; }), `[chat/${w}] focus should come back to the page after Esc`);
+		// chat first, then a ticket (a #ID link in the reply)
+		await page.click('#chatBtn'); await page.fill('#cin', 'what first?'); await page.keyboard.press('Enter');
+		await page.waitForSelector('#clog .idlink[data-open="API-1"]'); await page.click('#clog .idlink[data-open="API-1"]'); await page.waitForSelector('#drawer:not([hidden])');
+		ok(!(await vis('chat')), `[chat/${w}] opening a ticket should close the chat`);
+		ok(await page.evaluate(() => !document.body.classList.contains('chat-open')), `[chat/${w}] the board should not keep room for a closed chat`);
+		await page.keyboard.press('Escape'); await page.waitForSelector('#drawer', { state: 'hidden' });
+		ok(await page.evaluate(() => document.activeElement.id === 'chatBtn'), `[chat/${w}] focus should return to Ask Claude after the drawer it opened closes: ${await page.evaluate(() => document.activeElement.id || document.activeElement.tagName)}`);
+		ok(!(await vis('chat')) && !(await vis('drawer')), `[chat/${w}] nothing should be left open`);
+		ok(await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), `[chat/${w}] horizontal overflow`);
+		ok(!errs.length, `[chat/${w}] page errors: ${errs.join('; ')}`);
+		await ctx.close();
+	}
 	// 6b. "I am" + Mine, on a board with 2 human owners (the example board has one: the setting is hidden there)
 	await mkdir(join(root, 'zteam/tickets'), { recursive: true });
 	await writeFile(join(root, 'zteam/tickets/unblockd.json'), JSON.stringify({ id: 'zteam', title: 'Team board', owners: [{ name: 'Dana', kind: 'human' }, { name: 'Omri', kind: 'human' }, { name: 'Claude', kind: 'agent' }], default_owner: 'Dana', review: true }));

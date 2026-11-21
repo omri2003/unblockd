@@ -87,7 +87,8 @@ Check AGENTS.md, UI-REFERENCE.md and the `?` sheet first. Already built: Board, 
 
 ### 4.4 Layers and Esc
 - The Needs you panel and the drawer share `#scrim`. Opening one closes the other. Whoever closes second must not leave the scrim up or hide it from the other.
-- Esc closes the top-most layer in this order: hint (`p`), command palette, `?` sheet, menus, panel, drawer.
+- Chat, drawer and Needs you = one right-hand panel at a time: opening one closes the others (UI-58).
+- Esc closes the top-most layer in this order: hint (`p`), command palette, `?` sheet, menus, panel, drawer, chat.
 - Closing the drawer rewrites the URL. Keep `location.search` (`?board=`).
 
 ### 4.5 Basic accessibility [GENERAL unless noted]

@@ -217,7 +217,7 @@ Revisit SQLite only for the **runtime** state (claims, activity), never for tick
 - Closing drawer rewrites URL: keep `location.search` (`?board=`) when clearing hash.
 - `compose.yaml` must pass `.env` values into container explicitly (`environment:`); `.env` alone only feeds `${...}` interpolation.
 - An ETag (or any "last seen" token) must be stored WITH data it describes. `loadNeeds` once set `nEtag` before parsing body; when newer request superseded it, data was dropped but tag stayed, every later poll got 304, and panel never showed answer (flaky smoke: ~1 run in 3). Race-test anything with overlapping fetches by firing two refreshes at once.
-- The Needs panel and drawer share `#scrim`: whoever closes second must not leave it up or hide it from other (`closeNeeds(true)` = drawer is taking over; `openNeeds` closes drawer first, then shows scrim). `Esc` order in keydown handler: hint (`p`), command palette, `?` sheet, menus, panel, drawer.
+- The Needs panel and drawer share `#scrim`: whoever closes second must not leave it up or hide it from other (`closeNeeds(true)` = drawer is taking over; `openNeeds` closes drawer first, then shows scrim). `Esc` order in keydown handler: hint (`p`), command palette, `?` sheet, menus, panel, drawer, chat. Chat is third right-hand panel: opening any of three closes others (UI-58).
 - `<input value>` drops newlines: multi-line draft collapsed back to one-line input shows them stripped, so `submitNeeds` sends `DRAFTS[key]`, not field's value.
 - **"Waiting on <first word>" bug**: question's `waiting_on` is free text (question), never person. Cards and drawer show `Question from <asked_by>` for agent question and `Parked: <waiting_on>` for hand-set one; never split `waiting_on`.
 
