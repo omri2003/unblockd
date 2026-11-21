@@ -66,7 +66,7 @@ class Syncer:
 					new[t["id"]] = old[t["id"]]
 				continue
 			if e["merged"]:
-				store.update(t["id"], {"status": "done"})
+				store.update(t["id"], {"status": "done"}, by="github")  # the done event names who moved it (CORE-68)
 				store.add_note(t["id"], "github", f"PR #{e['number']} merged — moved to done")
 				continue  # done now: no cache entry
 			if e["state"] == "closed" and not e["noted"]:

@@ -81,6 +81,9 @@ REQUESTS_MAX = 500  # request_ids remembered per board (runtime doc `requests`),
 REQUEST_RE = re.compile(r"^[\w.:-]{1,100}$")
 TRANSITIONS = ("claim", "release", "complete", "question", "expired", "dropped", "rejected", "done", "answered", "deleted", "split")
 SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result)
+# CORE-68: a ticket done on or after this day (done_at, UTC) with no result summary reads `unreported` (UI: Finished without a summary);
+# the day it shipped, so the ~100 older hand-closed tickets never flood the board
+UNREPORTED_SINCE = "2026-11-21"
 ACTIVITY_MAX = 5_000_000  # bytes; past this the activity log rotates (files: activity.jsonl -> activity.1.jsonl, one old file kept)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 BRANCH_DAYS = 14  # a linked branch with no commit for this long is still listed, but no longer reads as work in progress
@@ -223,7 +226,7 @@ MCP_TOOLS = ("accept_ticket", "add_note", "agents_now", "answer", "approve_ticke
              "arch_remove_edge", "arch_set_edge", "arch_update_component", "architecture_map", "ask_human", "attach_file", "board_info",
              "claim_next", "claim_ticket", "complete", "create_board", "create_ticket", "create_tickets", "delete_ticket", "detach_file", "get_context",
              "get_ticket", "heartbeat", "knowledge_graph", "list_boards", "list_tickets", "next_ready", "read_doc", "reject", "release",
-             "roadmap", "split_ticket", "update_ticket", "work_plan")
+             "report_ticket", "roadmap", "split_ticket", "update_ticket", "work_plan")
 BATCH_MAX = 50  # tickets per create_many
 SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
@@ -757,7 +760,8 @@ class Store:
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
 			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []), "branches": br,
-			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None})
+			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None,
+			            **({"unreported": True} if _unreported(t) else {})})
 		return out
 
 	def _branch_links(self) -> dict[str, list[dict]]:
@@ -944,6 +948,7 @@ class Store:
 				raise TicketError(self._schema_refusal(problems))
 			t = self._create(data, tid, pre, proposed_by=agent if strict and self.config["agent_tickets"] == "propose" else "", agent=agent)
 			self._record_request(agent, request_id, "create", t["id"])
+			problems = problems + ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else [])  # a new ticket never has a result
 			return {**t, "warnings": problems} if problems else t
 		got = self._locked(run)
 		return self._already(got) if "already" in got else got
@@ -1188,12 +1193,14 @@ class Store:
 		t["proposed_by"] = proposed_by
 		return t
 
-	def update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
+	def update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None, by: str | None = None) -> dict:
 		"""Change fields. `agent` = the worker making the change (MCP/CLI agents); None = a human (web, CLI).
-		`expected_rev` = the rev the caller last saw: if the ticket was written since, raise Conflict instead of overwriting."""
-		return self._with_lease(self._locked(lambda: self._update(tid, changes, agent, expected_rev)), agent)
+		`expected_rev` = the rev the caller last saw: if the ticket was written since, raise Conflict instead of overwriting.
+		`by` = who a human change is by (only recorded: the `done` event names agent, else by, else "human"). A move to done with no
+		result comes back with `warnings` naming complete() (CORE-68: not refused, so a solo board keeps working)."""
+		return self._with_lease(self._locked(lambda: self._update(tid, changes, agent, expected_rev, by)), agent)
 
-	def _update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None) -> dict:
+	def _update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None, by: str | None = None) -> dict:
 		t = self._fresh(tid)
 		if expected_rev is not None and expected_rev != t["rev"]:
 			raise Conflict(f"{tid} changed since you loaded it (rev {t['rev']}, you had {expected_rev}): reload it and apply your change again")
@@ -1237,7 +1244,9 @@ class Store:
 		t["updated"] = date.today().isoformat()
 		self._write(t)
 		if t["status"] == "done" and was != "done":  # by hand; an agent's complete() logs its own event
-			self._log("done", tid, None)
+			self._log("done", tid, agent or (str(by).strip() if by and str(by).strip() else "human"))  # who moved it (CORE-68)
+			if not (t.get("result") or {}).get("summary"):
+				return {**self.get(tid), "warnings": [_NO_REPORT.format(id=tid)]}
 		return self.get(tid)
 
 	def _holder_only(self, tid: str, agent: str | None) -> None:
@@ -1964,15 +1973,7 @@ class Store:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
 		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`."""
-		if not (isinstance(summary, str) and summary.strip()):
-			raise TicketError("complete needs a summary: cause -> fix -> tests, and what was NOT verified")
-		for name, v in (("files", files), ("refs", refs)):
-			if v is not None and not _short_list(v):
-				raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {'[\"unblockd/store.py\"]' if name == 'files' else '[\"https://github.com/o/r/pull/7\"]'}")
-		if len(summary.strip()) > SUMMARY_MAX:
-			raise TicketError(f"summary is {len(summary.strip())} chars, the limit is {SUMMARY_MAX}: keep cause -> fix -> tests, move detail into an attached file")
-		if handoff is not None and not (isinstance(handoff, str) and len(handoff) <= 2000):
-			raise TicketError("handoff must be text up to 2000 chars: what the tickets that wait on this one need to know")
+		_check_result_input("complete", summary, files, refs, handoff)
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
@@ -2003,6 +2004,30 @@ class Store:
 			return self._already(retaken)
 		return self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
 
+	def report(self, tid: str, by: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None) -> dict:
+		"""CORE-68: a person writes the summary a done ticket was closed without (moved to done by hand, not finished with complete()).
+		Sets `result` {summary, files, refs, handoff "", by, at}, adds a `complete` note, logs `reported`. Refused unless the ticket is
+		done, when it already has a summary, and for a worker (a worker finishes its own tickets with complete)."""
+		if not (isinstance(by, str) and by.strip()):
+			raise TicketError("report needs `by`: who is writing the summary")
+		self._human_only("report", by)
+		by = by.strip()
+		_check_result_input("report", summary, files, refs, None)
+		def run():
+			raw = self._fresh(tid)
+			if raw.get("status") != "done":
+				raise TicketError(f"{tid} is {raw.get('status')}, not done: open work is finished with complete(), which records the summary")
+			if (raw.get("result") or {}).get("summary"):
+				raise TicketError(f"{tid} already has a summary by {raw['result'].get('by')}: add a note instead")
+			_append_note(raw, by, summary.strip(), kind="complete", status="done")
+			raw["result"] = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
+			                 "handoff": "", "by": by, "at": _now()}
+			raw["updated"] = date.today().isoformat()
+			self._write(raw)
+			self._log("reported", tid, by, summary.strip())
+		self._locked(run)
+		return self.get(tid)
+
 	def activity(self, tid: str | None = None, limit: int = 50, since: str | None = None) -> list[dict]:
 		"""Newest first. `since` (ISO timestamp, naive = UTC) keeps only events at or after it."""
 		floor = None
@@ -2031,6 +2056,28 @@ class Store:
 		            "note": c.get("note", ""), "principal": c.get("principal"), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
 		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
+
+
+_NO_REPORT = ("finish with complete(): {id} is done with no summary of what changed (cause -> fix -> tests, files, PR); it shows as "
+              "Finished without a summary until someone adds one (report {id}: REST POST tickets/{id}/report, CLI report)")
+
+
+def _unreported(t: dict) -> bool:
+	"""Done after UNREPORTED_SINCE with no result summary (moved to done by hand, not finished with complete())."""
+	return t.get("status") == "done" and not (t.get("result") or {}).get("summary") and str(t.get("done_at") or "")[:10] >= UNREPORTED_SINCE
+
+
+def _check_result_input(op: str, summary, files, refs, handoff) -> None:
+	"""What complete() and report() take, checked before anything changes."""
+	if not (isinstance(summary, str) and summary.strip()):
+		raise TicketError(f"{op} needs a summary: cause -> fix -> tests, and what was NOT verified")
+	for name, v in (("files", files), ("refs", refs)):
+		if v is not None and not _short_list(v):
+			raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {'[\"unblockd/store.py\"]' if name == 'files' else '[\"https://github.com/o/r/pull/7\"]'}")
+	if len(summary.strip()) > SUMMARY_MAX:
+		raise TicketError(f"summary is {len(summary.strip())} chars, the limit is {SUMMARY_MAX}: keep cause -> fix -> tests, move detail into an attached file")
+	if handoff is not None and not (isinstance(handoff, str) and len(handoff) <= 2000):
+		raise TicketError("handoff must be text up to 2000 chars: what the tickets that wait on this one need to know")
 
 
 def _append_note(raw: dict, by: str, text: str, strict: bool = True, kind: str = "note", **extra) -> bool:

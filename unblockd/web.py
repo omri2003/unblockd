@@ -18,7 +18,8 @@ POST   tickets                           {"prefix": "BUG", ...fields}  or  {"id"
 POST   tickets/batch                     {"tickets": [{prefix|id, ...fields}, ...], "agent"?}  up to 50, all or nothing; blocked_by / parent may say "#N" (the Nth item) -> {"tickets", "ids": {"#1": id}, "warnings"?}
 POST   tickets/<id>/accept               {"by"?}  accept an agent's proposal (400 unless proposed_by is set)
 POST   tickets/<id>/approve              {"by"?}  review -> done, recording result.approved_by / approved_at (400 unless status is review; not the completer, not a worker)
-PATCH  tickets/<id>                      {...fields to change}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it
+PATCH  tickets/<id>                      {...fields to change, "by"?}; If-Match: <rev> (optional) = 409 if the ticket was written since you read it; to done with no result = `warnings` (finish with complete)
+POST   tickets/<id>/report               {"by"?, "summary", "files"?, "refs"?}  a person adds the summary a done ticket was closed without (400 unless done with no summary)
 DELETE tickets/<id>                      ?agent= (holder rule), ?reason= (a human rejecting a proposal; logged)
 GET    meta                              statuses, priorities, fields, config (unblockd.json)
 GET    agents                            who is working what right now + recent activity
@@ -348,6 +349,9 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "dismiss":
 				b = self._body()
 				return self._send(200, store.dismiss_notes(rest[1], str(b.get("by") or "human"), b.get("notes"), undo=bool(b.get("undo"))))
+			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "report":
+				b = self._body()
+				return self._send(200, store.report(rest[1], str(b.get("by") or "human"), b.get("summary"), files=b.get("files"), refs=b.get("refs")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
@@ -369,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
 				m = (self.headers.get("If-Match") or "").strip().strip('"')  # the rev the client last saw; none = last write wins, as before
 				if m and not m.isdigit():
 					raise st.TicketError("If-Match must be the ticket's rev (a number)")
-				return self._send(200, store.update(tid, b, agent=b.pop("agent", None), expected_rev=int(m) if m else None))  # agent: a remote worker's name (cli.Remote)
+				return self._send(200, store.update(tid, b, agent=b.pop("agent", None), expected_rev=int(m) if m else None, by=b.pop("by", None)))  # agent: a remote worker's name (cli.Remote); by: who (logged on done)
 			if method == "DELETE" and tid:
 				return self._send(200, store.delete(tid, agent=q.get("agent"), reason=q.get("reason", "")))
 			return self._send(405, {"error": "method not allowed"})

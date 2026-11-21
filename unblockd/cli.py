@@ -20,6 +20,7 @@
     python -m unblockd.cli create-many --file plan.json|- [--agent A]   # a JSON array, all or nothing; blocked_by / parent may say "#N" = the Nth item
     python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
     python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
+    python -m unblockd.cli report ID "summary" [--by NAME] [--file PATH]... [--ref URL]...   # a person adds the summary a done ticket was closed without
     python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
@@ -100,7 +101,8 @@ class Remote:
 	def create_many(self, items, agent=None): return self._call("POST", "/tickets/batch", {"tickets": items, **({"agent": agent} if agent else {})})
 	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
 	def approve(self, tid, by): return self._call("POST", f"/tickets/{tid}/approve", {"by": by})
-	def update(self, tid, changes, agent=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {})})
+	def update(self, tid, changes, agent=None, by=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
+	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
 	def claim(self, agent, tid=None, profile=None, note="", principal=None):
@@ -173,6 +175,13 @@ def main(argv: list[str] | None = None) -> int:
 	up.add_argument("--skill", action="append", help="set the ticket's skills to these registry names (repeatable)")
 	up.add_argument("--mcp", action="append", help="set the ticket's MCP servers to these registry names (repeatable)")
 	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
+	up.add_argument("--by", help="who a human change is by (recorded when it moves the ticket to done)")
+	rp = sub.add_parser("report", help="a person adds the summary a done ticket was closed without (moved to done by hand, not with complete)")
+	rp.add_argument("id")
+	rp.add_argument("summary")
+	rp.add_argument("--by", default="human")
+	rp.add_argument("--file", action="append", help="a path that changed (repeatable)")
+	rp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
@@ -333,7 +342,9 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
-			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent)
+			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent, by=a.by)
+		elif a.cmd == "report":
+			out = s.report(a.id, a.by, a.summary, files=a.file, refs=a.ref)
 		else:
 			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
 	except (st.TicketError, json.JSONDecodeError) as e:
