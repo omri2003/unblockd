@@ -511,7 +511,13 @@ python -m unblockd.cli --dir <repo>/tickets roadmap                          # m
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --milestone v0.2   # - clears it
 python -m unblockd.cli --dir <repo>/tickets migrate-milestones REL-1=v0.1 REL-2=v0.2   # version epics -> milestones
 python -m unblockd.cli health                                               # remote: GET /healthz; local: the folder; exit 1 when down
+python -m unblockd.cli --dir <repo>/tickets update BUG-10 --rev 3 --json '{"title":"..."}'   # refused (conflict) if written since rev 3
 ```
+
+**Errors a program can parse.** Every reply is JSON. Errors too, whenever stdout is not a terminal (an agent or a
+script reading it) or with `--json` before the command (`cli --json claim ...`): ONE object on stdout,
+`{"error": "...", "code": "refused|not_found|conflict|down|usage"}`, exit 1 (`down` = the server did not answer,
+`usage` = a bad command line). At a terminal a person still gets `error: ...` on stderr (argparse's usage errors: exit 2).
 
 **Agents without MCP, and sub-agents** (a supported interface, not a workaround): MCP tools are configured per client, so a
 sub-agent or a cloud session often has none. Set `UNBLOCKD_URL` (+ `UNBLOCKD_TOKEN`, `UNBLOCKD_BOARD`) and every CLI command

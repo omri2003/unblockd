@@ -1,6 +1,7 @@
 """Git worktrees: every worktree of a repo shares the main checkout's lock and claims; the CLI never invents an empty board."""
 import contextlib
 import io
+import json
 import shutil
 import subprocess
 import tempfile
@@ -54,10 +55,10 @@ class WorktreeTest(unittest.TestCase):
 		self.assertEqual(Store(sub / "tickets").rt, sub / "tickets" / ".unblockd")
 
 	def test_cli_refuses_a_missing_board(self):
-		err = io.StringIO()
-		with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+		out = io.StringIO()
+		with contextlib.redirect_stdout(out):
 			self.assertEqual(cli.main(["--dir", str(self.root / "nope"), "list"]), 1)
-		self.assertIn("no board at", err.getvalue())
+		self.assertIn("no board at", json.loads(out.getvalue())["error"])
 		self.assertFalse((self.root / "nope").exists())
 
 	@unittest.skipUnless(shutil.which("git"), "needs git")

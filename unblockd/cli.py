@@ -21,7 +21,7 @@
     python -m unblockd.cli accept ID [--by NAME]   # a human accepts an agent's proposal
     python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
     python -m unblockd.cli report ID "summary" [--by NAME] [--file PATH]... [--ref URL]...   # a person adds the summary a done ticket was closed without
-    python -m unblockd.cli update ID [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
+    python -m unblockd.cli update ID [--rev N] [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
@@ -29,7 +29,9 @@
 --dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
 command goes to that server's REST API instead of a local folder, so agents on other machines share one board and one lock. Settings come from
 <dir>/unblockd.json (see README); extra legacy numbering files from $UNBLOCKD_LEGACY.
-Prints JSON. Exit code 1 + message on bad input.
+Prints JSON. Exit code 1 + message on bad input. With --json before the command (`cli --json claim ...`), or whenever stdout is
+not a terminal (an agent or a script reading it), an error is ONE JSON object on stdout too:
+{"error": "...", "code": "refused|not_found|conflict|down|usage"}, exit 1. In a terminal: `error: ...` on stderr, as before.
 """
 from __future__ import annotations
 
@@ -48,6 +50,47 @@ from . import knowledge as kn
 from . import store as st
 
 
+class Down(st.TicketError):
+	"""The server did not answer (Remote): code "down" in --json mode."""
+
+
+class _Usage(st.TicketError):
+	"""A command line argparse refused: code "usage" in --json mode."""
+
+
+class _Parser(argparse.ArgumentParser):
+	JSON = False  # set by main before parsing: argparse's own errors become a JSON object too (API-24)
+
+	def error(self, message):
+		if not _Parser.JSON:
+			super().error(message)
+		raise _Usage(f"{message} (usage: {self.format_usage().strip().removeprefix('usage: ')})")
+
+
+def _fail(e: Exception, as_json: bool) -> int:
+	"""API-24: every error the same shape for a reader that parses stdout; a person in a terminal keeps the plain line."""
+	if as_json:
+		code = ("not_found" if isinstance(e, st.NotFound) else "conflict" if isinstance(e, st.Conflict) else
+		        "down" if isinstance(e, Down) else "usage" if isinstance(e, _Usage) else "refused")
+		print(json.dumps({"error": str(e), "code": code}, ensure_ascii=False))
+	else:
+		print(f"error: {e}", file=sys.stderr)
+	return 1
+
+
+def _json_mode(argv: list[str]) -> bool:
+	"""--json among the options before the command (not create's / update's own --json data), or stdout is not a terminal."""
+	i = 0
+	while i < len(argv) and argv[i].startswith("-"):
+		if argv[i] == "--json":
+			return True
+		i += 2 if argv[i] == "--dir" else 1
+	try:
+		return not sys.stdout.isatty()
+	except (AttributeError, ValueError):
+		return True
+
+
 class Remote:
 	"""The Store calls this CLI makes, sent to a running unblockd.web instead (UNBLOCKD_URL)."""
 	def __init__(self, url: str, token: str | None = None, board: str | None = None):
@@ -55,9 +98,9 @@ class Remote:
 		self.base = self.origin + "/api" + (f"/b/{urllib.parse.quote(board)}" if board else "")
 		self.token = token
 
-	def down(self, why) -> st.TicketError:
+	def down(self, why) -> Down:
 		"""The one "server down" message: say it plainly and what to do, so an agent stops and tells its human instead of retrying blind."""
-		return st.TicketError(f"unblockd server down: nothing answers at {self.origin} ({why}). The host may be asleep or the server stopped: "
+		return Down(f"unblockd server down: nothing answers at {self.origin} ({why}). The host may be asleep or the server stopped: "
 		                      "ask your human to start it (docker compose up -d). Nothing you sent was saved; run `health` until it says ok, then retry")
 
 	def health(self) -> dict:
@@ -72,11 +115,11 @@ class Remote:
 		except (TimeoutError, OSError) as e:
 			raise self.down(e)
 
-	def _call(self, method: str, path: str, body=None, **q):
+	def _call(self, method: str, path: str, body=None, headers=None, **q):
 		q = {k: v for k, v in q.items() if v is not None}
 		req = urllib.request.Request(self.base + path + ("?" + urllib.parse.urlencode(q) if q else ""), method=method,
 		                             data=None if body is None else json.dumps(body).encode(),
-		                             headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.token}"} if self.token else {})})
+		                             headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.token}"} if self.token else {}), **(headers or {})})
 		try:
 			with urllib.request.urlopen(req, timeout=30) as r:
 				return json.loads(r.read())
@@ -85,7 +128,7 @@ class Remote:
 				msg = json.loads(e.read()).get("error")
 			except (ValueError, AttributeError):
 				msg = None
-			raise st.TicketError(msg or f"{self.base}: HTTP {e.code}")
+			raise {404: st.NotFound, 409: st.Conflict}.get(e.code, st.TicketError)(msg or f"{self.base}: HTTP {e.code}")
 		except urllib.error.URLError as e:
 			raise self.down(e.reason)
 		except (TimeoutError, ConnectionError) as e:  # the server went away mid-reply, or hangs
@@ -101,7 +144,9 @@ class Remote:
 	def create_many(self, items, agent=None): return self._call("POST", "/tickets/batch", {"tickets": items, **({"agent": agent} if agent else {})})
 	def accept(self, tid, by): return self._call("POST", f"/tickets/{tid}/accept", {"by": by})
 	def approve(self, tid, by): return self._call("POST", f"/tickets/{tid}/approve", {"by": by})
-	def update(self, tid, changes, agent=None, by=None): return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
+	def update(self, tid, changes, agent=None, by=None, expected_rev=None):
+		return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {}), **({"by": by} if by else {})},
+		                  headers={"If-Match": str(expected_rev)} if expected_rev is not None else None)
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
@@ -134,8 +179,11 @@ def _utf8_out() -> None:
 
 def main(argv: list[str] | None = None) -> int:
 	_utf8_out()
-	ap = argparse.ArgumentParser(prog="unblockd.cli")
+	argv = sys.argv[1:] if argv is None else list(argv)
+	as_json = _Parser.JSON = _json_mode(argv)
+	ap = _Parser(prog="unblockd.cli")
 	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
+	ap.add_argument("--json", dest="json_out", action="store_true", help="errors as one JSON object on stdout (default when stdout is not a terminal)")
 	sub = ap.add_subparsers(dest="cmd", required=True)
 	ls = sub.add_parser("list")
 	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
@@ -176,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
 	up.add_argument("--mcp", action="append", help="set the ticket's MCP servers to these registry names (repeatable)")
 	up.add_argument("--agent", help="the worker making the change: it can't change, split or delete a ticket another agent holds")
 	up.add_argument("--by", help="who a human change is by (recorded when it moves the ticket to done)")
+	up.add_argument("--rev", type=int, help="the rev you last read: refused (code conflict) if the ticket was written since")
 	rp = sub.add_parser("report", help="a person adds the summary a done ticket was closed without (moved to done by hand, not with complete)")
 	rp.add_argument("id")
 	rp.add_argument("summary")
@@ -249,14 +298,16 @@ def main(argv: list[str] | None = None) -> int:
 	mg.add_argument("--from", dest="src", required=True, help="where the board is now (a folder or a database URL + #board)")
 	mg.add_argument("--to", dest="dst", required=True, help="where it goes; must be empty unless --force")
 	mg.add_argument("--force", action="store_true", help="REPLACE whatever board is at --to")
-	a = ap.parse_args(argv)
+	try:
+		a = ap.parse_args(argv)
+	except _Usage as e:
+		return _fail(e, True)
 
 	if a.cmd == "migrate":  # needs no board of its own (--dir is not used)
 		try:
 			out = connectors.migrate(a.src, a.dst, force=a.force)
 		except st.TicketError as e:
-			print(f"error: {e}", file=sys.stderr)
-			return 1
+			return _fail(e, as_json)
 		print(json.dumps(out, indent=2, ensure_ascii=False))
 		return 0
 	try:
@@ -342,14 +393,14 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
-			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent, by=a.by)
+			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent, by=a.by,
+			               **({"expected_rev": a.rev} if a.rev is not None else {}))
 		elif a.cmd == "report":
 			out = s.report(a.id, a.by, a.summary, files=a.file, refs=a.ref)
 		else:
 			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
-	except (st.TicketError, json.JSONDecodeError) as e:
-		print(f"error: {e}", file=sys.stderr)
-		return 1
+	except (st.TicketError, json.JSONDecodeError, OSError) as e:  # OSError: a --file / attach path that can't be read
+		return _fail(e, as_json)
 	print(json.dumps(out, indent=2, ensure_ascii=False))
 	return 0
 

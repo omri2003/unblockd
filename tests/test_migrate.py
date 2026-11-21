@@ -134,10 +134,10 @@ class MigrateTest(unittest.TestCase):
 		with contextlib.redirect_stdout(out):
 			self.assertEqual(cli.main(["migrate", "--from", str(self.src), "--to", db]), 0)
 		self.assertEqual(json.loads(out.getvalue())["tickets"], 4)
-		err = io.StringIO()
-		with contextlib.redirect_stderr(err):
+		out = io.StringIO()
+		with contextlib.redirect_stdout(out):
 			self.assertEqual(cli.main(["migrate", "--from", str(self.src), "--to", db]), 1)
-		self.assertIn("--force", err.getvalue())
+		self.assertIn("--force", json.loads(out.getvalue())["error"])
 
 	def test_locations_hide_the_password(self):
 		self.assertEqual(connectors.describe("postgres://u:s3cret@h/db#b"), "postgres://u:***@h/db#b")

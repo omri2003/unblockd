@@ -368,6 +368,40 @@ class CliTest(unittest.TestCase):
 			with contextlib.redirect_stderr(io.StringIO()):
 				self.assertEqual(call("update", "BUG-1", "--json", '{"status": "maybe"}')[0], 1)
 
+	def test_errors_are_json_when_read_by_a_program(self):
+		"""API-24: a worker parsing stdout got plain text on stderr for a refused claim. Not a terminal (or --json): one JSON object."""
+		import io, contextlib, json
+		from unblockd import cli
+
+		class Tty(io.StringIO):
+			def isatty(self):
+				return True
+		with tempfile.TemporaryDirectory() as d:
+			def call(*a, out=None):
+				out, err = out or io.StringIO(), io.StringIO()
+				with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+					code = cli.main(["--dir", d, *a])
+				return code, out.getvalue(), err.getvalue()
+			self.assertEqual(call("create", "--prefix", "BUG", "--title", "a")[0], 0)
+			self.assertEqual(call("claim", "--id", "BUG-1", "--agent", "w-1")[0], 0)
+			for args, code in ((("claim", "--id", "BUG-1", "--agent", "w-2"), "refused"), (("get", "NOPE-1"), "not_found"),
+			                   (("update", "BUG-1", "--rev", "99", "--json", '{"title": "b"}'), "conflict"), (("claim",), "usage"),
+			                   (("update", "BUG-1", "--json", "{not json"), "refused")):
+				rc, out, err = call(*args)
+				got = json.loads(out)  # the whole of stdout is one object
+				self.assertEqual((rc, sorted(got), got["code"], err), (1, ["code", "error"], code, ""), args)
+			self.assertIn("claimed by w-1", call("claim", "--id", "BUG-1", "--agent", "w-2")[1])
+			rc, out, err = call("get", "NOPE-1", out=Tty())  # a person at a terminal: unchanged
+			self.assertEqual((rc, out, err.strip()), (1, "", "error: no ticket NOPE-1"))
+			out, err = Tty(), io.StringIO()
+			with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+				rc = cli.main(["--json", "--dir", d, "get", "NOPE-1"])  # --json asks for it at a terminal too
+			self.assertEqual((rc, json.loads(out.getvalue())["code"], err.getvalue()), (1, "not_found", ""))
+			with contextlib.redirect_stdout(Tty()), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as e:
+				cli.main(["--dir", d, "claim"])  # argparse's own message and exit 2 at a terminal
+			self.assertEqual(e.exception.code, 2)
+			self.assertEqual(json.loads(call("update", "BUG-1", "--rev", "2", "--json", '{"title": "b"}')[1])["title"], "b")  # the right rev passes
+
 	def test_piped_output_is_utf8(self):
 		# Windows pipes default to cp1252: printing a ticket with "→" used to crash AFTER the command ran (a claim was taken, the output lost)
 		import os, subprocess, sys

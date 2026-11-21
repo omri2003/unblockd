@@ -72,7 +72,7 @@ class AgentsMd(unittest.TestCase):
 		self.assertEqual(added.strip().replace("\r\n", "\n") + "\n", bd.agents_md("pay", str(self.dir)))
 		code, _, err = self.run_cli("agents-md", "--write", str(f))  # second time: refused, file unchanged
 		self.assertEqual(code, 1)
-		self.assertIn("already has the unblockd block", err)
+		self.assertIn("already has the unblockd block", json.loads(_)["error"])  # stdout is not a terminal: the error is JSON there
 		self.assertEqual(f.read_bytes(), after)
 
 	def test_write_creates_a_missing_file(self):
