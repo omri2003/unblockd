@@ -12,9 +12,11 @@ Only text files are read; paths can't leave the project folder.
 from __future__ import annotations
 
 import bisect
+import copy
 import os
 import re
 import string
+import time
 from pathlib import Path
 
 from .store import TicketError, _overlap
@@ -573,6 +575,13 @@ def components(store) -> dict:
 		return out
 	base = root(store)
 	try:
+		d = _inside(base, folder)
+	except TicketError as e:
+		return out | {"error": f"architecture: {e}"}
+	sig = (folder, str(d), _stamps(d))
+	if (hit := _COMPS.get(sig)) is not None:
+		return copy.deepcopy(hit)
+	try:
 		d, notes, resolver = _notes(store)
 	except TicketError as e:
 		return out | {"error": f"architecture: {e}"}
@@ -588,7 +597,23 @@ def components(store) -> dict:
 		for _, text, targets, broken in sc["links"]:
 			out["broken_links"] += [{"from": key, "target": raw} for raw in broken]
 			out["edges"] += [{"from": key, "to": to, "text": text.strip()} for to in targets]
+	if sig[2] == _stamps(d):  # nothing changed while we read: keep it (another process may be writing a note)
+		if len(_COMPS) > 50:
+			_COMPS.clear()
+		_COMPS[sig] = copy.deepcopy(out)
 	return out
+
+
+_COMPS: dict[tuple, dict] = {}  # (folder, note stamps) -> components() result: notes are re-parsed only when one changed (CORE-59)
+
+
+def _stamps(d: Path) -> tuple | None:
+	"""(name, mtime_ns, size) of every *.md in the architecture folder: one scandir, no stat per file on Windows. None = no folder."""
+	try:
+		with os.scandir(d) as it:
+			return tuple(sorted((e.name, (st := e.stat()).st_mtime_ns, st.st_size) for e in it if e.name.lower().endswith(".md") and e.is_file()))
+	except (FileNotFoundError, NotADirectoryError):
+		return None
 
 
 def ticket_components(t: dict, arch: dict) -> list[str]:
@@ -602,12 +627,31 @@ def ticket_components(t: dict, arch: dict) -> list[str]:
 	return keys
 
 
+DEAD_TTL = 60.0  # seconds a dead_paths answer is reused (CORE-59: it globbed the project on every GET architecture; a warning chip can lag a minute)
+_HAS: dict[tuple[str, str], tuple[float, bool]] = {}  # (project root, glob) -> (when, matches a file)
+
+
 def _has_file(base: Path, glob: str) -> bool:
+	"""Does `glob` (a component's `paths` entry) match at least one file? Cached for DEAD_TTL; stops at the first file."""
+	key, now = (str(base), glob), time.monotonic()
+	hit = _HAS.get(key)
+	if hit and now - hit[0] < DEAD_TTL:
+		return hit[1]
+	if len(_HAS) > 5000:
+		_HAS.clear()
+	_HAS[key] = (now, ok := _match_file(base, glob))
+	return ok
+
+
+def _match_file(base: Path, glob: str) -> bool:
 	g = glob.strip().replace("\\", "/").lstrip("/")
 	try:
 		_inside(base, g.split("*")[0] or ".")
+		if not any(c in g for c in "*?["):  # a plain path: the file itself, or any file under that folder (what the two globs below answer)
+			p = base / g
+			return p.is_file() or (p.is_dir() and any(fs for _, _, fs in os.walk(p)))
 		return any(p.is_file() for pat in (g, g.rstrip("/") + "/**/*") for p in base.glob(pat))
-	except (TicketError, ValueError, NotImplementedError):
+	except (TicketError, ValueError, NotImplementedError, OSError):
 		return False
 
 
@@ -816,6 +860,8 @@ def _arch_write(store, by, note: str, fn) -> dict:
 			fn(*_notes(store))  # a folder outside the project is refused here
 		except OSError as e:
 			raise TicketError(f"cannot write the architecture notes: {e}")
+		_COMPS.clear()  # a write must show at once, even within one mtime tick
+		_HAS.clear()  # and its new paths are checked now, not in DEAD_TTL
 		store._log("arch", None, str(by or "human")[:40], note)
 		return architecture(store)
 	return store._locked(run)

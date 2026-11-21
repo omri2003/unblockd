@@ -195,6 +195,35 @@ class ArchTest(unittest.TestCase):
 		self.assertEqual(len(p["broken_links"]), 2)
 		self.assertNotIn(d["id"], v["ticket_map"])
 
+	def test_dead_paths_cached_for_the_window(self):  # CORE-59: a glob that starts or stops matching shows once DEAD_TTL has passed
+		(self.repo / "docs" / "arch" / "late.md").write_text("---\npaths: later/**, later.txt\n---\n# Late\nx\n", encoding="utf-8")
+		dead = lambda: [p["glob"] for p in kn.architecture(self.s)["problems"]["dead_paths"] if p["key"] == "late"]
+		old = kn.DEAD_TTL
+		self.addCleanup(setattr, kn, "DEAD_TTL", old)
+		self.assertEqual(dead(), ["later/**", "later.txt"])
+		(self.repo / "later" / "deep").mkdir(parents=True)
+		(self.repo / "later" / "deep" / "a.py").write_text("x", encoding="utf-8")
+		(self.repo / "later.txt").write_text("x", encoding="utf-8")
+		self.assertEqual(dead(), ["later/**", "later.txt"])  # inside the window: the cached answer
+		kn.DEAD_TTL = 0
+		self.assertEqual(dead(), [])  # window over: both match now
+		(self.repo / "later.txt").unlink()
+		self.assertEqual(dead(), ["later.txt"])  # and stops matching
+
+	def test_notes_reparsed_only_when_one_changes(self):  # CORE-59: components() is memoized by the notes' stamps
+		first = kn.components(self.s)
+		first["components"][0]["title"] = "mutated"  # callers get a copy, never the cached dict
+		self.assertNotEqual(kn.components(self.s)["components"][0]["title"], "mutated")
+		p = self.repo / "docs" / "arch" / "frontend.md"
+		p.write_text("# Web front\nThe browser app.\n", encoding="utf-8")
+		by = {c["key"]: c for c in kn.components(self.s)["components"]}
+		self.assertEqual(by["frontend"]["title"], "Web front")  # an edit outside unblockd shows on the next call
+		p.unlink()
+		self.assertNotIn("frontend", {c["key"] for c in kn.components(self.s)["components"]})
+		v = kn.add_component(self.s, "cache", "Cache", paths=["nowhere/**"])  # a write shows at once, its new path checked now
+		self.assertIn("cache", {c["key"] for c in v["components"]})
+		self.assertIn({"key": "cache", "glob": "nowhere/**"}, v["problems"]["dead_paths"])
+
 	def test_rest_endpoint(self):
 		from unblockd import web
 		web.BOARDS = Boards([self.tmp.name])
