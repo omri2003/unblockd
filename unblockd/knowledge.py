@@ -61,15 +61,37 @@ LIST_MAX = 3000  # repo_files cap
 
 def repo_files(store) -> dict:
 	"""{files: [project-relative paths], truncated}: what the ticket form suggests for `docs` / `touches`.
-	Never leaves the project root (symlinks are not followed or listed); skips dot-folders, node_modules and the tickets folder."""
+	Never leaves the project root (symlinks and junctions are not followed or listed); skips dot-folders, node_modules and the tickets folder.
+	One os.scandir per folder and DirEntry's own type bits, no stat or resolve() per entry (CORE-62: 2-4 s on a bind mount)."""
 	if root(store) is None:
 		return {"files": [], "truncated": False}
-	base, tdir, out = root(store), store.dir.resolve(), []
-	for d, dirs, names in os.walk(base):
-		dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS and (Path(d) / x).resolve() != tdir and not (Path(d) / x).is_symlink())
-		out += [(Path(d) / n).relative_to(base).as_posix() for n in sorted(names) if not (Path(d) / n).is_symlink()]
+	base, out = root(store), []
+	skip = os.path.normcase(str(store.dir.resolve()))
+
+	def walk(d: str, rel: str) -> bool:  # files of d, then each sub-folder, both sorted (the order os.walk gave); True = cap reached
+		try:
+			with os.scandir(d) as it:
+				entries = sorted(it, key=lambda e: e.name)
+		except OSError:
+			return False  # unreadable folder: left out, like os.walk did
+		dirs = []
+		for e in entries:
+			try:
+				if e.is_symlink() or getattr(e, "is_junction", bool)():
+					continue
+				if e.is_dir(follow_symlinks=False):
+					if not e.name.startswith(".") and e.name not in SKIP_DIRS and os.path.normcase(e.path) != skip:
+						dirs.append(e)
+					continue
+			except OSError:
+				continue
+			out.append(rel + e.name)
 		if len(out) >= LIST_MAX:
-			return {"files": out[:LIST_MAX], "truncated": True}
+			return True
+		return any(walk(e.path, rel + e.name + "/") for e in dirs)
+
+	if walk(str(base), ""):
+		return {"files": out[:LIST_MAX], "truncated": True}
 	return {"files": out, "truncated": False}
 
 
