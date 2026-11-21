@@ -3,11 +3,15 @@ FROM python:3.12-slim-bookworm
 # git: branch evidence (unblockd/branches.py) reads the projects' branches; without it that feature is off, nothing else changes.
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+# Dependencies first (a cached layer), then the package itself (pyproject.toml: the unblockd, unblockd-web, unblockd-mcp
+# commands). CMD stays `python -m` from /app, so compose's ./unblockd and ./static mounts win over the installed copy.
 COPY requirements.txt requirements-db.txt ./
 # The database drivers are in the image (owner decision CORE-27 #13: one image, every connector works)
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-db.txt
+COPY pyproject.toml README.md LICENSE ./
 COPY unblockd ./unblockd
 COPY static ./static
+RUN pip install --no-cache-dir --no-deps . && rm -rf build *.egg-info
 # OpenShift pattern: runs as 1001, or any random UID it assigns (always in group 0), so group perms = owner perms.
 # No /data/tickets here: TICKETS_DIR is the first board, so an empty one would become the default "Tickets" board.
 RUN mkdir -p /data /projects && chown -R 1001:0 /app /data /projects && chmod -R g=u /app /data /projects

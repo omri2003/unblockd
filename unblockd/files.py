@@ -32,6 +32,15 @@ NEW_MODE = 0o666 & ~_UMASK  # what open() gives a new file: 0644 under the usual
 # changed, so another process's write, a git pull or a hand edit is seen on the next call. Never written back.
 _RAW: dict[tuple, dict] = {}  # (tickets folder, parse) -> {stem: (stamp, parsed ticket)}: a raw reader never shares a parsed cache
 _LOG: dict[str, tuple] = {}  # activity file -> (inode, bytes parsed, [events oldest first])
+# Reuse of a fresh stat pass (CORE-60): one page load reads the same board ~4 times. A read OUTSIDE the lock may reuse the
+# folder's last stat pass while it is younger than SCAN_REUSE_S and this process wrote no ticket since; under the lock every
+# read stats again (claims and read-modify-writes must see other processes' writes). The reuse also needs the folder's own
+# mtime_ns unchanged (ONE stat): os.replace, which every store write and git checkout uses, changes it, so another process's
+# write is seen on the very next read; only an in-place editor save can wait out the window. 0 = always stat (CLI, MCP,
+# tests); web.main sets 1 s.
+SCAN_REUSE_S = 0.0
+_SCANNED: dict[tuple, tuple] = {}  # _RAW key -> (time.monotonic() when its last pass started, _WROTE count then, folder mtime_ns then)
+_WROTE: dict[str, int] = {}  # tickets folder -> ticket writes / locked steps by this process (any one drops the reuse)
 
 
 class FileBackend:
@@ -43,6 +52,7 @@ class FileBackend:
 		self.dir.mkdir(parents=True, exist_ok=True)
 		self.parse = parse
 		self.key = str(self.dir.resolve())
+		self._held = False  # inside lock(): every _scan stats (CORE-60)
 		# runtime state: <tickets>/.unblockd, except in a linked git worktree, where it is the MAIN checkout's copy of the same
 		# folder: every worktree then shares one lock and one claims.json (ticket files stay per branch)
 		wt = linked_worktree(self.dir.resolve())
@@ -84,6 +94,12 @@ class FileBackend:
 
 	def _scan(self) -> dict[str, tuple]:
 		ck = (self.key, self.parse)
+		gen, last = _WROTE.get(self.key, 0), _SCANNED.get(ck)
+		mt = os.stat(self.dir).st_mtime_ns if SCAN_REUSE_S else 0  # read before the pass: a write during it changes it
+		if (last and last[1] == gen and last[2] == mt and not self._held and time.monotonic() - last[0] < SCAN_REUSE_S
+				and ck in _RAW):
+			return _RAW[ck]  # fresh, nothing written by this process since, no file added / replaced / removed (outside the lock only)
+		started = time.monotonic()  # taken before the pass: a file changed during it is not older than the stamp says
 		old, new = _RAW.get(ck, {}), {}
 		with os.scandir(self.dir) as it:
 			for e in it:
@@ -94,7 +110,11 @@ class FileBackend:
 				hit = old.get(stem)
 				new[stem] = hit if hit and hit[0] == stamp else (stamp, self.read_file(Path(e.path)))
 		_RAW[ck] = dict(sorted(new.items()))
+		_SCANNED[ck] = (started, gen, mt)  # gen and mt read before the pass: a write during it drops the reuse
 		return _RAW[ck]
+
+	def _wrote(self) -> None:
+		_WROTE[self.key] = _WROTE.get(self.key, 0) + 1  # the next read stats again (CORE-60)
 
 	def version(self):
 		"""Changes whenever a ticket, a claim or an attachment changed (read after tickets()): the derived board is rebuilt only then."""
@@ -130,10 +150,12 @@ class FileBackend:
 			f.write("\n")
 		os.chmod(tmp, mode)  # mkstemp makes it 0600 and os.replace keeps that: a root server left tickets other users couldn't read (CORE-75)
 		os.replace(tmp, p)  # atomic: a reader never sees half a file
+		self._wrote()
 
 	def delete(self, tid: str) -> None:
 		"""The ticket and its attachments."""
 		self.path(tid).unlink()
+		self._wrote()
 		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)
 
 	def numbers(self, prefix: str) -> list[int]:
@@ -174,9 +196,12 @@ class FileBackend:
 				if time.monotonic() > deadline:
 					raise TicketError("another claim is in progress; try again")
 				time.sleep(0.05)
+		self._held = True
 		try:
 			yield
 		finally:
+			self._held = False
+			self._wrote()  # a locked step may have written or deleted a ticket: drop the reuse (CORE-60)
 			os.close(fd)
 			lock.unlink(missing_ok=True)
 

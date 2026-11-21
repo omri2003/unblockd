@@ -264,6 +264,45 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(code2, 200)
 		self.assertNotEqual(etag2, etag)
 
+	def test_an_unchanged_poll_does_no_json_dumps_or_md5(self):
+		"""CORE-65: the body + ETag of GET tickets and /needs are kept while their inputs are unchanged; any write re-serializes.
+		On a files board and a database board (the key is the connector's version, what _board() caches under)."""
+		from unblockd import sql, web
+		db = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+		self.addCleanup(db.cleanup)
+		self.addCleanup(sql.disconnect)
+		web.BOARDS = Boards([self.tmp.name], ["sqlite:///" + (Path(db.name) / "x.db").as_posix() + "#s"])
+
+		def get(path, etag=None):
+			c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)
+			c.request("GET", path, headers={"If-None-Match": etag} if etag else {})
+			r = c.getresponse()
+			return r.status, r.getheader("ETag"), r.read()
+		for b in ("a", "s"):
+			with self.subTest(board=b):
+				self.assertEqual(self.call("POST", f"/api/b/{b}/tickets", {"prefix": "BUG", "title": "x"})[0], 201)
+				self.to_review("BUG-1", b)  # a new ticket can't start in review (CORE-19)
+				n = {"dumps": 0, "md5": 0}
+				fake_json = mock.Mock(wraps=json, dumps=lambda *a, **k: n.__setitem__("dumps", n["dumps"] + 1) or json.dumps(*a, **k))
+				real_md5 = web.hashlib.md5
+				fake_hash = mock.Mock(md5=lambda *a: n.__setitem__("md5", n["md5"] + 1) or real_md5(*a))
+				_, et, body = get(f"/api/b/{b}/tickets")
+				_, ne, nbody = get("/api/needs")
+				with mock.patch.object(web, "json", fake_json), mock.patch.object(web, "hashlib", fake_hash):
+					self.assertEqual(get(f"/api/b/{b}/tickets", et), (304, et, b""))
+					self.assertEqual(get(f"/api/b/{b}/tickets"), (200, et, body))  # no tag: the same bytes, from the cache
+					self.assertEqual(get("/api/needs", ne), (304, ne, b""))
+					self.assertEqual(n, {"dumps": 0, "md5": 0})
+					self.assertEqual(json.loads(get(f"/api/b/{b}/tickets?status=review")[2])[0]["id"], "BUG-1")  # a filter is not cached
+					self.call("POST", f"/api/b/{b}/tickets/BUG-1/notes", {"text": "hi"})
+					code, et2, body2 = get(f"/api/b/{b}/tickets", et)
+					self.assertEqual((code, json.loads(body2)[0]["notes"][-1]["text"]), (200, "hi"))
+					self.assertNotEqual(et2, et)
+					code, ne2, _ = get("/api/needs", ne)
+					self.assertEqual(code, 200)
+					self.assertNotEqual(ne2, ne)
+					self.assertEqual(get("/api/needs", ne2)[0], 304)
+
 	def cli(self, *args, **env):
 		"""Run the CLI as a remote worker (UNBLOCKD_URL) -> (exit code, parsed stdout)."""
 		out, err = io.StringIO(), io.StringIO()
@@ -513,6 +552,36 @@ class ApiTest(unittest.TestCase):
 		code, err = self.call("GET", "/api/needs?board=nope")
 		self.assertEqual(code, 404)
 		self.assertIn("no board 'nope'", err["error"])
+
+	def test_needs_cache_is_per_requested_board(self):
+		"""CORE-65 + API-18: /needs?board=a and ?board=b are cached apart (one board's body never answers the other's request),
+		and an unchanged ?board=a poll does no json.dumps / md5."""
+		from unblockd import web
+		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "parry", "pillar": "COMBAT"})
+		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
+		self.to_review("CMB-1", "a")  # a new ticket can't start in review (CORE-19)
+		self.to_review("WEB-1", "b")
+
+		def get(path, etag=None):
+			c = http.client.HTTPConnection("127.0.0.1", self.srv.server_port)
+			c.request("GET", path, headers={"If-None-Match": etag} if etag else {})
+			r = c.getresponse()
+			return r.status, r.getheader("ETag"), r.read()
+		_, ea, a = get("/api/needs?board=a")
+		_, eb, b = get("/api/needs?board=b")
+		self.assertNotEqual((ea, a), (eb, b))
+		self.assertEqual(([g["id"] for g in json.loads(a)], [g["id"] for g in json.loads(b)]), (["a"], ["b"]))
+		self.assertEqual([g["id"] for g in json.loads(get("/api/needs")[2])], ["a", "b"])  # no param: every board, its own entry
+		n = {"dumps": 0, "md5": 0}
+		real_md5 = web.hashlib.md5
+		fake_json = mock.Mock(wraps=json, dumps=lambda *x, **k: n.__setitem__("dumps", n["dumps"] + 1) or json.dumps(*x, **k))
+		fake_hash = mock.Mock(md5=lambda *x: n.__setitem__("md5", n["md5"] + 1) or real_md5(*x))
+		with mock.patch.object(web, "json", fake_json), mock.patch.object(web, "hashlib", fake_hash):
+			self.assertEqual(get("/api/needs?board=a", ea), (304, ea, b""))
+			self.assertEqual(get("/api/needs?board=a"), (200, ea, a))  # the same bytes, from the cache
+			self.assertEqual(get("/api/needs?board=b"), (200, eb, b))  # b's own entry, not a's
+			self.assertEqual(n, {"dumps": 0, "md5": 0})
+		self.assertEqual(get("/api/needs?board=nope")[0], 404)  # unknown board: still 404 with the cache
 
 	def test_needs_stuck_after_three_failed_attempts(self):
 		self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": "flaky", "pillar": "COMBAT"})

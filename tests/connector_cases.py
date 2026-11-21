@@ -114,6 +114,22 @@ class ConnectorCases:
 		self.assertEqual(s.get(a["id"])["status"], "doing")
 		self.assertEqual(s.get(a["id"])["claim"]["agent"], "w-1")
 
+	def test_a_claim_reads_the_board_once(self):
+		# CORE-61: the claim step reads every ticket once through the connector, under the lock; the reply patches the write in
+		s = self.s
+		for title in ("one", "two"):
+			s.create({"title": title}, prefix="C")
+		calls, real = [], s.backend.tickets
+		with mock.patch.object(s.backend, "tickets", lambda: calls.append(1) or real()):
+			got = s.claim_next("w-1")
+			self.assertEqual((got["id"], got["status"], got["effective_status"], got["claim"]["agent"], len(calls)), ("C-1", "doing", "doing", "w-1", 1))
+			calls.clear()
+			s.claim_next("w-2")
+			calls.clear()
+			none = s.claim_next("w-3")
+			self.assertEqual((none["ticket"], none["reason"], none["counts"]["in_flight"], len(calls)), (None, "waiting", 2, 1))
+		self.assertEqual(self.store(self.boards[0]).get("C-1")["claim"]["agent"], "w-1")  # another Store reads the same
+
 	def test_an_attachment_that_is_not_utf8_is_inlined_and_named(self):
 		# CORE-48: bad bytes become U+FFFD with a warning; the bytes come from the connector, not a folder
 		s = self.s

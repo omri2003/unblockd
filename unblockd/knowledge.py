@@ -12,9 +12,12 @@ Only text files are read; paths can't leave the project folder.
 from __future__ import annotations
 
 import bisect
+import copy
 import os
 import re
+import stat
 import string
+import time
 from pathlib import Path
 
 from .store import TicketError, _overlap
@@ -59,15 +62,37 @@ LIST_MAX = 3000  # repo_files cap
 
 def repo_files(store) -> dict:
 	"""{files: [project-relative paths], truncated}: what the ticket form suggests for `docs` / `touches`.
-	Never leaves the project root (symlinks are not followed or listed); skips dot-folders, node_modules and the tickets folder."""
+	Never leaves the project root (symlinks and junctions are not followed or listed); skips dot-folders, node_modules and the tickets folder.
+	One os.scandir per folder and DirEntry's own type bits, no stat or resolve() per entry (CORE-62: 2-4 s on a bind mount)."""
 	if root(store) is None:
 		return {"files": [], "truncated": False}
-	base, tdir, out = root(store), store.dir.resolve(), []
-	for d, dirs, names in os.walk(base):
-		dirs[:] = sorted(x for x in dirs if not x.startswith(".") and x not in SKIP_DIRS and (Path(d) / x).resolve() != tdir and not (Path(d) / x).is_symlink())
-		out += [(Path(d) / n).relative_to(base).as_posix() for n in sorted(names) if not (Path(d) / n).is_symlink()]
+	base, out = root(store), []
+	skip = os.path.normcase(str(store.dir.resolve()))
+
+	def walk(d: str, rel: str) -> bool:  # files of d, then each sub-folder, both sorted (the order os.walk gave); True = cap reached
+		try:
+			with os.scandir(d) as it:
+				entries = sorted(it, key=lambda e: e.name)
+		except OSError:
+			return False  # unreadable folder: left out, like os.walk did
+		dirs = []
+		for e in entries:
+			try:
+				if e.is_symlink() or getattr(e, "is_junction", bool)():
+					continue
+				if e.is_dir(follow_symlinks=False):
+					if not e.name.startswith(".") and e.name not in SKIP_DIRS and os.path.normcase(e.path) != skip:
+						dirs.append(e)
+					continue
+			except OSError:
+				continue
+			out.append(rel + e.name)
 		if len(out) >= LIST_MAX:
-			return {"files": out[:LIST_MAX], "truncated": True}
+			return True
+		return any(walk(e.path, rel + e.name + "/") for e in dirs)
+
+	if walk(str(base), ""):
+		return {"files": out[:LIST_MAX], "truncated": True}
 	return {"files": out, "truncated": False}
 
 
@@ -164,13 +189,13 @@ def _span(text: str, anchor: str, path: str = "") -> tuple[int, int, list[str]]:
 	return start, end, [f"{'#' * lv} {t}" for _, lv, t in hs][:OUTLINE_MAX]
 
 
-def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
+def expand(store, entry: str, base: Path | None = None) -> list[tuple[str, Path | None, str | None]]:
 	"""One docs entry -> [(display path, file or None, error or None)]. `path#heading` (one markdown file) is kept as the
-	display path: readers cut the text with section() (AI-14)."""
-	base = root(store)
+	display path: readers cut the text with section() (AI-14). `base` = root(store), when the caller already resolved it."""
+	base = base or root(store)
 	entry, _, anchor = entry.partition("#") if not any(c in entry for c in "*?[") else (entry, "", "")
 	if anchor:
-		got = expand(store, entry)
+		got = expand(store, entry, base)
 		if len(got) != 1 or got[0][2] or got[0][1] is None or got[0][1].is_dir():
 			return [(f"{entry}#{anchor}", None, got[0][2] if len(got) == 1 and got[0][2] else "a #heading works on one text file, not a folder")]
 		return [(f"{got[0][0]}#{anchor}", got[0][1], None)]
@@ -199,15 +224,26 @@ def expand(store, entry: str) -> list[tuple[str, Path | None, str | None]]:
 
 def links_of(text: str, here: Path, base: Path) -> list[str]:
 	"""Repo-relative targets of markdown links / @imports in a doc that exist in the project."""
+	return _existing(_link_targets(text, here), base)
+
+
+def _link_targets(text: str, here: Path) -> list[Path]:
+	"""Every local markdown link / @import in a doc, resolved: what links_of() checks. graph() keeps it per file stamp (CORE-63)."""
 	out = []
 	for m in LINK_RE.finditer(text):
 		target = m.group(1) or m.group(2)
 		if not target or "://" in target or target.startswith("mailto:"):
 			continue
 		try:
-			p = (here.parent / target).resolve()
+			out.append((here.parent / target).resolve())
 		except (OSError, ValueError):
 			continue
+	return out
+
+
+def _existing(targets: list[Path], base: Path) -> list[str]:
+	out = []
+	for p in targets:
 		if p.exists() and (base in p.parents):
 			rel = p.relative_to(base).as_posix()
 			if rel not in out:
@@ -573,6 +609,13 @@ def components(store) -> dict:
 		return out
 	base = root(store)
 	try:
+		d = _inside(base, folder)
+	except TicketError as e:
+		return out | {"error": f"architecture: {e}"}
+	sig = (folder, str(d), _stamps(d))
+	if (hit := _COMPS.get(sig)) is not None:
+		return copy.deepcopy(hit)
+	try:
 		d, notes, resolver = _notes(store)
 	except TicketError as e:
 		return out | {"error": f"architecture: {e}"}
@@ -588,7 +631,23 @@ def components(store) -> dict:
 		for _, text, targets, broken in sc["links"]:
 			out["broken_links"] += [{"from": key, "target": raw} for raw in broken]
 			out["edges"] += [{"from": key, "to": to, "text": text.strip()} for to in targets]
+	if sig[2] == _stamps(d):  # nothing changed while we read: keep it (another process may be writing a note)
+		if len(_COMPS) > 50:
+			_COMPS.clear()
+		_COMPS[sig] = copy.deepcopy(out)
 	return out
+
+
+_COMPS: dict[tuple, dict] = {}  # (folder, note stamps) -> components() result: notes are re-parsed only when one changed (CORE-59)
+
+
+def _stamps(d: Path) -> tuple | None:
+	"""(name, mtime_ns, size) of every *.md in the architecture folder: one scandir, no stat per file on Windows. None = no folder."""
+	try:
+		with os.scandir(d) as it:
+			return tuple(sorted((e.name, (st := e.stat()).st_mtime_ns, st.st_size) for e in it if e.name.lower().endswith(".md") and e.is_file()))
+	except (FileNotFoundError, NotADirectoryError):
+		return None
 
 
 def ticket_components(t: dict, arch: dict) -> list[str]:
@@ -602,12 +661,31 @@ def ticket_components(t: dict, arch: dict) -> list[str]:
 	return keys
 
 
+DEAD_TTL = 60.0  # seconds a dead_paths answer is reused (CORE-59: it globbed the project on every GET architecture; a warning chip can lag a minute)
+_HAS: dict[tuple[str, str], tuple[float, bool]] = {}  # (project root, glob) -> (when, matches a file)
+
+
 def _has_file(base: Path, glob: str) -> bool:
+	"""Does `glob` (a component's `paths` entry) match at least one file? Cached for DEAD_TTL; stops at the first file."""
+	key, now = (str(base), glob), time.monotonic()
+	hit = _HAS.get(key)
+	if hit and now - hit[0] < DEAD_TTL:
+		return hit[1]
+	if len(_HAS) > 5000:
+		_HAS.clear()
+	_HAS[key] = (now, ok := _match_file(base, glob))
+	return ok
+
+
+def _match_file(base: Path, glob: str) -> bool:
 	g = glob.strip().replace("\\", "/").lstrip("/")
 	try:
 		_inside(base, g.split("*")[0] or ".")
+		if not any(c in g for c in "*?["):  # a plain path: the file itself, or any file under that folder (what the two globs below answer)
+			p = base / g
+			return p.is_file() or (p.is_dir() and any(fs for _, _, fs in os.walk(p)))
 		return any(p.is_file() for pat in (g, g.rstrip("/") + "/**/*") for p in base.glob(pat))
-	except (TicketError, ValueError, NotImplementedError):
+	except (TicketError, ValueError, NotImplementedError, OSError):
 		return False
 
 
@@ -816,6 +894,8 @@ def _arch_write(store, by, note: str, fn) -> dict:
 			fn(*_notes(store))  # a folder outside the project is refused here
 		except OSError as e:
 			raise TicketError(f"cannot write the architecture notes: {e}")
+		_COMPS.clear()  # a write must show at once, even within one mtime tick
+		_HAS.clear()  # and its new paths are checked now, not in DEAD_TTL
 		store._log("arch", None, str(by or "human")[:40], note)
 		return architecture(store)
 	return store._locked(run)
@@ -1070,6 +1150,36 @@ def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], b
 
 
 HUBS = 5  # how many hub docs graph() lists
+# graph() memos across calls (CORE-63: 2.4-3.3 s on a bind mount, mostly stat + resolve()). Both are checked against the file's stamp on every
+# call, so a doc that changes or disappears shows on the next one; a folder or glob entry is always expanded again (a nested file has no stamp here).
+_EXP: dict[tuple[str, str], tuple] = {}  # (root, docs entry) -> (stamp of its file, expand() result)
+_INFO: dict[str, tuple] = {}  # file + display path -> (stamp, size, link targets or None when too big to read)
+
+
+def _stamp(p: Path) -> tuple | None:
+	try:
+		st = os.stat(p)
+	except (OSError, ValueError):
+		return None
+	return st.st_ino, st.st_mtime_ns, st.st_size, stat.S_ISDIR(st.st_mode)
+
+
+def _expand_kept(store, entry: str, base: Path | None) -> list:
+	"""expand(), reused while the entry's file has the same stamp (a missing one: while it is still missing)."""
+	if base is None or any(c in entry for c in "*?["):  # no repo (a database board): expand() reports it
+		return expand(store, entry, base)
+	st = _stamp(base / entry.partition("#")[0].strip().replace("\\", "/").lstrip("/"))
+	if st and st[3]:
+		return expand(store, entry, base)
+	key = (str(base), entry)
+	hit = _EXP.get(key)
+	if hit and hit[0] == st:
+		return hit[1]
+	if len(_EXP) > 20000:
+		_EXP.clear()
+	got = expand(store, entry, base)
+	_EXP[key] = (st, got)
+	return got
 
 
 def graph(store) -> dict:
@@ -1094,14 +1204,20 @@ def graph(store) -> dict:
 	by_key = {c["key"]: c["path"] for c in arch["components"]}
 	tickets, docs, reads, links, readers = [], {}, [], [], {}
 
-	def info(rel, p):  # size + outgoing links, once per file (per section for path#heading)
+	def info(rel, p):  # size + outgoing links, once per file (per section for path#heading); read again only when the file's stamp changed
 		if rel not in finfo:
-			size = p.stat().st_size
-			text = p.read_text(encoding="utf-8", errors="replace") if size <= (SECTION_FILE_MAX if "#" in rel else MAX_FILE) else None
-			if text is not None and "#" in rel:
-				text = section(text, rel.partition("#")[2], rel.partition("#")[0])[0]  # a bad anchor raises: note() turns it into the doc's error
-				size = len(text)
-			finfo[rel] = (size, None if text is None else links_of(text, p, base))
+			key, st = f"{p}|{rel}", _stamp(p)
+			hit = _INFO.get(key)
+			if not (st and hit and hit[0] == st):
+				size = st[2] if st else p.stat().st_size  # gone since expand(): raises, as before
+				text = p.read_text(encoding="utf-8", errors="replace") if size <= (SECTION_FILE_MAX if "#" in rel else MAX_FILE) else None
+				if text is not None and "#" in rel:
+					text = section(text, rel.partition("#")[2], rel.partition("#")[0])[0]  # a bad anchor raises: note() turns it into the doc's error
+					size = len(text)
+				if len(_INFO) > 20000:
+					_INFO.clear()
+				hit = _INFO[key] = (st, size, None if text is None else _link_targets(text, p))
+			finfo[rel] = (hit[1], None if hit[2] is None else _existing(hit[2], base))  # a link target that appears or goes shows at once
 		return finfo[rel]
 
 	def note(rel, p, err, via):  # one doc's node: size, error, the broadest way it is read
@@ -1129,10 +1245,11 @@ def graph(store) -> dict:
 
 	def exp(entry):
 		if entry not in cache:
-			cache[entry] = expand(store, entry)
+			cache[entry] = _expand_kept(store, entry, base)
 		return cache[entry]
 
-	for t in store.list():
+	everyone = store.list()
+	for t in everyone:
 		if t["status"] == "done":
 			continue
 		tickets.append({k: t.get(k) for k in ("id", "title", "pillar", "agent", "priority")} | {"status": t["effective_status"]})
@@ -1140,11 +1257,12 @@ def graph(store) -> dict:
 			kind, _, frm = src.partition(":")
 			for rel, p, err in exp(entry):
 				add(t, rel, p, err, kind.replace("agent", "profile"), frm or None)
-		for f in list_files(store, t["id"]):
-			rel = f"tickets/files/{t['id']}/{f['name']}"
-			if store.dir is not None:
-				add(t, rel, files_dir(store, t["id"]) / f["name"], None, "file")
-			else:  # stored in the database: no path; size from the listing, links not followed
+		if store.dir is not None:
+			for name in t.get("files", []):  # the store already listed attachments (list_files() would stat a folder per ticket)
+				add(t, f"tickets/files/{t['id']}/{name}", files_dir(store, t["id"]) / name, None, "file")
+		else:  # stored in the database: no path; size from the listing, links not followed
+			for f in list_files(store, t["id"]):
+				rel = f"tickets/files/{t['id']}/{f['name']}"
 				finfo[rel] = (f["bytes"], [])
 				add(t, rel, None, None, "file")
 				docs[rel]["size"] = f["bytes"]
@@ -1154,7 +1272,7 @@ def graph(store) -> dict:
 		reads += [{"ticket": t["id"], "doc": PROTOCOL, "via": "board", "from": None} for t in tickets]
 	# the rules in unblockd.json that send docs, with everything each one sends (a doc no open ticket reads yet still shows, readers 0)
 	# and the open tickets it reaches: a rule's list is the config, not the reads, where a doc two rules send is recorded once per ticket
-	cfg, opn = store.config, [t for t in store.list() if t["status"] != "done"]
+	cfg, opn = store.config, [t for t in everyone if t["status"] != "done"]
 	rules = []
 	for via, frm, entries, who in ([("board", None, cfg.get("docs", []), opn)]
 	                               + [("tag", g, e, [t for t in opn if g in t.get("tags", [])]) for g, e in (cfg.get("docs_by_tag") or {}).items()]

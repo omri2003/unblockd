@@ -444,7 +444,7 @@ form.edit textarea{min-height:220px;resize:vertical;font-family:var(--mono);font
 .empty{grid-column:1/-1} .empty h2{color:var(--ink);font-size:1.2rem} .empty p{margin:0}
 .gempty{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 32px);padding:18px 24px;background:var(--surface)}
 .fl{display:flex;flex-wrap:wrap;gap:6px;justify-content:center} .fl span{border:1px solid var(--line);background:var(--surface);border-radius:99px;padding:2px 10px;color:var(--ink);font-size:.85rem}
-/* chat: a docked panel on the right. Non-modal, so the board stays usable; a ticket drawer opens over it. */
+/* chat: a docked panel on the right. Non-modal, so the board stays usable. One right-hand panel at a time (UI-58): opening the drawer or Needs you closes it, opening it closes them. */
 .chat{position:fixed;top:0;right:0;bottom:0;width:min(420px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:15;display:flex;flex-direction:column;box-shadow:-8px 0 24px rgba(0,0,0,.08)}
 @media (min-width:1100px){body.chat-open .wrap{margin-right:420px}}
 .chead{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--line)}
@@ -589,13 +589,11 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 /* the fold: a tree of the doc's headings with guide lines, a size bar each against the budget, then ONE bar for the whole budget */
 .dch.wb{grid-template-columns:max-content minmax(0,1fr) auto auto auto}
 .dsb{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:2px 8px;font-size:.72rem;font-weight:600;color:var(--jade);cursor:pointer;box-shadow:var(--sh1);white-space:nowrap}
-.dsb:hover{border-color:var(--jade)} .dsb[aria-expanded=true]{background:var(--jade-soft);box-shadow:none} .dsb svg,.dpk svg{width:12px;height:12px;flex:none}
+.dsb:hover{border-color:var(--jade)} .dsb[aria-expanded=true]{background:var(--jade-soft);box-shadow:none} .dsb svg{width:12px;height:12px;flex:none}
 /* a doc that did not fit: the strip says so and holds the fix (UI-72) */
-.dsec.miss{background:var(--surface);border-top:1px dashed color-mix(in srgb,var(--cinnabar) 30%,var(--line))} .dsec>summary.strip{display:flex;align-items:center;gap:10px;width:auto;color:var(--muted);font-weight:400;list-style:none} .dsec>summary.strip::-webkit-details-marker{display:none}
-.dsec>summary.strip strong,.dstrip strong{color:var(--ink);font-weight:600} .dsec>summary.strip>span:first-child{flex:1}
-.dpk{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);box-shadow:var(--sh1);border-radius:var(--r);padding:4px 11px;font-weight:600;color:var(--jade);white-space:nowrap} .dsec>summary.strip:hover .dpk{box-shadow:var(--sh2);border-color:var(--jade)}
-.dsec.miss[open] .dpk{background:var(--jade-soft);box-shadow:none}
-.dstrip{padding:7px 12px;border-top:1px dashed color-mix(in srgb,var(--cinnabar) 30%,var(--line));font-size:.76rem;color:var(--muted)}
+.dsec.miss{background:var(--surface)}
+.dstrip strong{color:var(--ink);font-weight:600}
+.dstrip{display:flex;flex-wrap:wrap;align-items:center;column-gap:10px;row-gap:2px;padding:7px 12px;border-top:1px dashed color-mix(in srgb,var(--cinnabar) 30%,var(--line));font-size:.76rem;color:var(--muted)}
 .dsec{padding:6px 10px 8px;background:color-mix(in srgb,var(--sunk) 35%,var(--surface));border-radius:0 0 var(--rc) var(--rc)} .dsec>summary{cursor:pointer;color:var(--jade);font-weight:600;font-size:.76rem;width:fit-content;padding:2px 0} .dsec>summary[hidden]{display:none} .dsec .hint{margin:4px 0 6px}
 .dtree,.dtree ul{list-style:none;margin:0;padding:0} .dtree ul{margin-left:9px;padding-left:14px;border-left:1.5px solid var(--line)}
 .dsr{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(60px,130px) 3.2rem;gap:10px;align-items:center;font-size:.76rem;cursor:pointer;border-radius:var(--r);padding:4px 8px;margin:1px 0}
@@ -630,7 +628,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .dlist li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 @media (max-width:700px){
   .dcols{grid-template-columns:minmax(0,1fr);gap:14px} #dDw{order:-1} .dcols>div:empty{display:none} #dSvg{display:none}
-  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dch,.dch.wb{grid-template-columns:max-content minmax(0,1fr);row-gap:4px} .dch .dsb{grid-column:2;justify-self:start} .dsec>summary.strip{flex-wrap:wrap} .dsf>span{flex-basis:100%} .dsf .btn:first-of-type{margin-left:auto} .dch .z{display:none} .dch .s{grid-column:2} .dsr{grid-template-columns:minmax(0,1fr) 3.5rem 2.8rem;gap:6px} .dtree ul{margin-left:6px;padding-left:10px} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0}  .dbud{margin-left:0} .dsug .dch .btn{grid-column:2;justify-self:start}
+  .dbh{flex-wrap:wrap} .dbh .port{display:none} .szw .u{display:none} .dbh .rule{margin-left:0;flex-basis:100%} .dctx{margin-left:0} .dch,.dch.wb{grid-template-columns:max-content minmax(0,1fr);row-gap:4px} .dch .dsb{grid-column:2;justify-self:start} .dsf>span{flex-basis:100%} .dsf .btn:first-of-type{margin-left:auto} .dch .z,.dch>span:empty{display:none} .dch .s{grid-column:2} .dsr{grid-template-columns:minmax(0,1fr) 3.5rem 2.8rem;gap:6px} .dtree ul{margin-left:6px;padding-left:10px} .dctx li{grid-template-columns:minmax(0,1fr) auto;row-gap:0}  .dbud{margin-left:0} .dsug .dch .btn{grid-column:2;justify-self:start}
 }
 /* Map view: components as real buttons over one <svg> of edges; tokens only (heat = a colour-mix of --surface and --slate) */
 .mapstage{position:relative;overflow:hidden;height:calc(100dvh - 360px);min-height:340px;background:var(--sunk);border-radius:8px;touch-action:none;user-select:none;cursor:grab}
@@ -1542,7 +1540,8 @@ function toggleNX(k){
 }
 function openNeeds(){
   const el=$('npanel'); if(!el.hidden) return; if(!$('drawer').hidden) closeDrawer();
-  lastNFocus=document.activeElement; el.hidden=false; $('scrim').hidden=false; npShown=false; npSig=''; renderNeedsPanel(); loadNeeds();
+  const ch=!$('chat').hidden&&$('chat').contains(document.activeElement); if(!$('chat').hidden) closeChat(true);
+  lastNFocus=ch?$('chatBtn'):document.activeElement; el.hidden=false; $('scrim').hidden=false; npShown=false; npSig=''; renderNeedsPanel(); loadNeeds();
   if(!reduce.matches) el.animate([{transform:'translateX(28px)',opacity:0},{transform:'none',opacity:1}],{duration:200,easing:'ease-out'});
   el.querySelector('[data-nclose]').focus();
 }
@@ -1781,7 +1780,7 @@ function renderBoard(){
 
 // ---------- drawer ----------
 let lastFocus=null;
-function openDrawer(html,keepScroll){document.body.classList.remove('peek');const d=$('drawer'),np=!$('npanel').hidden;if(np)closeNeeds(true);if(d.hidden)lastFocus=np?$('needsBadge'):document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
+function openDrawer(html,keepScroll){document.body.classList.remove('peek');const d=$('drawer'),np=!$('npanel').hidden,ch=!$('chat').hidden&&$('chat').contains(document.activeElement);if(np)closeNeeds(true);if(!$('chat').hidden)closeChat(true);if(d.hidden)lastFocus=np?$('needsBadge'):ch?$('chatBtn'):document.activeElement;const y=d.scrollTop;keepFocus(()=>{d.innerHTML=html;});d.hidden=false;$('scrim').hidden=false;slideAll(d);d.scrollTop=keepScroll?y:0;if(!keepScroll)d.querySelector('[data-close]')?.focus();}
 function closeDrawer(){if(MV.pan&&openId==null)mapClear(true);SPLIT=null;$('drawer').hidden=true;$('scrim').hidden=true;document.body.classList.remove('peek');openId=null;markCur();editing=false;if(location.hash)history.replaceState(null,'',location.pathname+location.search);lastFocus?.focus?.();}
 function linkList(ids){
   if(!ids.length) return '<p class="none">None</p>';
@@ -2171,6 +2170,7 @@ document.addEventListener('keydown',e=>{
     else if(menuBusy()) closeMenus();
     else if(!$('npanel').hidden) closeNeeds();
     else if(!$('drawer').hidden){ editing&&openId?showTicket(openId):closeDrawer(); }
+    else if(!$('chat').hidden) closeChat();
     else if(state.view==='docs'&&(DV.f||DV.sel||DV.q)){DV.f=DV.sel=null;DV.q=$('dQ').value='';renderDocs();}
     else if(state.view==='map'&&(MV.foc||MV.multi||MV.f)) mapClear();
     else if(SEL.size){SEL.clear();renderBulk();renderBoard();}
@@ -2653,7 +2653,8 @@ function dCtxHtml(id){ // what an agent gets for this ticket, from context()'s o
       if(r.f){const n=r.secs.filter(d=>d.sent==='full').length, tot=r.secs.reduce((a,d)=>a+(d.chars||0),0), S=dSecState(id,r.f,c.docs);
         const chip=d=>{const a=d.path.split('#')[1], h=S.hs.find(x=>x.a===a), [k,w]=SW[d.sent]||['out','not sent'];return `<span class="dsc ${k}" title="${esc(d.path)}: ${esc(w)} (${dCh(d.chars||0)})">${esc(h?h.t:a)}</span>`;};
         return `<li class="dcard${n<r.secs.length?' bad':''}"><div class="dch">${dSrc('ticket')}<span class="pw">${dLink(r.f)}${r.secs.map(chip).join('')}</span><span class="z" title="${dCh(tot)}">${dTk(tot)}</span><span class="s ${n===r.secs.length?'in':'out'}">${n===r.secs.length?(n>1?'All sections sent':'Section sent'):n?`${n} of ${r.secs.length} sections sent`:'Sections not sent'}</span></div>${fold}</li>`;}
-      const d=r,[k,w]=SW[d.sent]||['out','Not sent: '+(d.error||'broken')], sb=dSecBtn(id,d,c.docs);return `<li class="dcard${k==='out'?' bad':''}"><div class="dch${sb?' wb':''}">${dSrc(d.source)}<span class="pw">${dLink(d.path)}</span><span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span><span class="s ${k}">${esc(w)}</span>${sb}</div>${fold}</li>`;}).join('')}
+      const d=r,[k,w]=SW[d.sent]||['out','Not sent: '+(d.error||'broken')], sb=dSecBtn(id,d,c.docs), inStrip=fold.includes('class="dstrip"'); // owner, 2026-11-17: a doc that did not fit says so once, in the line under its head
+        return `<li class="dcard${k==='out'?' bad':''}"><div class="dch${sb?' wb':''}">${dSrc(d.source)}<span class="pw">${dLink(d.path)}</span><span class="z" title="${d.chars!=null?dCh(d.chars):''}">${d.chars!=null?dTk(d.chars):''}</span>${inStrip?'<span></span>':`<span class="s ${k}">${esc(w)}</span>`}${sb}</div>${fold}</li>`;}).join('')}
       <li class="dcard"><div class="dch">${dSrc('board')}${dPath('unblockd://work-loop')}<span class="z"></span><span class="s wl">Sent by the MCP prompt</span></div></li></ol>
     ${dSugHtml(id)}<p class="dcb"><button type="button" class="btn sm" data-open="${esc(id)}">Open ${esc(id)}</button><span class="hint">The budget pays for the ticket's own docs first, then attachments, the profile, tags, the board.</span></p></div>`;}
 // AI-14 (owner pick: option C + a fold per doc + several sections): under the last row of a doc that is not sent in full (too big, budget
@@ -2684,18 +2685,23 @@ function dSrc(src){const [k,x]=[src.split(':')[0],src.slice(src.indexOf(':')+1)]
     :['board','board','Every ticket gets it (docs in unblockd.json)'];
   return `<span class="dsrc k-${c}" title="${esc(t)}">${l}</span>`;}
 // A doc sent in full with 2+ headings (the preview gave it an outline: knowledge.preview_outlines; UI-75: any size, UI-72 only big ones)
-// whose sections the ticket has not picked: a quiet button.
-const dSecBtn=(id,d,all)=>d.sent==='full'&&!d.path.includes('#')&&d.outline?.length>1&&!all.some(x=>x.path.startsWith(d.path+'#'))
-  ?`<button type="button" class="dsb" data-dsecopen="${esc(id+'|'+d.path)}" aria-expanded="${dSecOpen.has(id+'|'+d.path)}" title="Send only some sections of ${esc(dBase(d.path))}, to leave room for other docs"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>Sections</button>`:'';
+// whose sections the ticket has not picked: a quiet button. A doc that did not fit and has headings gets Pick sections in the SAME place
+// (owner, 2026-11-17: the button never moves between the two; the "Didn't fit" line goes under the head instead).
+const dSecBtn=(id,d,all)=>{if(d.path.includes('#')||all.some(x=>x.path.startsWith(d.path+'#')))return '';
+  const miss=['too_big','budget'].includes(d.sent)&&d.outline_chars?.length, k=id+'|'+d.path;
+  if(!miss&&!(d.sent==='full'&&d.outline?.length>1))return '';
+  return `<button type="button" class="dsb${miss?' pk':''}" data-dsecopen="${esc(k)}" aria-expanded="${dSecOpen.has(k)}" title="${miss?`Send only the parts of ${esc(dBase(d.path))} this ticket needs`:`Send only some sections of ${esc(dBase(d.path))}, to leave room for other docs`}"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>${miss?'Pick sections':'Sections'}</button>`;};
 function dSecHtml(id,f,all){ // the fold, under the doc's last row
   const S=dSecState(id,f,all), B=DV.data?.budget||Infinity, picked=S.rows.some(x=>x!==S.whole&&x.source==='ticket');
-  // UI-72 (owner pick of 3 options in 3 situations, "middle ground"): a doc that did not fit gets a strip saying so, with Pick sections (or, with
-  // no headings, what to do instead); a doc sent in full with 2+ headings (UI-75: any size; the preview has its outline) gets a quiet Sections
-  // button in its card head (dSecBtn) that opens the same fold; picked sections keep "Change sections".
+  // UI-72 (owner pick of 3 options in 3 situations, "middle ground"): a doc that did not fit gets a line under its head saying so (with no
+  // headings: what to do instead); its Pick sections button sits in the card head where a sent doc's quiet Sections button is (dSecBtn,
+  // owner 2026-11-17), and both open the same fold; picked sections keep "Change sections".
   const miss=S.whole&&['too_big','budget'].includes(S.whole.sent), big=!miss&&!picked&&S.whole?.sent==='full';
-  if(miss&&!S.src&&!picked) return `<div class="dstrip"><span><strong>Didn't fit,</strong> and it has no headings to pick from. Split the doc or raise the budget.</span></div>`;
+  const why=miss?`<span class="s out">${S.whole.sent==='too_big'?'Too big: path only':'Budget spent: path only'}</span>`:''; // the head's status, moved into this line
+  if(miss&&!S.src&&!picked) return `<div class="dstrip">${why}<span><strong>Didn't fit,</strong> and it has no headings to pick from. Split the doc or raise the budget.</span></div>`;
   if(!S.src||!(miss||picked||big)) return '';
-  if(big&&!dSecOpen.has(S.k)) return ''; // the card head's Sections button opens it
+  const strip=miss&&!S.have.length?`<div class="dstrip">${why}<span><strong>Didn't fit.</strong> Send only the parts this ticket needs.</span></div>`:'';
+  if((big||strip)&&!dSecOpen.has(S.k)) return strip; // the card head's Sections / Pick sections button opens it
   const n=S.hs.filter(h=>h.on&&!h.cov).length, w=x=>Math.min(100,x/B*100).toFixed(1);
   const node=h=>{const big=h.n>B, dis=h.cov||big&&!h.on;
     return `<label class="dsr${big?' big':''}${h.cov?' cov':''}" title="${esc(h.cov?`${h.t} is inside a section you ticked`:big?`${h.t} is bigger than the whole budget (${dCh(h.n)})`:`${f}#${h.a} (${dCh(h.n)})`)}"><span class="dst"><input type="checkbox" data-dsbox="${esc(S.k)}" value="${esc(h.a)}"${h.on||h.cov?' checked':''}${dis?' disabled':''}><span>${esc(h.t)}${h.cov?' <small>in it</small>':big&&h.lv===Math.min(...S.hs.map(x=>x.lv))?' <small>whole doc</small>':''}</span></span><span class="mb${big?' over':''}"><i style="width:${w(h.n)}%"></i></span><span class="n">${dTk(h.n)}</span></label>`;};
@@ -2709,8 +2715,8 @@ function dSecHtml(id,f,all){ // the fold, under the doc's last row
   // owner, 2026-11-16: the picker a suggestion opened keeps its line while it is open; once the ticks differ from the suggestion it says what was
   // suggested instead of "ticked for you", and Reset brings those ticks back (a normal picker's Reset goes back to what the ticket has).
   const sg=dSugPick[S.k], sgSame=sg&&sg.secs.length===S.sel.size&&sg.secs.every(a=>S.sel.has(a)), rs=sg?!sgSame:S.changed;
-  const sum=S.have.length?'<summary>Change sections</summary>':miss?`<summary class="strip"><span><strong>Didn't fit.</strong> Send only the parts this ticket needs.</span><span class="dpk"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h8M5 8h8M7 12h6M2.5 4h.01M2.5 8h.01M4.5 12h.01"/></svg>Pick sections</span></summary>`:'<summary hidden>Sections</summary>';
-  return `<details class="dsec${miss&&!S.have.length?' miss':''}" data-dsk="${esc(S.k)}"${dSecOpen.has(S.k)?' open':''}>${sum}
+  const sum=S.have.length?'<summary>Change sections</summary>':'<summary hidden>Sections</summary>';
+  return `${strip}<details class="dsec${strip?' miss':''}" data-dsk="${esc(S.k)}"${dSecOpen.has(S.k)?' open':''}>${sum}
     ${sg?`<p class="hint sugpk">${sgSame?'Ticked for you':'Suggested'}: the section${sg.secs.length>1?'s':''} naming <code>${esc(sg.names)}</code>, why it was suggested.${sgSame?'':` Reset ticks ${sg.secs.length>1?'them':'it'} again.`}</p>`:''}<p class="hint">Tick the parts ${esc(id)} needs. Its agent gets those sections and the list of headings, and can read the rest itself.</p>
     <ul class="dtree">${tree}</ul>${bud}
     <p class="dsf"><span${tot>B&&n?' class="warn"':''}>${msg}</span>${rs?`<button type="button" class="btn sm ghost" data-dsecreset="${esc(S.k)}">Reset</button>`:''}${S.changed?`<button type="button" class="btn sm" data-dsecgo="${esc(S.k)}">${n?`Send ${n} section${n>1?'s':''}`:S.whole?'Send no sections':'Send the whole doc'}</button>`:''}</p></details>`;
@@ -3404,14 +3410,20 @@ async function propAct(mi,pi,act){ // the only write the chat can cause, and it 
   chatSave();renderChat();
 }
 const summTools=ts=>Object.entries(ts.reduce((a,n)=>(a[n]=(a[n]||0)+1,a),{})).map(([n,c])=>c>1?`${n.replace(/_/g,' ')} ×${c}`:n.replace(/_/g,' ')).join(', ');
-async function openChat(prefill){
+let chatFocus=null; // where focus goes back to when the chat closes
+async function openChat(prefill){ // one right-hand panel at a time (UI-58): the drawer and Needs you close first, so they never stack
+  if(!$('drawer').hidden) closeDrawer(); if(!$('npanel').hidden) closeNeeds();
+  if($('chat').hidden) chatFocus=document.activeElement;
   $('chat').hidden=false;document.body.classList.add('chat-open');store.set('chatOpen',true);
   $('chatT').textContent='Ask about '+(CFG.title||'this board');
   if(!CH.on){try{CH.on=await jf('/api/chat')}catch{CH.on={enabled:false}}}
   renderChat();
   const i=$('cin');if(prefill){i.value=prefill+(i.value?' '+i.value:'');}i.focus();i.setSelectionRange(i.value.length,i.value.length);
 }
-function closeChat(){$('chat').hidden=true;document.body.classList.remove('chat-open');store.set('chatOpen',false);hideAc();}
+function closeChat(quiet){ // quiet: the drawer or Needs you is taking over and places the focus itself
+  const had=$('chat').contains(document.activeElement);$('chat').hidden=true;document.body.classList.remove('chat-open');store.set('chatOpen',false);hideAc();
+  if(!quiet&&had) (chatFocus?.isConnected&&chatFocus.offsetParent!==null&&!$('chat').contains(chatFocus)?chatFocus:$('chatBtn')).focus?.();
+}
 async function sendChat(){
   const text=$('cin').value.trim();if(!text||CH.busy)return;
   CH.log.push({role:'user',content:text});$('cin').value='';CH.busy=true;hideAc();renderChat();
@@ -3457,7 +3469,7 @@ $('cin').addEventListener('keydown',e=>{
 });
 $('ac').addEventListener('mousedown',e=>{const li=e.target.closest('[data-ac]');if(li){e.preventDefault();pickAc(+li.dataset.ac);}});
 $('cform').addEventListener('submit',e=>{e.preventDefault();sendChat();});
-$('chatClose').addEventListener('click',closeChat);
+$('chatClose').addEventListener('click',()=>closeChat());
 $('chatClear').addEventListener('click',()=>{CH.log=[];chatSave();renderChat();$('cin').focus();});
 $('clog').addEventListener('click',e=>{const pb=e.target.closest('[data-prop]');if(pb){const [mi,pi]=pb.dataset.prop.split(':');propAct(+mi,+pi,pb.dataset.act);return;}
   const c=e.target.closest('[data-ask]');if(c){$('cin').value=c.dataset.ask;sendChat();}});

@@ -341,7 +341,7 @@ try {
 			}
 			if (w > 600) ok(await page.locator('#dSvg path.s').count() >= 2, `[${tag}] docs: the selected ticket draws a line into each band it reaches`);
 			{ // AI-14 (design C): a doc too big to send folds out its headings with size bars; tick two, Send, both are in the preview; Undo takes them back
-				const sec = page.locator('#dT .dsec').first(); await sec.locator('summary').click();
+				await page.locator('#dT .dsb.pk').first().click(); await page.waitForSelector('#dT .dsec .dsr'); const sec = page.locator('#dT .dsec').first(); // Pick sections sits in the doc's head (owner, 2026-11-17)
 				const hs = await sec.locator('.dsr').evaluateAll((rs) => rs.map((r) => r.querySelector('.dst span').firstChild.textContent.trim() + (r.querySelector('input').disabled ? '!' : '')));
 				ok(hs.join('|') === 'Big!|Part one!|Part two|Part three', `[${tag}] docs: the fold lists big.md's headings, the ones over the budget disabled: ${hs.join('|')}`);
 				await sec.locator('.dsr', { hasText: 'Part two' }).locator('input').check();
@@ -352,7 +352,10 @@ try {
 				await page.click('#toasts button:has-text("Undo")');
 				await page.waitForFunction(() => { const c = document.querySelector('#dT .dctx')?.innerText || ''; return c.includes('big.md') && !document.querySelector('#dT .dsc'); }, null, { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Undo did not take the sections back`)); await page.waitForSelector('#toasts :text("docs restored")'); // Undo's reload is done
 			}
-			ok((await page.locator('#dT .dsec.miss summary.strip').first().innerText()).includes("Didn't fit"), `[${tag}] docs: a doc that did not fit gets the strip with Pick sections (UI-72)`);
+			{ // UI-72: a doc that did not fit gets "Didn't fit" under its head and Pick sections IN the head, where a sent doc's Sections button is (owner, 2026-11-17)
+				const card = page.locator('#dT .dcard:has(.dstrip)').first();
+				ok((await card.locator('.dstrip').innerText()).includes("Didn't fit") && (await card.locator('.dstrip .s.out').innerText()).includes('path only') && !(await card.locator('.dch .s').count()) && (await card.locator('.dch .dsb.pk').innerText()).includes('Pick sections') && !(await card.locator('.dstrip button, .dstrip .dsb').count()), `[${tag}] docs: a doc that did not fit has Pick sections in its head and, below, ONE line with its status ("Too big: path only") and "Didn't fit", with no button in it`);
+			}
 			{ // UI-72: a doc with no headings that did not fit says what to do instead; a sent doc with 2+ headings gets a quiet Sections button
 				await writeFile(join(root, 'example/docs/plain.txt'), 'plain notes with no headings '.repeat(100));
 				await writeFile(join(root, 'example/docs/mid.md'), ['# Mid', '## One', 'y'.repeat(400), '## Two', 'z'.repeat(400)].join(String.fromCharCode(10)));
@@ -389,7 +392,7 @@ try {
 				ok(rows.join(' / ') === 'docs/release.md||Add to DOC-1 / docs/releasing.md!|too big: pick sections|Pick sections', `[${tag}] docs: release.md fits and comes first, releasing.md is too big (red mark, Pick sections), flat.md (no headings) is not offered: ${rows.join(' / ')}`);
 				await page.click('#dT .dsug [data-path="docs/releasing.md"]');
 				await page.waitForSelector('#dT .dsec.miss[open] .dsr', { timeout: 8000 }).catch(() => ok(false, `[${tag}] docs: Pick sections did not open releasing.md's section tree`));
-				ok((await page.locator('#dT .dsec.miss[open] summary.strip').innerText()).includes("Didn't fit") && (await page.locator('#dT .dsec.miss[open] .dsr').count()) === 3, `[${tag}] docs: the picker is the usual "Didn't fit" fold with releasing.md's 3 headings`);
+				ok((await page.locator('#dT .dcard:has(.dsec.miss[open]) .dstrip').innerText()).includes("Didn't fit") && (await page.locator('#dT .dcard:has(.dsec.miss[open]) .dsb.pk').getAttribute('aria-expanded')) === 'true' && (await page.locator('#dT .dsec.miss[open] .dsr').count()) === 3, `[${tag}] docs: the picker is the usual "Didn't fit" fold with releasing.md's 3 headings`);
 				ok(JSON.parse(cli('get', 'DOC-1')).docs.includes('docs/releasing.md'), `[${tag}] docs: Pick sections put releasing.md on DOC-1`);
 				{ // the sections that name scripts/release.sh start ticked, so the picker shows why the doc was offered
 					const ticked = await page.locator('#dT .dsec.miss[open] input[data-dsbox]:checked').evaluateAll((xs) => xs.map((x) => x.value).join(','));
@@ -1111,6 +1114,38 @@ try {
 		const ids = await page.evaluate(() => [...document.querySelectorAll('.prop')].map((e) => e.textContent.match(/Created (\S+)/)[1])), b = await (await fetch(base + 'api/tickets/' + ids[1])).json();
 		ok(JSON.stringify(b.blocked_by) === JSON.stringify([ids[0]]), `[chat] Beta should be blocked_by ${ids[0]}: ${JSON.stringify(b.blocked_by)}`);
 		ok(!errs.length, `[chat] page errors: ${errs.join('; ')}`);
+		await ctx.close();
+	}
+	// 6a. the chat and the ticket drawer never stack (UI-58): opening one closes the other, in both orders; Esc closes it and focus comes back
+	for (const [w, h] of [[1400, 900], [390, 844]]) {
+		const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+		const page = await ctx.newPage(); page.setDefaultTimeout(8000);
+		const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+		await page.route('**/api/chat', (r) => r.request().method() === 'POST'
+			? r.fulfill({ json: { reply: 'Look at API-1 first.', tools: [], refs: [], proposals: [] } })
+			: r.fulfill({ json: { enabled: true, model: 'x' } }));
+		await page.goto(base); await page.waitForSelector('#board .card', { state: 'attached' });
+		const vis = (id) => page.evaluate((i) => !document.getElementById(i).hidden, id);
+		// ticket first, then Ask Claude
+		await page.evaluate(() => document.querySelector('#board .card[data-open="API-1"]').click()); await page.waitForSelector('#drawer:not([hidden])');
+		if (w > 600) { await page.keyboard.press('Control+k'); await page.fill('#cmdQ', 'ask claude'); await page.keyboard.press('Enter'); } // the palette's Ask Claude
+		else await page.evaluate(() => document.querySelector('#drawer [data-ask-about]').click()); // the drawer's own Ask Claude (in its overflow menu)
+		await page.waitForSelector('#chat:not([hidden])');
+		ok(!(await vis('drawer')), `[chat/${w}] opening the chat should close the ticket drawer`);
+		await page.waitForFunction(() => document.activeElement.id === 'cin').catch(() => ok(false, `[chat/${w}] the chat should take the focus`)); // openChat focuses after its first GET /api/chat
+		await page.keyboard.press('Escape'); await page.waitForSelector('#chat', { state: 'hidden' });
+		ok(!(await vis('drawer')), `[chat/${w}] Esc should close the chat and open nothing else`);
+		ok(await page.evaluate(() => { const a = document.activeElement; return a && a !== document.body && !a.closest('#chat') && a.offsetParent !== null; }), `[chat/${w}] focus should come back to the page after Esc`);
+		// chat first, then a ticket (a #ID link in the reply)
+		await page.click('#chatBtn'); await page.fill('#cin', 'what first?'); await page.keyboard.press('Enter');
+		await page.waitForSelector('#clog .idlink[data-open="API-1"]'); await page.click('#clog .idlink[data-open="API-1"]'); await page.waitForSelector('#drawer:not([hidden])');
+		ok(!(await vis('chat')), `[chat/${w}] opening a ticket should close the chat`);
+		ok(await page.evaluate(() => !document.body.classList.contains('chat-open')), `[chat/${w}] the board should not keep room for a closed chat`);
+		await page.keyboard.press('Escape'); await page.waitForSelector('#drawer', { state: 'hidden' });
+		ok(await page.evaluate(() => document.activeElement.id === 'chatBtn'), `[chat/${w}] focus should return to Ask Claude after the drawer it opened closes: ${await page.evaluate(() => document.activeElement.id || document.activeElement.tagName)}`);
+		ok(!(await vis('chat')) && !(await vis('drawer')), `[chat/${w}] nothing should be left open`);
+		ok(await page.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth), `[chat/${w}] horizontal overflow`);
+		ok(!errs.length, `[chat/${w}] page errors: ${errs.join('; ')}`);
 		await ctx.close();
 	}
 	// 6b. "I am" + Mine, on a board with 2 human owners (the example board has one: the setting is hidden there)
