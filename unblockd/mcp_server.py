@@ -182,7 +182,8 @@ def list_boards() -> list[dict]:
 def create_board(id: str, title: str = "", root: str | None = None) -> dict:
 	"""Make a new empty board (a tickets folder with an unblockd.json) under the server's project root (root = which UNBLOCKD_ROOT
 	folder, default the first). In Docker a root that is not a mounted volume is refused (the board would vanish with the container).
-	Returns the board plus `path` (and `host_path` in Docker: where it is on the mounted folder)."""
+	Returns the board plus `path` (and `host_path` in Docker: where it is on the mounted folder) and `agents_md`: a short block to paste into
+	the project's CLAUDE.md / AGENTS.md so every agent session claims, heartbeats and completes (CLI `agents-md --write FILE` appends it)."""
 	return BOARDS.create(id, title, root)
 
 

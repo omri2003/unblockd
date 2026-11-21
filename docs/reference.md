@@ -431,6 +431,8 @@ The server is shared, so the agent must say which board: a repo's board id is it
 Tickets for this repo live on the unblockd board `<repo>`; pass board=<repo> to every unblockd tool.
 ```
 
+Better: let unblockd write it. `python -m unblockd.cli --dir <repo>/tickets agents-md` prints a block of at most 15 lines (between `<!-- unblockd:agents-md start -->` / `end -->` markers) naming the board and the steps every session must take: claim before you start, heartbeat, `complete(summary, files, refs)` (never `update` to done), `ask_human` / `release`, plus the CLI form for agents without MCP; it points at `unblockd://work-loop` for the rest. `--board ID` names another board; `--write CLAUDE.md` appends it to that file (created if missing; refused when the markers are already there; every existing byte kept, CRLF files get CRLF). `create_board` (MCP, `POST /api/boards`) replies carry the same block as `agents_md` plus an `agents_md_hint`. The tools it names are checked against `WORK_LOOP.md` by tests/test_agents_md.py, so the two cannot drift.
+
 **Without Docker / per client (stdio).** Each client spawns its own server; the Docker form uses the built image, so tools stay as old as the last `docker compose build`:
 
 ```sh
@@ -484,6 +486,7 @@ python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1 [--principal
 python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 --note "running tests"
 python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests"
 python -m unblockd.cli --dir <repo>/tickets list --status todo
+python -m unblockd.cli --dir <repo>/tickets agents-md [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md (see Connect the MCP server)
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store --skill pytest-runner --mcp postgres   # names from the board's registry
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent backend-1   # as a worker: strict schema, may park as a proposal

@@ -39,7 +39,7 @@ On the board, `g` is the graph, `d` the docs agents read, `j`/`k` step through c
 claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp
 ```
 
-With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board (snippet in docs/reference.md). Then tell Claude: *"use unblockd: run work_plan and work all ready tickets."* Watch cards move. An empty claim says why (`dry`, `conflict` = retry, `waiting`; see docs/reference.md). With agent profiles (the demo has `frontend`, `backend`), worker names must be `<profile>-N`, e.g. `backend-1`.
+With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board: `python -m unblockd.cli --dir <repo>/tickets agents-md --write <repo>/CLAUDE.md` adds the short claim / heartbeat / complete block. Then tell Claude: *"use unblockd: run work_plan and work all ready tickets."* Watch cards move. An empty claim says why (`dry`, `conflict` = retry, `waiting`; see docs/reference.md). With agent profiles (the demo has `frontend`, `backend`), worker names must be `<profile>-N`, e.g. `backend-1`.
 
 **3. Without Docker** (Python 3.10+; the board and CLI are stdlib only). Run a copy of the demo project, never `example/` itself:
 

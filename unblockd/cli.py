@@ -10,6 +10,7 @@
     python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"]
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
     python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
+    python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
     python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli context ID              # docs + attached files to read before working ID
     python -m unblockd.cli doc PATH                # one file from the project repo
@@ -40,6 +41,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from . import boards as bd
 from . import connectors
 from . import knowledge as kn
 from . import store as st
@@ -231,6 +233,9 @@ def main(argv: list[str] | None = None) -> int:
 		if name not in ("accept", "approve"):
 			x.add_argument("text")
 		x.add_argument("--by", default="human")
+	am = sub.add_parser("agents-md", help="print the short block for a project's CLAUDE.md / AGENTS.md that tells every agent session to claim, heartbeat and complete")
+	am.add_argument("--board", help="board id to name (default: the board's own id)")
+	am.add_argument("--write", metavar="FILE", help="append the block to FILE between markers (refused when they are already there; the rest of FILE is untouched)")
 	mg = sub.add_parser("migrate", help="copy a board to another place: a folder, sqlite:///x.db#board, postgres://...#board, mongodb://...#board")
 	mg.add_argument("--from", dest="src", required=True, help="where the board is now (a folder or a database URL + #board)")
 	mg.add_argument("--to", dest="dst", required=True, help="where it goes; must be empty unless --force")
@@ -290,6 +295,13 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.ask(a.id, a.agent, a.question, request_id=a.request_id)
 		elif a.cmd == "complete":
 			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id)
+		elif a.cmd == "agents-md":
+			board = a.board or (os.environ.get("UNBLOCKD_BOARD") or "default" if url else s.config["id"])
+			text = bd.agents_md(board, a.dir)
+			if not a.write:
+				print(text, end="")
+				return 0
+			out = bd.write_agents_md(a.write, text)
 		elif a.cmd == "agents":
 			out = s.agents_now()
 		elif a.cmd == "context":
