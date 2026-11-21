@@ -178,6 +178,24 @@ class BranchesTest(unittest.TestCase):
 		c = self.sync()["checkout"]
 		self.assertEqual((c["behind"], c["ahead"]), (2, 1))  # diverged: still counted from the last commit both have
 
+	def test_a_checkout_that_is_behind_picks_ids_above_origins_and_other_branches(self):
+		"""CORE-76: two clones each took the next number (NUT-88 twice): the lock is per filesystem. With branch evidence the board's
+		checkout skips ids origin's main and unmerged branches already hold."""
+		self.assertEqual(self.store.next_id("WEAR"), "WEAR-6")  # no scan yet: only what this checkout has
+		elsewhere = Store(self.worker / "tickets")  # the other clone
+		self.assertEqual(elsewhere.create({"title": "made in the other clone"}, prefix="WEAR")["id"], "WEAR-6")
+		git(self.worker, "add", "-A")
+		git(self.worker, "commit", "-qm", "WEAR-6")
+		git(self.worker, "push", "-q", "origin", "HEAD:main")
+		self.branch("wear-feature", {"tickets/WEAR-8.json": json.dumps({"id": "WEAR-8", "title": "on a branch"})}, "plan on a branch")
+		self.assertEqual(self.store.next_id("WEAR"), "WEAR-6")  # the board's checkout hasn't pulled
+		data = self.sync()
+		self.assertEqual(data["id_max"]["WEAR"], 8)
+		self.assertEqual(data["checkout"]["missing"], ["WEAR-6"])
+		t = self.store.create({"title": "made on the board"}, prefix="WEAR")
+		self.assertEqual(t["id"], "WEAR-9")
+		self.assertEqual(self.store.next_id("NEW"), "NEW-1")  # other prefixes untouched
+
 	def test_no_origin_reads_the_checkouts_own_refs(self):
 		git(self.board, "remote", "remove", "origin")
 		git(self.board, "branch", "wear-2-local")

@@ -912,7 +912,20 @@ class Store:
 		for f in self.legacy_files:
 			if f.exists():
 				nums += [int(m) for m in pat.findall(f.read_text(encoding="utf-8", errors="ignore"))]
+		nums.append(self._taken_elsewhere().get(prefix, 0))
 		return f"{prefix}-{max(nums, default=0) + 1}"
+
+	def _taken_elsewhere(self) -> dict[str, int]:
+		"""{prefix: highest number} on origin's default branch and on unmerged branches, from branches.json (the web server's branch
+		scan; absent = {}). Another clone's lock can't stop it picking the same next number, so a checkout that is behind skips past
+		what origin and other branches already hold (CORE-76)."""
+		if self.rt is None:
+			return {}
+		try:
+			got = json.loads((self.rt / "branches.json").read_text(encoding="utf-8")).get("id_max") or {}
+		except (OSError, ValueError, AttributeError):
+			return {}
+		return {k: v for k, v in got.items() if isinstance(v, int)} if isinstance(got, dict) else {}
 
 	def create(self, data: dict, tid: str | None = None, prefix: str | None = None, agent: str | None = None, request_id: str | None = None) -> dict:
 		"""Create from `data`. Give an explicit `tid`, or a `prefix` to get the next free number (a board whose schema lists exactly
