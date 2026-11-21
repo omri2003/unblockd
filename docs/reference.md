@@ -64,6 +64,13 @@ gets a derived `agent` (shown on its card, filterable in the bar).
 ]
 ```
 
+A ticket that routes to no profile (no pillar or tag a profile works, no
+`agent:` tag, not owned by a person) is never offered by `claim_next`, so
+create / update / batch create answer with a warning saying what to set, and
+the board shows how many open tickets are like that (Show them = the Unrouted
+filter). The New ticket form and quick add set the pillar from the prefix
+when the prefix is a pillar key.
+
 `work_plan` (MCP, `GET .../plan`, CLI `plan`) returns the ready tickets **not
 owned by a human**, grouped per profile with its `instructions`, `model`, `skills` and `mcp`:
 everything an orchestrator needs to spawn one agent per group. A single agent

@@ -482,3 +482,49 @@ class FileModeTest(unittest.TestCase):
 		self.s.update("BUG-1", {"title": "y"})
 		self.assertEqual(os.stat(p).st_mode & 0o777, 0o640)
 		self.assertEqual(self.s.get("BUG-1")["title"], "y")
+
+
+class UnroutableTest(unittest.TestCase):
+	"""CORE-82: a ticket no agent profile takes says so on create / update / create_many."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.dir = Path(self.tmp.name) / "tickets"
+		self.dir.mkdir()
+		(self.dir / "unblockd.json").write_text(json.dumps({
+			"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
+			"pillars": [{"key": "CORE", "name": "Core"}, {"key": "UI", "name": "UI"}],
+			"agents": [{"name": "backend", "pillars": ["CORE"]}, {"name": "frontend", "pillars": ["UI"], "tags": ["css"]}]}), encoding="utf-8")
+		self.s = Store(self.dir)
+
+	def tearDown(self):
+		self.tmp.cleanup()
+
+	def test_create_without_pillar_warns_with_what_to_set(self):
+		w = self.s.create({"title": "x", "owner": "Claude"}, prefix="CORE")["warnings"]
+		self.assertEqual(len(w), 1)
+		self.assertIn("no agent profile takes CORE-1", w[0])
+		self.assertIn("CORE/UI", w[0])
+		self.assertIn("css", w[0])
+		self.assertNotIn("warnings", self.s.create({"title": "y", "owner": "Claude", "pillar": "CORE"}, prefix="CORE"))
+		self.assertNotIn("warnings", self.s.create({"title": "z", "owner": "Claude", "tags": ["agent:frontend"]}, prefix="UI"))
+		self.assertNotIn("warnings", self.s.create({"title": "p", "owner": "Omri"}, prefix="CORE"))  # a person's ticket: theirs
+
+	def test_update_warns_while_unroutable_and_stops_once_fixed(self):
+		t = self.s.create({"title": "x", "owner": "Claude", "pillar": "UI"}, prefix="UI")
+		self.assertIn("no agent profile", self.s.update(t["id"], {"pillar": None})["warnings"][0])
+		self.assertIn("no agent profile", self.s.update(t["id"], {"priority": "P1"})["warnings"][0])  # still says so
+		self.assertNotIn("warnings", self.s.update(t["id"], {"tags": ["css"]}))
+
+	def test_create_many_warns_per_item(self):
+		got = self.s.create_many([{"title": "a", "prefix": "CORE", "owner": "Claude", "pillar": "CORE"},
+		                          {"title": "b", "prefix": "CORE", "owner": "Claude", "blocked_by": ["#1"]}])
+		self.assertEqual(list(got["warnings"]), ["#2"])
+		self.assertIn("no agent profile takes CORE-2", got["warnings"]["#2"][0])
+
+	def test_board_without_profiles_never_warns(self):
+		(self.dir / "unblockd.json").write_text(json.dumps({"owners": [{"name": "Claude", "kind": "agent"}]}), encoding="utf-8")
+		s = Store(self.dir)
+		t = s.create({"title": "x"}, prefix="BUG")
+		self.assertNotIn("warnings", t)
+		self.assertNotIn("warnings", s.update(t["id"], {"priority": "P1"}))
+		self.assertNotIn("warnings", s.create_many([{"title": "y", "prefix": "BUG"}]))

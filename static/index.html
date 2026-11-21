@@ -99,6 +99,7 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 /* digest: what happened since you last looked */
 .digest{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--slate);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .gitnote{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);padding:9px 12px;margin-bottom:12px;font-size:.88rem}
+@media (max-width:600px){#routeNote{display:none}} /* CORE-82: a setup hint for whoever files tickets; on a phone the cards come first */
 .gitnote p{margin:0;flex:1;min-width:0;overflow-wrap:anywhere} .gitnote .gi{color:var(--amber);padding-top:2px;display:inline-flex} .gitnote .gl{width:15px;height:15px}
 .liv.br .who{font-weight:600} .liv.br .st{color:var(--muted);font-weight:600}
 .brl{list-style:none;margin:0;padding:0;display:grid;gap:8px} .brl li{display:grid;gap:1px;min-width:0} .brl li.off{opacity:.75} .brl .bn{display:inline-flex;align-items:center;gap:5px;font-weight:600;min-width:0} .brl code{font-size:.85em;overflow-wrap:anywhere}
@@ -827,6 +828,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
   </div>
 
   <section class="gitnote" id="gitNote" hidden aria-label="This board's checkout"></section>
+  <section class="gitnote" id="routeNote" hidden aria-label="Tickets no agent takes"></section>
   <section class="digest" id="digest" hidden aria-label="While you were away"></section>
   <section class="next" id="nextUp" hidden aria-label="Next up"></section>
   <div class="tabs" id="tabs" role="tablist" aria-label="Status"></div>
@@ -1462,6 +1464,14 @@ function renderGit(){
   const h=!show?'':blind?`<span class="gi">${glyph('branch')}</span><p>This board can't read <code>${esc(GIT.remote)}</code>, so branches pushed from other machines don't show here (${esc(GIT.error.replace(/^could not read origin, showing this checkout's branches only: /,''))}). For a private repo, set <code>UNBLOCKD_GIT_TOKEN</code> on the server.</p><button type="button" class="btn ghost sm" data-gitdismiss>Dismiss</button>`:`<span class="gi">${glyph('branch')}</span><p>This board reads your checkout of <code>${esc(c.branch)}</code>${c.behind>0?`, ${n(c.behind,'commit')} behind origin`:''}${c.ahead>0?` (${n(c.ahead,'local commit')} not pushed)`:''}.${c.missing_count>0?` ${n(c.missing_count,'ticket')} on origin ${c.missing_count===1?'is':'are'} missing here (${esc(c.missing.slice(0,3).join(', '))}${c.missing_count>3?'…':''}).`:''} Pull to see merged work.</p><button type="button" class="btn ghost sm" data-gitdismiss>Dismiss</button>`;
   if(h===gHtml) return; gHtml=h; el.innerHTML=h; el.hidden=!show;
 }
+let rHtml=null; // CORE-82: open tickets no agent profile takes (no pillar or tag a profile works, not a person's): claim_next never offers them
+const unroutedIds=()=>(CFG.agents||[]).length?T.filter(t=>t.status!=='done'&&!t.agent&&!HUMAN.has(t.owner)).map(t=>t.id):[];
+function renderRoute(){
+  const el=$('routeNote'),ids=unroutedIds(),show=state.view==='board'&&ids.length>0&&store.get('unblockd.routeSeen.'+(BOARD||'default'),'')!==String(ids.length),
+    pil=[...new Set((CFG.agents||[]).flatMap(a=>a.pillars||[]))].join(', '),one=ids.length===1;
+  const h=!show?'':`<span class="gi">${glyph('agent')}</span><p><b>${ids.length}</b> open ticket${one?'':'s'} no agent profile takes (${esc(ids.slice(0,3).join(', '))}${ids.length>3?'…':''}), so no agent will pick ${one?'it':'them'} up. Set ${one?'its':'their'} ${esc(CFG.pillar_label.toLowerCase())}${pil?` (${esc(pil)})`:''}, a tag a profile works, or a person as owner.</p><button type="button" class="btn ghost sm" data-agent="NONE">Show ${one?'it':'them'}</button><button type="button" class="btn ghost sm" data-routedismiss>Dismiss</button>`;
+  if(h===rHtml) return; rHtml=h; el.innerHTML=h; el.hidden=!show;
+}
 const NSEEN='unblockd.nseen'; // {board: [ids]} the badge has shown; an id not in there pulses it once
 function needMark(t){ const n=NEEDS.find(g=>g.id===curBoard())?.items.find(i=>i.id===t.id&&i.kind==='stuck')?.attempts?.length; return n?`<span class="wl fail" title="Failed claims since a human last touched it; a note clears this">Failed ${n} times</span>`:''; }
 function paintNeeds(){
@@ -1570,9 +1580,10 @@ async function acceptTicket(bd,id){
   try{ await jf(`/api/b/${bd}/tickets/${id}/accept`,'POST',by()); await refreshAfter(bd); toast(`Accepted: ${id}`); }
   catch(er){ toast(er.message,{err:1}); }
 }
-function createdToast(t){ // a human's ticket that breaks the board's schema is still created: say what is missing, one click to fix it
+function createdToast(t){ // a human's ticket that breaks the board's schema, or that no agent profile takes (CORE-82), is still created: say what is missing, one click to fix it
   if(!t.warnings?.length) return toast(`Created ${t.id}`);
-  const n=document.createElement('span'); n.append(`Created ${t.id}. The board's schema wants: ${t.warnings.join('; ')}. `);
+  const rt=t.warnings.filter(w=>/^no agent profile takes /.test(w)),sc=t.warnings.filter(w=>!rt.includes(w));
+  const n=document.createElement('span'); n.append(`Created ${t.id}.${sc.length?` The board's schema wants: ${sc.join('; ')}.`:''}${rt.length?` No agent profile takes it: set its ${CFG.pillar_label.toLowerCase()} or a tag a profile works.`:''} `);
   const b=document.createElement('button'); b.type='button'; b.dataset.open=t.id; b.textContent='Open'; n.append(b); toast(n);
 }
 async function nPatch(bd,id,ch,back,msg){ // approve / release from the panel; Undo = one PATCH back
@@ -1683,7 +1694,7 @@ let qaBusy=false;
 async function quickAdd(f,again){
   const ti=f.querySelector('.qa-t'),prefix=f.querySelector('.qa-p').value.trim().toUpperCase(),title=ti.value.trim(); if(!title||qaBusy) return;
   qaBusy=true;
-  try{ const t=await api('POST','',{prefix,title}); store.set(qaKey(),prefix); ti.value=''; await load(true); createdToast(t); }
+  try{ const t=await api('POST','',{prefix,title,...(PILLARS.includes(prefix)?{pillar:prefix}:{})}); store.set(qaKey(),prefix); ti.value=''; await load(true); createdToast(t); }
   catch(er){ toast('Create failed: '+er.message,{err:1}); qaBusy=false; return; }
   qaBusy=false; const n=document.querySelector('.qa-t'); if(again) n?.focus(); else n?.blur();
 }
@@ -1902,7 +1913,7 @@ async function loadActs(id){
   ACTS.set(id,html); const cur=$('acts'); if(cur&&cur.dataset.for===id) cur.innerHTML=html;
 }
 function editForm(t){
-  const isNew=!t; t=t||{status:'todo',owner:[...HUMAN][0]||CFG.owners[0].name,priority:'P2',blocked_by:[],body:'',title:'',section:'',waiting_on:''};
+  const isNew=!t, p0=CFG.schema?qaPrefix():'BUG'; t=t||{status:'todo',owner:[...HUMAN][0]||CFG.owners[0].name,priority:'P2',blocked_by:[],body:'',title:'',section:'',waiting_on:'',pillar:PILLARS.includes(p0)?p0:null}; // CORE-82: a prefix that is a pillar key picks that pillar
   editing=true;
   const SC=isNew?CFG.schema:null, RQ=new Set(SC?.required||[]), R=f=>RQ.has(f)?' rq-l':'', S=f=>RQ.has(f)?'<b class="rq" title="Required by this board\'s schema"> *</b>':'';
   const opt=(vals,cur)=>vals.map(([v,l])=>`<option value="${esc(v)}" ${String(cur??'')===v?'selected':''}>${esc(l)}</option>`).join('');
@@ -1913,7 +1924,7 @@ function editForm(t){
     <label for="f-status">Status<select id="f-status">${opt(COLS,t.status)}</select></label>
     <label class="${R('owner').trim()}" for="f-owner">Owner${S('owner')}<select id="f-owner">${opt(CFG.owners.map(o=>[o.name,o.name]),t.owner)}</select></label>
     <label class="full${R('priority')}" for="f-priority">Priority${S('priority')}<select id="f-priority">${opt(PLAB,t.priority)}</select></label>
-    <label class="${R('pillar').trim()}" for="f-pillar" title="The kind of work: one per ticket (prefix, colour, which agent)">${esc(CFG.pillar_label)}${S('pillar')}<select id="f-pillar">${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
+    <label class="${R('pillar').trim()}" for="f-pillar" title="The kind of work: one per ticket (prefix, colour, which agent)">${esc(CFG.pillar_label)}${S('pillar')}<select id="f-pillar"${isNew&&t.pillar?' data-auto="1"':''}>${opt([['','None'],...PILLARS.map(p=>[p,pname(p)]),...(t.pillar&&!PILLARS.includes(t.pillar)?[[t.pillar,t.pillar]]:[])],t.pillar)}</select></label>
     ${MSL().length||t.milestone?`<label class="full" for="f-ms" title="The roadmap version it ships in">Milestone <span class="hint">the roadmap version it ships in</span><select id="f-ms">${opt([['','Unscheduled'],...MSL().map(m=>[m.key,m.title+(m.closed?' (closed)':'')]),...(t.milestone&&!MSL().some(m=>m.key===t.milestone)?[[t.milestone,t.milestone]]:[])],t.milestone)}</select></label>`:''}
     <label for="f-step">Pillar step<input id="f-step" type="number" min="1" value="${esc(t.pillar_step??'')}"></label>
     <label class="full" for="f-section">Section <span class="hint">pick one used on this board or type a new one</span><input id="f-section" maxlength="80" list="dl-section" value="${esc(t.section)}"><datalist id="dl-section">${[...new Set(T.map(x=>x.section).filter(Boolean))].sort().map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>
@@ -1934,7 +1945,9 @@ function editForm(t){
 function markReq(){ // schema-required fields that are still empty get an amber border; submitting is still allowed
   document.querySelectorAll('#editForm .rq-l').forEach(l=>l.classList.toggle('empty',l.querySelector('.pick')?!l.querySelector('.pc'):!l.querySelector('input,select,textarea').value.trim()));
 }
-for(const ev of['input','change']) document.addEventListener(ev,e=>{ if(e.target.closest?.('#editForm .rq-l')) markReq(); });
+for(const ev of['input','change']) document.addEventListener(ev,e=>{ if(e.target.closest?.('#editForm .rq-l')) markReq();
+  if(e.target.id==='f-prefix'){ const p=$('f-pillar'),v=e.target.value.trim().toUpperCase(); if(p&&(!p.value||p.dataset.auto)&&(PILLARS.includes(v)||p.dataset.auto)){ p.value=PILLARS.includes(v)?v:''; p.dataset.auto=p.value?'1':''; markReq(); } } }); // the pillar follows the prefix until picked by hand
+document.addEventListener('change',e=>{ if(e.target.id==='f-pillar') delete e.target.dataset.auto; });
 async function submitForm(f){
   const m=$('fMsg'); m.className='msg'; m.textContent='Saving…';
   const data={title:$('f-title').value,status:$('f-status').value,priority:$('f-priority').value||null,owner:$('f-owner').value,
@@ -1994,6 +2007,7 @@ document.addEventListener('click',async e=>{
   if(g('[data-new]')){openId=null;editForm(null);return;}
   if(b=g('[data-dgmore]')){dgMore.add(b.dataset.dgmore);renderDigest();return;}
   if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
+  if(g('[data-routedismiss]')){store.set('unblockd.routeSeen.'+(BOARD||'default'),String(unroutedIds().length));renderRoute();return;} // back when the count changes
   if(g('[data-gitdismiss]')){store.set('unblockd.gitSeen.'+(BOARD||'default'),gitKey());renderGit();return;} // it comes back when the numbers change
   if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
   if(b=g('[data-dghidesec]')){const s=digestGroups().find(x=>x[0]===b.dataset.dghidesec); if(s) dgHide(s[3],`${s[3].length} ${s[2].toLowerCase()}`); return;}
@@ -3226,8 +3240,8 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	document.startViewTransition(()=>setView(v));
 }
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('roadWrap').hidden=v!=='roadmap';$('bar').hidden=v==='docs'||v==='map'||v==='roadmap';$('depSeg').hidden=v!=='graph';$('layoutSeg').hidden=v!=='board';
-  paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
-function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
+  paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderRoute();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
+function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderRoute();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
 // ---------- Roadmap: the board's milestones (unblockd.json, in order) as progress rows; a row expands to its tickets (chips) and exit criteria ----------
 const RMS=[['done','done'],['review','in review'],['doing','in progress'],['ready','not started'],['waiting','waiting on a person'],['blocked','blocked']]; // bar order = legend order
 const RMC=[['ready','ready'],['doing','in progress'],['review','in review'],['waiting','waiting on a person'],['blocked','blocked']];
@@ -3327,7 +3341,7 @@ async function switchBoard(v,push=true){
   DG=null; dgOpen=false; dgMore.clear(); dgHtml='';
   archSig=null; docSig=null; archDue=false; docDue=false; // UI-73: the Map / Docs fetch is due again on the first load, as on a fresh page
   NEEDS=[]; nLoaded=false; nErr=''; NX=null; npSig=''; npShown=false; nEtag=null; lastNFocus=null; NMARK='';
-  GIT=null; gEtag=null; gHtml=null; renderGit();
+  GIT=null; gEtag=null; gHtml=null; renderGit(); rHtml=null;
   Object.assign(AP,{ev:null,err:'',tl:null,draft:null,terr:'',more:false});
   Object.assign(G,{nodes:new Map(),edges:[],ments:[],down:{},k:1,tx:0,ty:0,alpha:0,key:'',lkey:'',hover:null,focus:null,isolate:null,saved:null,restore:false,ptr:null,sized:false,fitted:false,lanes:[],preds:new Map(),critG:null,critF:null,selEdge:null,link:null,pts:new Map(),pinch:null,anims:[],last:0,fitSettle:false});
   CH.busy=false; CH.others.clear(); chatLoad(); renderChat();

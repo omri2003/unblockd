@@ -48,7 +48,7 @@ class ReportStore(unittest.TestCase):
 		got = self.s.create({"title": "c", "status": "done"}, prefix="A")
 		self.assertTrue(any("complete()" in w for w in got["warnings"]))
 		self.assertTrue(self.s.get(got["id"])["unreported"])
-		self.assertNotIn("warnings", self.s.create({"title": "d"}, prefix="A"))
+		self.assertNotIn("warnings", self.s.create({"title": "d", "tags": ["api"]}, prefix="A"))  # routable: no CORE-82 warning either
 
 	def test_complete_is_not_unreported_and_does_not_warn(self):
 		t = self.s.create({"title": "e", "tags": ["api"]}, prefix="A")

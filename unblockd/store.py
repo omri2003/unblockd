@@ -818,6 +818,19 @@ class Store:
 				return ag["name"]
 		return None
 
+	def unroutable(self, t: dict) -> list[str]:
+		"""CORE-82: a warning when no agent profile will take this open ticket (board with profiles, not owned by a person):
+		claim_next never offers it to anyone, so the creator is told what to set. [] otherwise (profile-less boards: nothing)."""
+		ags = self.config["agents"]
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		if not ags or t.get("status") == "done" or t.get("owner") in humans or self.route(t):
+			return []
+		pil = list(dict.fromkeys(p for a in ags for p in a.get("pillars", [])))
+		tags = list(dict.fromkeys(x for a in ags for x in a.get("tags", [])))
+		how = ", ".join(x for x in (f"set pillar {'/'.join(pil)}" if pil else "", f"a tag {'/'.join(tags)}" if tags else "",
+		                                f"tag agent:<{'|'.join(a['name'] for a in ags)}>") if x)
+		return [f"no agent profile takes {t.get('id')}: {how}, or owner a person (claim_next never offers it)"]
+
 	def is_agent(self, name: str, tid: str | None = None) -> bool:
 		"""Is this author a worker rather than a person? A name that resolves to a profile, an agent owner, the holder of
 		tid's live claim, or a service (github). Everyone else (Omri, human, anyone typing in the web board) is a person."""
@@ -959,7 +972,7 @@ class Store:
 				raise TicketError(self._schema_refusal(problems))
 			t = self._create(data, tid, pre, proposed_by=agent if strict and self.config["agent_tickets"] == "propose" else "", agent=agent)
 			self._record_request(agent, request_id, "create", t["id"])
-			problems = problems + ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else [])  # a new ticket never has a result
+			problems = problems + ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else []) + self.unroutable(t)  # a new ticket never has a result
 			return {**t, "warnings": problems} if problems else t
 		got = self._locked(run)
 		return self._already(got) if "already" in got else got
@@ -1141,6 +1154,9 @@ class Store:
 				if proposed:
 					self._log("proposed", t["id"], proposed, t["title"])
 			out = {"tickets": [self.get(x) for x in done], "ids": {f"#{i + 1}": x for i, x in enumerate(done)}}
+			for i, t in enumerate(out["tickets"]):
+				if (w := self.unroutable(t)):
+					warns.setdefault(f"#{i + 1}", []).extend(w)
 			return {**out, "warnings": warns} if warns else out
 		return self._locked(run)
 
@@ -1262,7 +1278,8 @@ class Store:
 			self._log("done", tid, agent or (str(by).strip() if by and str(by).strip() else "human"))  # who moved it (CORE-68)
 			if not (t.get("result") or {}).get("summary"):
 				return {**self.get(tid), "warnings": [_NO_REPORT.format(id=tid)]}
-		return self.get(tid)
+		got = self.get(tid)
+		return {**got, "warnings": w} if (w := self.unroutable(got)) else got
 
 	def _holder_only(self, tid: str, agent: str | None) -> None:
 		"""An agent that is not the live holder of tid may not change, split or delete it. agent None = a human: unchanged."""
