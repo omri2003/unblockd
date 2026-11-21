@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.2.0 (2026-11-22)
+
 79 pull requests since v0.1.0. Drafted with `scripts/release_notes.py v0.1.0`, then edited (docs/releasing.md).
 
 ### Upgrading from v0.1.0
