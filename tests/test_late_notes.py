@@ -101,6 +101,19 @@ class LateNotesTest(unittest.TestCase):
 		s.complete("B-2", "backend-1", "done")
 		self.assertNotIn("late", self.needs()["B-2"])
 
+	def test_a_note_in_the_same_second_as_done_counts_only_after_the_finishing_note(self):
+		s = self.s
+		s.add_note("B-1", "Omri", "before it finished")
+		s.claim("backend-1", tid="B-1")
+		s.complete("B-1", "backend-1", "done")
+		s.add_note("B-1", "Omri", "right after it finished")
+		p = self.dir / "B-1.json"  # done_at has whole seconds: put every note in that same second
+		t = json.loads(p.read_text(encoding="utf-8"))
+		for n in t["notes"]:
+			n["at"] = t["done_at"]
+		p.write_text(json.dumps(t), encoding="utf-8")
+		self.assertEqual([n["text"] for n in self.needs()["B-1"]["late"]], ["right after it finished"])
+
 	def test_a_persons_note_on_a_done_ticket_until_reopen_or_dismiss(self):
 		s = self.s
 		for tid in ("B-1", "B-2"):

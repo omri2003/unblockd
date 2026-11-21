@@ -1635,9 +1635,13 @@ class Store:
 			return []
 		done_at = _ts(t["done_at"]) if t.get("done_at") else None
 		end = max((i for i, n in enumerate(notes) if n.get("kind") in ("complete", "approved")), default=None)
+		def after(i, n):  # done_at has whole seconds: a note in the same second counts when it comes after the finishing note
+			if done_at is None:
+				return end is not None and i > end
+			at = _ts(n.get("at") or "1970-01-01T00:00:00+00:00")
+			return at > done_at or (at == done_at and (end is None or i > end))
 		return [dict(n) for i, n in enumerate(notes)
-		        if n.get("kind") in kinds and not n.get("dismissed_by")
-		        and (_ts(n.get("at") or "1970-01-01T00:00:00+00:00") > done_at if done_at is not None else end is not None and i > end)
+		        if n.get("kind") in kinds and not n.get("dismissed_by") and after(i, n)
 		        and not self.is_agent(n.get("by") or "", t["id"])]  # last: it reads claims.json
 
 	def dismiss_notes(self, tid: str, by: str, ns: list[int], undo: bool = False) -> dict:
