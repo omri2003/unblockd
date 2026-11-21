@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unblockd"
+version = "0.1.0"
+description = "A dependency-aware ticket board for humans and AI agents: one JSON file per ticket, in your repo."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = []  # the board, CLI and REST API are stdlib only
+
+[project.optional-dependencies]
+mcp = ["mcp>=2.2,<3"]  # keep equal to requirements.txt (CI and the image install that)
+# database connectors (keep equal to requirements-db.txt); files and SQLite boards need none of them
+postgres = ["psycopg[binary]>=3.2,<4"]
+mongo = ["pymongo>=4.6,<5"]
+db = ["unblockd[postgres,mongo]"]
+all = ["unblockd[mcp,db]"]
+
+[project.scripts]
+unblockd = "unblockd.cli:main"
+unblockd-web = "unblockd.web:main"
+unblockd-mcp = "unblockd.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/omri2003/unblockd"
+
+[tool.setuptools]
+# The UI lives at the repo's static/ (compose mounts it there); an install carries it as unblockd/static/,
+# which web.py serves when it exists.
+packages = ["unblockd", "unblockd.static"]
+
+[tool.setuptools.package-dir]
+"unblockd.static" = "static"
+
+[tool.setuptools.package-data]
+unblockd = ["*.md"]
+"unblockd.static" = ["index.html"]

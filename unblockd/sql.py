@@ -81,7 +81,7 @@ class _Conn:
 				import psycopg  # noqa: PLC0415 - optional: only boards on Postgres need it
 			except ImportError:
 				raise TicketError("this board is on Postgres, which needs the psycopg package: pip install \"psycopg[binary]\" "
-				                  "(the Docker image includes it)") from None
+				                  "or pip install \"unblockd[postgres]\" (the Docker image includes it)") from None
 			def go():
 				try:
 					return psycopg.connect(url, autocommit=True, connect_timeout=CONNECT_S)

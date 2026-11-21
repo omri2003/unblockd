@@ -24,9 +24,12 @@ import sys
 import time
 from pathlib import Path
 
-from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
-from mcp.server.transport_security import TransportSecuritySettings
+try:
+	from mcp.server.mcpserver import MCPServer
+	from mcp.server.mcpserver.exceptions import ToolError
+	from mcp.server.transport_security import TransportSecuritySettings
+except ImportError as e:  # still an ImportError: the tests skip on it
+	raise ImportError(f"unblockd's MCP server needs the mcp package ({e}): pip install \"unblockd[mcp]\" or pip install -r requirements.txt") from e
 
 from . import boards as bd
 from . import knowledge as kn

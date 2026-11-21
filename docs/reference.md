@@ -421,6 +421,8 @@ Tickets for this repo live on the unblockd board `<repo>`; pass board=<repo> to 
 claude mcp add unblockd --scope user -- docker run -i --rm -v /path/to/projects:/projects unblockd python -m unblockd.mcp_server
 ```
 
+Or install the package (`pyproject.toml`; stdlib only; extras: `[mcp]` for the MCP server, `[postgres]` / `[mongo]` / `[db]` (both) for database boards, `[all]` for everything) and use its commands, no `PYTHONPATH`: `pip install ".[mcp]"` from a clone, then `claude mcp add unblockd -e UNBLOCKD_ROOT=/path/to/projects -- unblockd-mcp`. It also installs `unblockd-web` (the board, same env vars as `python -m unblockd.web`) and `unblockd` (the CLI). Without installing: `uvx --from . unblockd-web` (uv). An installed copy serves the UI from `unblockd/static/` inside the package; a checkout serves `static/`.
+
 **Claude Desktop** (`claude_desktop_config.json`) only starts local (stdio) commands:
 
 ```json
@@ -541,7 +543,7 @@ A board's tickets live in one connector. **Files** (the default) is the `tickets
 (experimental, CORE-30) keeps many boards in one database: SQLite (`sqlite:///path/to/unblockd.db`, nothing to install)
 or Postgres (`postgres://user:password@host:5432/db`). **MongoDB** (experimental, CORE-31): `mongodb://user:password@host:27017/db`
 (database `unblockd` when the URL names none; Atlas `mongodb+srv://` works the same). Postgres and MongoDB need
-`pip install -r requirements-db.txt` (included in the Docker image).
+`pip install -r requirements-db.txt`, or with the package `pip install "unblockd[db]"` (`[postgres]` / `[mongo]` for one) (included in the Docker image).
 
 **Serve a database board** by naming it, with `#board` after the URL, in `UNBLOCKD_BOARDS` (or `TICKETS_DIR`), next to
 any folders; entries are separated like paths (`:` on Linux/macOS, `;` on Windows; a URL's own `:` is fine):

@@ -76,7 +76,9 @@ from . import knowledge as kn
 from . import notify
 from . import store as st
 
-STATIC = Path(__file__).resolve().parent.parent / "static"
+STATIC = Path(__file__).resolve().parent / "static"  # an installed package (pyproject.toml) carries the UI here
+if not (STATIC / "index.html").is_file():
+	STATIC = STATIC.parent.parent / "static"  # a checkout (and the image, where compose mounts ./static)
 BOARDS = bd.from_env()
 MAX_BODY = 1_000_000
 

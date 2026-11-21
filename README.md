@@ -45,7 +45,7 @@ With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each r
 
 ```sh
 git clone https://github.com/omri2003/unblockd && cd unblockd
-mkdir -p /tmp/demo/shop && cp -r example/tickets /tmp/demo/shop/
+mkdir -p /tmp/demo/shop && cp -r example/. /tmp/demo/shop/
 UNBLOCKD_ROOT=/tmp/demo python -m unblockd.web
 ```
 
@@ -58,12 +58,12 @@ python -m unblockd.cli --dir /tmp/demo/shop/tickets create --prefix API --title 
 Expected: `"id": "API-3"`, and the card appears within 4 s. For step 2 use one stdio process per client instead:
 
 ```sh
-pip install mcp
-claude mcp add unblockd -e UNBLOCKD_ROOT=/tmp/demo -e PYTHONPATH=$PWD -- python -m unblockd.mcp_server
+pip install ".[mcp]"
+claude mcp add unblockd -e UNBLOCKD_ROOT=/tmp/demo -- unblockd-mcp
 claude mcp list
 ```
 
-Expected: `unblockd: python -m unblockd.mcp_server - Connected`. `PYTHONPATH` must be this checkout (not pip-installed).
+Expected: `unblockd: unblockd-mcp - Connected`. The install also gives `unblockd-web` (the board) and `unblockd` (the CLI); `uvx --from . unblockd-web` runs the board without installing.
 
 **In the UI:** a working agent's card says `live · 40 s` or `quiet · 11 min`, with its lease bar. **Waiting** splits by reason: *On you*, *On other work*, *Parked*. The **Needs you** badge (`i`) collects, across all boards, questions, reviews and stuck tickets; answer, approve or *Request changes…* inline. The title switches boards (`Shift+B`). Priorities: P0 breaks things now, P1 must happen, P2 should, P3 nice to have (`p` then `0`-`3`).
 
