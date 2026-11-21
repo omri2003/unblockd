@@ -539,6 +539,24 @@ class ClaimTest(unittest.TestCase):
 		for tid in got:  # an unlocked update re-writes the old status over the claim
 			self.assertEqual(self.s.get(tid)["status"], "doing", tid)
 
+	def test_claim_next_reads_the_board_once(self):
+		"""CORE-61: claim_next used to read every ticket 3 times (by_id, next_ready, the reply); one backend.tickets() now, the write patched in."""
+		calls = []
+		real = self.s.backend.tickets
+		with mock.patch.object(self.s.backend, "tickets", lambda: calls.append(1) or real()):
+			got = self.s.claim_next("backend-1")
+			self.assertEqual((got["id"], got["status"], got["effective_status"], got["claim"]["agent"], got["rev"]), ("CMB-1", "doing", "doing", "backend-1", 2))
+			self.assertEqual(len(calls), 1)
+			calls.clear()
+			self.s.claim_next("backend-2")  # CMB-3: CMB-2 overlaps CMB-1's touches
+			calls.clear()
+			none = self.s.claim_next("backend-3")  # nothing left: the reason comes from the same read
+			self.assertEqual((none["ticket"], none["reason"], len(calls)), (None, "conflict", 1))
+			self.s.release("CMB-3", "backend-2")
+			calls.clear()
+			self.assertEqual((self.s.claim("backend-4", tid="CMB-3")["claim"]["agent"], len(calls)), ("backend-4", 1))  # by id too
+		self.assertEqual(Store(self.dir).get("CMB-1")["claim"]["agent"], "backend-1")  # a fresh read agrees with the reply
+
 
 class PrincipalTest(unittest.TestCase):
 	"""principal = the human an agent works for: validated, stored in the claim, copied to result, part of the holder check."""
