@@ -258,6 +258,7 @@ a.btn{display:inline-block;text-decoration:none}
 .card.dn{display:flex;align-items:baseline;gap:8px;padding:4px 10px 4px 9px}
 .card.dn .ttl{display:block;-webkit-line-clamp:unset;line-clamp:unset;flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.dn .age{font-size:.76rem;color:var(--muted)}
+.lrow .lw.unr{color:var(--amber);font-weight:600} /* CORE-83: List row of a done ticket without a summary */
 .card.dn .unr{flex:none;font-size:.68rem;font-weight:700;color:var(--amber);border:1px solid currentColor;border-radius:3px;padding:0 4px;white-space:nowrap} /* UI-79: done without a summary (CORE-68) */
 .cw.dn .mv{top:50%;bottom:auto;transform:translateY(-50%)}
 .cw.dn:hover .age,.cw.dn:focus-within .age,.cw.dn:has(.mv[open]) .age{visibility:hidden}
@@ -1144,13 +1145,13 @@ let paint=null; // the deferred render, if any
 // UI-73: a heartbeat changes claim.heartbeat_at (and the inbox mark `seen`) and nothing else, but every worker beats every few minutes:
 // that must not refetch /api/needs, /git and /architecture in every open tab. hbOnly = the two texts differ only there;
 // sigOf = the fields a server view reads, so the Map and Docs refetch only when one of those changed (archDue/docDue survive a deferred paint).
-const hbStrip=s=>s.replace(/"(?:heartbeat_at|seen)": ?(?:"[^"]*"|\d+)/g,'');
+const hbStrip=s=>s.replace(/"(?:heartbeat_at|seen|expires_at)": ?(?:"[^"]*"|\d+)/g,''); // expires_at moves with every heartbeat too
 const hbOnly=(a,b)=>a.length>0&&b.length>0&&hbStrip(a)===hbStrip(b);
 const ARCHF=['id','status','effective_status','touches','components'], DOCF=['id','title','status','tags','pillar','agent','docs','components','touches','files'];
 const sigOf=(ts,f)=>JSON.stringify(ts.map(t=>f.map(k=>t[k])));
 let archSig=null, docSig=null, archDue=false, docDue=false;
 function paintBeats(){ // the liveness line (time + lease bar) of every card, and the open drawer's "last heard": nothing else reads a heartbeat
-  document.querySelectorAll('time[data-hb]').forEach(e=>{ const hb=BY.get(e.closest('[data-open]')?.dataset.open)?.claim?.heartbeat_at; if(hb) e.dataset.hb=hb; });
+  document.querySelectorAll('time[data-hb]').forEach(e=>{ const c=BY.get(e.closest('[data-open]')?.dataset.open)?.claim; if(c?.heartbeat_at) e.dataset.hb=c.heartbeat_at; if(c?.expires_at) e.dataset.exp=c.expires_at; });
   tickAges(); if(openId&&!editing&&!$('drawer').hidden&&BY.has(openId)&&!paint) showTicket(openId,true);
 }
 let DATA=false, live=false, DROP=null; // DATA: true only while paint() renders fresh ticket data (not the first paint: `live`). Only those renders animate (cards slide, Needs rows fade); a filter, search, group, view or board change just redraws. DROP: where the last drag ended, so that card slides from the pointer
@@ -1343,8 +1344,8 @@ function card(t){
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:'',needMark(t)].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
-  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${t.unreported?'<span class="unr" title="Finished without a summary: open it to add what changed">no summary</span>':''}${meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
-  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${!t.claim&&onBr(t).length?brLine(onBr(t)[0]):''}${warn}</button>${mvMenu(t)}</div>`;
+  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):'')+(t.unreported?' · closed '+t.updated:''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${t.unreported?'<span class="unr" title="Finished without a summary: open it to add what changed">no summary</span>':meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
+  return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"${t.claim.expires_at?` data-exp="${esc(t.claim.expires_at)}"`:''}></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${!t.claim&&onBr(t).length?brLine(onBr(t)[0]):''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
   const el=$('bulk'),n=SEL.size; el.hidden=!n; document.body.classList.toggle('hasbulk',!!n); if(!n){el.innerHTML='';return;}
@@ -1655,8 +1656,9 @@ function toolsHtml(){
 }
 // heartbeat ages on cards: filled from the timestamp, so the JSON stays stable between polls; late = older than half the lease (10 min if unknown)
 function tickAges(){document.querySelectorAll('[data-since]').forEach(e=>{const d=e.dataset.since,n=Math.floor((Date.now()-Date.parse(d))/864e5);e.textContent=d.includes('T00:00:00')?(n<1?'today':n+'d'):ago(d);e.title=e.dataset.since;});
-  const lease=CFG.lease_minutes||20,lim=lease*30000,short=ms=>{const m=ms/6e4;return ms<6e4?Math.round(ms/1e3)+' s':m<60?Math.round(m)+' min':m<1440?Math.round(m/60)+' h':Math.round(m/1440)+' d';};
-  document.querySelectorAll('[data-hb]').forEach(e=>{const ms=Math.max(0,Date.now()-Date.parse(e.dataset.hb)),q=ms>lim,l=e.closest('.liv'),pct=Math.min(100,100*ms/(lease*6e4)),lb=l.nextElementSibling,tip=`${Math.min(lease,Math.round(ms/6e4))} of ${lease} min lease used`;
+  const short=ms=>{const m=ms/6e4;return ms<6e4?Math.round(ms/1e3)+' s':m<60?Math.round(m)+' min':m<1440?Math.round(m/60)+' h':Math.round(m/1440)+' d';};
+  document.querySelectorAll('[data-hb]').forEach(e=>{const hb=Date.parse(e.dataset.hb),ex=Date.parse(e.dataset.exp||''),lease=ex>hb?Math.round((ex-hb)/6e4):CFG.lease_minutes||20, // the claim's own lease: its profile's, or a heartbeat(until=) (CORE-83)
+    ms=Math.max(0,Date.now()-hb),q=ms>lease*30000,l=e.closest('.liv'),pct=Math.min(100,100*ms/(lease*6e4)),lb=l.nextElementSibling,tip=`${Math.min(lease,Math.round(ms/6e4))} of ${lease} min lease used`;
     e.textContent=(q?'quiet · ':'live · ')+short(ms);l.classList.toggle('quiet',q);l.title=q?'No heartbeat for a while. The claim expires if it stays quiet.':'Heard from recently';
     if(lb?.classList.contains('lbar')){lb.firstChild.style.width=pct+'%';lb.title=tip;lb.setAttribute('aria-label',tip);}});
   document.querySelectorAll('[data-up]').forEach(e=>{const d=Math.floor((Date.now()-Date.parse(e.dataset.up+'T00:00:00'))/864e5);if(isNaN(d))return;const done=e.dataset.st==='done';
@@ -1729,11 +1731,12 @@ function lwhy(t){ // the card's reason line, as plain words
   if(s==='pending') return t.proposed_by?'Proposal by '+t.proposed_by:t.open_blockers.length?'Blocked by '+t.open_blockers.join(', '):t.waiting_on?(t.asked_by?'Question from '+t.asked_by:'Parked: '+t.waiting_on):'';
   if(t.claim) return t.claim.agent+(t.claim.principal?' for '+t.claim.principal:'');
   if(onBr(t).length) return 'On branch '+onBr(t)[0].name;
-  return s!=='done'&&t.unblocks?'Unblocks '+t.unblocks:'';
+  if(s==='done') return t.unreported?'Finished without a summary':''; // CORE-83: the List layout carries the Done card's mark
+  return t.unblocks?'Unblocks '+t.unblocks:'';
 }
 function lrow(t,st){
   const s=t.effective_status,pc=PILLARS.includes(t.pillar)?` style="--pc:var(--${pk(t.pillar)})"`:'',w=lwhy(t);
-  return `<button type="button" class="lrow${SEL.has(t.id)?' sel':''}${t.priority==='P0'&&s!=='done'?' p0':''}${t.claim?' claimed':''}" data-open="${esc(t.id)}"${pc}>${st?`<span class="status ${s}">${NAME[s]}</span>`:''}<span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="lt" title="${esc(t.title)}">${inline(t.title)}</span><span class="lw" title="${esc(w)}">${esc(w)}</span><span class="lo">${ownHtml(t.owner)}</span><span class="age" data-up="${esc(t.updated)}" data-st="${s}"></span></button>`;
+  return `<button type="button" class="lrow${SEL.has(t.id)?' sel':''}${t.priority==='P0'&&s!=='done'?' p0':''}${t.claim?' claimed':''}" data-open="${esc(t.id)}"${pc}>${st?`<span class="status ${s}">${NAME[s]}</span>`:''}<span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:'<span></span>'}<span class="lt" title="${esc(t.title)}">${inline(t.title)}</span><span class="lw${s==='done'&&t.unreported?' unr':''}" title="${esc(w)}">${esc(w)}</span><span class="lo">${ownHtml(t.owner)}</span><span class="age" data-up="${esc(t.updated)}" data-st="${s}"></span></button>`;
 }
 function listHtml(vis){
   const at=t=>Date.parse(t.done_at||t.updated),open=vis.filter(t=>t.effective_status!=='done'),dn=vis.filter(t=>t.effective_status==='done').sort((a,b)=>at(b)-at(a));

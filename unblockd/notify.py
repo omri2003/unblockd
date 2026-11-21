@@ -33,6 +33,9 @@ def _line(board: str, e: dict, titles: dict) -> str | None:
 		return f"👍 {board}: {tid} {titles.get(tid, '')} accepted by {who}"
 	if ev == "approved":
 		return f"✅ {board}: {tid} {titles.get(tid, '')} approved by {who}"
+	if ev == "reported":  # CORE-68 / CORE-83: a person wrote the summary a hand-closed ticket lacked
+		first = note.splitlines()[0] if note else ""
+		return f"📄 {board}: {tid} {titles.get(tid, '')} summary added by {who}" + (f" — {first}" if first else "")
 	if ev == "ran_dry":
 		return f"🏁 {board} ran dry: no ready tickets and no agent working"
 	return None

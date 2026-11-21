@@ -39,7 +39,7 @@ On the board, `g` is the graph, `d` the docs agents read, `j`/`k` step through c
 claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp
 ```
 
-With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board: `python -m unblockd.cli --dir <repo>/tickets agents-md --write <repo>/CLAUDE.md` adds the short claim / heartbeat / complete block. Then tell Claude: *"use unblockd: run work_plan and work all ready tickets."* Watch cards move. An empty claim says why (`dry`, `conflict` = retry, `waiting`; see docs/reference.md). With agent profiles (the demo has `frontend`, `backend`), worker names must be `<profile>-N`, e.g. `backend-1`.
+With `UNBLOCKD_TOKEN` set add `--header "Authorization: Bearer <token>"`. Each repo's CLAUDE.md names its board: `python -m unblockd.cli --dir <repo>/tickets agents-md --write <repo>/CLAUDE.md` adds the short claim / heartbeat / complete block. Then tell Claude: *"use unblockd: run work_plan and work all ready tickets."* Watch cards move. An empty claim says why. With agent profiles (the demo has `frontend`, `backend`), worker names must be `<profile>-N`, e.g. `backend-1`.
 
 **3. Without Docker** (Python 3.10+; the board and CLI are stdlib only). Run a copy of the demo project, never `example/` itself:
 
@@ -65,7 +65,7 @@ claude mcp list
 
 Expected: `unblockd: unblockd-mcp - Connected`. The install also gives `unblockd-web` (the board) and `unblockd` (the CLI); `uvx --from . unblockd-web` runs the board without installing.
 
-**In the UI:** a working agent's card says `live · 40 s` or `quiet · 11 min`, with its lease bar. **Waiting** splits by reason: *On you*, *On other work*, *Parked*. The **Needs you** badge (`i`) collects, across all boards, questions, reviews and stuck tickets; answer, approve or *Request changes…* inline. The title switches boards (`Shift+B`). Priorities: P0 breaks things now, P1 must happen, P2 should, P3 nice to have (`p` then `0`-`3`).
+**In the UI:** a working agent's card says `live · 40 s` or `quiet · 11 min`, with its lease bar. **Waiting** splits by reason: *On you*, *On other work*, *Parked*. The **Needs you** badge (`i`) collects, across all boards, questions, reviews and stuck tickets; answer, approve or *Request changes…* inline. The title switches boards (`Shift+B`). Priorities P0 (breaks things now) to P3 (nice to have): `p` then `0`-`3`.
 
 ## What your agents see
 
@@ -81,7 +81,6 @@ Map: an agent on one component gets the contracts of the parts it touches.
 |---|---|
 | **Ticket** | One JSON file in `<project>/tickets/`. Status `todo`, `doing`, `review`, `done` (`pending` is derived: a todo with an open blocker or a `waiting_on` question; shown as **Waiting**). |
 | **Ready** | Open, nothing open blocks it, not human-owned, not waiting on a person. Agents only claim ready tickets. |
-| **Blocked / pending** | Derived: a `todo` with an open `blocked_by` is pending until its blockers are done. |
 | **Pillar** | A workstream (UI, API, ...): a colour, filter and graph lane. |
 | **Profile** | An agent type in the board config: tags/pillars, model, instructions. `work_plan` groups ready tickets per profile. |
 | **Claim, lease, heartbeat** | `claim_next` gives a worker one ticket and sets it to `doing`. With no `heartbeat` for `lease_minutes` (15) the claim expires and the ticket returns to todo. |
@@ -99,7 +98,7 @@ Put project rules (tests, commits, when to ask a human) in a doc such as `AGENT_
 |---|---|
 | `UNBLOCKD_ROOT` | Folder(s) of projects; each `<project>/tickets/unblockd.json` is a board. |
 | `HOST`, `PORT` | Bind address (default `127.0.0.1`, `8787`). |
-| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, and a non-loopback `HOST` refuses to start unless `UNBLOCKD_ALLOW_OPEN=1` (compose sets it; its ports bind 127.0.0.1 only). Writes must be `application/json`; a foreign `Origin` is refused. The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI ignore it. |
+| `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>`, or open `/?token=<token>` once to set a cookie. Unset: no auth, and a non-loopback `HOST` refuses to start unless `UNBLOCKD_ALLOW_OPEN=1` (compose sets it; its ports bind 127.0.0.1 only). The HTTP MCP server (`MCP_PORT`, default `8788`) needs the same Bearer token; stdio MCP and CLI ignore it. |
 
 ## More
 

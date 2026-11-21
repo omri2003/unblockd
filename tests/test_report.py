@@ -44,6 +44,11 @@ class ReportStore(unittest.TestCase):
 		self.assertEqual(self.s.activity(t2["id"], limit=1)[0]["agent"], "human")
 		self.assertNotIn("warnings", self.s.update(t2["id"], {"priority": "P1"}))  # only the move to done warns
 
+	def test_create_many_done_warns(self):  # CORE-83: like create()
+		got = self.s.create_many([{"title": "a", "prefix": "A", "tags": ["api"]}, {"title": "b", "prefix": "A", "status": "done"}])
+		self.assertEqual(list(got["warnings"]), ["#2"])
+		self.assertTrue(any("complete()" in w for w in got["warnings"]["#2"]))
+
 	def test_create_done_warns(self):
 		got = self.s.create({"title": "c", "status": "done"}, prefix="A")
 		self.assertTrue(any("complete()" in w for w in got["warnings"]))

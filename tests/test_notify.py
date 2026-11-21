@@ -119,6 +119,16 @@ class NotifyTest(unittest.TestCase):
 		n.poll()
 		self.assertEqual(self.msgs(), ["✅ game: BUG-2 a approved by Omri"])
 
+	def test_reported_line(self):
+		n = self.notifier()
+		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")
+		self.s.create({"title": "a", "owner": "Claude", "status": "done"}, tid="BUG-2")  # closed by hand, no summary
+		n.poll()
+		Receiver.got = []
+		self.s.report("BUG-2", "Omri", "fixed the parser\nmore detail")
+		n.poll()
+		self.assertEqual(self.msgs(), ["📄 game: BUG-2 a summary added by Omri — fixed the parser"])
+
 	def test_batching(self):
 		n = self.notifier()
 		self.s.create({"title": "keep busy", "owner": "Claude"}, tid="BUG-99")

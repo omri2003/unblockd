@@ -385,6 +385,27 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(self.cli("claim", "--id", "CMB-1", "--agent", "backend-1")[0], 0)
 		self.assertTrue(self.cli("claim", "--id", "CMB-1", "--agent", "backend-2")[1].startswith("refused: "))
 
+	def test_remote_cli_until_request_id_takeover_followup(self):
+		"""CORE-83: the REST / Remote / CLI paths of AI-58 (heartbeat until), CORE-74 (request_id), CORE-79 (explicit takeover) and AI-60 (followup)."""
+		from datetime import datetime, timedelta, timezone
+		for x in ("a", "b", "c"):
+			self.assertEqual(self.cli("create", "--prefix", "CMB", "--title", x, "--json", '{"pillar": "COMBAT"}')[0], 0)
+		self.assertEqual(self.cli("claim", "--id", "CMB-1", "--agent", "backend-1")[0], 0)
+		until = (datetime.now(timezone.utc) + timedelta(minutes=40)).replace(microsecond=0)
+		code, hb = self.cli("heartbeat", "CMB-1", "--agent", "backend-1", "--until", until.isoformat())
+		self.assertEqual(code, 0)
+		self.assertGreater(datetime.fromisoformat(hb["expires_at"]), until - timedelta(minutes=1))  # the claim lives past the normal lease
+		self.assertEqual(self.cli("get", "CMB-1")[1]["claim"]["expires_at"], hb["expires_at"])  # what the board's lease bar reads (CORE-83)
+		args = ("complete", "CMB-1", "--agent", "backend-1", "--summary", "done", "--request-id", "r-1")
+		first, again = self.cli(*args)[1], self.cli(*args)[1]
+		self.assertEqual((first["status"], first.get("already"), again["already"], again["request_id"]), ("done", None, True, "r-1"))
+		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "doing"})  # doing by hand, nobody holds it: orphaned
+		code, got = self.cli("claim", "--id", "CMB-2", "--agent", "backend-2")
+		self.assertEqual(code, 0)
+		self.assertTrue(any("you took it over" in w for w in got["warnings"]))
+		code, got = self.cli("complete", "CMB-2", "--agent", "backend-2", "--summary", "half", "--followup", json.dumps({"title": "rest", "blocked_by": ["CMB-3"]}))
+		self.assertEqual((code, got["followup"]["id"], got["followup"]["effective_status"]), (0, "CMB-4", "pending"))
+
 	def test_cli_health(self):
 		code, d = self.cli("health")
 		self.assertEqual((code, d["status"], d["url"]), (0, "ok", self.base))

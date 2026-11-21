@@ -66,6 +66,8 @@ try {
 		for (const c of Object.values(cl)) if (c.agent === 'backend-2') c.heartbeat_at = new Date(Date.now() - 8 * 60000).toISOString().replace(/\.\d+Z$/, '+00:00');
 		await writeFile(cp, JSON.stringify(cl)); }
 	cli('split', 'DOC-1', '--title', 'part one', '--title', 'part two');
+	cli('create', '--prefix', 'HND', '--title', 'closed by hand with no summary of what changed', '--json', '{"owner":"Claude","pillar":"UI"}');
+	cli('update', 'HND-1', '--json', '{"status":"done"}'); // CORE-68: done by hand, no summary: the digest counts it, its Done card / List row is marked
 
 	// 2. server on a free port
 	const port = await new Promise((r) => { const s = createServer().listen(0, () => { const p = s.address().port; s.close(() => r(p)); }); });
@@ -177,6 +179,15 @@ try {
 		await visible('#digest [data-dgtoggle]', 'digest bar');
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]')?.getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
+		{ // CORE-83 (UI-79): the hand-closed HND-1 is counted in the digest head, marked on its Done card (the age makes room: title >= 120px at 1400) and in the List layout
+			ok((await page.locator('#digest .dg-u').allInnerTexts()).join() === '1 without a summary', `[${tag}] digest: want "1 without a summary", got ${await page.locator('#digest .dg-u').allInnerTexts()}`);
+			const dn = page.locator('#board .card.dn[data-open="HND-1"]');
+			ok((await dn.locator('.unr').allInnerTexts()).join() === 'no summary' && !(await dn.locator('.age').count()), `[${tag}] done card HND-1: want the "no summary" mark instead of the age`);
+			if (w > 600) ok(await dn.locator('.ttl').evaluate((e) => e.clientWidth >= 120), `[${tag}] done card HND-1: the mark crowds the title`);
+			await page.keyboard.press('l'); await page.waitForSelector('#board .lrow', { state: 'attached' });
+			ok((await page.locator('#board .lrow[data-open="HND-1"] .lw.unr').allInnerTexts()).join() === 'Finished without a summary', `[${tag}] List row HND-1 has no "Finished without a summary"`);
+			await page.keyboard.press('l'); await page.waitForSelector('#board .card', { state: 'attached' });
+		}
 		{ // UI-55: each row reads as a ticket (tile, id, title) and lists its ticket once; a render that changes nothing keeps the digest DOM
 			const rows = await page.$$eval('#digest .dg-r', (rs) => rs.map((r) => [r.dataset.open, !!r.querySelector('.dg-tile'), !!r.querySelector('.idc .tid'), !!r.querySelector('.dt')]));
 			ok(rows.length > 0 && rows.every((r) => r[1] && r[2] && r[3]), `[${tag}] digest rows need a tile, an id and a title: ${JSON.stringify(rows.slice(0, 3))}`);

@@ -763,7 +763,8 @@ class Store:
 			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
 			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
 			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []), "branches": br,
-			            "claim": {k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")} if t["id"] in live else None,
+			            "claim": {**{k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")},  # expires_at: profile lease or heartbeat(until=) (CORE-83)
+			                      "expires_at": _iso(self._expires(live[t["id"]]))} if t["id"] in live else None,
 			            **({"unreported": True} if _unreported(t) else {})})
 		return out
 
@@ -1157,7 +1158,7 @@ class Store:
 					self._log("proposed", t["id"], proposed, t["title"])
 			out = {"tickets": [self.get(x) for x in done], "ids": {f"#{i + 1}": x for i, x in enumerate(done)}}
 			for i, t in enumerate(out["tickets"]):
-				if (w := self.unroutable(t)):
+				if (w := ([_NO_REPORT.format(id=t["id"])] if t["status"] == "done" else []) + self.unroutable(t)):  # done = no summary, as in create() (CORE-83)
 					warns.setdefault(f"#{i + 1}", []).extend(w)
 			return {**out, "warnings": warns} if warns else out
 		return self._locked(run)
