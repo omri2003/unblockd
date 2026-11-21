@@ -433,10 +433,11 @@ class Store:
 	def _all_raw(self) -> list[dict]:
 		return [_copy(t) for t in self.backend.tickets().values()]
 
-	def _board(self) -> dict[str, dict]:
-		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket, the claims, an attachment, the config or the date changed."""
+	def _board(self, raw: dict | None = None) -> dict[str, dict]:
+		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket, the claims, an attachment, the config or the date changed.
+		raw = what the caller's own backend.tickets() call just returned (claim: it keeps that read to patch its write in)."""
 		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
-		raw = self.backend.tickets()
+		raw = self.backend.tickets() if raw is None else raw
 		sig = (self.backend.version(), date.today(), self._cfg_sig,
 		       *((_stamp(self.rt / "branches.json"), _stamp(self.rt / "branches_ignored.json")) if self.rt else ()))
 		hit = _DEC.get(self._key)
@@ -842,9 +843,10 @@ class Store:
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
-	         agent: str | None = None, parent: str | None = None, milestone: str | None = None) -> list[dict]:
-		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none."""
-		res = list(self._board().values())  # cached: filter first, copy what is returned
+	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None) -> list[dict]:
+		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none.
+		board = a _board() the caller already read in this locked step (claim), so it is not read again."""
+		res = list((self._board() if board is None else board).values())  # cached: filter first, copy what is returned
 		if status:
 			res = [t for t in res if t["effective_status"] == status]
 		if pillar:
@@ -868,11 +870,11 @@ class Store:
 		return [_copy(t) for t in res]
 
 	def next_ready(self, owner: str | None = None, pillar: str | None = None, limit: int = 5,
-	               agent: str | None = None, tag: str | None = None) -> list[dict]:
+	               agent: str | None = None, tag: str | None = None, board: dict | None = None) -> list[dict]:
 		"""Ready tickets (effective todo: not blocked, started or done), best first:
 		score = priority weight x (1 + open tickets it unblocks), then the current milestone's tickets (a tie-break: it never beats a
 		higher score), then priority, then id."""
-		res = self.list(status="todo", pillar=pillar, owner=owner, agent=agent, tag=tag)
+		res = self.list(status="todo", pillar=pillar, owner=owner, agent=agent, tag=tag, board=board)
 		nxt = self.next_milestone()
 		res.sort(key=lambda t: (-t["score"], not (nxt and t["milestone"] == nxt), PRIORITIES.index(t["priority"]) if t.get("priority") else 9, t["id"]))
 		return res[:max(0, int(limit))]
@@ -1371,7 +1373,14 @@ class Store:
 		return profile
 
 	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None) -> dict | None:
-		"""Take a ticket for `agent` (a unique worker name, e.g. backend-1): the given one, or the best
+		return self._claim(agent, tid, profile, note, principal)[0]
+
+	def _claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None) -> tuple:
+		"""(claim()'s reply, the decorated board it read): claim_next reports why nothing was claimable from that same read.
+		The step reads the board ONCE (CORE-61: it used to read every ticket 3 times, twice under the lock), on every connector:
+		one backend.tickets() under the lock serves _claimable's touches, next_ready and, with the written ticket patched in,
+		the reply (decorated after the lock is let go).
+		Take a ticket for `agent` (a unique worker name, e.g. backend-1): the given one, or the best
 		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
 		claim overlaps. Sets it to doing. `principal` = the human owner (kind human) the agent works for; stored in the claim. Returns the ticket, or None when nothing is claimable."""
 		if not (isinstance(agent, str) and NAME_RE.match(agent)):
@@ -1388,35 +1397,40 @@ class Store:
 
 		def take():
 			live = self._live_claims()
-			by_id = {x["id"]: x for x in self._all_raw()}  # read once: _claimable looks up live claims' touches in it
+			raw = self.backend.tickets()  # THE read of this step (shared with the cache: never changed here)
+			board = by_id = self._board(raw)  # _claimable looks up live claims' touches in it
 			if tid:
-				t = self.get(tid)
+				self._valid(tid)
+				if tid not in board:
+					raise NotFound(f"no ticket {tid}")
+				t = _copy(board[tid])
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
 				if not self._claimable(t, live, by_id, profile, explicit=True):
 					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile)}")
 				pick = t
 			else:
-				ready = self.next_ready(limit=10_000, agent=profile)
+				ready = self.next_ready(limit=10_000, agent=profile, board=board)
 				pick = next((t for t in ready if self._claimable(t, live, by_id, profile)), None)
 				if pick is None:
-					return None
+					return None, board
 			claims = self._claims()
 			now = _now()
 			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300],
 			                      "seen": len(pick.get("notes", [])),  # inbox(): notes before the claim came with it, they are not news
 				                      **({"principal": principal} if principal else {})}
 			self._save_claims(claims)
-			raw = self._fresh(pick["id"])
-			raw["status"], raw["updated"] = "doing", date.today().isoformat()
-			self._write(raw)
+			fresh = self._fresh(pick["id"])  # one ticket, read now: the read-modify-write starts from what is stored
+			fresh["status"], fresh["updated"] = "doing", date.today().isoformat()
+			self._write(fresh)
 			self._log("claim", pick["id"], agent, note, principal)
-			return pick["id"]
+			return pick["id"], {**raw, pick["id"]: fresh}  # the step's read with the write in it: no second read
 
-		got = self._locked(take)
+		got, read = self._locked(take)
 		if not got:
-			return None
-		t, c = self.get(got), self._claims()[got]
+			return None, read
+		board = {x["id"]: x for x in self._decorate(list(read.values()))}  # outside the lock; the claim is in claims already
+		t, c = _copy(board[got]), self._claims()[got]
 		lease = self.config["lease_minutes"]
 		t["notes"], left = self.lean_notes(t["notes"])
 		if left:
@@ -1426,14 +1440,14 @@ class Store:
 		if not principal and len(humans) > 1:
 			warn.append("no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it")
 		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": datetime.fromtimestamp(_ts(c["heartbeat_at"]) + lease * 60, timezone.utc).isoformat(timespec="seconds"),
-		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}
+		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}, board
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None) -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
 		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}, "ids": {same keys: [ticket ids]}, "orphaned": [doing ids with no live claim]}.
 		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
 		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
-		got = self.claim(agent, profile=profile, note=note, principal=principal)
+		got, board = self._claim(agent, profile=profile, note=note, principal=principal)
 		if got:
 			return got
 		if profile is None:
@@ -1441,7 +1455,7 @@ class Store:
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		ids: dict[str, list[str]] = {k: [] for k in ("in_flight", "ready_conflicting", "in_review", "waiting_on_human", "blocked")}
 		orphaned = []
-		for t in self.list():
+		for t in board.values():  # the read claim() made under the lock (read only, so no copies)
 			if t["status"] == "done" or (profile and t["agent"] != profile):
 				continue
 			if t["effective_status"] == "doing":  # claimed, or work on an unmerged branch (Store._on_branch)
