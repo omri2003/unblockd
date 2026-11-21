@@ -37,6 +37,22 @@ class StoreTest(unittest.TestCase):
 		self.s.update("E-2", {"parent": None})
 		self.assertEqual(self.s.get("E-1")["progress"], {"done": 1, "total": 1})
 
+	def test_review_needs_a_result(self):  # CORE-19: a reviewer must have something to check; the rule is about the data, not the caller
+		t = self.s.create({"title": "x"}, prefix="R")
+		with self.assertRaisesRegex(TicketError, "has no result.*complete"):
+			self.s.update(t["id"], {"status": "review"})
+		with self.assertRaisesRegex(TicketError, "has no result"):
+			self.s.update(t["id"], {"status": "review"}, agent="claude")
+		self.assertEqual(self.s.get(t["id"])["status"], "todo")
+		with self.assertRaisesRegex(TicketError, "has no result"):
+			self.s.create({"title": "y", "status": "review"}, prefix="R")
+		with self.assertRaisesRegex(TicketError, "#1: .*has no result"):
+			self.s.create_many([{"title": "z", "prefix": "R", "status": "review"}])
+		self.s.claim("w-1", tid=t["id"])
+		self.s.complete(t["id"], "w-1", "did it")  # done, with a result
+		self.assertEqual(self.s.update(t["id"], {"status": "review"})["status"], "review")  # Undo of a move / of Approve: still works
+		self.assertEqual(self.s.update(t["id"], {"priority": "P1"})["status"], "review")  # already in review: other edits fine
+
 	def test_rev_counts_writes_and_guards_updates(self):
 		t = self.s.create({"title": "x"}, tid="R-1")
 		self.assertEqual(t["rev"], 1)

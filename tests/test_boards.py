@@ -137,6 +137,11 @@ class ApiTest(unittest.TestCase):
 		self.srv.server_close()
 		self.tmp.cleanup()
 
+	def to_review(self, tid, board="a"):  # review needs a result (CORE-19): finish it, then move it back to review as a person would
+		self.call("POST", f"/api/b/{board}/tickets/{tid}/claim", {"agent": "backend-1"})
+		self.call("POST", f"/api/b/{board}/tickets/{tid}/complete", {"agent": "backend-1", "summary": "did it"})
+		self.assertEqual(self.call("PATCH", f"/api/b/{board}/tickets/{tid}", {"status": "review"})[1]["status"], "review")
+
 	def call(self, method, path, body=None, headers=None):
 		req = urllib.request.Request(self.base + path, method=method, data=json.dumps(body).encode() if body else None,
 		                             headers={"Content-Type": "application/json", **(headers or {})})
@@ -416,7 +421,7 @@ class ApiTest(unittest.TestCase):
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/answer", {"text": "this one"})
 		self.assertEqual((code, t["waiting_on"]), (200, ""))
 		self.assertEqual({k: t["notes"][-1][k] for k in ("by", "kind", "q", "text")}, {"by": "human", "kind": "answer", "q": "which?", "text": "this one"})
-		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
+		self.to_review("CMB-1")
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/reject", {"by": "ana", "reason": "redo"})
 		self.assertEqual((code, t["status"]), (200, "todo"))
 		self.assertEqual((t["notes"][-1]["by"], t["notes"][-1]["kind"]), ("ana", "rejected"))
@@ -426,11 +431,12 @@ class ApiTest(unittest.TestCase):
 		for t in ("one", "two"):
 			self.call("POST", "/api/b/a/tickets", {"prefix": "CMB", "title": t, "pillar": "COMBAT"})
 		self.assertEqual(self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})[0], 400)  # not in review
-		self.call("PATCH", "/api/b/a/tickets/CMB-1", {"status": "review"})
+		f = Path(self.tmp.name) / "a" / "tickets" / "CMB-1.json"  # an old file moved to review by hand before CORE-19: no result
+		f.write_text(json.dumps({**json.loads(f.read_text(encoding="utf-8")), "status": "review"}), encoding="utf-8")
 		code, t = self.call("POST", "/api/b/a/tickets/CMB-1/approve", {"by": "ana"})
 		self.assertEqual((code, t["status"], t["result"]), (200, "done", None))  # moved to review by hand: no result is invented
 		self.assertEqual(t["notes"][-1]["kind"], "approved")
-		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
+		self.to_review("CMB-2")
 		code, t = self.cli("approve", "CMB-2", "--by", "ana")
 		self.assertEqual((code, t["status"]), (0, "done"))
 		self.assertEqual(t["notes"][-1]["text"], "Approved by ana")
@@ -444,7 +450,7 @@ class ApiTest(unittest.TestCase):
 		self.call("POST", "/api/b/b/tickets", {"prefix": "WEB", "title": "page"})
 		self.call("POST", "/api/b/a/tickets/CMB-1/claim", {"agent": "backend-1"})
 		self.call("POST", "/api/b/a/tickets/CMB-1/ask", {"agent": "backend-1", "question": "which?"})
-		self.call("PATCH", "/api/b/a/tickets/CMB-2", {"status": "review"})
+		self.to_review("CMB-2")
 		self.call("POST", "/api/b/b/tickets/WEB-1/claim", {"agent": "w-1"})
 		self.call("POST", "/api/b/b/tickets/WEB-1/ask", {"agent": "w-1", "question": "colour?"})
 		code, n = self.call("GET", "/api/needs")

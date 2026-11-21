@@ -1172,6 +1172,8 @@ class Store:
 		"""Validate `data` as new ticket `tid` and return the ticket dict, unwritten. batch = (ids, blocked_by graph, parents) of the
 		new tickets of a create_many: they count as existing for blocked_by / parent and their edges join the loop checks."""
 		clean = self._clean(data, partial=False)
+		if clean.get("status") == "review":  # CORE-19: a new ticket never has a result, so it can't be waiting for review (create, create_many)
+			raise TicketError(_REVIEW_NEEDS_RESULT.format(id=tid))
 		known, graph, ups = batch or ((), {}, {})
 		self._check_blockers(clean.get("blocked_by", []), list(inherited) + list(known))
 		self._check_loop(tid, clean.get("blocked_by", []), graph)
@@ -1219,6 +1221,8 @@ class Store:
 		if agent and self.profile_of(agent) and clean.get("status") in ("doing", "done", "review") and clean["status"] != t.get("status"):
 			raise TicketError(f"a worker can't set status {clean['status']}: use claim_ticket / complete / ask_human")
 		self._check_caps(clean, t)
+		if clean.get("status") == "review" and t.get("status") != "review" and not (t.get("result") or {}).get("summary"):
+			raise TicketError(_REVIEW_NEEDS_RESULT.format(id=tid))  # CORE-19: about the data, not the caller (Undo of Approve keeps its result)
 		if clean.get("status") == "doing" and t.get("status") != "doing":
 			if t.get("proposed_by"):
 				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
@@ -2060,6 +2064,10 @@ class Store:
 
 _NO_REPORT = ("finish with complete(): {id} is done with no summary of what changed (cause -> fix -> tests, files, PR); it shows as "
               "Finished without a summary until someone adds one (report {id}: REST POST tickets/{id}/report, CLI report)")
+
+
+_REVIEW_NEEDS_RESULT = ("{id} has no result, so a reviewer has nothing to check: finish it with complete() (it records the summary, files "
+                        "and PR link, and lands in review on a review board), or move it to todo / done")
 
 
 def _unreported(t: dict) -> bool:
