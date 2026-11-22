@@ -53,7 +53,7 @@ class ReleaseNotesTest(unittest.TestCase):
 		s.claim("w-1", "CORE-1")
 		s.complete("CORE-1", "w-1", "Cause: three reads under the lock. Fix: one read per claim. Tests: test_claims.")
 		s.create({"title": "Crash on start", "tags": ["bug"]}, prefix="BUG")  # BUG-1: joined by a note
-		s.add_note("BUG-1", "omri", "Merged in PR #6 (https://github.com/o/r/pull/6)")
+		s.add_note("BUG-1", "human", "Merged in PR #6 (https://github.com/o/r/pull/6)")
 		s.claim("w-1", "BUG-1")
 		s.complete("BUG-1", "w-1", "Start no longer crashes when the folder is empty.\nmore lines")
 		s.create({"title": "Tickets in a database", "tags": ["experimental"]}, prefix="CORE")  # CORE-2: refs name the branch, no result
@@ -84,7 +84,7 @@ class ReleaseNotesTest(unittest.TestCase):
 	def test_refs_branch_join_no_result_and_experimental(self):
 		s = self.store
 		s.claim("w-1", "CORE-2")
-		s.complete("CORE-2", "w-1", "Cause: nothing in a database.", refs=["branch feat/db, .claude/commit.sh"])  # no Fix: part
+		s.complete("CORE-2", "w-1", "Cause: nothing in a database.", refs=["branch feat/db, scripts/commit.sh"])  # no Fix: part
 		d = self.rn.draft(self.repo, s, "v0.1.0", "HEAD")
 		item = {i["id"]: i for i in d["groups"]["Added"]}["CORE-2"]
 		self.assertEqual((item["pr"], item["text"], item["experimental"]), (8, "Tickets in a database", True))
@@ -105,6 +105,30 @@ class ReleaseNotesTest(unittest.TestCase):
 		self.assertEqual(g({"id": "CORE-1", "title": "y", "tags": ["perf"]}), "Changed")
 		self.assertEqual(g({"id": "DOCS-1", "title": "y"}), "Changed")
 		self.assertEqual(g({"id": "CORE-1", "title": "Fixtures for tests"}), "Added")  # "fix" inside a word is not a fix
+		self.assertEqual(g({"id": "CORE-1", "title": "y", "tags": ["tests"]}), "Changed")
+		self.assertEqual(g({"id": "TEST-1", "title": "y"}), "Changed")
+		self.assertEqual(g({"id": "CORE-1", "title": "Tests for the lock"}), "Changed")
+		self.assertEqual(g({"id": "CORE-1", "title": "y", "tags": ["hotfix"]}), "Fixed")
+		self.assertEqual(g({"id": "CORE-1", "title": "y", "notes": [{"text": "Breaking: the field is renamed"}]}), "Breaking")
+		self.assertEqual(g({"id": "CORE-1", "title": "y", "notes": [{"text": "this is a breaking change for CLI users"}]}), "Breaking")
+		self.assertEqual(g({"id": "CORE-1", "title": "y", "notes": [{"text": "nothing breaks"}]}), "Added")
+
+	def test_squash_merged_prs_are_flagged_and_joined(self):
+		r = self.repo
+		(r / "sq.txt").write_text("sq")
+		git(r, "add", "-A")
+		git(r, "commit", "-qm", "Store: tickets in a database (#9)", "-m", "* sql connector (CORE-2)")  # GitHub's squash shape
+		git(r, "commit", "-q", "--allow-empty", "-m", "typo (see #3) in docs")  # "(#N)" not at the end: no PR
+		d = self.rn.draft(self.repo, self.store, "v0.1.0", "HEAD")
+		self.assertEqual(sorted(p["number"] for p in d["prs"]), [5, 6, 7, 8, 9])
+		self.assertEqual([(p["number"], p["title"]) for p in d["squashed"]], [(9, "Store: tickets in a database")])
+		self.assertEqual({i["id"]: i["pr"] for i in d["groups"]["Added"]}["CORE-2"], 9)  # joined by the id in its body
+		text = self.rn.render(d)
+		self.assertIn("Squash- or rebase-merged PRs, only their one commit was read: check their tickets by hand (1):\n- #9 Store: tickets in a database (", text)
+
+	def test_no_squash_merges_says_none(self):
+		text = self.rn.render(self.rn.draft(self.repo, self.store, "v0.1.0", "HEAD"))
+		self.assertIn("check their tickets by hand (0):\n- none", text)
 
 	def test_main_refuses_a_missing_board(self):
 		from contextlib import redirect_stderr

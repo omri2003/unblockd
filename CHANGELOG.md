@@ -10,7 +10,11 @@
 - Nothing to migrate: v0.1.0 boards and ticket files read as before. Notes kept in an old ticket's body move into its `notes` field on the next write.
 - Install: `pip install ".[mcp]"` (from a clone) gives the `unblockd`, `unblockd-web` and `unblockd-mcp` commands; the image installs the package the same way.
 - Scripts that read CLI errors: when stdout is not a terminal (or with `--json`), an error is now one JSON object `{error, code}` on stdout with exit 1, not text on stderr.
-- Workers named after a profile (`backend-1`) can no longer set status doing / done / review with `update`, or answer, accept, approve or reject: they use `claim_ticket`, `complete` and `ask_human`. Boards without profiles are unchanged.
+- Workers named after a profile (`backend-1`) can no longer set status doing / done / review with `update`, or answer, accept, approve or reject: they use `claim_ticket`, `complete` and `ask_human`; they also can't delete a ticket a person owns. Names that match no profile (and boards without profiles) keep these.
+- Nobody approves their own work, on every board and for every name: answering your own question, accepting your own proposal, and approving or rejecting a ticket you completed are refused.
+- `session_tickets` (default 5): a stdio MCP worker gets `reason: "session_done"` from `claim_next` after 5 claims and should stop. Set `"session_tickets": null` in `unblockd.json` to turn it off.
+- The CLI refuses a missing board folder (`no board at ...`) instead of creating an empty board there.
+- A board inside a linked git worktree uses the main checkout's claims and lock, so workers in different worktrees see each other's claims.
 - Moving a ticket into review needs a result: finish it with `complete`, not a bare status change.
 - Check the running version: `unblockd --version`, `GET /healthz` and `GET /api/meta` now report it.
 
@@ -22,6 +26,10 @@
 - Leases that fit long runs: per-profile `lease_minutes`, `heartbeat(until=)`, replies that say how much lease is left, and a lapsed claim the same agent can take back.
 - Notes reach the worker: a note on a claimed ticket arrives in the next heartbeat reply, one written after the last heartbeat comes back from `complete`, and human notes, answers and decisions are always sent with the claim (pinned notes).
 - `complete(followup=...)`: finish the part that is done and hand the rest on as a new ticket that waits on what it needs.
+- Review gate: `approve` (MCP `approve_ticket`, CLI `approve`) moves a ticket in review to done and records who looked (`result.approved_by`).
+- `report` (MCP `report_ticket`, CLI and REST too): a person adds the summary to a ticket that was moved to done without one.
+- Late notes: a person's note on a finished ticket shows in Needs you, to reopen the ticket or dismiss the note.
+- `create_board(root=...)` picks which projects folder the new board goes in; in Docker the reply also says where it is on the host (`host_path`).
 - Batch creation: `create_tickets` / `create-many` creates a whole plan in one step, with `#N` references between the new tickets, all or nothing.
 - Safe retries: an optional `request_id` on create, complete, release, note and ask, so a write that timed out but landed is not done twice.
 - Worker MCP server (`--tools worker`): a short tool set that has every tool the work loop needs, short write replies, board docs sent once per session, `session_tickets`, and `release(missing=...)` to flag a tool the worker lacks. Tool sets per profile in the Agents panel (Profiles and tools tab).
@@ -45,7 +53,6 @@
 - Agent replies are always valid UTF-8, even when an inlined doc is not.
 - `create_board` in Docker refuses a folder that is not on a mounted volume (the board would vanish with the container).
 - Windows: concurrent writes were sometimes lost while the lock file was being re-created.
-- A ticket another process just wrote is seen at once, not after a second.
 - Agent loop: `claim_next` reports the right ids, a ticket can't be split twice, bad board config is refused with a clear message, and the profile hint no longer suggests an argument the tool doesn't have.
 
 ## v0.1.0 (2026-10-11)

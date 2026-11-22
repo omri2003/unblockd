@@ -2,7 +2,7 @@
 
 The steps the maintainer runs, in order. Which number comes next: [CONTRIBUTING.md](../CONTRIBUTING.md#versions) (0.x: minor = anything new or breaking, patch = fixes only). The example is v0.2.0 after v0.1.0; for a patch release see the end.
 
-Run the commands in **Git Bash** from the main checkout (`C:\Users\omri0\unblockd`) unless a step says PowerShell. Commits and tags are signed with the SSH key, so load it once per Git Bash window (steps 1-2).
+Run the commands in **Git Bash** (or any POSIX shell) from your clone of the repo unless a step says PowerShell. Commits and tags are signed with an SSH key, so load it once per shell window (step 1).
 
 ## 1. Load the signing key (once per window)
 
@@ -11,30 +11,51 @@ eval "$(ssh-agent -s)"
 ```
 
 ```bash
-ssh-add ~/.ssh/id_ed25519_signing
+ssh-add <your signing key>
 ```
 
 ## 2. Get the latest main
 
 ```bash
-cd /c/Users/omri0/unblockd
+cd <your clone>
 ```
 
 ```bash
 git fetch origin
 ```
 
-## 3. Draft the notes from data
-
-Every merged PR since the last tag, joined to its board tickets (ticket id in the PR's commits, the PR or branch in the ticket's `result.refs`, or a "Merged in PR #N" note). The board is the maintainer's `tickets/` checkout.
+```bash
+git switch main
+```
 
 ```bash
-python scripts/release_notes.py v0.1.0 --to origin/main --board tickets > .claude/release-draft.md
+git pull --ff-only
+```
+
+If your board lives in its own repo (cloned as `tickets/` inside this one, git-ignored), update it too, so the draft sees every finished ticket:
+
+```bash
+git -C tickets pull --ff-only
+```
+
+## 3. Draft the notes from data
+
+Every merged PR since the last tag, joined to its board tickets (ticket id in the PR's commits, the PR or branch in the ticket's `result.refs`, or a "Merged in PR #N" note). Reading the board sweeps expired claims (a lapsed claim goes back to todo), so point `--board` at a copy if you don't want that. Write the draft outside the repo:
+
+```bash
+python scripts/release_notes.py v0.1.0 --to origin/main --board tickets > "${TMPDIR:-/tmp}/release-draft.md"
+```
+
+PowerShell:
+
+```powershell
+python scripts/release_notes.py v0.1.0 --to origin/main --board tickets > "$env:TEMP\release-draft.md"
 ```
 
 Read the end of the draft first, under **Needs a look**:
 
 - **PRs with no ticket**: write their bullets by hand from the PR title.
+- **Squash- or rebase-merged PRs**: only their one commit on main was read; check their tickets by hand.
 - **Tickets in a PR with no result**: the bullet is only the title; check it says what changed.
 - **Done but in no merged PR**: work that was not merged yet, or never needed code; leave it out unless it shipped.
 
@@ -43,21 +64,15 @@ Read the end of the draft first, under **Needs a look**:
 Open `CHANGELOG.md` and write the `## Unreleased` section from the draft, for people upgrading:
 
 - An **Upgrading from vX** list first: what they must do or will notice (changed defaults, refused calls, new install steps). Nothing to do = say so.
-- Then **Added / Changed / Fixed** (and **Breaking** when there is one), one plain sentence per bullet, user words, no function names unless people type them. Merge many small tickets into one bullet.
+- Then **Added / Changed / Fixed** (and **Breaking** when there is one), one plain sentence per bullet, user words, no function names unless people type them. Merge many small tickets into one bullet. A bug introduced and fixed inside the same release gets no Fixed bullet.
 - Keep "(experimental)" on anything not verified for real (today: storage connectors, `migrate`, chat, GitHub PR sync).
 
 ## 5. The release PR
 
-The PR bumps `__version__` in `unblockd/__init__.py` and renames `## Unreleased` to `## v0.2.0 (YYYY-MM-DD)` (the merge date) with an empty `## Unreleased` above it. For v0.2.0 the script made by the release worker builds the whole PR:
+The PR bumps `__version__` in `unblockd/__init__.py` and renames `## Unreleased` to `## v0.2.0 (YYYY-MM-DD)` with an empty `## Unreleased` above it. The date is the planned release date; fix it on the branch if the merge slips.
 
 ```bash
-bash .claude/commit-release.sh
-```
-
-By hand, for later releases:
-
-```bash
-git switch -c release/v0.2.1 origin/main
+git switch -c release/v0.2.0 origin/main
 ```
 
 (edit `unblockd/__init__.py` and `CHANGELOG.md`, then)
@@ -67,16 +82,18 @@ python -m unittest
 ```
 
 ```bash
-git commit -am "release: v0.2.1"
+git commit -am "release: v0.2.0"
 ```
 
 ```bash
-git push -u origin release/v0.2.1
+git push -u origin release/v0.2.0
 ```
 
 ```bash
-gh pr create --base main --title "Release v0.2.1" --body "Version bump and CHANGELOG for v0.2.1."
+gh pr create --base main --title "Release v0.2.0" --body "Version bump and CHANGELOG for v0.2.0."
 ```
+
+A local helper script that runs these steps is fine; keep it out of the repo.
 
 ## 6. Merge it
 
@@ -86,7 +103,7 @@ Wait for CI:
 gh pr checks --watch
 ```
 
-Merge with a **merge commit** (not squash: `release_notes.py` finds PRs by their "Merge pull request #N" commits):
+Merge with a **merge commit** (not squash: `release_notes.py` reads PRs from their "Merge pull request #N" commits and only flags squash merges):
 
 ```bash
 gh pr merge --merge --delete-branch
@@ -110,6 +127,16 @@ git show origin/main:unblockd/__init__.py
 
 ```bash
 git tag -s v0.2.0 -m "unblockd v0.2.0" origin/main
+```
+
+`git tag -v` checks an SSH signature only against `gpg.ssh.allowedSignersFile`. Once per machine, list your public key there (one line: your email, then the key):
+
+```bash
+echo "$(git config user.email) $(cat <your signing key>.pub)" >> ~/.ssh/allowed_signers
+```
+
+```bash
+git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
 ```
 
 ```bash
@@ -140,14 +167,20 @@ git tag -d v0.2.0
 
 ## 9. The GitHub Release
 
-The body = the CHANGELOG section plus how to get the image:
+The body = the CHANGELOG section plus how to get the image. Read the CHANGELOG as tagged, not from whatever branch is checked out:
 
 ```bash
-python scripts/release_notes.py --body v0.2.0 > .claude/release-body.md
+git show v0.2.0:CHANGELOG.md > "${TMPDIR:-/tmp}/CHANGELOG.md"
 ```
 
 ```bash
-gh release create v0.2.0 --verify-tag --title "v0.2.0" --notes-file .claude/release-body.md
+python scripts/release_notes.py --body v0.2.0 --repo "${TMPDIR:-/tmp}" > "${TMPDIR:-/tmp}/release-body.md"
+```
+
+(Or `git switch main` and `git pull --ff-only` first, then run it without `--repo`.)
+
+```bash
+gh release create v0.2.0 --verify-tag --title "v0.2.0" --notes-file "${TMPDIR:-/tmp}/release-body.md"
 ```
 
 ## 10. Check the image says the version
@@ -182,7 +215,7 @@ docker stop ub-check
 
 ## 11. Close the board milestone
 
-In `tickets/unblockd.json` (the board repo), add `"closed": true` to the milestone (`"key": "v0.2"`), then:
+In the board's `unblockd.json`, add `"closed": true` to the milestone (`"key": "v0.2"`). If your board lives in its own repo (as `tickets/` above), commit and push it there:
 
 ```bash
 git -C tickets commit -am "milestone v0.2 closed: v0.2.0 released"

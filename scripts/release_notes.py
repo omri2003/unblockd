@@ -3,23 +3,26 @@
 python scripts/release_notes.py v0.1.0 [--to origin/main] [--board tickets] [--repo .] > draft.md
 python scripts/release_notes.py --body v0.2.0 > release-body.md   (the GitHub Release body: that CHANGELOG section + image)
 
-The draft is for a person to edit (docs/releasing.md); nothing is written. Stdlib only; the board is read through
-unblockd.store.Store, so any board location works (folder or database URL).
+The draft is for a person to edit (docs/releasing.md); the script writes no file. Stdlib only; the board is read through
+unblockd.store.Store, so any board location works (folder or database URL). Store.list() sweeps expired claims (a lapsed
+claim goes back to todo and is logged), so run it on a copy of the board, or accept that it tidies the real one.
 
 - PRs = merge commits on the first-parent line of --to since the tag whose subject is "Merge pull request #N from owner/branch";
   the PR title is the merge body's first line.
+- Squash- or rebase-merged PRs = other (non-merge) commits on that line whose subject ends with "(#N)": joined to tickets the
+  same way (their own message is the PR's text) and flagged under Needs a look, since only that one commit is seen.
 - A ticket belongs to PR #N when any of these holds:
   its id is in the PR title or in a commit subject / body inside the PR (the "(CORE-84)" convention);
   its result.refs name the PR (".../pull/N", "#N", "PR N") or its branch ("branch prod/x");
   one of its notes says the PR merged it ("Merged in PR #N", "Done in PR #N", "PR #N merged", github.py's note).
 - Bullet = the ticket's result.summary first line, cut to its "Fix:" part when it starts with "Cause:" (the work loop's
   cause -> fix -> tests shape), else the title; the title follows on a "ticket:" line when they differ. Groups, first match wins:
-  Breaking: tag breaking, or "breaking" in title / summary first line;
-  Fixed: tag bug / fix / regression, prefix BUG, or a title starting "Fix" / "Bug";
-  Changed: tag perf / docs, or prefix DOCS;
+  Breaking: tag breaking, "breaking" in title / summary first line, or a note that starts with "Breaking" / says "breaking change";
+  Fixed: tag bug / fix / bugfix / hotfix / regression, prefix BUG / FIX, or a title starting "Fix" / "Bug";
+  Changed: tag perf / docs / test / tests / ci / refactor, prefix DOCS / TEST / CI, or a title starting "Test";
   Added: the rest.
   "(experimental)" when the ticket has tag experimental or says experimental in title / summary first line / its PR title.
-- Flagged at the end: PRs with no ticket, tickets in a PR with no result (bullet = title), tickets done since the tag
+- Flagged at the end: PRs with no ticket, squash- or rebase-merged PRs, tickets in a PR with no result (bullet = title), tickets done since the tag
   (done_at) that no PR names.
 """
 from __future__ import annotations
@@ -40,6 +43,7 @@ from unblockd import connectors  # noqa: E402
 from unblockd.store import Store  # noqa: E402
 
 PR_RE = re.compile(r"^Merge pull request #(\d+) from ([^/\s]+)/(\S+)")
+SQUASH_RE = re.compile(r"^(.*\S)\s*\(#(\d+)\)\s*$")
 ID_RE = re.compile(r"\b([A-Z][A-Z0-9]*-\d+)\b")
 GROUPS = ("Breaking", "Added", "Changed", "Fixed")
 BULLET_MAX = 220
@@ -64,6 +68,22 @@ def merged_prs(repo: Path, since: str, to: str) -> list[dict]:
 		inside = git(repo, "log", "--format=%s%n%b", f"{sha}^1..{sha}^2")
 		prs.append({"number": int(m.group(1)), "branch": m.group(3), "title": lines[0] if lines else m.group(3),
 		            "sha": sha, "date": date, "text": inside})
+	return prs
+
+
+def squashed_prs(repo: Path, since: str, to: str) -> list[dict]:
+	"""Squash / rebase merges: non-merge commits on the first-parent line whose subject ends with "(#N)", oldest first
+	(merged_prs' keys; branch "" since such a commit does not name it; squash True)."""
+	out = git(repo, "log", "--no-merges", "--first-parent", "--reverse", "--format=%H%x1f%ad%x1f%s%x1f%b%x1e", "--date=short", f"{since}..{to}")
+	prs = []
+	for rec in out.split("\x1e"):
+		if not rec.strip():
+			continue
+		sha, date, subject, body = (rec.strip("\n").split("\x1f") + ["", "", "", ""])[:4]
+		m = SQUASH_RE.match(subject.strip())
+		if m:
+			prs.append({"number": int(m.group(2)), "branch": "", "title": m.group(1), "sha": sha, "date": date,
+			            "text": subject + "\n" + body, "squash": True})
 	return prs
 
 
@@ -102,9 +122,14 @@ def _summary_line(t: dict) -> str | None:
 def _refs_pr(t: dict, pr: dict) -> bool:
 	n, b = pr["number"], re.escape(pr["branch"])
 	for r in (t.get("result") or {}).get("refs") or []:
-		if re.search(rf"/pull/{n}\b|#{n}\b|\bPR {n}\b", r) or re.search(rf"(?<![\w/.-]){b}(?![\w/.-])", r):
+		if re.search(rf"/pull/{n}\b|#{n}\b|\bPR {n}\b", r) or b and re.search(rf"(?<![\w/.-]){b}(?![\w/.-])", r):
 			return True
 	return False
+
+
+def _breaking_note(t: dict) -> bool:
+	return any(re.match(r"(?i)\s*breaking\b", n.get("text") or "") or re.search(r"(?i)\bbreaking change", n.get("text") or "")
+	           for n in t.get("notes") or [])
 
 
 def _notes_pr(t: dict, n: int) -> bool:
@@ -121,18 +146,19 @@ def group_of(t: dict) -> str:
 	line = ((t.get("result") or {}).get("summary") or "").strip().splitlines()[:1]
 	words = (title + " " + (line[0] if line else "")).lower()
 	prefix = t["id"].split("-")[0]
-	if "breaking" in tags or "breaking" in words:
+	if "breaking" in tags or "breaking" in words or _breaking_note(t):
 		return "Breaking"
-	if tags & {"bug", "fix", "regression"} or prefix == "BUG" or re.match(r"(?i)(fix(es|ed)?|bug)\b", title):
+	if tags & {"bug", "fix", "bugfix", "hotfix", "regression"} or prefix in ("BUG", "FIX") or re.match(r"(?i)(fix(es|ed)?|bug)\b", title):
 		return "Fixed"
-	if tags & {"perf", "docs"} or prefix == "DOCS":
+	if tags & {"perf", "docs", "test", "tests", "ci", "refactor"} or prefix in ("DOCS", "TEST", "CI") or re.match(r"(?i)tests?\b", title):
 		return "Changed"
 	return "Added"
 
 
 def draft(repo: Path, store: Store, since: str, to: str = "HEAD") -> dict:
-	"""The draft as data: {since, to, prs, groups {name: [item]}, pr_no_ticket, no_result, done_no_pr}."""
-	prs = merged_prs(repo, since, to)
+	"""The draft as data: {since, to, prs, squashed, groups {name: [item]}, pr_no_ticket, no_result, done_no_pr}."""
+	squashed = squashed_prs(repo, since, to)
+	prs = merged_prs(repo, since, to) + squashed
 	tickets = store.list()
 	by_id = {t["id"]: t for t in tickets}
 	since_time = tag_time(repo, since)
@@ -156,7 +182,7 @@ def draft(repo: Path, store: Store, since: str, to: str = "HEAD") -> dict:
 			groups[group_of(t)].append({"id": i, "title": t["title"], "pr": pr["number"], "text": line or t["title"], "experimental": exp})
 	done_no_pr = [{"id": t["id"], "title": t["title"], "done_at": t.get("done_at")} for t in tickets
 	              if t["status"] == "done" and t["id"] not in seen and _after(t.get("done_at"), since_time)]
-	return {"since": since, "to": to, "prs": prs, "groups": groups, "pr_no_ticket": pr_no_ticket, "no_result": no_result,
+	return {"since": since, "to": to, "prs": prs, "squashed": squashed, "groups": groups, "pr_no_ticket": pr_no_ticket, "no_result": no_result,
 	        "done_no_pr": sorted(done_no_pr, key=lambda x: x["done_at"] or "")}
 
 
@@ -175,7 +201,10 @@ def render(d: dict) -> str:
 		out.append("")
 	out += ["## Needs a look", ""]
 	out.append(f"PRs with no ticket ({len(d['pr_no_ticket'])}):")
-	out += [f"- #{p['number']} {p['title']} ({p['branch']})" for p in d["pr_no_ticket"]] or ["- none"]
+	out += [f"- #{p['number']} {p['title']} ({p['branch'] or 'squashed ' + p['sha'][:7]})" for p in d["pr_no_ticket"]] or ["- none"]
+	sq = d.get("squashed", [])
+	out += ["", f"Squash- or rebase-merged PRs, only their one commit was read: check their tickets by hand ({len(sq)}):"]
+	out += [f"- #{p['number']} {p['title']} ({p['sha'][:7]}, {p['date']})" for p in sq] or ["- none"]
 	out += ["", f"Tickets in a PR with no result, bullet = title ({len(d['no_result'])}):"]
 	out += [f"- {t['id']} {t['title']} (#{t['pr']})" for t in d["no_result"]] or ["- none"]
 	out += ["", f"Done since {d['since']} but no merged PR names them ({len(d['done_no_pr'])}):"]
