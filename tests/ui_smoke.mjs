@@ -1462,6 +1462,23 @@ try {
 			ok(/can't read https:\/\/example.com\/o\/private/.test(await page.innerText('#gitNote')) && /Authentication failed/.test(await page.innerText('#gitNote')), 'unreadable origin: the notice says why and what to set');
 			await writeFile(brJ, keep);
 		}
+		{ // UI-81: slow storage notice. This machine is a native disk, so GET meta measures it fast (no notice); a slow Docker Desktop mount is simulated by rewriting meta's storage
+			const real = await page.evaluate(() => fetch('/api/b/zgit/meta').then((r) => r.json()).then((m) => m.storage));
+			ok(real && real.slow === false && 'passes' in real && await page.locator('#storeNote').isHidden(), `native board: no slow storage notice (${JSON.stringify(real)})`);
+			await page.route('**/meta', async (r) => { const res = await r.fetch(); const j = await res.json(); j.storage = { per_file_ms: 0.6, passes: 3, slow: true }; await r.fulfill({ response: res, json: j }); });
+			await page.reload(); await page.waitForSelector('#storeNote:not([hidden])', { state: 'attached' });
+			if (w <= 600) ok(await page.locator('#storeNote').isHidden(), 'a phone hides the slow storage notice (cards first)');
+			else {
+				const sn = await page.innerText('#storeNote');
+				ok(/Slow storage: this board's files are on a Docker Desktop mount, about 75x slower to read\. For faster pages run unblockd natively or keep the project inside WSL\. How/.test(sn), `slow storage notice wording: ${sn}`);
+				ok(/docs\/reference\.md#docker-desktop/.test(await page.getAttribute('#storeNote a', 'href')), 'the notice links the deploy notes');
+				await noOver('board with the slow storage notice');
+				await page.click('#storeNote [data-storedismiss]'); ok(await page.locator('#storeNote').isHidden(), 'Dismiss hides the slow storage notice');
+				await page.reload(); await page.waitForSelector('#board .card', { state: 'attached' });
+				ok(await page.locator('#storeNote').isHidden(), 'the slow storage notice stays dismissed for this board');
+			}
+			await page.unroute('**/meta'); await page.evaluate(() => localStorage.removeItem('unblockd.storeSeen.zgit'));
+		}
 		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
 		await ctx.close();
 	}

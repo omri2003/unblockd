@@ -328,7 +328,9 @@ class Handler(BaseHTTPRequestHandler):
 			store = BOARDS.get(board)
 			if method == "GET" and rest == ["meta"]:
 				return self._send(200, {"statuses": st.STATUSES, "priorities": st.PRIORITIES, "fields": list(st.FIELDS),
-				                        "config": store.config, "board": board or next(iter(BOARDS.all()))})
+				                        "config": store.config, "board": board or next(iter(BOARDS.all())),
+				                        # UI-81: a slow Docker Desktop mount (files boards only; a database board has no folder)
+				                        "storage": files.storage(store.backend.dir, store.backend.key) if getattr(store.backend, "kind", "") == "files" else None})
 			if method == "GET" and rest == ["git"]:  # how the board's checkout compares with origin (branches.py); {} fields when git evidence is off
 				d = branches.load(store.rt) if store.rt else {}
 				return self._send(200, {k: d.get(k) for k in ("source", "remote", "base", "checkout", "error", "since")})

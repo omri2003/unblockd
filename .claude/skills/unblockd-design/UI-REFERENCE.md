@@ -21,6 +21,7 @@ UI: board in `?board=` + localStorage. Switcher = page title: `#bpanel` (`.spane
 
 ### Unroutable tickets (CORE-82)
 
+- `#storeNote` (UI-81; `.gitnote` look, above `#gitNote`; `renderStore` from `render()`, `sHtml`): GET meta's `storage.slow` (`STOR`, set on page load and board switch) = this board's files are on a Docker Desktop mount (server: `files.storage`, docs/reference.md "Docker Desktop"). Owner-approved wording (2026-11-22) + `How` link to that section on GitHub; Dismiss = `unblockd.storeSeen.<board>` = true, for good. Board view only, hidden at <= 600px.
 - `#routeNote` (reuses `.gitnote` look; `renderRoute` from `render()`, skips unchanged markup in `rHtml`): board view only, hidden at <= 600px (cards first on a phone). Counts open tickets with no `agent`, not owned by a human, on boards with profiles (`unroutedIds`); Show = `data-agent="NONE"` (the Unrouted filter); Dismiss = `unblockd.routeSeen.<board>` = count, back when it changes. `createdToast` splits routing warnings from schema ones. New ticket form: pillar preselected from prefix (`data-auto` until picked by hand); quick add sends `pillar` when prefix is a pillar key.
 
 ### Branch evidence

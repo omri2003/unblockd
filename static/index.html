@@ -99,8 +99,8 @@ body.hasbulk{padding-bottom:150px} body.hasbulk .toasts{bottom:calc(var(--bulkh,
 /* digest: what happened since you last looked */
 .digest{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--slate);border-radius:8px;padding:8px 12px;margin-bottom:14px}
 .gitnote{display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);padding:9px 12px;margin-bottom:12px;font-size:.88rem}
-@media (max-width:600px){#routeNote{display:none}} /* CORE-82: a setup hint for whoever files tickets; on a phone the cards come first */
-.gitnote p{margin:0;flex:1;min-width:0;overflow-wrap:anywhere} .gitnote .gi{color:var(--amber);padding-top:2px;display:inline-flex} .gitnote .gl{width:15px;height:15px}
+@media (max-width:600px){#routeNote,#storeNote{display:none}} /* CORE-82, UI-81: setup hints for whoever runs the board; on a phone the cards come first */
+.gitnote p{margin:0;flex:1;min-width:0;overflow-wrap:anywhere} .gitnote p a{color:var(--jade);font-weight:600} .gitnote .gi{color:var(--amber);padding-top:2px;display:inline-flex} .gitnote .gl{width:15px;height:15px}
 .liv.br .who{font-weight:600} .liv.br .st{color:var(--muted);font-weight:600}
 .brl{list-style:none;margin:0;padding:0;display:grid;gap:8px} .brl li{display:grid;gap:1px;min-width:0} .brl li.off{opacity:.75} .brl .bn{display:inline-flex;align-items:center;gap:5px;font-weight:600;min-width:0} .brl code{font-size:.85em;overflow-wrap:anywhere}
 .brl .bre{font-size:.82rem;color:var(--amber);font-weight:600}
@@ -830,6 +830,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
     <div class="vico-g" id="depSeg" role="group" aria-label="Blocked or free"></div>
   </div>
 
+  <section class="gitnote" id="storeNote" hidden aria-label="Slow storage"></section>
   <section class="gitnote" id="gitNote" hidden aria-label="This board's checkout"></section>
   <section class="gitnote" id="routeNote" hidden aria-label="Tickets no agent takes"></section>
   <section class="digest" id="digest" hidden aria-label="While you were away"></section>
@@ -1133,7 +1134,7 @@ async function load(force){
   catch{ const m=msg404||'Cannot load tickets: is the server running, and does this board exist?'; toast(m,{err:1}); if(!LOADED){LERR=m; if(state.view==='board') render();} return; }
   if(text===raw && !force) return;
   if(LOADED&&!force&&hbOnly(text,raw)){ raw=text; T=JSON.parse(text); BY=new Map(T.map(t=>[t.id,t])); paintBeats(); return; } // UI-73: only heartbeats moved: no refetch, no re-render
-  const first=!LOADED; raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); if(first) loadGit(); const prev=BY; BY=new Map(T.map(t=>[t.id,t])); // git: its own 15 s poll after the first answer
+  const first=!LOADED; raw=text; T=JSON.parse(text); LOADED=true; LERR=''; setCols(); loadNeeds(); if(first) loadGit(); if(first&&STOR&&!STOR.passes){const a=API;fetch(a+'/meta',{cache:'no-store'}).then(r=>r.json()).then(m=>{if(a===API){STOR=m.storage||null;renderStore();}}).catch(()=>{});} /* UI-81: a fresh server timed its first stat pass with this /tickets read: ask again */ const prev=BY; BY=new Map(T.map(t=>[t.id,t])); // git: its own 15 s poll after the first answer
   const as=sigOf(T,ARCHF), ds=sigOf(T,DOCF); if(as!==archSig){archSig=as;archDue=true;} if(ds!==docSig){docSig=ds;docDue=true;} // what the Map / Docs fetch reads changed: due until the next paint
   if(prev.size&&!reduce.matches) noteFinished(prev);
   paint=()=>{ paint=null;
@@ -1322,7 +1323,7 @@ function setQ(v){ // one place that parses the search box: /pattern/ is a regex 
   if(m){try{state.rx=new RegExp(m[1],'i');}catch(e){state.rx=/(?!)/;state.rxErr=e.message;}}
   $('q').classList.toggle('err',!!state.rxErr);$('q').title=state.rxErr||'Words, an ID like BUG-10, or a regex like /^CMB-|BUG-10/';
 }
-const GL={human:'<circle cx="8" cy="5.5" r="2.5"/><path d="M3 14c0-3 2.2-4.5 5-4.5s5 1.5 5 4.5"/>',agent:'<rect x="3" y="5.5" width="10" height="7.5" rx="2"/><path d="M8 5.5V3"/><circle cx="6" cy="9" r=".7"/><circle cx="10" cy="9" r=".7"/>',branch:'<circle cx="5" cy="3.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/><circle cx="11" cy="5.5" r="1.5"/><path d="M5 5v6M11 7c0 2.5-6 2-6 4"/>'};
+const GL={slow:'<circle cx="8" cy="8.5" r="5.5"/><path d="M8 5.5v3l2 1.5M6.5 1.5h3"/>',human:'<circle cx="8" cy="5.5" r="2.5"/><path d="M3 14c0-3 2.2-4.5 5-4.5s5 1.5 5 4.5"/>',agent:'<rect x="3" y="5.5" width="10" height="7.5" rx="2"/><path d="M8 5.5V3"/><circle cx="6" cy="9" r=".7"/><circle cx="10" cy="9" r=".7"/>',branch:'<circle cx="5" cy="3.5" r="1.5"/><circle cx="5" cy="12.5" r="1.5"/><circle cx="11" cy="5.5" r="1.5"/><path d="M5 5v6M11 7c0 2.5-6 2-6 4"/>'};
 const onBr=t=>t.status==='todo'&&t.effective_status==='doing'?(t.branches||[]).filter(b=>b.active):[]; // in progress only because of a pushed branch nobody claimed here (server: Store._on_branch)
 const brVia=v=>v.map(x=>({name:'its name',commit:'a commit message',file:"an edit to this ticket's file"}[x]||x)).join(', '); // person / bot, stroke only: who is a human or an agent is a shape + a word, not colour
 const glyph=k=>`<svg class="gl" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">${GL[k]}</svg>`;
@@ -1466,6 +1467,13 @@ function renderGit(){
   const n=(x,w)=>`<b>${x}</b> ${w}${x===1?'':'s'}`;
   const h=!show?'':blind?`<span class="gi">${glyph('branch')}</span><p>This board can't read <code>${esc(GIT.remote)}</code>, so branches pushed from other machines don't show here (${esc(GIT.error.replace(/^could not read origin, showing this checkout's branches only: /,''))}). For a private repo, set <code>UNBLOCKD_GIT_TOKEN</code> on the server.</p><button type="button" class="btn ghost sm" data-gitdismiss>Dismiss</button>`:`<span class="gi">${glyph('branch')}</span><p>This board reads your checkout of <code>${esc(c.branch)}</code>${c.behind>0?`, ${n(c.behind,'commit')} behind origin`:''}${c.ahead>0?` (${n(c.ahead,'local commit')} not pushed)`:''}.${c.missing_count>0?` ${n(c.missing_count,'ticket')} on origin ${c.missing_count===1?'is':'are'} missing here (${esc(c.missing.slice(0,3).join(', '))}${c.missing_count>3?'…':''}).`:''} Pull to see merged work.</p><button type="button" class="btn ghost sm" data-gitdismiss>Dismiss</button>`;
   if(h===gHtml) return; gHtml=h; el.innerHTML=h; el.hidden=!show;
+}
+// UI-81: GET meta's `storage` (files.storage): slow = this board's files sit on a Docker Desktop mount (measured stats, in a container)
+let STOR=null, sHtml=null; const STOR_DOC='https://github.com/omri2003/unblockd/blob/main/docs/reference.md#docker-desktop-windows--macos-bind-mounts-are-slow';
+function renderStore(){
+  const el=$('storeNote'), show=!!(state.view==='board'&&STOR?.slow&&store.get('unblockd.storeSeen.'+(BOARD||'default'),false)!==true); // dismissed per board, in this browser
+  const h=!show?'':`<span class="gi">${glyph('slow')}</span><p><b>Slow storage:</b> this board's files are on a Docker Desktop mount, about 75x slower to read. For faster pages run unblockd natively or keep the project inside WSL. <a href="${STOR_DOC}" target="_blank" rel="noopener">How</a></p><button type="button" class="btn ghost sm" data-storedismiss>Dismiss</button>`;
+  if(h===sHtml) return; sHtml=h; el.innerHTML=h; el.hidden=!show;
 }
 let rHtml=null; // CORE-82: open tickets no agent profile takes (no pillar or tag a profile works, not a person's): claim_next never offers them
 const unroutedIds=()=>(CFG.agents||[]).length?T.filter(t=>t.status!=='done'&&!t.agent&&!HUMAN.has(t.owner)).map(t=>t.id):[];
@@ -2016,6 +2024,7 @@ document.addEventListener('click',async e=>{
     return;}
   if(b=g('[data-dgsec]')){const c=b.dataset.dgsec;dgShut.has(c)?dgShut.delete(c):dgShut.add(c);dgMore.delete(c);store.set('dgShut',[...dgShut]);renderDigest();$('digest').querySelector(`[data-dgsec="${c}"]`)?.focus();return;} // UI-82: one section collapses on its own; its header keeps the count
   if(g('[data-routedismiss]')){store.set('unblockd.routeSeen.'+(BOARD||'default'),String(unroutedIds().length));renderRoute();return;} // back when the count changes
+  if(g('[data-storedismiss]')){store.set('unblockd.storeSeen.'+(BOARD||'default'),true);renderStore();return;} // UI-81: for good on this board, in this browser
   if(g('[data-gitdismiss]')){store.set('unblockd.gitSeen.'+(BOARD||'default'),gitKey());renderGit();return;} // it comes back when the numbers change
   if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
   if(b=g('[data-dghidesec]')){const s=digestGroups().find(x=>x[0]===b.dataset.dghidesec); if(s) dgHide(s[3],`${s[3].length} ${s[2].toLowerCase()}`); return;}
@@ -3248,8 +3257,8 @@ function viewTo(v){ // user-driven switch (toggle, g, d): cross-fade where the b
 	document.startViewTransition(()=>setView(v));
 }
 function setView(v){if(v!=='graph')leaveIsolate();if(v!=='map'&&state.view==='map')mapClear();if(v!=='docs'&&state.view==='docs'&&!$('drawer').hidden&&!openId)closeDrawer();state.view=v;store.set('view',v);urlWrite();$('board').hidden=$('tabs').hidden=v!=='board';$('graphWrap').hidden=v!=='graph';$('docsWrap').hidden=v!=='docs';$('mapWrap').hidden=v!=='map';$('roadWrap').hidden=v!=='roadmap';$('bar').hidden=v==='docs'||v==='map'||v==='roadmap';$('depSeg').hidden=v!=='graph';$('layoutSeg').hidden=v!=='board';
-  paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderRoute();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
-function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderRoute();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
+  paintViews(v);renderShow();if(v!=='graph')render();else{renderDigest();renderStore();renderRoute();renderNext();resize();syncGraph();}if(v==='docs'){renderDocs();loadDocs();}if(v==='map'){renderMap();loadMap();}}
+function render(){urlWrite();if([...SEL].some(id=>!BY.has(id))){[...SEL].forEach(id=>BY.has(id)||SEL.delete(id));renderBulk();}BV=showSet(T,state.showBoard);renderBoard();renderDigest();renderStore();renderRoute();renderNext();renderAgBtn();tickAges();if(state.view==='graph')syncGraph();if(state.view==='roadmap')renderRoad();}
 // ---------- Roadmap: the board's milestones (unblockd.json, in order) as progress rows; a row expands to its tickets (chips) and exit criteria ----------
 const RMS=[['done','done'],['review','in review'],['doing','in progress'],['ready','not started'],['waiting','waiting on a person'],['blocked','blocked']]; // bar order = legend order
 const RMC=[['ready','ready'],['doing','in progress'],['review','in review'],['waiting','waiting on a person'],['blocked','blocked']];
@@ -3356,7 +3365,7 @@ async function switchBoard(v,push=true){
   $('toasts').replaceChildren(); // an old toast's Undo would PATCH the same id on the new board
   $('board').innerHTML=$('nextUp').innerHTML=''; $('nextUp').className='next'; $('dQ').value=$('cin').value=$('q').value=''; $('q').classList.remove('err'); $('q').title=QT0; renderBulk(); scrollTo(0,0); // state0 already cleared the search
   // the page-load sequence (below), minus /api/boards
-  paintBoards(); loadNeeds(); applyConfig(m.config);
+  paintBoards(); loadNeeds(); STOR=m.storage||null; sHtml=null; applyConfig(m.config);
   urlRead(); readColors(); renderBar(); setView(state.view);
   load(true).then(loadDigest);
 }
@@ -3365,7 +3374,7 @@ addEventListener('popstate',()=>{ // Back / Forward between boards switched in t
   if(v!==BOARD) switchBoard(v,false);
 });
 loadBoards().then(loadNeeds);
-fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD&&!location.search.includes('board=')){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>applyConfig(m.config)).catch(()=>applyConfig()).finally(()=>{
+fetch(API+'/meta',{cache:'no-store'}).then(r=>{if(r.status===404&&BOARD&&!location.search.includes('board=')){try{localStorage.removeItem('unblockd.board')}catch{} location.search='';}return r.json();}).then(m=>{STOR=m.storage||null;applyConfig(m.config);}).catch(()=>applyConfig()).finally(()=>{
   urlRead(); readColors(); renderBar(); setView(state.view);
   load(true).then(loadDigest).then(()=>{const h=location.hash.slice(1);if(h&&BY.has(h))showTicket(h);});
 });
