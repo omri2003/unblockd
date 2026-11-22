@@ -121,7 +121,7 @@ try {
 			await visible('#drawer #dTitle', 'drawer');
 			await noOverflow('drawer');
 			await page.keyboard.press('Escape');
-			const fin = await page.evaluate(() => [...document.querySelectorAll('#board .card.dn[data-open]')].find((c) => c.textContent.includes('finished with a long summary'))?.dataset.open);
+			const fin = await page.evaluate(() => [...document.querySelectorAll('#board .card.dc[data-open]')].find((c) => c.textContent.includes('finished with a long summary'))?.dataset.open);
 			ok(fin, `[${tag}] UI-79: the light pass's done ticket is not on the board`);
 			{ // UI-79's done ticket from the light pass: its Result box in dark, no overflow
 				await page.evaluate((i) => document.querySelector(`#board [data-open="${i}"]`).click(), fin);
@@ -181,7 +181,7 @@ try {
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]')?.getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
 		{ // CORE-83 (UI-79): the hand-closed HND-1 is counted in the digest head, marked on its Done card (the age makes room: title >= 120px at 1400) and in the List layout
 			ok((await page.locator('#digest .dg-u').allInnerTexts()).join() === '1 without a summary', `[${tag}] digest: want "1 without a summary", got ${await page.locator('#digest .dg-u').allInnerTexts()}`);
-			const dn = page.locator('#board .card.dn[data-open="HND-1"]');
+			const dn = page.locator('#board .card.dc[data-open="HND-1"]');
 			ok((await dn.locator('.unr').allInnerTexts()).join() === 'no summary' && !(await dn.locator('.age').count()), `[${tag}] done card HND-1: want the "no summary" mark instead of the age`);
 			if (w > 600) ok(await dn.locator('.ttl').evaluate((e) => e.clientWidth >= 120), `[${tag}] done card HND-1: the mark crowds the title`);
 			await page.keyboard.press('l'); await page.waitForSelector('#board .lrow', { state: 'attached' });
@@ -879,12 +879,22 @@ try {
 			await page.keyboard.press('Escape');
 		}
 		{ // a done card is one compact row: id + title + age, no seal / owner chip, still opens the drawer, still has its Move-to menu
-			const d = page.locator('.col.done .card.dn').first(), td = page.locator('.col.todo .card').first();
+			const d = page.locator('.col.done .card.dc').first(), td = page.locator('.col.todo .card').first();
 			ok(await d.getAttribute('data-open') && await d.getAttribute('title'), `[${tag}] done card keeps data-open and the full title`);
 			ok((await d.locator('.seal, .own').count()) === 0, `[${tag}] done card should show no priority seal or owner chip`);
 			ok((await d.locator('xpath=..').locator('[data-moveto]').count()) > 0, `[${tag}] done card keeps its Move-to menu`);
 			const hd = await d.boundingBox(), ht = await td.boundingBox();
 			if (hd && ht) ok(hd.height < ht.height / 2, `[${tag}] done card (${hd.height}px) should be under half a To do card (${ht.height}px)`);
+			// UI-83: one outline (the wrapper draws no box of its own: it used to share the Docs view's .dn node style); Move to never covers the title; it stays up on keyboard focus only
+			const wb = await d.locator('xpath=..').evaluate((e) => { const s = getComputedStyle(e); return s.borderTopWidth + ' ' + s.backgroundColor; });
+			ok(wb === '0px rgba(0, 0, 0, 0)', `[${tag}] UI-83: the done card's wrapper draws a second box (${wb})`);
+			if (w > 600) {
+				await d.hover();
+				const [tr, mr] = await Promise.all([d.locator('.ttl').boundingBox(), d.locator('xpath=..').locator('.mv summary').boundingBox()]);
+				ok(tr && mr && tr.x + tr.width <= mr.x, `[${tag}] UI-83: Move to covers the done card's title on hover (title ends ${tr && tr.x + tr.width}, Move to starts ${mr && mr.x})`);
+				await d.click(); await page.waitForSelector('#drawer:not([hidden])'); await page.click('#drawer [data-close]'); await page.mouse.move(2, 2);
+				ok(await d.evaluate((e) => document.activeElement === e && !e.matches(':focus-visible') && getComputedStyle(e.parentNode.querySelector('.mv summary')).opacity === '0'), `[${tag}] UI-83: after a click, the done card keeps a focus ring or its Move to`);
+			}
 		}
 		ok((await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), rid)).result.approved_by === 'human', `[${tag}] Approve should record the approver (human when I am is not set)`);
 		{ // Approve / Reject from the drawer (same handlers, same draft key as the panel); own review tickets, so the panel checks around it stay as they are

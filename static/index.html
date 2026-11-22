@@ -255,14 +255,15 @@ a.btn{display:inline-block;text-decoration:none}
 .meta{display:flex;flex-wrap:wrap;gap:2px 10px;margin-top:6px;font-size:.78rem;color:var(--muted)}
 .why{color:var(--slate);font-weight:600} .card>.why{display:block;margin-bottom:3px;font-size:.78rem;font-weight:700}
 .done .card .ttl{font-weight:400;color:var(--muted)}
-.card.dn{display:flex;align-items:baseline;gap:8px;padding:4px 10px 4px 9px}
-.card.dn .ttl{display:block;-webkit-line-clamp:unset;line-clamp:unset;flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.card.dn .age{font-size:.76rem;color:var(--muted)}
+.card.dc{display:flex;align-items:baseline;gap:8px;padding:4px 10px 4px 9px}
+.card.dc .ttl{display:block;-webkit-line-clamp:unset;line-clamp:unset;flex:1;min-width:0;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.dc .age{font-size:.76rem;color:var(--muted)}
 .lrow .lw.unr{color:var(--amber);font-weight:600} /* CORE-83: List row of a done ticket without a summary */
-.card.dn .unr{flex:none;font-size:.68rem;font-weight:700;color:var(--amber);border:1px solid currentColor;border-radius:3px;padding:0 4px;white-space:nowrap} /* UI-79: done without a summary (CORE-68) */
-.cw.dn .mv{top:50%;bottom:auto;transform:translateY(-50%)}
-.cw.dn:hover .age,.cw.dn:focus-within .age,.cw.dn:has(.mv[open]) .age{visibility:hidden}
-@media (hover:none){.cw.dn .card{padding:4px 84px 4px 9px}}
+.card.dc .unr{flex:none;font-size:.68rem;font-weight:700;color:var(--amber);border:1px solid currentColor;border-radius:3px;padding:0 4px;white-space:nowrap} /* UI-79: done without a summary (CORE-68) */
+.cw.dc .mv{top:50%;bottom:auto;transform:translateY(-50%)}
+/* UI-83: while Move to shows, the age / mark step aside and the card reserves the pill's width, so the title ellipsis ends before it (never under it) */
+:is(.cw.dc:hover,.cw.dc:has(:focus-visible),.cw.dc:has(.mv[open])) .card{padding-right:88px} :is(.cw.dc:hover,.cw.dc:has(:focus-visible),.cw.dc:has(.mv[open])) .card :is(.age,.unr){display:none}
+@media (hover:none){.cw.dc .card{padding:4px 84px 4px 9px}}
 .more{margin-top:8px;width:100%}
 .props{width:100%;margin:0 0 8px;text-align:left}
 /* drag and drop */
@@ -277,7 +278,7 @@ a.btn{display:inline-block;text-decoration:none}
 .cw{position:relative;min-width:0}
 .mv{position:absolute;right:6px;bottom:6px;z-index:2}
 .mv summary{cursor:pointer;font-size:.72rem;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:0 8px;opacity:0}
-.cw:hover .mv summary,.cw:focus-within .mv summary,.mv[open] summary{opacity:1}
+.cw:hover .mv summary,.cw:has(:focus-visible) .mv summary,.mv[open] summary{opacity:1} /* keyboard focus only (UI-83): a clicked card does not keep Move to up */
 @media (hover:none){.mv summary{opacity:1}.cw .card{padding-bottom:30px}}
 .mvm{position:absolute;right:0;bottom:calc(100% + 4px);display:grid;min-width:130px;background:var(--surface);border:1px solid var(--ink);border-radius:var(--r);box-shadow:0 6px 18px rgba(0,0,0,.2);overflow:hidden}
 .mvm button,.ovm button{text-align:left;background:none;border:0;padding:7px 12px;cursor:pointer;font-weight:600} .mvm button:hover,.ovm button:hover{background:var(--jade-soft)}
@@ -714,7 +715,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
 .cards{gap:10px}
 .card{position:relative;border-color:var(--line);border-radius:var(--rc);padding:10px 12px 10px 15px;box-shadow:var(--sh1);transition:box-shadow .15s ease-out,transform .15s ease-out}
 .card:hover{transform:translateY(-1px);box-shadow:var(--sh2);border-color:color-mix(in srgb,var(--ink) 18%,var(--line))}
-.card.dn{border-radius:10px;padding:5px 12px 5px 15px}
+.card.dc{border-radius:10px;padding:5px 12px 5px 15px}
 .card.dragging{transform:none}
 .seal{border-radius:5px}
 .qa input{border-radius:10px;padding:7px 10px;box-shadow:var(--sh1)}
@@ -743,10 +744,10 @@ aside{border-left-color:var(--line);box-shadow:var(--sh3)}
 body{font-optical-sizing:auto} h1{letter-spacing:-.02em} .logo{font-weight:700}
 /* 4 pillar spine: a floating capsule, not a border bent by the radius */
 .card::before{content:'';position:absolute;left:5px;top:10px;bottom:10px;width:3px;border-radius:3px;background:var(--pc);pointer-events:none}
-.card.dn::before{top:6px;bottom:6px}
+.card.dc::before{top:6px;bottom:6px}
 .col.done .card,.col.done .card:hover{border-left-color:var(--line)} .col.done .card::before{opacity:.45} .col.done .card:hover::before{opacity:1}
 .compact .card{padding-left:12px} .compact .card::before{left:4px;top:6px;bottom:6px}
-@media (hover:none){.cw.dn .card{padding-left:15px}}
+@media (hover:none){.cw.dc .card{padding-left:15px}}
 /* 5 owner as a byline; 7b the card head never wraps */
 .card .own{background:none;padding:0;border-radius:0;color:var(--muted);font-weight:600;font-size:.76rem;gap:4px;min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card .own.human{color:var(--ink);font-weight:700} .card .own .gl{opacity:.85;flex:none}
@@ -1344,7 +1345,7 @@ function card(t){
   const warn=s==='done'?'':[(t.missing_blockers||[]).length?`<span class="wl miss">Missing blocker: ${esc(t.missing_blockers.join(', '))}</span>`:'',t.stale_days!=null&&t.stale_days>=STALE?`<span class="wl stale">No update for ${t.stale_days} days</span>`:'',needMark(t)].join('');
   const pc=PILLARS.includes(t.pillar)?' '+pk(t.pillar):'',fl=flash.get(t.id);
   const cls=(t.priority==='P0'&&s!=='done'?' p0':'')+(s==='pending'?' blocked':'')+(t.claim?' claimed':'');
-  if(s==='done') return `<div class="cw dn"><button type="button" class="card dn${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):'')+(t.unreported?' · closed '+t.updated:''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${t.unreported?'<span class="unr" title="Finished without a summary: open it to add what changed">no summary</span>':meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
+  if(s==='done') return `<div class="cw dc"><button type="button" class="card dc${pc}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}" draggable="true" data-open="${esc(t.id)}" title="${esc(t.title+(t.result&&doneTip(t.result)?' · '+doneTip(t.result):'')+(t.unreported?' · closed '+t.updated:''))}"><span class="tid">${esc(t.id)}</span><span class="ttl">${inline(t.title)}</span>${t.unreported?'<span class="unr" title="Finished without a summary: open it to add what changed">no summary</span>':meta[0]}</button>${mvMenu(t)}</div>`; // ONE compact row: id, title (ellipsis), age
   return `<div class="cw"><button type="button" class="card${pc}${cls}${fl?' flash':''}${SEL.has(t.id)?' sel':''}${onp?' onpath':''}${dm?' dimmed':''}"${fl?` style="animation-delay:-${Date.now()-fl}ms"`:''} draggable="true" data-open="${esc(t.id)}" title="${s==='todo'?'Score '+t.score+' (priority x tickets unblocked)':s==='done'&&t.result?esc(doneTip(t.result)):''}">${why}<span class="top"><span class="tid">${esc(t.id)}</span>${t.priority?`<span class="seal ${t.priority.toLowerCase()}">${t.priority}</span>`:''}${ownHtml(t.owner)}</span><span class="ttl" title="${esc(t.title)}">${inline(t.title)}</span>${meta.length?`<span class="meta">${meta.join('')}</span>`:''}${t.claim?`<span class="liv"><span class="who">${glyph('agent')}${esc(t.claim.agent)}${t.claim.principal?' for '+esc(t.claim.principal):''}</span><span class="st"><i class="pulse" aria-hidden="true"></i><time data-hb="${esc(t.claim.heartbeat_at)}"${t.claim.expires_at?` data-exp="${esc(t.claim.expires_at)}"`:''}></time></span></span><span class="lbar" role="img"><i></i></span>`:''}${t.claim?.note?`<span class="wk">“${esc(t.claim.note)}”</span>`:''}${!t.claim&&onBr(t).length?brLine(onBr(t)[0]):''}${warn}</button>${mvMenu(t)}</div>`;
 }
 function renderBulk(){ // rebuilt only when the selection changes or after an edit (never by the poll: it would eat a half-typed tag)
