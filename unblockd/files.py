@@ -42,6 +42,33 @@ SCAN_REUSE_S = 0.0
 _SCANNED: dict[tuple, tuple] = {}  # _RAW key -> (time.monotonic() when its last pass started, _WROTE count then, folder mtime_ns then)
 _WROTE: dict[str, int] = {}  # tickets folder -> ticket writes / locked steps by this process (any one drops the reuse)
 
+# Slow storage (UI-81): on Docker Desktop (Windows / macOS) a bind-mounted project costs ~0.6 ms per file stat, ~75x a native
+# disk (docs/reference.md "Docker Desktop"). _scan times the stats of every pass it really makes (no extra filesystem call:
+# a reused pass is not timed) and keeps the last SLOW_PASSES per-file times of boards with >= SLOW_MIN tickets; storage() =
+# their median. slow = inside a container AND median over SLOW_STAT_MS: a native board (Windows, macOS, Linux) is never
+# flagged, and a Linux host's bind mount is native speed. Env UNBLOCKD_SLOW_STORAGE=1 / 0 forces it (demos, tests).
+SLOW_STAT_MS = 0.1
+SLOW_MIN = 10  # fewer ticket files than this: too few to judge, never measured
+SLOW_PASSES = 3
+_STAT_MS: dict[str, list] = {}  # tickets folder -> ms per file stat of its last SLOW_PASSES scans
+_stat = lambda e: e.stat()  # the stat _scan times; tests swap in a slow one
+_CONTAINER: list = []  # in_container(), asked once per process
+
+
+def in_container() -> bool:
+	if not _CONTAINER:
+		_CONTAINER.append(Path("/.dockerenv").exists() or bool(os.environ.get("container")))
+	return _CONTAINER[0]
+
+
+def storage(tickets_dir: str | os.PathLike, key: str | None = None) -> dict:
+	"""{per_file_ms, passes, slow} for a files board, from the stat passes its reads already made (none yet: per_file_ms None)."""
+	runs = _STAT_MS.get(key or str(Path(tickets_dir).resolve()), [])
+	per = round(sorted(runs)[len(runs) // 2], 4) if runs else None
+	force = os.environ.get("UNBLOCKD_SLOW_STORAGE", "")
+	slow = force == "1" or (force != "0" and per is not None and per > SLOW_STAT_MS and in_container())
+	return {"per_file_ms": per, "passes": len(runs), "slow": slow}
+
 
 class FileBackend:
 	"""A board stored as files. `parse` turns a ticket file's JSON into the stored form (the rules' upgrade of old files)."""
@@ -100,15 +127,19 @@ class FileBackend:
 				and ck in _RAW):
 			return _RAW[ck]  # fresh, nothing written by this process since, no file added / replaced / removed (outside the lock only)
 		started = time.monotonic()  # taken before the pass: a file changed during it is not older than the stamp says
-		old, new = _RAW.get(ck, {}), {}
+		old, new, spent = _RAW.get(ck, {}), {}, 0.0
 		with os.scandir(self.dir) as it:
 			for e in it:
 				if not e.name.endswith(".json") or not ID_RE.match(stem := e.name[:-5]):
 					continue
-				st = e.stat()
+				t0 = time.perf_counter()
+				st = _stat(e)
+				spent += time.perf_counter() - t0  # UI-81: what a stat costs on this storage (storage())
 				stamp = (st.st_ino, st.st_mtime_ns, st.st_size)  # os.replace makes a new file, so a rewrite changes the stamp even within one clock tick
 				hit = old.get(stem)
 				new[stem] = hit if hit and hit[0] == stamp else (stamp, self.read_file(Path(e.path)))
+		if len(new) >= SLOW_MIN:
+			_STAT_MS[self.key] = (_STAT_MS.get(self.key, []) + [spent * 1000 / len(new)])[-SLOW_PASSES:]
 		_RAW[ck] = dict(sorted(new.items()))
 		_SCANNED[ck] = (started, gen, mt)  # gen and mt read before the pass: a write during it drops the reuse
 		return _RAW[ck]

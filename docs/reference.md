@@ -22,6 +22,7 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
 | `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
 | `UNBLOCKD_GIT` | `0` turns branch evidence off (see Branch evidence). On by default when `git` is installed and the project is a git repository. |
+| `UNBLOCKD_SLOW_STORAGE` | `1` always shows the slow storage notice, `0` never (see Docker Desktop below). Unset = measured. |
 | `UNBLOCKD_GIT_TOKEN` | Optional token for a private https `origin` on any host. `GITHUB_TOKEN` is used too, but only when origin is on github.com. Sent only to that host, through git's environment (never on a command line). |
 | `GITHUB_TOKEN` (or `UNBLOCKD_GITHUB_TOKEN`), `UNBLOCKD_GITHUB_API` | Optional GitHub token: every 60 s the server reads the PRs in `result.refs` of tickets in `review` (see GitHub PR sync). Unset: off. API base defaults to `https://api.github.com`. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
@@ -556,7 +557,7 @@ POST   /api/chat                      {"board", "messages": [{"role", "content"}
 POST   /api/boards                    {"id": "my-game", "title": "My game", "root"?: one of UNBLOCKD_ROOT}  -> the board + "path" (+ "host_path" in Docker);
                                       in a container a root that is not a mounted volume is refused (the board would vanish with the container)
 # per board under /api/b/<board>/ ; without the prefix = the default board
-GET    meta                           statuses, priorities, fields, config, version
+GET    meta                           statuses, priorities, fields, config, version, storage {per_file_ms, passes, slow} (files boards; null on a database board)
 GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
 GET    next?owner=&pillar=&agent=&tag=&limit=
 GET    plan?per_agent=
@@ -654,6 +655,8 @@ What to do:
 - **On Docker Desktop, prefer running the server natively**: `python -m unblockd.web` with `UNBLOCKD_ROOT` = your projects folder (the README's "Without Docker").
 - **Or keep the repos inside the WSL filesystem** (e.g. `~/projects` in your distro) and mount that, not a `C:\` folder.
 - **Linux bind mounts are fine**: there the mount is the native disk.
+
+**The board tells you.** The server times the file stats its board reads already make (no extra ones) and keeps the median per file of the last 3 passes. Inside a container, over 0.1 ms per file (a native disk is about 0.02 ms) on a board of at least 10 tickets, `GET meta` says `storage.slow: true` and the board header shows a "Slow storage" notice linking here; Dismiss hides it for that board in that browser. Outside a container it never shows. `UNBLOCKD_SLOW_STORAGE=1` / `0` forces it on or off.
 
 **Branch evidence needs `git` in the image.** The Dockerfile installs `git` for [branch evidence](#branch-evidence-work-that-lives-on-branches). An image built before branch evidence existed has no `git`, and the feature is silently off. Rebuild: `docker compose build`, then `docker compose up -d`. After that the scan runs `git` every 120 s per board on the mounted repo (its bare mirror lives in `tickets/.unblockd/git`), so on a Docker Desktop bind mount it pays the same per-file cost.
 

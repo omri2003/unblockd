@@ -121,7 +121,7 @@ try {
 			await visible('#drawer #dTitle', 'drawer');
 			await noOverflow('drawer');
 			await page.keyboard.press('Escape');
-			const fin = await page.evaluate(() => [...document.querySelectorAll('#board .card.dn[data-open]')].find((c) => c.textContent.includes('finished with a long summary'))?.dataset.open);
+			const fin = await page.evaluate(() => [...document.querySelectorAll('#board .card.dc[data-open]')].find((c) => c.textContent.includes('finished with a long summary'))?.dataset.open);
 			ok(fin, `[${tag}] UI-79: the light pass's done ticket is not on the board`);
 			{ // UI-79's done ticket from the light pass: its Result box in dark, no overflow
 				await page.evaluate((i) => document.querySelector(`#board [data-open="${i}"]`).click(), fin);
@@ -174,6 +174,7 @@ try {
 		}
 		ok(await page.evaluate(() => /unblockd/.test(document.title) && !!document.querySelector('link[rel=icon]')), `[${tag}] title / favicon missing`);
 		await noOverflow('board');
+		const dgExtra = Array.from({ length: 7 }, (_, i) => JSON.parse(cli('create', '--prefix', 'SM', '--title', `digest filler ${i + 1}`, '--json', '{"pillar":"API"}').toString()).id); // UI-82: a New section past 6 rows, so it has "+N more"; deleted after the digest checks
 		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
 		await page.reload(); await page.waitForSelector('.card', { state: 'attached' });
 		await visible('#digest [data-dgtoggle]', 'digest bar');
@@ -181,7 +182,7 @@ try {
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0 && document.querySelector('[data-dgtoggle]')?.getAttribute('aria-expanded') === 'true', null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not expand`));
 		{ // CORE-83 (UI-79): the hand-closed HND-1 is counted in the digest head, marked on its Done card (the age makes room: title >= 120px at 1400) and in the List layout
 			ok((await page.locator('#digest .dg-u').allInnerTexts()).join() === '1 without a summary', `[${tag}] digest: want "1 without a summary", got ${await page.locator('#digest .dg-u').allInnerTexts()}`);
-			const dn = page.locator('#board .card.dn[data-open="HND-1"]');
+			const dn = page.locator('#board .card.dc[data-open="HND-1"]');
 			ok((await dn.locator('.unr').allInnerTexts()).join() === 'no summary' && !(await dn.locator('.age').count()), `[${tag}] done card HND-1: want the "no summary" mark instead of the age`);
 			if (w > 600) ok(await dn.locator('.ttl').evaluate((e) => e.clientWidth >= 120), `[${tag}] done card HND-1: the mark crowds the title`);
 			await page.keyboard.press('l'); await page.waitForSelector('#board .lrow', { state: 'attached' });
@@ -212,7 +213,22 @@ try {
 			await page.click(`#digest [data-dghidesec="${sec}"]`);
 			ok(!(await page.$(`#digest .dg-g.${sec}`)), `[${tag}] Dismiss all left the ${sec} section`);
 			await page.click('#toasts button:has-text("Undo")'); ok((await rowIds()).length === before.length, `[${tag}] Undo did not restore the ${sec} section`);
+			// UI-82: a section collapses on its own (count stays, remembered in this browser); collapsing the digest puts "+N more" back
+			await page.click(`#digest [data-dgsec="${sec}"]`);
+			ok(await page.evaluate((s) => !document.querySelector(`#digest .dg-g.${s} + .dg-l`) && document.querySelector(`#digest [data-dgsec="${s}"]`)?.getAttribute('aria-expanded') === 'false' && !!document.querySelector(`#digest .dg-g.${s} .n`)?.textContent && JSON.parse(localStorage.getItem('dgShut')).includes(s), sec), `[${tag}] UI-82: the ${sec} section did not collapse on its own with its count kept and remembered`);
+			ok((await rowIds()).length < before.length && (await page.$$('#digest .dg-l')).length > 0, `[${tag}] UI-82: collapsing ${sec} hid nothing, or hid the other sections too`);
+			await page.click(`#digest [data-dgsec="${sec}"]`); ok((await rowIds()).length === before.length && (await page.evaluate(() => localStorage.getItem('dgShut'))) === '[]', `[${tag}] UI-82: the ${sec} section did not open again`);
+			const mo = await page.$eval('#digest [data-dgmore]', (b) => b.dataset.dgmore).catch(() => null);
+			ok(mo, `[${tag}] UI-82: the smoke digest needs a section with "+N more"`);
+			if (mo) {
+				await page.click(`#digest [data-dgmore="${mo}"]`); ok(!(await page.$(`#digest [data-dgmore="${mo}"]`)), `[${tag}] "+N more" did not show the ${mo} section in full`);
+				await page.click('#digest [data-dgtoggle]'); await page.waitForFunction((s) => !!document.querySelector(`#digest [data-dgmore="${s}"]`), mo, { timeout: 2000 }).catch(() => ok(false, `[${tag}] UI-82: collapsing the digest did not put "+N more" back in ${mo}`));
+				ok(await page.evaluate(() => document.activeElement?.matches('[data-dgtoggle]')), `[${tag}] UI-82: the rebuild after collapsing lost focus on Expand`);
+				await page.click('#digest [data-dgtoggle]'); await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0, null, { timeout: 2000 });
+			}
 		}
+		for (const id of dgExtra) cli('delete', id);
+		await refresh();
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
 		await page.click('#digest [data-dgdismiss]'); await page.waitForSelector('#digest', { state: 'hidden' });
@@ -879,12 +895,22 @@ try {
 			await page.keyboard.press('Escape');
 		}
 		{ // a done card is one compact row: id + title + age, no seal / owner chip, still opens the drawer, still has its Move-to menu
-			const d = page.locator('.col.done .card.dn').first(), td = page.locator('.col.todo .card').first();
+			const d = page.locator('.col.done .card.dc').first(), td = page.locator('.col.todo .card').first();
 			ok(await d.getAttribute('data-open') && await d.getAttribute('title'), `[${tag}] done card keeps data-open and the full title`);
 			ok((await d.locator('.seal, .own').count()) === 0, `[${tag}] done card should show no priority seal or owner chip`);
 			ok((await d.locator('xpath=..').locator('[data-moveto]').count()) > 0, `[${tag}] done card keeps its Move-to menu`);
 			const hd = await d.boundingBox(), ht = await td.boundingBox();
 			if (hd && ht) ok(hd.height < ht.height / 2, `[${tag}] done card (${hd.height}px) should be under half a To do card (${ht.height}px)`);
+			// UI-83: one outline (the wrapper draws no box of its own: it used to share the Docs view's .dn node style); Move to never covers the title; it stays up on keyboard focus only
+			const wb = await d.locator('xpath=..').evaluate((e) => { const s = getComputedStyle(e); return s.borderTopWidth + ' ' + s.backgroundColor; });
+			ok(wb === '0px rgba(0, 0, 0, 0)', `[${tag}] UI-83: the done card's wrapper draws a second box (${wb})`);
+			if (w > 600) {
+				await d.hover();
+				const [tr, mr] = await Promise.all([d.locator('.ttl').boundingBox(), d.locator('xpath=..').locator('.mv summary').boundingBox()]);
+				ok(tr && mr && tr.x + tr.width <= mr.x, `[${tag}] UI-83: Move to covers the done card's title on hover (title ends ${tr && tr.x + tr.width}, Move to starts ${mr && mr.x})`);
+				await d.click(); await page.waitForSelector('#drawer:not([hidden])'); await page.click('#drawer [data-close]'); await page.mouse.move(2, 2);
+				ok(await d.evaluate((e) => document.activeElement === e && !e.matches(':focus-visible') && getComputedStyle(e.parentNode.querySelector('.mv summary')).opacity === '0'), `[${tag}] UI-83: after a click, the done card keeps a focus ring or its Move to`);
+			}
 		}
 		ok((await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), rid)).result.approved_by === 'human', `[${tag}] Approve should record the approver (human when I am is not set)`);
 		{ // Approve / Reject from the drawer (same handlers, same draft key as the panel); own review tickets, so the panel checks around it stay as they are
@@ -1435,6 +1461,23 @@ try {
 			await page.waitForSelector('#gitNote:not([hidden])');
 			ok(/can't read https:\/\/example.com\/o\/private/.test(await page.innerText('#gitNote')) && /Authentication failed/.test(await page.innerText('#gitNote')), 'unreadable origin: the notice says why and what to set');
 			await writeFile(brJ, keep);
+		}
+		{ // UI-81: slow storage notice. This machine is a native disk, so GET meta measures it fast (no notice); a slow Docker Desktop mount is simulated by rewriting meta's storage
+			const real = await page.evaluate(() => fetch('/api/b/zgit/meta').then((r) => r.json()).then((m) => m.storage));
+			ok(real && real.slow === false && 'passes' in real && await page.locator('#storeNote').isHidden(), `native board: no slow storage notice (${JSON.stringify(real)})`);
+			await page.route('**/meta', async (r) => { const res = await r.fetch(); const j = await res.json(); j.storage = { per_file_ms: 0.6, passes: 3, slow: true }; await r.fulfill({ response: res, json: j }); });
+			await page.reload(); await page.waitForSelector('#storeNote:not([hidden])', { state: 'attached' });
+			if (w <= 600) ok(await page.locator('#storeNote').isHidden(), 'a phone hides the slow storage notice (cards first)');
+			else {
+				const sn = await page.innerText('#storeNote');
+				ok(/Slow storage: this board's files are on a Docker Desktop mount, about 75x slower to read\. For faster pages run unblockd natively or keep the project inside WSL\. How/.test(sn), `slow storage notice wording: ${sn}`);
+				ok(/docs\/reference\.md#docker-desktop/.test(await page.getAttribute('#storeNote a', 'href')), 'the notice links the deploy notes');
+				await noOver('board with the slow storage notice');
+				await page.click('#storeNote [data-storedismiss]'); ok(await page.locator('#storeNote').isHidden(), 'Dismiss hides the slow storage notice');
+				await page.reload(); await page.waitForSelector('#board .card', { state: 'attached' });
+				ok(await page.locator('#storeNote').isHidden(), 'the slow storage notice stays dismissed for this board');
+			}
+			await page.unroute('**/meta'); await page.evaluate(() => localStorage.removeItem('unblockd.storeSeen.zgit'));
 		}
 		ok(!errs.length, 'browser errors:\n  ' + errs.join('\n  '));
 		await ctx.close();
