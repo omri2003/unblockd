@@ -475,7 +475,7 @@ Build the image once first (`docker compose build`), or use `ghcr.io/omri2003/un
 Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the package, same for every board, not configurable). The `work_loop` prompt (`board`, `profile`) and the `unblockd://work-loop` resource carry the claim, heartbeat, complete / release / `ask_human` protocol, so any MCP client can run it without the orchestrator skill. The file ends with two rules: *Never go silent* (stop a claimed ticket only through `ask_human` or `release`, never by just stopping) and *Your board's policy* (board / profile docs such as `AGENT_POLICY.md` say how to do the work; if they conflict with the protocol, the protocol wins and the worker says so in its summary). The Docs view lists the protocol as a **built-in** doc (`unblockd://work-loop`, `builtin: true` in `GET /knowledge`, openable with View file / `read_doc`, shown with generic values: workers get their board, profile and name filled in) that every open ticket reads; it is not inlined into `context()`, which carries `protocol: "unblockd://work-loop"` instead.
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
-profiles), `work_plan` (orchestrators start here), `next_ready` (single agents
+profiles, unblockd's `version`; the server's initialize reply carries it too), `work_plan` (orchestrators start here), `next_ready` (single agents
 start here for a read-only queue; `agent=`, `tag=`), `list_tickets`, `get_ticket`, `create_ticket` (needs `agent`), `create_tickets` (a plan in one call, see Tickets), `accept_ticket`, `approve_ticket` (the human side of review: done + who approved),
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
@@ -523,6 +523,7 @@ python -m unblockd.cli --dir <repo>/tickets roadmap                          # m
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --milestone v0.2   # - clears it
 python -m unblockd.cli --dir <repo>/tickets migrate-milestones REL-1=v0.1 REL-2=v0.2   # version epics -> milestones
 python -m unblockd.cli health                                               # remote: GET /healthz; local: the folder; exit 1 when down
+python -m unblockd.cli --version                                            # unblockd 0.2.0 (also: unblockd --version once installed)
 python -m unblockd.cli --dir <repo>/tickets update BUG-10 --rev 3 --json '{"title":"..."}'   # refused (conflict) if written since rev 3
 ```
 
@@ -542,7 +543,7 @@ so keep the host awake while agents work, or run it on a machine that stays on.
 ## API
 
 ```
-GET    /healthz                       (no /api, no auth) {"status": "ok"}: container health check / k8s probes
+GET    /healthz                       (no /api, no auth) {"status": "ok", "version": "0.2.0"}: container health check / k8s probes
 GET    /api/boards                    every board with ticket counts
 GET    /api/needs                     every board's tickets waiting on a person, for the UI's Needs you panel (read-only):
                                       [{"id", "title", "items": [{"id", "kind": "question"|"review"|"proposal"|"stuck", "title", "priority", "score", "unblocks",
@@ -555,7 +556,7 @@ POST   /api/chat                      {"board", "messages": [{"role", "content"}
 POST   /api/boards                    {"id": "my-game", "title": "My game", "root"?: one of UNBLOCKD_ROOT}  -> the board + "path" (+ "host_path" in Docker);
                                       in a container a root that is not a mounted volume is refused (the board would vanish with the container)
 # per board under /api/b/<board>/ ; without the prefix = the default board
-GET    meta                           statuses, priorities, fields, config
+GET    meta                           statuses, priorities, fields, config, version
 GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&q=
 GET    next?owner=&pillar=&agent=&tag=&limit=
 GET    plan?per_agent=
@@ -660,5 +661,5 @@ What to do:
 
 - **User**: the image runs as uid 1001 and `/app`, `/data`, `/projects` are owned by group 0 with group = owner permissions, so it also runs under OpenShift's random UID (restricted SCC). compose.yaml sets `user: "0"` only because Linux bind mounts of your own projects are not writable by 1001; don't copy that to a cluster.
 - **Base**: `python:3.12-slim-bookworm` (the floating `3.12-slim` is not used). Pin a `@sha256` digest for fully reproducible builds.
-- **Health**: `GET /healthz` returns `200 {"status": "ok"}` with no auth even when `UNBLOCKD_TOKEN` is set. The Dockerfile `HEALTHCHECK` uses it; use it for liveness/readiness probes too.
+- **Health**: `GET /healthz` returns `200 {"status": "ok", "version": "<running version>"}` with no auth even when `UNBLOCKD_TOKEN` is set. The Dockerfile `HEALTHCHECK` uses it; use it for liveness/readiness probes too.
 - **Storage (files backend)**: tickets are files and the claim lock is a file lock, so run `replicas: 1`, `strategy: Recreate` (a rolling update would briefly run two pods on one volume) and mount a ReadWriteOnce PVC at `/data` (`TICKETS_DIR=/data/tickets`) or at `/projects`. Set `UNBLOCKD_TOKEN` (the container binds `0.0.0.0`).

@@ -44,6 +44,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from . import __version__
 from . import boards as bd
 from . import connectors
 from . import knowledge as kn
@@ -183,6 +184,7 @@ def main(argv: list[str] | None = None) -> int:
 	argv = sys.argv[1:] if argv is None else list(argv)
 	as_json = _Parser.JSON = _json_mode(argv)
 	ap = _Parser(prog="unblockd.cli")
+	ap.add_argument("--version", action="version", version=f"unblockd {__version__}")
 	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
 	ap.add_argument("--json", dest="json_out", action="store_true", help="errors as one JSON object on stdout (default when stdout is not a terminal)")
 	sub = ap.add_subparsers(dest="cmd", required=True)
@@ -331,7 +333,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "roadmap":
 			out = s.roadmap()
 		elif a.cmd == "health":
-			out = s.health() if url else {"status": "ok", "dir": connectors.describe(a.dir) if connectors.is_db(a.dir) else Path(a.dir).resolve().as_posix(), "tickets": len(s.list())}
+			out = s.health() if url else {"status": "ok", "version": __version__, "dir": connectors.describe(a.dir) if connectors.is_db(a.dir) else Path(a.dir).resolve().as_posix(), "tickets": len(s.list())}
 		elif a.cmd == "migrate-milestones":
 			pairs = [p.split("=", 1) for p in a.pairs]
 			if not all(len(p) == 2 and p[0] and p[1] for p in pairs):
