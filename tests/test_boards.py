@@ -13,6 +13,7 @@ import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
+import unblockd
 from unblockd import cli
 from unblockd.boards import Boards
 from unblockd.store import NotFound, Store, TicketError
@@ -209,6 +210,7 @@ class ApiTest(unittest.TestCase):
 		self.assertEqual(len(self.call("GET", "/api/b/b/tickets")[1]), 1)
 		self.assertEqual(self.call("GET", "/api/tickets")[1], [])  # default board = a
 		self.assertEqual(self.call("GET", "/api/meta")[1]["board"], "a")
+		self.assertEqual(self.call("GET", "/api/meta")[1]["version"], unblockd.__version__)  # CORE-84
 		self.assertEqual([x["id"] for x in self.call("GET", "/api/boards")[1]], ["a", "b"])
 		self.assertEqual(self.call("GET", "/api/b/zzz/tickets")[0], 404)
 
@@ -408,14 +410,14 @@ class ApiTest(unittest.TestCase):
 
 	def test_cli_health(self):
 		code, d = self.cli("health")
-		self.assertEqual((code, d["status"], d["url"]), (0, "ok", self.base))
+		self.assertEqual((code, d["status"], d["url"], d["version"]), (0, "ok", self.base, unblockd.__version__))
 		code, msg = self.cli("health", UNBLOCKD_URL="http://127.0.0.1:1")
 		self.assertEqual(code, 1)
 		self.assertIn("server down", msg)
 
 	def test_healthz_needs_no_auth(self):
 		with mock.patch.dict(os.environ, {"UNBLOCKD_TOKEN": "s3cret"}):
-			self.assertEqual(self.call("GET", "/healthz"), (200, {"status": "ok"}))
+			self.assertEqual(self.call("GET", "/healthz"), (200, {"status": "ok", "version": unblockd.__version__}))
 			self.assertEqual(self.call("GET", "/api/tickets")[0], 401)
 
 	def test_token_auth(self):

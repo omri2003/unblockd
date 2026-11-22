@@ -16,3 +16,7 @@ fail.png
 # pip install . builds in-tree
 /build/
 *.egg-info/
+
+# Local scratch in .claude (drafts, helper scripts); the tracked skills stay tracked
+.claude/*
+!.claude/skills/

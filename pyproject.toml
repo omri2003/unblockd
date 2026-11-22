@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unblockd"
-version = "0.1.0"
+dynamic = ["version"]  # from unblockd/__init__.py __version__ (CORE-84)
 description = "A dependency-aware ticket board for humans and AI agents: one JSON file per ticket, in your repo."
 readme = "README.md"
 license = {text = "MIT"}
@@ -31,6 +31,9 @@ Homepage = "https://github.com/omri2003/unblockd"
 # The UI lives at the repo's static/ (compose mounts it there); an install carries it as unblockd/static/,
 # which web.py serves when it exists.
 packages = ["unblockd", "unblockd.static"]
+
+[tool.setuptools.dynamic]
+version = {attr = "unblockd.__version__"}
 
 [tool.setuptools.package-dir]
 "unblockd.static" = "static"
