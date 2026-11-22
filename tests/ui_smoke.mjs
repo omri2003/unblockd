@@ -174,6 +174,7 @@ try {
 		}
 		ok(await page.evaluate(() => /unblockd/.test(document.title) && !!document.querySelector('link[rel=icon]')), `[${tag}] title / favicon missing`);
 		await noOverflow('board');
+		const dgExtra = Array.from({ length: 7 }, (_, i) => JSON.parse(cli('create', '--prefix', 'SM', '--title', `digest filler ${i + 1}`, '--json', '{"pillar":"API"}').toString()).id); // UI-82: a New section past 6 rows, so it has "+N more"; deleted after the digest checks
 		await page.evaluate(() => { const k = Object.keys(localStorage).find((x) => x.startsWith('unblockd.lastSeen.')); localStorage.setItem(k, JSON.stringify('2020-01-01T00:00:00Z')); }); // digest: expand/collapse runs the grid-rows transition
 		await page.reload(); await page.waitForSelector('.card', { state: 'attached' });
 		await visible('#digest [data-dgtoggle]', 'digest bar');
@@ -212,7 +213,22 @@ try {
 			await page.click(`#digest [data-dghidesec="${sec}"]`);
 			ok(!(await page.$(`#digest .dg-g.${sec}`)), `[${tag}] Dismiss all left the ${sec} section`);
 			await page.click('#toasts button:has-text("Undo")'); ok((await rowIds()).length === before.length, `[${tag}] Undo did not restore the ${sec} section`);
+			// UI-82: a section collapses on its own (count stays, remembered in this browser); collapsing the digest puts "+N more" back
+			await page.click(`#digest [data-dgsec="${sec}"]`);
+			ok(await page.evaluate((s) => !document.querySelector(`#digest .dg-g.${s} + .dg-l`) && document.querySelector(`#digest [data-dgsec="${s}"]`)?.getAttribute('aria-expanded') === 'false' && !!document.querySelector(`#digest .dg-g.${s} .n`)?.textContent && JSON.parse(localStorage.getItem('dgShut')).includes(s), sec), `[${tag}] UI-82: the ${sec} section did not collapse on its own with its count kept and remembered`);
+			ok((await rowIds()).length < before.length && (await page.$$('#digest .dg-l')).length > 0, `[${tag}] UI-82: collapsing ${sec} hid nothing, or hid the other sections too`);
+			await page.click(`#digest [data-dgsec="${sec}"]`); ok((await rowIds()).length === before.length && (await page.evaluate(() => localStorage.getItem('dgShut'))) === '[]', `[${tag}] UI-82: the ${sec} section did not open again`);
+			const mo = await page.$eval('#digest [data-dgmore]', (b) => b.dataset.dgmore).catch(() => null);
+			ok(mo, `[${tag}] UI-82: the smoke digest needs a section with "+N more"`);
+			if (mo) {
+				await page.click(`#digest [data-dgmore="${mo}"]`); ok(!(await page.$(`#digest [data-dgmore="${mo}"]`)), `[${tag}] "+N more" did not show the ${mo} section in full`);
+				await page.click('#digest [data-dgtoggle]'); await page.waitForFunction((s) => !!document.querySelector(`#digest [data-dgmore="${s}"]`), mo, { timeout: 2000 }).catch(() => ok(false, `[${tag}] UI-82: collapsing the digest did not put "+N more" back in ${mo}`));
+				ok(await page.evaluate(() => document.activeElement?.matches('[data-dgtoggle]')), `[${tag}] UI-82: the rebuild after collapsing lost focus on Expand`);
+				await page.click('#digest [data-dgtoggle]'); await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height > 0, null, { timeout: 2000 });
+			}
 		}
+		for (const id of dgExtra) cli('delete', id);
+		await refresh();
 		await page.click('#digest [data-dgtoggle]');
 		await page.waitForFunction(() => document.querySelector('#digest .dg-body').getBoundingClientRect().height === 0, null, { timeout: 2000 }).catch(() => ok(false, `[${tag}] digest did not collapse`));
 		await page.click('#digest [data-dgdismiss]'); await page.waitForSelector('#digest', { state: 'hidden' });

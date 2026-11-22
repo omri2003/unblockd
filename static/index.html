@@ -161,6 +161,7 @@ a.btn{display:inline-block;text-decoration:none}
 .dg-l{grid-column:1/-1;display:grid;grid-template-columns:subgrid;list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--rc);box-shadow:var(--sh1);overflow:hidden}
 .dg-l li{grid-column:1/-1;display:grid;grid-template-columns:subgrid;position:relative}
 .dg-g .dg-gx{margin-left:auto;font-weight:600} /* Dismiss a whole section */
+.dg-sx .chev{transition:transform .15s ease-out} .dg-sx[aria-expanded=false] .chev{transform:translateY(0) rotate(-45deg)} /* UI-82: a section's own collapse (down = open, right = shut) */
 .dg-x{position:absolute;right:8px;top:6px;width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:var(--r);background:var(--sunk);color:var(--muted);font:inherit;font-size:1rem;line-height:1;cursor:pointer;opacity:0} /* takes the time's place on hover / focus, like the Done card's Move-to */
 .dg-x:hover{color:var(--ink)} .dg-l li:hover .dg-x,.dg-x:focus-visible{opacity:1} .dg-l li:hover time,.dg-l li:has(.dg-x:focus-visible) time{visibility:hidden}
 @media (hover:none){.dg-x{opacity:1;width:40px;height:40px;top:2px;right:2px;background:none} .dg-l li .dg-r{padding-right:44px}} /* li .dg-r: wins over the <=600px padding */
@@ -691,7 +692,7 @@ i.c-done{background:var(--jade)} i.c-review{background:var(--plum)} i.c-doing{ba
   .mcon li{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 4px} .mcon .dir{color:var(--muted);font-size:.74rem;padding-top:2px} .mcon .ctr{grid-column:2}
 }
 /* touch: 44px targets (UX-5); desktop and the compact density keep their sizes */
-@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip,.dchev,.dsr,.dsb{min-height:44px;min-width:44px} .dsec>summary{min-height:44px;display:inline-flex;align-items:center} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
+@media (pointer:coarse){.rqd>summary{min-height:44px;display:inline-flex;align-items:center} .btn,.chip,.vico,#bsum,.tab,.nbadge,.npanel button,aside .chip,.dchev,.dsr,.dsb,.dg-sx{min-height:44px;min-width:44px} .dsec>summary{min-height:44px;display:inline-flex;align-items:center} .btn.sm{min-height:44px} .chip{display:inline-flex;align-items:center;justify-content:center} #bpanel summary{display:inline-flex;align-items:center} .npanel button{display:inline-flex;align-items:center;justify-content:center}}
 /* Elevated surfaces (dev/premium-look trial): white raised cards and controls on a quiet page, hairline borders, soft shadows,
    rounder corners; segmented controls are a grey track with a raised white pill. Overrides only, so the trial reverts as one block. */
 .bar{border-block:0;padding:10px 0;background:color-mix(in srgb,var(--paper) 88%,transparent);backdrop-filter:blur(10px)}
@@ -793,7 +794,7 @@ aside:not([hidden]){animation:arrive-side .2s ease-out}
 .vl{display:grid;grid-template-columns:0fr;opacity:0;transition:grid-template-columns .2s ease-out,margin-left .2s ease-out,opacity .15s ease-out} .vl>span{overflow:hidden;white-space:nowrap}
 .vico[aria-pressed="true"] .vl{grid-template-columns:1fr;margin-left:6px;opacity:1}
 @media (prefers-reduced-motion:no-preference){::view-transition-old(root),::view-transition-new(root){animation-duration:.15s;animation-timing-function:ease-out}}
-@media (prefers-reduced-motion:reduce){.ld i,.topbar::before{animation:none} .topbar::before{width:100%;opacity:.55} .dcard{transition:none} body.peek .wrap{transition:none} .rmrow .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
+@media (prefers-reduced-motion:reduce){.ld i,.topbar::before{animation:none} .topbar::before{width:100%;opacity:.55} .dcard{transition:none} body.peek .wrap{transition:none} .rmrow .chev{transition:none} .dg-sx .chev{transition:none} .pulse,.card.flash,.toast,.dots::after{animation:none} .eg,.mc,.mapin,.mapin.anim,.mapin.rs .mc,.btn,.card,.rmi,.nbadge,.vico,.links button,.qa input{transition:none} .card:hover,.btn:active,.nbadge:active,.vico:active,.card:active,.rmi:active,.links button:active{transform:none} aside,.fbody,.ovm,.mvm,.cmdk{animation:none} .liv .pulse::after{display:none} .ind,.ind.go,.vl,.sl>*,.nx-body,.nx-more,.nexttog .chev,.dg-body,.digest .chev,.dchev .chev{transition:none}}
 </style>
 </head>
 <body>
@@ -1387,7 +1388,7 @@ function dgHide(rows,what){ // rows = [{e,t}]; Undo puts the old map back
   const old=store.get(DGH(),{}), h={...old}; for(const {e,t} of rows) h[t.id]=e.ts; store.set(DGH(),h); renderDigest();
   toast(`Dismissed ${what}`,{undo:()=>{store.set(DGH(),old);renderDigest();}});
 }
-const DG_CAP=5; let dgMore=new Set(), dgHtml=''; // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
+const DG_CAP=5; let dgMore=new Set(), dgHtml='', dgShut=new Set(store.get('dgShut',[])); // dgShut (UI-82): sections collapsed on their own, per browser (store dgShut) // rows a section shows before "+N more"; sections shown in full; the last markup (the poll never rebuilds an unchanged digest)
 const dgFirst=n=>{const s=(n||'').trim().split('\n')[0], m=s.match(/^.*?[.;](?=\s|$)/), f=m?m[0].replace(/[.;]$/,''):s; return f.length>170?f.slice(0,170).replace(/\s+\S*$/,'')+'…':f;}; // the first sentence of a note
 function digestGroups(){
   const last=new Map(), made=new Map(); // made: the ticket's created event in this window, the fallback row when its latest event no longer fits
@@ -1424,8 +1425,8 @@ function renderDigest(){
   const d=new Date(DG.since), sameDay=d.toDateString()===new Date().toDateString();
   const since=sameDay?hm(d):d.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'})+' '+hm(d);
   const head=`<h2>While you were away</h2><span class="since">since ${esc(since)}</span>${gs.map(([c,i,n,r])=>`<span class="dg-n ${c}"><i aria-hidden="true">${i}</i>${r.length} ${n.toLowerCase()}${(u=>u?`, <b class="dg-u">${u} without a summary</b>`:'')(c==='fin'?r.filter(x=>x.t.unreported).length:0)}</span>`).join('')}`; // UI-79: hand-closed tickets (CORE-68) counted
-  const body=`<div class="dg-body"><div><div class="dg-grid">`+gs.map(([c,i,n,r])=>{const all=dgMore.has(c)||r.length<=DG_CAP+1, shown=all?r:r.slice(0,DG_CAP);
-     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span><button type="button" class="btn ghost sm dg-gx" data-dghidesec="${c}" aria-label="Dismiss all ${r.length} ${esc(n.toLowerCase())}">${r.length>1?'Dismiss all':'Dismiss'}</button></h3><ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`;}).join('')+`</div></div></div>`;
+  const body=`<div class="dg-body"><div><div class="dg-grid">`+gs.map(([c,i,n,r])=>{const all=dgMore.has(c)||r.length<=DG_CAP+1, shown=all?r:r.slice(0,DG_CAP), shut=dgShut.has(c);
+     return `<h3 class="dg-g ${c}"><i class="dg-tile ${c}" aria-hidden="true">${i}</i>${n} <span class="n">${r.length}</span><button type="button" class="btn ghost sm dg-gx" data-dghidesec="${c}" aria-label="Dismiss all ${r.length} ${esc(n.toLowerCase())}">${r.length>1?'Dismiss all':'Dismiss'}</button><button type="button" class="ib dg-sx" data-dgsec="${c}" aria-expanded="${!shut}" aria-label="${shut?'Show':'Hide'} ${esc(n.toLowerCase())}" title="${shut?'Show':'Hide'} ${esc(n.toLowerCase())}"><i class="chev" aria-hidden="true"></i></button></h3>${shut?'':`<ul class="dg-l" aria-label="${esc(n)}">${shown.map(x=>dgRow(c,i,n,x)).join('')}</ul>${all?'':`<button type="button" class="dg-more" data-dgmore="${c}">+${r.length-DG_CAP} more</button>`}`}`;}).join('')+`</div></div></div>`;
   if(head+body===dgHtml) return; dgHtml=head+body; // same items, statuses, titles and times: keep the DOM (no hover or focus flicker on the 4 s poll); the toggle edits its own button, so it is not in the key
   const sc=el.querySelector('.dg-grid')?.scrollTop||0;
   el.innerHTML=`<div class="dg-bar">${head}<span class="sp"><button type="button" class="btn ghost sm" data-dgtoggle aria-expanded="${dgOpen}"><span>${dgOpen?'Collapse':'Expand'}</span> <i class="chev" aria-hidden="true"></i></button><button type="button" class="btn ghost sm" data-dgdismiss>Dismiss</button></span></div>`+body; const g=el.querySelector('.dg-grid'); if(g) g.scrollTop=sc;
@@ -2010,7 +2011,10 @@ document.addEventListener('click',async e=>{
   if(g('[data-clear]')){clearFilters();return;}
   if(g('[data-new]')){openId=null;editForm(null);return;}
   if(b=g('[data-dgmore]')){dgMore.add(b.dataset.dgmore);renderDigest();return;}
-  if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand';return;} // classes only, no rebuild: the transition runs
+  if(b=g('[data-dgtoggle]')){dgOpen=!dgOpen;$('digest').classList.toggle('open',dgOpen);b.setAttribute('aria-expanded',dgOpen);b.firstElementChild.textContent=dgOpen?'Collapse':'Expand'; // classes only, no rebuild: the transition runs
+    if(!dgOpen&&dgMore.size){dgMore.clear();setTimeout(()=>{if(dgOpen)return;const f=document.activeElement?.matches?.('[data-dgtoggle]');renderDigest();if(f)$('digest').querySelector('[data-dgtoggle]')?.focus();},reduce.matches?0:220);} // UI-82: collapsing puts every section back to its first rows; rebuilt once the body is shut, out of sight
+    return;}
+  if(b=g('[data-dgsec]')){const c=b.dataset.dgsec;dgShut.has(c)?dgShut.delete(c):dgShut.add(c);dgMore.delete(c);store.set('dgShut',[...dgShut]);renderDigest();$('digest').querySelector(`[data-dgsec="${c}"]`)?.focus();return;} // UI-82: one section collapses on its own; its header keeps the count
   if(g('[data-routedismiss]')){store.set('unblockd.routeSeen.'+(BOARD||'default'),String(unroutedIds().length));renderRoute();return;} // back when the count changes
   if(g('[data-gitdismiss]')){store.set('unblockd.gitSeen.'+(BOARD||'default'),gitKey());renderGit();return;} // it comes back when the numbers change
   if(b=g('[data-dghide]')){const r=digestGroups().flatMap(x=>x[3]).find(x=>x.t.id===b.dataset.dghide); if(r) dgHide([r],r.t.id); return;}
