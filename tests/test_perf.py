@@ -52,6 +52,11 @@ BUDGETS = {
 	"/api/b/big/doc?path=docs/guide.md": (60, "40 / 39"),
 	"/api/b/big/tickets": (812, "541 / 537"),
 	"/api/b/big/tickets?status=todo": (812, "541 / 537"),
+	"/api/b/big/tickets?fields=touches,done_when&limit=20": (812, "541 / 537"),  # AI-47, CORE-52, AI-45 rows (CORE-92): measured on main + worker-turns
+	"/api/b/big/tickets?limit=20": (812, "541 / 537"),
+	"/api/b/big/tickets?touches=src/store/m1.py": (812, "541 / 537"),
+	"/api/b/big/tickets?component=store": (824, "549 / 548"),
+	"/api/b/big/docs?path=docs/guide.md&path=docs/api.md&path=docs/ui.md": (89, "54 / 59"),
 	"/api/b/big/tickets/API-7": (1574, "1049 / 1045"),
 	"/api/b/big/tickets/API-7/context": (887, "574 / 591"),
 	"/api/b/big/tickets/API-7/context?content=0": (896, "577 / 597"),
