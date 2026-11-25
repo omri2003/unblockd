@@ -23,6 +23,7 @@
     python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
     python -m unblockd.cli report ID "summary" [--by NAME] [--file PATH]... [--ref URL]...   # a person adds the summary a done ticket was closed without
     python -m unblockd.cli update ID [--rev N] [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
+    python -m unblockd.cli update-many --file changes.json|- [--agent A]   # [{"id": "UI-12", "changes": {...}}, ...], all or nothing
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
@@ -149,6 +150,8 @@ class Remote:
 	def update(self, tid, changes, agent=None, by=None, expected_rev=None):
 		return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {}), **({"by": by} if by else {})},
 		                  headers={"If-Match": str(expected_rev)} if expected_rev is not None else None)
+	def update_many(self, items, agent=None, by=None):
+		return self._call("PATCH", "/tickets", {"tickets": items, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
@@ -241,6 +244,10 @@ def main(argv: list[str] | None = None) -> int:
 	rp.add_argument("--by", default="human")
 	rp.add_argument("--file", action="append", help="a path that changed (repeatable)")
 	rp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
+	um = sub.add_parser("update-many", help='several tickets in one all-or-nothing step: a JSON array of {"id", "changes", "expected_rev"?}')
+	um.add_argument("--file", required=True, help="path to the JSON array, or - for stdin")
+	um.add_argument("--agent", help="the worker making the changes (holder rule and worker limits, as for update)")
+	um.add_argument("--by", help="who a human change is by (as update)")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
@@ -350,9 +357,12 @@ def main(argv: list[str] | None = None) -> int:
 			pairs = [p.split("=", 1) for p in a.pairs]
 			if not all(len(p) == 2 and p[0] and p[1] for p in pairs):
 				raise st.TicketError("give pairs like REL-1=v0.1 (the version epic's id = the milestone key in unblockd.json)")
-			out = {}
+			out, items = {}, []
 			for parent, key in pairs:  # every ticket under that epic: milestone set, parent cleared (it was the version, not a feature epic)
-				out[parent] = [s.update(t["id"], {"milestone": key, "parent": None})["id"] for t in s.list(parent=parent)]
+				out[parent] = [t["id"] for t in s.list(parent=parent)]
+				items += [{"id": x, "changes": {"milestone": key, "parent": None}} for x in out[parent]]
+			for i in range(0, len(items), st.UPDATE_MAX):  # update_many: all or nothing per call (one call up to UPDATE_MAX tickets)
+				s.update_many(items[i:i + st.UPDATE_MAX])
 		elif a.cmd == "plan":
 			out = s.work_plan(per_agent=a.per_agent)
 			short = lambda t: {k: t.get(k) for k in ("id", "title", "priority", "score")}
@@ -411,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent, request_id=a.request_id)
 		elif a.cmd == "create-many":
 			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
+		elif a.cmd == "update-many":
+			out = s.update_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent, by=a.by)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
 			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent, by=a.by,

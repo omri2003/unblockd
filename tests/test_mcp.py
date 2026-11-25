@@ -314,6 +314,21 @@ class WorkLoopTest(unittest.TestCase):
 			m.list_tickets(limit=-1)
 		self.assertIn('fields=["touches", "parent", "done_when"]', str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "g", "path": "s.md"}))))
 
+	def test_update_tickets_all_or_nothing_with_short_acks(self):
+		from unblockd import mcp_server as m
+		from mcp.server.mcpserver.exceptions import ToolError
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		s = m.BOARDS.get(None)
+		for i in (1, 2):
+			s.create({"title": str(i), "body": "x" * 3000}, tid=f"B-{i}")
+		acks = m.update_tickets([{"id": "B-1", "changes": {"priority": "P1"}}, {"id": "B-2", "changes": {"tags": ["ui"]}}], agent="planner")
+		self.assertEqual([(a["ok"], a["id"]) for a in acks], [(True, "B-1"), (True, "B-2")])
+		self.assertLess(len(json.dumps(acks)), 300)
+		with self.assertRaisesRegex(ToolError, "#2 B-2: invalid priority"):
+			m.update_tickets([{"id": "B-1", "changes": {"priority": "P3"}}, {"id": "B-2", "changes": {"priority": "P7"}}], agent="planner")
+		self.assertEqual(s.get("B-1")["priority"], "P1")
+
 	def test_list_tickets_by_touches_shows_the_holder(self):
 		from unblockd import mcp_server as m
 		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)

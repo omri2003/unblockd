@@ -257,8 +257,9 @@ MCP_TOOLS = ("accept_ticket", "add_note", "agents_now", "answer", "approve_ticke
              "arch_remove_edge", "arch_set_edge", "arch_update_component", "architecture_map", "ask_human", "attach_file", "board_info",
              "claim_next", "claim_ticket", "complete", "create_board", "create_ticket", "create_tickets", "delete_ticket", "detach_file", "get_context",
              "get_ticket", "heartbeat", "knowledge_graph", "list_boards", "list_tickets", "next_ready", "read_doc", "reject", "release",
-             "report_ticket", "roadmap", "split_ticket", "update_ticket", "work_plan")
+             "report_ticket", "roadmap", "split_ticket", "update_ticket", "update_tickets", "work_plan")
 BATCH_MAX = 50  # tickets per create_many
+UPDATE_MAX = 200  # tickets per update_many (the UI's bulk bar sends its whole selection in one request)
 SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 
@@ -1207,8 +1208,8 @@ class Store:
 		return self._locked(run)
 
 	@staticmethod
-	def _batch_refusal(errs: list[str]) -> str:
-		msg = f"batch refused, nothing was created ({len(errs)} problem{'s' if len(errs) > 1 else ''}): " + " | ".join(errs)
+	def _batch_refusal(errs: list[str], verb: str = "created") -> str:
+		msg = f"batch refused, nothing was {verb} ({len(errs)} problem{'s' if len(errs) > 1 else ''}): " + " | ".join(errs)
 		return msg[:2000] + ("…" if len(msg) > 2000 else "")
 
 	def _schema_problems(self, data: dict, prefix: str | None, strict: bool) -> list[str]:
@@ -1276,17 +1277,27 @@ class Store:
 		return self._with_lease(self._locked(lambda: self._update(tid, changes, agent, expected_rev, by)), agent)
 
 	def _update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None, by: str | None = None) -> dict:
+		t, was, clean = self._prepare_update(tid, changes, agent, expected_rev, keepalive=True)
+		return self._commit_update(t, was, clean, agent, by)
+
+	def _prepare_update(self, tid: str, changes: dict, agent: str | None = None, expected_rev: int | None = None,
+	                    batch: dict | None = None, keepalive: bool = False) -> tuple[dict, str, dict]:
+		"""Every check update() makes, nothing written: (the changed ticket, its old status, the clean changes). batch = the other
+		items of an update_many {"blocked_by": {id: ids}, "parent": {id: parent}, "status": {id: status}}: their new values count
+		for the loop, parent and open-blocker checks (CORE-51). keepalive = renew the holder's lease (update(); a batch renews after writing)."""
+		batch = batch or {"blocked_by": {}, "parent": {}, "status": {}}
 		t = self._fresh(tid)
 		if expected_rev is not None and expected_rev != t["rev"]:
 			raise Conflict(f"{tid} changed since you loaded it (rev {t['rev']}, you had {expected_rev}): reload it and apply your change again")
 		clean = self._clean(changes, partial=True)
 		self._holder_only(tid, agent)
-		self._keepalive(tid, agent)
+		if keepalive:
+			self._keepalive(tid, agent)
 		if "blocked_by" in clean:
 			self._check_blockers(clean["blocked_by"], t.get("blocked_by", []))
-			self._check_loop(tid, clean["blocked_by"])
+			self._check_loop(tid, clean["blocked_by"], batch["blocked_by"])
 		if "parent" in clean:
-			self._check_parent(tid, clean["parent"])
+			self._check_parent(tid, clean["parent"], batch["parent"])
 		if "components" in clean:
 			self._check_components(clean["components"], t.get("components", []))
 		if "milestone" in clean:
@@ -1300,13 +1311,9 @@ class Store:
 			if t.get("proposed_by"):
 				raise TicketError(f"{tid} is a proposal by {t['proposed_by']}: accept it first")
 			open_b = [b for b in clean.get("blocked_by", t.get("blocked_by", []))
-			          if self._exists(b) and self._fresh(b).get("status") != "done"]
+			          if self._exists(b) and batch["status"].get(b, self._fresh(b).get("status")) != "done"]
 			if open_b:
 				raise TicketError(f"{tid} is blocked by {', '.join(open_b)} (still open): finish or unlink it first")
-		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
-			self._drop_claim(tid, f"status set to {clean['status']}")
-		if clean.get("status") == "todo" and (act := [b["sha"] for b in self._board().get(tid, {}).get("branches", []) if b["active"]]):
-			self._ignore_branches(tid, act)  # "it isn't being worked on": the branch that made it read as doing stops counting
 		was = t.get("status")
 		if "waiting_on" in clean:  # by hand: age starts now, no asked_by (only ask() names an agent); cleared with the question
 			if not clean["waiting_on"]:
@@ -1319,13 +1326,85 @@ class Store:
 			if t["status"] != "done" and t.get("result"):  # leaving done (Undo of an approval, a reopen): nobody has approved this any more
 				t["result"] = {k: v for k, v in t["result"].items() if k not in ("approved_by", "approved_at")}
 		t["updated"] = date.today().isoformat()
-		self._write(t)
+		return t, was, clean
+
+	def _commit_update(self, t: dict, was: str, clean: dict, agent: str | None = None, by: str | None = None, write: bool = True) -> dict:
+		"""The side effects of an update _prepare_update checked: drop the claim of a ticket moved off doing by hand, forget the
+		branches of one moved to todo, write, log done. Returns update()'s reply (with its warnings)."""
+		if clean.get("status", "doing") != "doing":  # moved off doing by hand: the claim ends with it
+			self._drop_claim(t["id"], f"status set to {clean['status']}")
+		if clean.get("status") == "todo" and (act := [b["sha"] for b in self._board().get(t["id"], {}).get("branches", []) if b["active"]]):
+			self._ignore_branches(t["id"], act)  # "it isn't being worked on": the branch that made it read as doing stops counting
+		if write:
+			self._write(t)
 		if t["status"] == "done" and was != "done":  # by hand; an agent's complete() logs its own event
-			self._log("done", tid, agent or (str(by).strip() if by and str(by).strip() else "human"))  # who moved it (CORE-68)
+			self._log("done", t["id"], agent or (str(by).strip() if by and str(by).strip() else "human"))  # who moved it (CORE-68)
 			if not (t.get("result") or {}).get("summary"):
-				return {**self.get(tid), "warnings": [_NO_REPORT.format(id=tid)]}
-		got = self.get(tid)
+				return {**self.get(t["id"]), "warnings": [_NO_REPORT.format(id=t["id"])]}
+		got = self.get(t["id"])
 		return {**got, "warnings": w} if (w := self.unroutable(got)) else got
+
+	def update_many(self, items: list, agent: str | None = None, by: str | None = None) -> dict:
+		"""Change several tickets in ONE locked, all-or-nothing step (re-prioritise, retag, set milestone / parent / components on a
+		selection). items = [{"id", "changes", "expected_rev"?}]. Every item gets update()'s checks (fields, holder rule, worker
+		guardrails, blockers, loops, expected_rev) with the batch's other new blocked_by / parent / status counted; any problem refuses
+		the whole batch naming each one ("#3 UI-12: ..."), nothing written. A Conflict (expected_rev) anywhere = Conflict (REST 409).
+		Returns {"tickets": [the updated tickets, in item order], "warnings"?: ["#N ID: ..."] (update()'s: no summary, unroutable)}
+		(with lease info for an agent holding them, as update()). by = who a human change is by, as update()."""
+		if not isinstance(items, list) or not items:
+			raise TicketError("tickets must be a non-empty list of {id, changes} objects")
+		if len(items) > UPDATE_MAX:
+			raise TicketError(f"{len(items)} tickets in one batch: at most {UPDATE_MAX}; send the rest in another call")
+		keys = {"id", "changes", "expected_rev"}
+
+		def run():
+			errs, conflict, seen = [], False, set()
+			batch = {"blocked_by": {}, "parent": {}, "status": {}}
+			for it in items:  # the batch's own new edges and statuses, for the checks below
+				if isinstance(it, dict) and isinstance(it.get("id"), str) and isinstance(it.get("changes"), dict):
+					for k in batch:
+						if k in it["changes"]:
+							batch[k][it["id"]] = it["changes"][k]
+			batch["blocked_by"] = {k: v for k, v in batch["blocked_by"].items() if isinstance(v, list)}
+			planned = []
+			for i, it in enumerate(items, 1):
+				tid = it.get("id") if isinstance(it, dict) else None
+				try:
+					if not isinstance(it, dict) or not isinstance(tid, str):
+						raise TicketError("each item must be an object {id, changes}")
+					if set(it) - keys:
+						raise TicketError(f"unknown key(s) {', '.join(sorted(set(it) - keys))}: an item is {{id, changes, expected_rev?}}")
+					if tid in seen:
+						raise TicketError(f"{tid} is given twice in this batch: put its changes in one item")
+					seen.add(tid)
+					rev = it.get("expected_rev")
+					if rev is not None and (isinstance(rev, bool) or not isinstance(rev, int)):
+						raise TicketError("expected_rev must be the ticket's rev (a number)")
+					planned.append(self._prepare_update(tid, it.get("changes"), agent, rev, batch))
+				except TicketError as e:
+					conflict |= isinstance(e, Conflict)
+					errs.append(f"#{i}{' ' + tid if isinstance(tid, str) else ''}: {e}")
+			if errs:
+				msg = self._batch_refusal(errs, "changed")
+				raise Conflict(msg) if conflict else TicketError(msg)
+			backup = {t["id"]: self._fresh(t["id"]) for t, _, _ in planned}  # as stored: put back as is on a failed write
+			done = []
+			try:
+				for t, _, _ in planned:
+					self._write(t)
+					done.append(t["id"])
+			except OSError as e:  # a database connector's write is inside the lock's transaction: it rolls back on its own
+				for x in done:
+					self.backend.write(backup[x])
+				raise TicketError(f"could not write the batch ({e}): nothing was changed")
+			out, warns = [], []
+			for i, (t, was, clean) in enumerate(planned, 1):
+				got = self._commit_update(t, was, clean, agent, by, write=False)
+				self._keepalive(t["id"], agent)
+				warns += [f"#{i} {t['id']}: {w}" for w in got.get("warnings", [])]
+				out.append(self._with_lease(got, agent))
+			return {"tickets": out, **({"warnings": warns} if warns else {})}
+		return self._locked(run)
 
 	def _holder_only(self, tid: str, agent: str | None) -> None:
 		"""An agent that is not the live holder of tid may not change, split or delete it. agent None = a human: unchanged."""

@@ -9,7 +9,7 @@ profile docs already sent unchanged in this process (_dedupe).
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, create_tickets, accept_ticket, approve_ticket, report_ticket, update_ticket, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+create_ticket, create_tickets, accept_ticket, approve_ticket, report_ticket, update_ticket, update_tickets, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, roadmap, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
@@ -338,6 +338,16 @@ def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) 
 	Every refused field is listed in ONE error with its rule; the numbers are in board_info's `limits`. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), milestone (a key of board_info's milestones, or null), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
 	return _ack(BOARDS.get(board).update(id, changes, agent=agent))
+
+
+@tool
+def update_tickets(tickets: list[dict], agent: str, board: str | None = None) -> list[dict]:
+	"""Change several tickets in ONE call (at most 200), all or nothing: re-prioritise, retag, set milestone / parent / components on a set.
+	tickets = [{"id": "UI-12", "changes": {"priority": "P1"}}, ...] (changes = what update_ticket takes; optional "expected_rev" = the rev you
+	read: refused if the ticket was written since). Every item gets update_ticket's checks (you can't change a ticket another agent holds;
+	a worker can't set doing / done / review); any problem refuses the whole batch with every problem listed by item ("#3 UI-12: ..."),
+	nothing changed. agent = your worker name. Returns one short ack per ticket, in order."""
+	return [_ack(t) for t in BOARDS.get(board).update_many(tickets, agent=agent)["tickets"]]
 
 
 @tool

@@ -440,6 +440,9 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and tid is None:
 				b = self._body()
 				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None), request_id=b.pop("request_id", None)))  # agent: the creating worker (cli.Remote); none = a human
+			if method == "PATCH" and tid is None:  # update_many: {"tickets": [{id, changes, expected_rev?}], "agent"?}, all or nothing
+				b = self._body()
+				return self._send(200, store.update_many(b.get("tickets"), agent=b.get("agent"), by=b.get("by")))
 			if method == "PATCH" and tid:
 				b = self._body()
 				m = (self.headers.get("If-Match") or "").strip().strip('"')  # the rev the client last saw; none = last write wins, as before
