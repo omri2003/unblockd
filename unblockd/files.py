@@ -26,6 +26,8 @@ LOCK_STALE = 30  # seconds: a lock file older than this was left by a crash
 _UMASK = os.umask(0)  # read once at import (os.umask is process-wide: setting it per write would race the web server's threads)
 os.umask(_UMASK)
 NEW_MODE = 0o666 & ~_UMASK  # what open() gives a new file: 0644 under the usual umask 022 (CORE-75)
+WINDOWS = os.name == "nt"
+REPLACE_WAIT = 5  # seconds replace() retries a Windows PermissionError (a reader has the target open) before giving up
 
 # Per-process caches keyed by folder / file path, so every Store on the same folder (the web server builds one per request)
 # shares them. Files stay the only truth: every read re-stats the folder and re-parses only files whose (inode, mtime, size)
@@ -96,7 +98,7 @@ class FileBackend:
 		if not path.exists():
 			return None, str(path)
 		try:
-			return json.loads(path.read_text(encoding="utf-8")), str(path)
+			return json.loads(read_text(path)), str(path)
 		except json.JSONDecodeError as e:
 			raise TicketError(f"{path} is not valid JSON: {e}")
 
@@ -104,15 +106,14 @@ class FileBackend:
 		p = self.dir / CONFIG_FILE
 		tmp = p.with_suffix(".tmp")
 		tmp.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-		os.replace(tmp, p)
+		replace(tmp, p)
 
 	# ---------- tickets ----------
 	def path(self, tid: str) -> Path:
 		return self.dir / f"{tid}.json"
 
 	def read_file(self, path: Path) -> dict:
-		with open(path, encoding="utf-8") as f:
-			return self.parse(json.load(f))
+		return self.parse(json.loads(read_text(path)))
 
 	def tickets(self) -> dict[str, dict]:
 		"""{id: ticket} for every ticket, in id order, re-parsing only the files that changed since the last call (any Store,
@@ -180,7 +181,7 @@ class FileBackend:
 			json.dump(t, f, indent=2, ensure_ascii=False)
 			f.write("\n")
 		os.chmod(tmp, mode)  # mkstemp makes it 0600 and os.replace keeps that: a root server left tickets other users couldn't read (CORE-75)
-		os.replace(tmp, p)  # atomic: a reader never sees half a file
+		replace(tmp, p)  # atomic: a reader never sees half a file
 		self._wrote()
 
 	def delete(self, tid: str) -> None:
@@ -241,7 +242,7 @@ class FileBackend:
 	def claims(self) -> dict:
 		p = self.rt / "claims.json"
 		try:
-			return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+			return json.loads(read_text(p)) if p.exists() else {}
 		except json.JSONDecodeError as e:
 			raise TicketError(f"{p} is not valid JSON ({e}), so no claim can be read: fix it by hand, or delete {p}: claims are runtime state "
 			                  "and live workers will re-claim (tickets they held stay 'doing' until then)")
@@ -250,7 +251,7 @@ class FileBackend:
 		p = self.runtime() / "claims.json"
 		tmp = p.with_suffix(".tmp")
 		tmp.write_text(json.dumps(claims, indent=2), encoding="utf-8")
-		os.replace(tmp, p)
+		replace(tmp, p)
 
 	# ---------- activity ----------
 	def append_event(self, line: dict, locked, cap: int = ACTIVITY_MAX) -> None:
@@ -323,6 +324,41 @@ class FileBackend:
 		d = self.rt
 		d.mkdir(parents=True, exist_ok=True)
 		(d / f"{name}.json").write_text(json.dumps(doc, indent=1), encoding="utf-8")
+
+
+def _windows_retry(fn, path):
+	"""fn(), retried on Windows while another thread or program has `path` open or is replacing it (CORE-86): there
+	os.replace raises PermissionError over an open file, and an open() racing a replace does too; claims.json and ticket
+	files are read without the board lock. Bounded by REPLACE_WAIT, then a TicketError saying what holds it. Elsewhere a
+	PermissionError is real and raised at once."""
+	deadline = time.monotonic() + REPLACE_WAIT
+	while True:
+		try:
+			return fn()
+		except PermissionError:
+			if not WINDOWS:
+				raise
+			if time.monotonic() > deadline:
+				raise TicketError(f"can't use {path}: another program kept it open for {REPLACE_WAIT} s (an editor, a virus "
+				                  "scanner or a sync tool?): close it and try again") from None
+			time.sleep(0.01)
+
+
+def replace(tmp, dst) -> None:
+	"""os.replace(tmp, dst) through _windows_retry; the temp file is removed when it fails."""
+	try:
+		_windows_retry(lambda: os.replace(tmp, dst), dst)
+	except (OSError, TicketError):
+		try:
+			os.unlink(tmp)
+		except OSError:
+			pass
+		raise
+
+
+def read_text(path) -> str:
+	"""Path(path).read_text(utf-8) through _windows_retry (a reader racing a replace)."""
+	return _windows_retry(lambda: Path(path).read_text(encoding="utf-8"), path)
 
 
 def steal_stale(lock: Path) -> None:

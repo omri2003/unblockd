@@ -8,6 +8,9 @@
 - `update_tickets` changes several tickets in one all-or-nothing call (MCP, REST `PATCH tickets`, CLI `update-many`); the board's bulk bar sends one request (and one for Undo), and a refused bulk edit changes nothing.
 - `list_tickets(touches=PATH)` finds the tickets whose `touches` overlap a path or glob by the claim rule (not a text search), `component=KEY` those on an architecture component; rows show `touches` and `holder`. REST `?touches=&component=`, CLI `--touches --component`.
 
+### Fixed
+- Files board on Windows: a write no longer fails with `PermissionError` when another agent or program is reading the same file at that moment; it retries for up to 5 s, then says which file is held open (CORE-86).
+
 ## v0.2.0 (2026-11-22)
 
 79 pull requests since v0.1.0. Drafted with `scripts/release_notes.py v0.1.0`, then edited (docs/releasing.md).
