@@ -77,6 +77,7 @@ NOTES_SHORT = 3000  # chars of note text a claim sends whole; past it: every pin
 NOTES_TAIL = 5
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 INBOX_NOTES, INBOX_NOTE_MAX, INBOX_MAX = 10, 2000, 6000  # inbox: notes shown, chars per note, chars in all (AI-44)
+WAIT_MAX, WAIT_POLL_S = 120, 2.0  # claim_next(wait_s=): the longest wait, and how often it looks again (AI-46)
 LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is left
 REQUESTS_MAX = 500  # request_ids remembered per board (runtime doc `requests`), oldest dropped first (CORE-74)
 REQUEST_RE = re.compile(r"^[\w.:-]{1,100}$")
@@ -1516,6 +1517,7 @@ class Store:
 		for o in self._overlaps(t, live, by_id, branch):
 			if not o["apart"]:
 				return (f"its touches overlap {o['id']}, claimed by {o['agent']}" + (f" on branch {o['branch']}" if o["branch"] else "")
+				        + f" ({', '.join(o['files'])}; that claim runs until {_iso(self._expires(live[o['id']]))} unless it heartbeats: wait_s=<seconds> waits for it)"
 				        + ("" if branch else ": if you work in your own git worktree, claim with branch=<your branch> (an overlap on another branch is only a warning)"))
 		return "it isn't ready"
 
@@ -1529,8 +1531,18 @@ class Store:
 		return profile
 
 	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None,
-	          branch: str | None = None) -> dict | None:
-		return self._claim(agent, tid, profile, note, principal, branch)[0]
+	          branch: str | None = None, wait_s: float = 0) -> dict | None:
+		"""See _claim. wait_s (<= WAIT_MAX, with tid only) = when tid is refused only because its touches overlap another live claim,
+		look again every WAIT_POLL_S until that claim ends or the time is up (then the refusal, which names the holder and its expiry)."""
+		wait_s, start = _wait_s(wait_s) if tid else 0, time.time()
+		while True:
+			try:
+				return self._claim(agent, tid, profile, note, principal, branch)[0]
+			except Busy:
+				left = start + wait_s - time.time()
+				if left <= 0:
+					raise
+				time.sleep(min(WAIT_POLL_S, left))
 
 	def _claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None,
 	           branch: str | None = None) -> tuple:
@@ -1573,7 +1585,8 @@ class Store:
 				if tid in live:
 					raise TicketError(f"{tid} is already claimed by {live[tid]['agent']}")
 				if not self._claimable(t, live, by_id, profile, explicit=True, branch=branch):
-					raise TicketError(f"{tid} can't be claimed: {self._unclaimable(t, live, by_id, profile, branch)}")
+					why = self._unclaimable(t, live, by_id, profile, branch)
+					raise (Busy if why.startswith("its touches overlap") else TicketError)(f"{tid} can't be claimed: {why}")
 				pick = t
 				orphan.append(self._orphaned(t, live))
 			else:
@@ -1624,14 +1637,26 @@ class Store:
 		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": _iso(exp),
 		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}, board
 
-	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None, branch: str | None = None) -> dict:
+	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None, branch: str | None = None,
+	               wait_s: float = 0) -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
 		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}, "ids": {same keys: [ticket ids]}, "orphaned": [doing ids with no live claim]}.
-		conflict = ready tickets exist but their touches overlap a live claim (retry later); waiting = open tickets exist
-		but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing open for this profile."""
-		got, board = self._claim(agent, profile=profile, note=note, principal=principal, branch=branch)
-		if got:
-			return got
+		conflict = ready tickets exist but their touches overlap a live claim (retry later; the reply adds `held_by` [{id, agent, files,
+		blocks, expires_at}] = the live claims in the way and `retry_after_s` = a hint, at most 60 s and never past the first of their
+		leases to end); waiting = open tickets exist but none is ready (in flight, in review, waiting on a human, blocked); dry = nothing
+		open for this profile. wait_s (<= WAIT_MAX) = on conflict, look again every WAIT_POLL_S and return as soon as a ticket frees up
+		(complete, release, an expired lease) or the time is up; the reply then carries `waited_s`. Other reasons return at once."""
+		wait_s, start = _wait_s(wait_s), time.time()
+		while True:
+			got, board = self._claim(agent, profile=profile, note=note, principal=principal, branch=branch)
+			res = got or self._why_empty(agent, profile, board, branch)
+			left = start + wait_s - time.time()
+			if got or res["reason"] != "conflict" or left <= 0:
+				return {**res, "waited_s": round(time.time() - start, 1)} if wait_s else res
+			time.sleep(min(WAIT_POLL_S, left))
+
+	def _why_empty(self, agent: str, profile: str | None, board: dict, branch: str | None) -> dict:
+		"""claim_next's answer when _claim found nothing, from the board that step read (see claim_next)."""
 		if profile is None:
 			profile = self.profile_of(agent)
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
@@ -1655,7 +1680,23 @@ class Store:
 			ids[k].append(t["id"])
 		counts = {k: len(v) for k, v in ids.items()}
 		reason = "conflict" if counts["ready_conflicting"] else "waiting" if any(counts.values()) else "dry"
-		return {"ticket": None, "reason": reason, "counts": counts, "ids": ids, "orphaned": orphaned}
+		out = {"ticket": None, "reason": reason, "counts": counts, "ids": ids, "orphaned": orphaned}
+		return {**out, **self._held_by([board[i] for i in ids["ready_conflicting"]], board, branch)} if reason == "conflict" else out
+
+	def _held_by(self, ready: list[dict], board: dict, branch: str | None = None) -> dict:
+		"""For a conflict: the live claims whose touches refuse the ready tickets ({held_by: [{id, agent, files, blocks, expires_at}]}, the
+		same overlap rule as _claimable, so a claim on another branch is not in the way), and retry_after_s = when to look again: the
+		first of their leases to end, capped at 60 s, at least 5 (a holder that completes frees it sooner). AI-46."""
+		live, held = self._live_claims(), {}
+		for t in ready:
+			for o in self._overlaps(t, live, board, branch):
+				if not o["apart"]:
+					h = held.setdefault(o["id"], {"id": o["id"], "agent": o["agent"], "files": [], "blocks": [],
+					                              "expires_at": _iso(self._expires(live[o["id"]]))})
+					h["blocks"].append(t["id"])
+					h["files"] += [f for f in o["files"] if f not in h["files"]]
+		soonest = min((self._expires(live[i]) - time.time() for i in held), default=60)
+		return {"held_by": [held[i] for i in sorted(held)], "retry_after_s": int(max(5, min(60, soonest)))}
 
 	def inbox(self, agent: str, mark: bool = False) -> dict | None:
 		"""Notes others left on the tickets `agent` holds that it has not been shown yet: {count, notes: [{ticket, n, by, kind, at,
@@ -2329,6 +2370,18 @@ def _now() -> str:
 def _ts(iso: str) -> float:
 	d = datetime.fromisoformat(iso[:-1] + "+00:00" if iso.endswith("Z") else iso)
 	return (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp()  # a time without offset is UTC, like every stored one
+
+
+def _wait_s(v) -> float:
+	"""claim / claim_next wait_s: seconds, clamped to 0..WAIT_MAX (AI-46)."""
+	try:
+		return min(max(float(v or 0), 0.0), WAIT_MAX)
+	except (TypeError, ValueError):
+		raise TicketError(f"wait_s must be a number of seconds (0-{WAIT_MAX})")
+
+
+class Busy(TicketError):
+	"""claim(tid) refused only because another live claim holds overlapping touches: waiting (wait_s) can help (AI-46)."""
 
 
 def _iso(ts: float) -> str:

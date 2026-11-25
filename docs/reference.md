@@ -162,7 +162,7 @@ ignores itself in git.
 
 **"Work on all tasks you can"**: an orchestrator calls `work_plan`, spawns
 one worker per agent profile with that profile's `instructions` and `model`,
-and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = retry in a minute, "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; `claim_next` never hands it out, but `claim_ticket(id)` takes it over with a warning, since nobody else could ever finish it). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder).
+and each worker runs the loop above until `claim_next` says to stop: `reason` "conflict" = the reply names the claims in the way (`held_by` [{id, agent, files, blocks, expires_at}]: the same overlap rule as claims, so with `branch` a claim on another branch is not in the way) and `retry_after_s` (5-60 s, never past the first of their leases); `claim_next(wait_s=120)` (CLI `claim --wait 120`, REST `POST claim {"wait_s"}`) looks again every 2 s and returns as soon as one frees up (complete, release, an expired lease), with `waited_s`; the shared `--http` MCP server caps the wait at `MCP_WAIT_MAX` (default 30 s: each waiting call holds one of its threads), stdio and REST at 120. "waiting" / "dry" = stop and report. The empty answer carries `ids` (the ticket ids behind each `counts` key) and `orphaned` (`doing` with no live claim: moved by hand, or the claim was lost; `claim_next` never hands it out, but `claim_ticket(id)` takes it over with a warning, since nobody else could ever finish it). `claim_ticket` refusals name the cause (blocker ids, the question, the proposal, the human owner, or the overlapping holder with its files and when its claim expires); `claim_ticket(id, wait_s=)` (CLI `claim --id X --wait`, REST `POST tickets/<id>/claim {"wait_s"}`) waits for that overlapping claim to end instead of refusing at once.
 
 ### Teams
 
@@ -448,6 +448,7 @@ claude mcp add --transport http --scope user unblockd http://localhost:8788/mcp 
 | `MCP_PORT` | Port of `--http` (default `8788`). |
 | `HOST` | Bind address (default `127.0.0.1`; compose sets `0.0.0.0` inside the container and publishes `127.0.0.1:8788` only). |
 | `UNBLOCKD_TOKEN` | Set: every request needs `Authorization: Bearer <token>` (constant-time compare, else 401 JSON saying how to fix it). Unset: open; beyond loopback it refuses to start unless `UNBLOCKD_ALLOW_OPEN=1`. Same token as the web API. |
+| `MCP_WAIT_MAX` | Longest `claim_next(wait_s=)` wait on the shared `--http` server, in seconds (default 30, at most 120): each waiting call holds one of the server's threads. |
 | `MCP_ALLOWED_HOSTS` | Extra `Host` values, comma list (`mypc:*`, `name:8788`). DNS-rebinding protection stays on: only `localhost`, `127.0.0.1` and `[::1]` (any port, so a remapped compose port works) are accepted otherwise (421). Needed when you reach the server by another name, e.g. from WSL or another machine. |
 
 The server is shared, so the agent must say which board: a repo's board id is its `id` in `unblockd.json` (folder name when created by `create_board`), and every tool takes `board=`. Put this in each repo's `CLAUDE.md`:
@@ -509,7 +510,7 @@ MCP prompts are slash commands (`/mcp__<server>__<prompt> args`), not tools. `<p
 ```
 python -m unblockd.cli --dir <repo>/tickets next --owner Claude --agent backend
 python -m unblockd.cli --dir <repo>/tickets plan --per-agent 3
-python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1 [--principal Omri]   # or env UNBLOCKD_PRINCIPAL; heartbeat/release/complete take it too
+python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1 [--principal Omri] [--wait 120]   # or env UNBLOCKD_PRINCIPAL; heartbeat/release/complete take it too; --wait: on a conflict, wait for it to free up
 python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 --note "running tests"
 python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests" [--next]   # --next: also claim the next ticket, prints {done, next}
 python -m unblockd.cli --dir <repo>/tickets list --status todo

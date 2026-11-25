@@ -25,8 +25,9 @@ GET    meta                              statuses, priorities, fields, config (u
 GET    agents                            who is working what right now + recent activity
 GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expired / complete / created / done log, newest first;
                                          since=<ISO time> keeps only newer events (the "While you were away" digest)
-POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner, "branch"?: your worktree's git branch}  best claimable ticket, or null
-POST   tickets/<id>/claim                {"agent", "note"?, "principal"?, "branch"?}
+POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner, "branch"?: your worktree's git branch, "wait_s"?: <= 120}
+                                         best claimable ticket, or {ticket: null, reason...} (conflict: held_by + retry_after_s; wait_s = wait for a conflicting claim to free up)
+POST   tickets/<id>/claim                {"agent", "note"?, "principal"?, "branch"?, "wait_s"?: wait for an overlapping claim to end}
 POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?, "until"? (ISO: keep the claim alive until then, capped at lease_max_minutes)}
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
@@ -346,7 +347,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50), q.get("since")))
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
-				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch")))
+				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", "")), principal=b.get("principal"),
+				                                        branch=b.get("branch"), wait_s=b.get("wait_s") or 0))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["files"]:
@@ -387,7 +389,8 @@ class Handler(BaseHTTPRequestHandler):
 				b, tid, act = self._body(), rest[1], rest[2]
 				agent = str(b.get("agent", ""))
 				if act == "claim":
-					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch")))
+					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch"),
+					                                   wait_s=b.get("wait_s") or 0))
 				if act == "heartbeat":
 					box = store.inbox(agent, mark=True)
 					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None)

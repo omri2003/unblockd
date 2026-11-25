@@ -3,7 +3,7 @@
     python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
-    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
+    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B] [--wait S]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for; --wait (<= 120) = on a conflict, wait for it to free up
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."] [--next]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide" [--next]   # releases the claim, waits on a human
@@ -117,13 +117,13 @@ class Remote:
 		except (TimeoutError, OSError) as e:
 			raise self.down(e)
 
-	def _call(self, method: str, path: str, body=None, headers=None, **q):
+	def _call(self, method: str, path: str, body=None, headers=None, timeout: float = 30, **q):
 		q = {k: v for k, v in q.items() if v is not None}
 		req = urllib.request.Request(self.base + path + ("?" + urllib.parse.urlencode(q) if q else ""), method=method,
 		                             data=None if body is None else json.dumps(body).encode(),
 		                             headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.token}"} if self.token else {}), **(headers or {})})
 		try:
-			with urllib.request.urlopen(req, timeout=30) as r:
+			with urllib.request.urlopen(req, timeout=timeout) as r:
 				return json.loads(r.read())
 		except urllib.error.HTTPError as e:
 			try:
@@ -152,9 +152,11 @@ class Remote:
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
 	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
-	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None):
-		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal, **({"branch": branch} if branch else {})})
-	def claim_next(self, agent, profile=None, note="", principal=None, branch=None): return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch)  # the server answers with the reason when empty
+	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None, wait_s=0):
+		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal,
+		                  **({"branch": branch} if branch else {}), **({"wait_s": wait_s} if wait_s else {})}, timeout=30 + min(float(wait_s or 0), st.WAIT_MAX))
+	def claim_next(self, agent, profile=None, note="", principal=None, branch=None, wait_s=0):  # the server answers with the reason when empty
+		return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=wait_s)
 	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
 	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None):
 		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id})
@@ -240,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
 	cl.add_argument("--id")
 	cl.add_argument("--profile")
 	cl.add_argument("--note", default="")
+	cl.add_argument("--wait", type=float, default=0, help=f"seconds (<= {st.WAIT_MAX}): on a conflict, wait for a claim in the way to free up instead of returning at once")
 	pr = os.environ.get("UNBLOCKD_PRINCIPAL")
 	cl.add_argument("--principal", default=pr, help="the human owner you work for (default: env UNBLOCKD_PRINCIPAL)")
 	cl.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="the git branch you work on in your own worktree (default: env UNBLOCKD_BRANCH): "
@@ -351,8 +354,8 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch) if a.id else \
-				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch)
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait) if a.id else \
+				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait)
 			out = with_ctx(got)
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it

@@ -1,6 +1,7 @@
 """MCP server over the same boards and Store. `python -m unblockd.mcp_server` = stdio (one process per client);
 `python -m unblockd.mcp_server --http` = Streamable HTTP at /mcp (HOST, default 127.0.0.1; MCP_PORT, default 8788;
-UNBLOCKD_TOKEN = Bearer token; MCP_ALLOWED_HOSTS = extra Host values, comma list, e.g. "myhost:*"): ONE shared server for every project.
+UNBLOCKD_TOKEN = Bearer token; MCP_ALLOWED_HOSTS = extra Host values, comma list, e.g. "myhost:*"; MCP_WAIT_MAX = the claim_next(wait_s=)
+cap, default 30): ONE shared server for every project.
 `--tools worker [--profile P]` (env UNBLOCKD_MCP_TOOLS / UNBLOCKD_PROFILE) = only the worker tools (store.WORKER_TOOLS, the board's
 `worker_tools`, plus profile P's `tools`); `--tools a,b` = those. Worker writes return a short ack (_ack); stdio claims skip board /
 profile docs already sent unchanged in this process (_dedupe).
@@ -117,6 +118,7 @@ def _ack(t: dict) -> dict:
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
 CLAIMS: dict[tuple, int] = {}  # (board, worker) -> claims taken in this session
 DEDUPE = False  # on for stdio, where one server process = one agent session; the shared --http server can't tell sessions apart
+WAIT_MAX = st.WAIT_MAX  # claim_next(wait_s=) cap; the shared --http server lowers it (MCP_WAIT_MAX, default 30): every waiting call holds a worker thread
 
 
 def _session_done(board: str | None, agent: str) -> dict | None:
@@ -347,26 +349,31 @@ def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
 
 @tool
 def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False,
-               branch: str | None = None, board: str | None = None) -> dict:
+               branch: str | None = None, wait_s: int = 0, board: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
 	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
-	live claims' touches, retry in a minute; "waiting" = open tickets exist but none is ready (in
+	live claims' touches: the reply has `held_by` [{id, agent, expires_at, blocks}] and `retry_after_s`; call again with wait_s=120 and it returns as
+	soon as one frees up (the server may cap the wait: the reply says `waited_s`); "waiting" = open tickets exist but none is ready (in
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim).
 	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted).
 	branch = the git branch you work on, when you have your own worktree: a ticket whose touches overlap a claim on ANOTHER branch is then
 	yours with a warning (expect a merge conflict in those files), tickets with no overlap first; without it (one shared folder) an overlap refuses."""
 	store = BOARDS.get(board)
-	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(agent, profile=profile, note=note, principal=principal, branch=branch)), fresh)
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(
+		agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
 
 
 @tool
 def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, branch: str | None = None,
-                 board: str | None = None) -> dict:
-	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh, branch: see claim_next."""
+                 wait_s: int = 0, board: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh, branch: see claim_next. A refusal
+	because its touches overlap another live claim names that claim and when it expires; wait_s (seconds, capped like claim_next's)
+	= wait for it to end instead, then claim (or the same refusal when the time is up)."""
 	store = BOARDS.get(board)
-	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(agent, tid=id, note=note, principal=principal, branch=branch)), fresh)
+	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(
+		agent, tid=id, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
 
 
 @tool
@@ -592,6 +599,8 @@ def main():
 		return
 	import uvicorn
 	host, port, token = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("MCP_PORT", "8788")), os.environ.get("UNBLOCKD_TOKEN", "")
+	global WAIT_MAX
+	WAIT_MAX = min(st.WAIT_MAX, int(os.environ.get("MCP_WAIT_MAX", "30")))  # one shared server: a waiting claim_next holds one of its threads
 	st.refuse_open_bind(host, token)
 	print(f"unblockd MCP on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}/mcp  boards: "
 	      + (", ".join(BOARDS.all()) or "none yet"), flush=True)

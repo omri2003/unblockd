@@ -181,6 +181,43 @@ class WorkLoopTest(unittest.TestCase):
 		r = m.complete("B-2", "w-1", "done", next=True)
 		self.assertEqual(r["next"]["reason"], "dry")
 
+	def test_claim_next_wait_is_capped_by_the_server(self):  # AI-46
+		from unblockd import mcp_server as m
+		from unblockd import store
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		self.addCleanup(setattr, m, "WAIT_MAX", m.WAIT_MAX)
+		self.addCleanup(setattr, store, "WAIT_POLL_S", store.WAIT_POLL_S)
+		m.BOARDS = m.bd.from_env()
+		m.BOARDS.get(None).create({"title": "a", "touches": ["x.py"]}, tid="B-1")
+		m.BOARDS.get(None).create({"title": "b", "touches": ["x.py"]}, tid="B-2")
+		m.claim_next("w-1")
+		store.WAIT_POLL_S, m.WAIT_MAX = 0.05, 0.2  # what MCP_WAIT_MAX does on the --http server
+		r = m.claim_next("w-2", wait_s=120)
+		self.assertEqual((r["reason"], r["held_by"][0]["id"]), ("conflict", "B-1"))
+		self.assertLess(r["waited_s"], 5)
+
+	def test_claim_next_wait_over_rest(self):  # AI-46: POST claim {wait_s} and cli.Remote
+		import threading
+		from http.server import ThreadingHTTPServer
+		from unblockd import cli, store, web
+		s = web.bd.Boards(dirs=[self.tmp.name])
+		s.get(None).create({"title": "a", "touches": ["x.py"]}, tid="B-1")
+		s.get(None).create({"title": "b", "touches": ["x.py"]}, tid="B-2")
+		s.get(None).claim("w-1", tid="B-1")
+		self.addCleanup(setattr, web, "BOARDS", web.BOARDS)
+		self.addCleanup(setattr, store, "WAIT_POLL_S", store.WAIT_POLL_S)
+		web.BOARDS, store.WAIT_POLL_S = s, 0.05
+		srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+		threading.Thread(target=srv.serve_forever, daemon=True).start()
+		try:
+			threading.Timer(0.3, lambda: s.get(None).release("B-1", "w-1")).start()
+			got = cli.Remote(f"http://127.0.0.1:{srv.server_port}").claim_next("w-2", wait_s=20)
+		finally:
+			srv.shutdown()
+			srv.server_close()
+		self.assertIn(got["id"], ("B-1", "B-2"))
+		self.assertLess(got["waited_s"], 10)
+
 	def test_board_docs_are_sent_once_per_session(self):
 		from unblockd import mcp_server as m
 		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)

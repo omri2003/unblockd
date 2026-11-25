@@ -420,6 +420,55 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual((r["reason"], sum(r["counts"].values())), ("dry", 0))  # ART-1 is blender's: not counted for backend
 		self.assertEqual(why("blender-1")["counts"]["waiting_on_human"], 1)
 
+	def test_conflict_names_the_holders_and_wait_returns_when_one_frees_up(self):  # AI-46
+		import threading
+		from unblockd import store
+		self.s.claim_next("backend-1")  # CMB-1
+		self.s.claim_next("backend-2")  # CMB-3; CMB-2 (scripts/*.gd) overlaps both
+		r = self.s.claim_next("backend-3")
+		self.assertEqual([(h["id"], h["agent"], h["blocks"]) for h in r["held_by"]], [("CMB-1", "backend-1", ["CMB-2"]), ("CMB-3", "backend-2", ["CMB-2"])])
+		self.assertTrue(r["held_by"][0]["expires_at"].endswith("+00:00"))
+		self.assertTrue(5 <= r["retry_after_s"] <= 60)
+		self.assertNotIn("waited_s", r)
+		self.assertNotIn("held_by", self.s.claim_next("blender-1"))  # not a conflict: no holders listed
+		old = store.WAIT_POLL_S
+		store.WAIT_POLL_S = 0.05
+		self.addCleanup(setattr, store, "WAIT_POLL_S", old)
+		r = self.s.claim_next("backend-3", wait_s=0.3)  # nobody frees it: back after the wait, still a conflict
+		self.assertEqual(r["reason"], "conflict")
+		self.assertGreaterEqual(r["waited_s"], 0.3)
+		self.s.complete("CMB-3", "backend-2", "done")
+		threading.Timer(0.3, lambda: Store(self.dir).complete("CMB-1", "backend-1", "done")).start()
+		t0 = time.time()
+		got = self.s.claim_next("backend-3", wait_s=30)
+		self.assertEqual(got["id"], "CMB-2")  # taken as soon as CMB-1 was done, not after 30 s
+		self.assertLess(time.time() - t0, 10)
+		self.assertGreater(got["waited_s"], 0)
+		self.assertEqual(self.s.claim_next("backend-4", wait_s=30)["reason"], "waiting")  # not a conflict: no wait at all
+		with self.assertRaisesRegex(TicketError, "wait_s must be a number"):
+			self.s.claim_next("backend-4", wait_s="soon")
+
+	def test_claim_by_id_names_the_holder_and_waits_for_it(self):  # AI-46 note 2: claim_ticket(id, wait_s=)
+		import threading
+		from unblockd import store
+		self.s.claim_next("backend-1")  # CMB-1 holds scripts/*.gd
+		with self.assertRaisesRegex(store.Busy, r"overlap CMB-1, claimed by backend-1 \(scripts/\*\.gd; that claim runs until 20.*wait_s="):
+			self.s.claim("backend-2", tid="CMB-2")
+		old = store.WAIT_POLL_S
+		store.WAIT_POLL_S = 0.05
+		self.addCleanup(setattr, store, "WAIT_POLL_S", old)
+		t0 = time.time()
+		with self.assertRaises(store.Busy):  # nobody frees it: the refusal after the wait
+			self.s.claim("backend-2", tid="CMB-2", wait_s=0.3)
+		self.assertGreaterEqual(time.time() - t0, 0.3)
+		threading.Timer(0.3, lambda: Store(self.dir).release("CMB-1", "backend-1", "later")).start()
+		self.assertEqual(self.s.claim("backend-2", tid="CMB-2", wait_s=30)["id"], "CMB-2")  # as soon as CMB-1 was let go
+		self.assertLess(time.time() - t0, 10)
+		t0 = time.time()
+		with self.assertRaisesRegex(TicketError, "already claimed"):  # not an overlap: refused at once, no wait
+			self.s.claim("backend-3", tid="CMB-2", wait_s=30)
+		self.assertLess(time.time() - t0, 2)
+
 	def test_claim_next_empty_answer_lists_ids_and_orphans(self):
 		self.s.claim_next("backend-1")  # CMB-1
 		self.s.claim_next("backend-2")  # CMB-3
@@ -578,7 +627,7 @@ class WorktreeOverlapTest(unittest.TestCase):
 			self.s.claim("backend-2", tid="CMB-2")  # no branch given: refused, and told how
 		self.s.release("CMB-1", "backend-1")
 		self.s.claim("backend-1", tid="CMB-1")  # the holder named none
-		with self.assertRaisesRegex(TicketError, "touches overlap CMB-1, claimed by backend-1$"):
+		with self.assertRaisesRegex(TicketError, "touches overlap CMB-1, claimed by backend-1 [(]scripts.*waits for it[)]$"):
 			self.s.claim("backend-2", tid="CMB-2", branch="cmb-2")
 
 	def test_claim_next_prefers_no_overlap(self):
