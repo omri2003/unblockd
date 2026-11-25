@@ -97,15 +97,33 @@ def work_loop_resource() -> str:
 	return work_loop_text()
 
 
-def tool(fn):
-	"""Register fn as a tool; a TicketError reaches the agent as its message (MCP hides other errors)."""
+def tool(fn=None, *, need: tuple = ()):
+	"""Register fn as a tool; a TicketError reaches the agent as its message (MCP hides other errors).
+	need = arguments the advertised schema lists as required although they have a default: a text argument after the
+	now optional actor (`agent` / `by`, see _who) needs one in Python, and the store refuses it empty anyway."""
+	if fn is None:
+		return lambda f: tool(f, need=need)
 	@functools.wraps(fn)
 	def wrapper(*a, **kw):
 		try:
 			return fn(*a, **kw)
 		except st.TicketError as e:
 			raise ToolError(str(e)) from e
-	return mcp.tool()(wrapper)
+	out = mcp.tool()(wrapper)
+	if need:
+		ps = mcp._tool_manager.get_tool(fn.__name__).parameters
+		ps["required"] = [*ps.get("required", []), *(n for n in need if n not in ps.get("required", []))]
+	return out
+
+
+def _who(agent: str | None, by: str | None) -> str:
+	"""Who is acting (API-17). Every tool that names an actor takes BOTH names: worker tools document `agent`, the human side
+	(answer, approve_ticket, reject, accept_ticket) documents `by`; either is accepted and agent wins when both are given.
+	Neither is in the schema's required list (one of the two is), so a missing name is refused here, plainly."""
+	who = agent or by
+	if not who:
+		raise st.TicketError("say who is acting: agent=<your worker name> (or by=<name>; the two are the same argument)")
+	return who
 
 
 def _ack(t: dict) -> dict:
@@ -280,15 +298,16 @@ def get_ticket(id: str, board: str | None = None) -> dict:
 
 
 @tool
-def create_ticket(title: str, agent: str, board: str | None = None, prefix: str | None = None, id: str | None = None,
+def create_ticket(title: str, agent: str | None = None, board: str | None = None, prefix: str | None = None, id: str | None = None,
                   status: str = "todo", priority: str | None = None, owner: str | None = None,
                   pillar: str | None = None, pillar_step: int | None = None, section: str = "",
                   blocked_by: list[str] | None = None, tags: list[str] | None = None, parent: str | None = None,
                   waiting_on: str = "", body: str = "", touches: list[str] | None = None, docs: list[str] | None = None,
                   done_when: list[str] | None = None, components: list[str] | None = None,
-                  skills: list[str] | None = None, mcp: list[str] | None = None, milestone: str | None = None, request_id: str | None = None) -> dict:
+                  skills: list[str] | None = None, mcp: list[str] | None = None, milestone: str | None = None, request_id: str | None = None,
+                  by: str | None = None) -> dict:
 	"""Create a ticket (owner defaults to the board's agent owner). agent (REQUIRED) = your worker name, or your human's name when you
-	create for them. Pass prefix (e.g. "BUG") to get
+	create for them (by= is accepted too). Pass prefix (e.g. "BUG") to get
 	the next free number, or an explicit id. tags route it to an agent profile (see board_info). touches = paths/globs the work edits (claims
 	never overlap), docs = repo paths to read, done_when = the acceptance criteria (one short line each),
 	components = keys of the architecture components (board_info / architecture_map) the work changes: set them, they link the ticket to its notes and the Map (refused when the board has no architecture or the key is unknown).
@@ -298,7 +317,7 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
 	break is refused with every problem listed; if no prefix fits, ask_human, do not guess a near one. With `agent_tickets: "propose"` the
 	new ticket is a proposal: not claimable until a human accepts it in Needs you. Don't create tickets for what you are doing now.
 	request_id: see complete."""
-	store = BOARDS.get(board)
+	agent, store = _who(agent, by), BOARDS.get(board)
 	data = {"title": title, "status": status, "priority": priority, "owner": owner or store.config["default_owner"],
 	        "pillar": pillar, "pillar_step": pillar_step, "section": section, "blocked_by": blocked_by or [], "parent": parent,
 	        "tags": tags or [], "waiting_on": waiting_on, "body": body, "touches": touches or [], "docs": docs or [], "done_when": done_when or [], "components": components or [], "skills": skills or [], "mcp": mcp or [], "milestone": milestone}
@@ -306,14 +325,14 @@ def create_ticket(title: str, agent: str, board: str | None = None, prefix: str 
 
 
 @tool
-def create_tickets(tickets: list[dict], agent: str, board: str | None = None) -> dict:
+def create_tickets(tickets: list[dict], agent: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Create several tickets in ONE call (a plan; at most 50), all or nothing: any problem refuses the whole batch with every
 	problem listed by item ("#2: ..."), nothing created. Each item = the create_ticket fields (title required; prefix or id).
 	blocked_by and parent may name existing ids or "#N" = the Nth ticket of this list (1-based), so new tickets can wait on each
 	other: [{"prefix": "API", "title": "Add the endpoint"}, {"prefix": "UI", "title": "Use it", "blocked_by": ["#1"]}].
-	agent = your worker name. The board schema and the proposal gate apply to each ticket as in create_ticket.
+	agent = your worker name (by= is accepted too). The board schema and the proposal gate apply to each ticket as in create_ticket.
 	Returns {tickets, ids: {"#1": "API-7", ...}, warnings?}."""
-	return BOARDS.get(board).create_many(tickets, agent=agent)
+	return BOARDS.get(board).create_many(tickets, agent=_who(agent, by))
 
 
 @tool
@@ -325,34 +344,36 @@ def roadmap(board: str | None = None) -> dict:
 
 
 @tool
-def accept_ticket(id: str, by: str, board: str | None = None) -> dict:
-	"""The human side of the proposal gate: accept a ticket an agent created (proposed_by is cleared, it becomes ready). Reject = delete_ticket."""
-	return BOARDS.get(board).accept(id, by)
+def accept_ticket(id: str, by: str | None = None, board: str | None = None, agent: str | None = None) -> dict:
+	"""The human side of the proposal gate: accept a ticket an agent created (proposed_by is cleared, it becomes ready). Reject = delete_ticket.
+	by = the human accepting (agent= is accepted too)."""
+	return BOARDS.get(board).accept(id, _who(agent, by))
 
 
 @tool
-def update_ticket(id: str, changes: dict, agent: str, board: str | None = None) -> dict:
-	"""Change fields of a ticket. agent = your worker name: you can't change a
+def update_ticket(id: str, changes: dict, agent: str | None = None, board: str | None = None, by: str | None = None) -> dict:
+	"""Change fields of a ticket. agent = your worker name (by= is accepted too): you can't change a
 	ticket another agent has claimed (finish with complete, give back with release, ask with ask_human).
 	The argument is `changes` (there is no `fields`): an object of field -> new value, e.g. {"priority": "P1", "done_when": ["..."]}.
 	Every refused field is listed in ONE error with its rule; the numbers are in board_info's `limits`. Fields: title, status, priority, owner, pillar,
 	pillar_step, section, blocked_by, done_when (list of acceptance criteria), parent (id of the group it belongs to; children/progress are derived), milestone (a key of board_info's milestones, or null), tags, touches, docs, components (list of architecture component keys the work changes), skills / mcp (registry names from board_info), waiting_on, body."""
-	return _ack(BOARDS.get(board).update(id, changes, agent=agent))
+	return _ack(BOARDS.get(board).update(id, changes, agent=_who(agent, by)))
 
 
 @tool
-def update_tickets(tickets: list[dict], agent: str, board: str | None = None) -> list[dict]:
+def update_tickets(tickets: list[dict], agent: str | None = None, board: str | None = None, by: str | None = None) -> list[dict]:
 	"""Change several tickets in ONE call (at most 200), all or nothing: re-prioritise, retag, set milestone / parent / components on a set.
 	tickets = [{"id": "UI-12", "changes": {"priority": "P1"}}, ...] (changes = what update_ticket takes; optional "expected_rev" = the rev you
 	read: refused if the ticket was written since). Every item gets update_ticket's checks (you can't change a ticket another agent holds;
 	a worker can't set doing / done / review); any problem refuses the whole batch with every problem listed by item ("#3 UI-12: ..."),
-	nothing changed. agent = your worker name. Returns one short ack per ticket, in order."""
-	return [_ack(t) for t in BOARDS.get(board).update_many(tickets, agent=agent)["tickets"]]
+	nothing changed. agent = your worker name (by= is accepted too). Returns one short ack per ticket, in order."""
+	return [_ack(t) for t in BOARDS.get(board).update_many(tickets, agent=_who(agent, by))["tickets"]]
 
 
 @tool
-def split_ticket(id: str, agent: str, titles: list[str] | None = None, parts: list[dict] | None = None, sequential: bool = False,
-                 claim: int | None = None, principal: str | None = None, branch: str | None = None, board: str | None = None) -> dict:
+def split_ticket(id: str, agent: str | None = None, titles: list[str] | None = None, parts: list[dict] | None = None, sequential: bool = False,
+                 claim: int | None = None, principal: str | None = None, branch: str | None = None, board: str | None = None,
+                 by: str | None = None) -> dict:
 	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it. Give titles (short form: one part per
 	title, each a copy of the parent: pillar, owner, priority, tags, touches, docs, components, skills, mcp) or parts = [{title, done_when,
 	touches, body, components, blocked_by, ...}]: each part sets its own fields (what create_ticket takes; the rest is copied from the
@@ -360,9 +381,9 @@ def split_ticket(id: str, agent: str, titles: list[str] | None = None, parts: li
 	A part's blocked_by may say "#N" = the Nth part. All or nothing: any problem refuses the split with every one listed ("#2: ...").
 	The parent then waits on all parts. sequential=true makes each part wait on the one before. If you hold the claim, the parent goes back
 	to todo and your claim ends; claim=k then takes part #k for you in the same call (it must have no open blocker; principal and branch as in
-	claim_next), returned as `claimed` with its context. agent = your worker name (a ticket another agent holds can't be split).
+	claim_next), returned as `claimed` with its context. agent = your worker name, by= is accepted too (a ticket another agent holds can't be split).
 	Returns {parent, children, claimed?, claim_error?}."""
-	store = BOARDS.get(board)
+	store, agent = BOARDS.get(board), _who(agent, by)
 	out = store.split(id, titles, sequential=sequential, by=agent, parts=parts, claim=claim, principal=principal, branch=branch)
 	if out.get("claimed"):
 		out["claimed"] = _dedupe(board, agent, kn.with_context(store, out["claimed"]))
@@ -370,16 +391,16 @@ def split_ticket(id: str, agent: str, titles: list[str] | None = None, parts: li
 
 
 @tool
-def delete_ticket(id: str, agent: str, board: str | None = None) -> dict:
-	"""Delete a ticket file. Prefer status=done for finished work; delete is for mistakes and duplicates. agent = your worker name (a ticket another agent holds can't be deleted)."""
-	return BOARDS.get(board).delete(id, agent=agent)
+def delete_ticket(id: str, agent: str | None = None, board: str | None = None, by: str | None = None) -> dict:
+	"""Delete a ticket file. Prefer status=done for finished work; delete is for mistakes and duplicates. agent = your worker name, by= is accepted too (a ticket another agent holds can't be deleted)."""
+	return BOARDS.get(board).delete(id, agent=_who(agent, by))
 
 
 @tool
-def claim_next(agent: str, profile: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False,
-               branch: str | None = None, wait_s: int = 0, board: str | None = None) -> dict:
+def claim_next(agent: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False,
+               branch: str | None = None, wait_s: int = 0, board: str | None = None, by: str | None = None) -> dict:
 	"""Take the best ready ticket for this worker and set it to doing. agent = your unique worker
-	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
+	name (<profile>-N, e.g. backend-1; by= is accepted too; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
 	live claims' touches: the reply has `held_by` [{id, agent, files, blocks, expires_at}] and `retry_after_s`; call again with wait_s=120 and it returns as
@@ -387,27 +408,29 @@ def claim_next(agent: str, profile: str | None = None, note: str = "", principal
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim).
 	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted).
 	branch = the git branch you work on, when you have your own worktree: a ticket whose touches overlap a claim on ANOTHER branch is then
-	yours with a warning (expect a merge conflict in those files), tickets with no overlap first; without it (one shared folder) an overlap refuses."""
-	store = BOARDS.get(board)
+	yours with a warning (expect a merge conflict in those files), tickets with no overlap first; without it (one shared folder) an overlap refuses.
+	agent = your worker name (by= is accepted too)."""
+	store, agent = BOARDS.get(board), _who(agent, by)
 	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(
 		agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
 
 
 @tool
-def claim_ticket(id: str, agent: str, note: str = "", principal: str | None = None, fresh: bool = False, branch: str | None = None,
-                 wait_s: int = 0, board: str | None = None) -> dict:
-	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). principal, fresh, branch: see claim_next. A refusal
-	because its touches overlap another live claim names that claim and when it expires; wait_s (seconds, capped like claim_next's)
-	= wait for it to end instead, then claim (or the same refusal when the time is up)."""
-	store = BOARDS.get(board)
+def claim_ticket(id: str, agent: str | None = None, note: str = "", principal: str | None = None, fresh: bool = False, branch: str | None = None,
+                 wait_s: int = 0, board: str | None = None, by: str | None = None) -> dict:
+	"""Claim one specific ticket (it must be ready, not human-owned, not claimed). agent (by= is accepted too), principal, fresh, branch: see
+	claim_next. A refusal because its touches overlap another live claim names that claim and when it expires; wait_s (seconds, capped
+	like claim_next's) = wait for it to end instead, then claim (or the same refusal when the time is up)."""
+	store, agent = BOARDS.get(board), _who(agent, by)
 	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(
 		agent, tid=id, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
 
 
 @tool
-def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None, until: str | None = None, board: str | None = None) -> dict:
+def heartbeat(id: str, agent: str | None = None, note: str = "", principal: str | None = None, until: str | None = None, board: str | None = None,
+              by: str | None = None) -> dict:
 	"""Keep your claim alive and say what you're doing now; shown live on the board. Call it at
-	least every few minutes. Pass the same principal you claimed with. until = UTC ISO time a long run (build, render, test suite)
+	least every few minutes. agent = your worker name (by= is accepted too). Pass the same principal you claimed with. until = UTC ISO time a long run (build, render, test suite)
 	ends: the claim then stays alive until that time without more heartbeats (capped at the board's lease_max_minutes; the reply's
 	expires_at says when it ends). Returns {ok, id, status, lease_left_s, expires_at} plus `inbox` {count, notes: [{ticket, n,
 	by, kind, at, text, reply_to?, truncated?}], truncated?} when someone left notes on a ticket you hold since your last heartbeat. Each
@@ -415,83 +438,92 @@ def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None,
 	set. Act on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold). complete, release and
 	ask_human replies carry `inbox` too (same caps, flagged unread_before_complete / _release / _ask) for notes that came after your
 	last heartbeat: read them; a request you could not act on goes in an add_note or a new ticket."""
-	s = BOARDS.get(board)
+	s, agent = BOARDS.get(board), _who(agent, by)
 	box = s.inbox(agent, mark=True)
 	r = _ack(s.heartbeat(id, agent, note, principal, until=until))
 	return {**r, "inbox": box} if box else r
 
 
-@tool
-def ask_human(id: str, agent: str, question: str, request_id: str | None = None, next: bool = False, principal: str | None = None,
-              branch: str | None = None, board: str | None = None) -> dict:
+@tool(need=("question",))
+def ask_human(id: str, agent: str | None = None, question: str = "", request_id: str | None = None, next: bool = False, principal: str | None = None,
+              branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
-	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket: next=true also claims it in the same call
-	and returns {done: <this reply>, next: <what claim_next answers>} (principal, branch = the ones you claim with). request_id: see complete."""
+	is not claimable until a human clears waiting_on), and notifies. agent = your worker name (by= is accepted too). Move on to the next ticket:
+	next=true also claims it in the same call and returns {done: <this reply>, next: <what claim_next answers>} (principal, branch = the ones
+	you claim with). request_id: see complete."""
+	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).ask(id, agent, question, request_id=request_id)), board, agent, next, principal, branch)
 
 
-@tool
-def add_note(id: str, agent: str, text: str, kind: str = "note", reply_to: int | None = None, supersedes: int | None = None,
-             request_id: str | None = None, board: str | None = None) -> dict:
+@tool(need=("text",))
+def add_note(id: str, agent: str | None = None, text: str = "", kind: str = "note", reply_to: int | None = None, supersedes: int | None = None,
+             request_id: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Record progress or a finding on a ticket: appends a signed, timestamped note to its `notes` ({by, at, kind, text}), safely (never touches
-	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not.
+	the body, so it can't clobber a concurrent complete or a human's answer). Prefer it to update_ticket(body=...). Works on any ticket, claimed or not. agent = who signs it (by= is accepted too).
 	kind: note (progress; "progress" is taken as note) | decision (a choice and why) | finding (a cause, an error, a fact you found) | warning (don't do X: it breaks Y).
 	decision / finding / warning are PINNED: every later worker on this ticket gets them, however many notes follow. Notes are numbered
 	(`n`): reply_to = the note you answer (sent along with yours), supersedes = a pinned note yours replaces (e.g. a reversed decision).
 	request_id: see complete."""
-	return _ack(BOARDS.get(board).add_note(id, agent, text, kind=kind, reply_to=reply_to, supersedes=supersedes, request_id=request_id))
+	return _ack(BOARDS.get(board).add_note(id, _who(agent, by), text, kind=kind, reply_to=reply_to, supersedes=supersedes, request_id=request_id))
 
 
-@tool
-def answer(id: str, by: str, text: str, board: str | None = None) -> dict:
+@tool(need=("text",))
+def answer(id: str, by: str | None = None, text: str = "", board: str | None = None, agent: str | None = None) -> dict:
 	"""The human side of ask_human: record the answer (note "Answer to: <question> — <text>"), clear waiting_on so the ticket is ready again.
-	Refused unless the ticket is waiting_on a question."""
-	return BOARDS.get(board).answer(id, by, text)
+	Refused unless the ticket is waiting_on a question. by = the human answering (agent= is accepted too)."""
+	return BOARDS.get(board).answer(id, _who(agent, by), text)
 
 
 @tool
-def approve_ticket(id: str, by: str, board: str | None = None) -> dict:
-	"""The human side of review: approve a ticket in review. It becomes done and records who approved (result.approved_by). Refused unless its status is review, for a worker, and for whoever completed it."""
-	return BOARDS.get(board).approve(id, by)
+def approve_ticket(id: str, by: str | None = None, board: str | None = None, agent: str | None = None) -> dict:
+	"""The human side of review: approve a ticket in review. It becomes done and records who approved (result.approved_by). Refused unless its status is review, for a worker, and for whoever completed it.
+	by = the human approving (agent= is accepted too)."""
+	return BOARDS.get(board).approve(id, _who(agent, by))
 
 
-@tool
-def report_ticket(id: str, by: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None, board: str | None = None) -> dict:
+@tool(need=("summary",))
+def report_ticket(id: str, by: str | None = None, summary: str = "", files: list[str] | None = None, refs: list[str] | None = None,
+                  board: str | None = None, agent: str | None = None) -> dict:
 	"""The human side of a ticket moved to done without complete(): write the summary it was closed without (cause -> fix -> tests,
-	files changed, PR). result.by = you. Refused unless the ticket is done with no summary, and for a worker (workers finish with complete)."""
-	return BOARDS.get(board).report(id, by, summary, files=files, refs=refs)
+	files changed, PR). result.by = you (by = the human; agent= is accepted too). Refused unless the ticket is done with no summary, and for
+	a worker (workers finish with complete)."""
+	return BOARDS.get(board).report(id, _who(agent, by), summary, files=files, refs=refs)
+
+
+@tool(need=("reason",))
+def reject(id: str, by: str | None = None, reason: str = "", board: str | None = None, agent: str | None = None) -> dict:
+	"""The human side of review: send a ticket in review back to todo with the reason as a note. Refused unless its status is review.
+	by = the human rejecting (agent= is accepted too)."""
+	return BOARDS.get(board).reject(id, _who(agent, by), reason)
 
 
 @tool
-def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
-	"""The human side of review: send a ticket in review back to todo with the reason as a note. Refused unless its status is review."""
-	return BOARDS.get(board).reject(id, by, reason)
-
-
-@tool
-def release(id: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
-            request_id: str | None = None, next: bool = False, branch: str | None = None, board: str | None = None) -> dict:
-	"""Give your claimed ticket back (it returns to todo). Say why. Missing a tool you need (a browser, a database, an unblockd tool)?
-	missing = its name, why = one line on what you needed it for: the human is told, and workers like you skip it until it is fixed.
-	request_id: see complete. next=true = also claim your next ticket in the same call (branch: see claim_next): the reply is
-	{done: <this reply>, next: <what claim_next answers>}."""
+def release(id: str, agent: str | None = None, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
+            request_id: str | None = None, next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
+	"""Give your claimed ticket back (it returns to todo). agent = your worker name (by= is accepted too). Say why. Missing a tool you need
+	(a browser, a database, an unblockd tool)? missing = its name, why = one line on what you needed it for: the human is told, and workers
+	like you skip it until it is fixed. request_id: see complete. next=true = also claim your next ticket in the same call (branch: see
+	claim_next): the reply is {done: <this reply>, next: <what claim_next answers>}."""
+	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id)),
 	             board, agent, next, principal, branch)
 
 
-@tool
-def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
+@tool(need=("summary",))
+def complete(id: str, agent: str | None = None, summary: str = "", files: list[str] | None = None, refs: list[str] | None = None,
              handoff: str | None = None, principal: str | None = None, request_id: str | None = None, followup: dict | None = None,
-             next: bool = False, branch: str | None = None, board: str | None = None) -> dict:
-	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
-	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
-	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with.
+             next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
+	"""Finish your claimed ticket (agent = your worker name, by= is accepted too): status done (review on boards that require a human look),
+	summary appended to its body. summary = cause -> fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files =
+	paths you changed, refs = PR / commit / URL, handoff = what tickets waiting on this one must know; they get it in their context as
+	`upstream`. Pass the same principal you claimed with.
 	A write that timed out may still have landed: get_ticket before retrying, or retry with the same request_id (any fresh id you pick
 	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true.
 	Part done, rest waiting on another ticket: followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?} completes this one AND
 	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing.
 	next=true = also claim your next ticket in the same call (branch: see claim_next): the reply is {done: <this reply>, next: <what
 	claim_next answers: a ticket with its context, or {ticket: null, reason} incl. session_done>}."""
+	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal,
 	                                             request_id=request_id, followup=followup)), board, agent, next, principal, branch)
 
@@ -528,37 +560,37 @@ def architecture_map(board: str | None = None) -> dict:
 
 
 @tool
-def arch_add_component(key: str, title: str, agent: str, summary: str = "", paths: list[str] | None = None, board: str | None = None) -> dict:
+def arch_add_component(key: str, title: str, agent: str | None = None, summary: str = "", paths: list[str] | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Add a component to the board's architecture: writes the note <architecture folder>/<key>.md (committed with the code). key = file name,
 	lowercase letters, digits and '-', max 40, never renamed; title <= 80 chars; summary <= 1000; paths = globs of the files it owns (no '..').
 	Returns the new architecture_map."""
-	return kn.add_component(BOARDS.get(board), key, title, summary, paths or (), by=agent)
+	return kn.add_component(BOARDS.get(board), key, title, summary, paths or (), by=_who(agent, by))
 
 
 @tool
-def arch_update_component(key: str, agent: str, title: str | None = None, summary: str | None = None, paths: list[str] | None = None, board: str | None = None) -> dict:
+def arch_update_component(key: str, agent: str | None = None, title: str | None = None, summary: str | None = None, paths: list[str] | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Change a component's title, summary and/or paths (omit what stays). Only those parts of the note are rewritten; the rest of the note is kept as written.
 	paths replaces the list ([] clears it). Returns the new architecture_map."""
-	return kn.update_component(BOARDS.get(board), key, by=agent, title=title, summary=summary, paths=paths)
+	return kn.update_component(BOARDS.get(board), key, by=_who(agent, by), title=title, summary=summary, paths=paths)
 
 
 @tool
-def arch_delete_component(key: str, agent: str, board: str | None = None) -> dict:
+def arch_delete_component(key: str, agent: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Delete a component: its note, and the lines in other notes that link to it. Refused while an open ticket lists it in `components` (reassign those first)."""
-	return kn.delete_component(BOARDS.get(board), key, by=agent)
+	return kn.delete_component(BOARDS.get(board), key, by=_who(agent, by))
 
 
 @tool
-def arch_set_edge(frm: str, to: str, text: str, agent: str, board: str | None = None) -> dict:
+def arch_set_edge(frm: str, to: str, text: str, agent: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Create or replace the connection from component `frm` to `to`: one line in frm's note, `- [<to title>](<to>.md) — <text>`. text = the CONTRACT, what
 	crosses the edge and which invariants hold (one line, max 500 chars, no markdown links). Use it to update a contract you changed. Returns the new architecture_map."""
-	return kn.set_edge(BOARDS.get(board), frm, to, text, by=agent)
+	return kn.set_edge(BOARDS.get(board), frm, to, text, by=_who(agent, by))
 
 
 @tool
-def arch_remove_edge(frm: str, to: str, agent: str, board: str | None = None) -> dict:
+def arch_remove_edge(frm: str, to: str, agent: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Remove the connection from component `frm` to `to` (its line in frm's note). Returns the new architecture_map."""
-	return kn.remove_edge(BOARDS.get(board), frm, to, by=agent)
+	return kn.remove_edge(BOARDS.get(board), frm, to, by=_who(agent, by))
 
 
 @tool

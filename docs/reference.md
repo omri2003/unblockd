@@ -495,8 +495,13 @@ start here for a read-only queue; `agent=`, `tag=`), `list_tickets` (`fields=`, 
 `2 problems: invalid done_when[1]: 251 chars, max 200; invalid priority: one of P0, P1, P2, P3 or null (limits: board_info)`; the input
 is never echoed back. `board_info` returns those numbers as `limits` (`fields`: {items, chars} per field, plus `note_kinds`,
 `question_chars`, `summary_chars`, `handoff_chars`, `notes_per_ticket`). `update_ticket`'s argument is `changes` (an object);
-`create_ticket` requires `agent`; `add_note` takes `kind="progress"` as a plain note. `get_ticket` (and REST `GET tickets/<id>`,
+`create_ticket` requires a name; `add_note` takes `kind="progress"` as a plain note. `get_ticket` (and REST `GET tickets/<id>`,
 CLI `get`) adds `blockers`: each `blocked_by` id with its `effective_status` (`missing` = no such ticket) and title.
+
+**Who is acting: `agent` or `by`.** Every tool that names an actor accepts both names (worker tools document `agent`, the human side
+`answer`, `approve_ticket`, `reject`, `accept_ticket` documents `by`); `agent` wins when both are given, and a call with neither is refused
+with "say who is acting". So `approve_ticket(id, agent="Omri")` works like `approve_ticket(id, by="Omri")`. (`agent` on `next_ready` /
+`list_tickets` is a filter, not an actor.)
 
 ### Checking a real client
 

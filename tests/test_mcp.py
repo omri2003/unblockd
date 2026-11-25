@@ -280,7 +280,7 @@ class WorkLoopTest(unittest.TestCase):
 		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
 		m.BOARDS = m.bd.from_env()
 		tool = {t.name: t for t in asyncio.run(m.mcp.list_tools())}["create_tickets"]
-		self.assertEqual(set(tool.input_schema["required"]), {"tickets", "agent"})
+		self.assertEqual(set(tool.input_schema["required"]), {"tickets"})  # the name: agent or by, checked by _who (API-17)
 		out = m.create_tickets([{"prefix": "A", "title": "a"}, {"prefix": "A", "title": "b", "blocked_by": ["#1"]}], agent="planner")
 		self.assertEqual(out["ids"], {"#1": "A-1", "#2": "A-2"})
 		self.assertEqual(m.BOARDS.get(None).get("A-2")["blocked_by"], ["A-1"])
@@ -358,6 +358,86 @@ class WorkLoopTest(unittest.TestCase):
 
 
 @unittest.skipIf(mcp is None, "mcp not installed")
+class ActorNameTest(unittest.TestCase):
+	"""API-17: every tool that names who is acting takes `agent` and `by`; agent wins; neither is refused."""
+	ACTORS = {"create_ticket", "create_tickets", "accept_ticket", "update_ticket", "update_tickets", "split_ticket", "delete_ticket", "claim_next", "claim_ticket",
+	          "heartbeat", "ask_human", "add_note", "answer", "approve_ticket", "reject", "report_ticket", "release", "complete", "arch_add_component",
+	          "arch_update_component", "arch_delete_component", "arch_set_edge", "arch_remove_edge"}
+
+	def setUp(self):
+		from unblockd import mcp_server as m
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		d = Path(self.tmp.name) / "tickets"
+		d.mkdir()
+		(d / "unblockd.json").write_text(json.dumps({"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}],
+			"default_owner": "Claude", "review": True, "agent_tickets": "propose"}), encoding="utf-8")
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.Boards(dirs=[str(d)])
+		self.m = m
+
+	def test_every_actor_tool_takes_both_names(self):
+		tools = {t.name: t.input_schema for t in asyncio.run(self.m.mcp.list_tools())}
+		self.assertEqual({n for n, sc in tools.items() if "by" in sc["properties"]}, self.ACTORS)
+		for n in self.ACTORS:
+			sc = tools[n]
+			self.assertIn("agent", sc["properties"], n)
+			self.assertFalse({"agent", "by"} & set(sc.get("required", [])), n)  # one of the two, checked by _who
+		for n, arg in (("add_note", "text"), ("answer", "text"), ("reject", "reason"), ("complete", "summary"), ("report_ticket", "summary"), ("ask_human", "question")):
+			self.assertIn(arg, tools[n]["required"], n)  # defaulted in Python only because it follows the optional name
+
+	def test_each_tool_accepts_the_other_name(self):
+		from mcp.server.mcpserver.exceptions import ToolError
+		m, s = self.m, self.m.BOARDS.get(None)
+		# planner side: worker tools called with by=, human tools with agent=
+		a = m.create_ticket("a", by="planner", prefix="B")["id"]
+		self.assertEqual(s.get(a)["proposed_by"], "planner")
+		m.accept_ticket(a, agent="Omri")
+		b, c = m.create_tickets([{"prefix": "B", "title": "b"}, {"prefix": "B", "title": "c"}], by="planner")["ids"].values()
+		for x in (b, c):
+			m.accept_ticket(x, by="Omri")
+		self.assertEqual(m.claim_ticket(a, by="w-1")["claim"]["agent"], "w-1")
+		self.assertTrue(m.heartbeat(a, by="w-1", note="on it")["ok"])
+		m.add_note(a, by="w-1", text="found it")
+		self.assertEqual(s.get(a)["notes"][-1]["by"], "w-1")
+		m.add_note(a, agent="w-1", by="someone-else", text="agent wins")
+		self.assertEqual(s.get(a)["notes"][-1]["by"], "w-1")
+		m.update_ticket(a, {"priority": "P1"}, by="w-1")
+		m.update_tickets([{"id": a, "changes": {"priority": "P2"}}], by="w-1")
+		self.assertEqual(s.get(a)["priority"], "P2")
+		self.assertEqual(m.complete(a, by="w-1", summary="did it")["status"], "review")
+		m.reject(a, agent="Omri", reason="redo")
+		self.assertEqual(s.get(a)["notes"][-1]["by"], "Omri")
+		got = m.claim_next(by="w-1")
+		self.assertEqual(got["claim"]["agent"], "w-1")
+		m.ask_human(got["id"], by="w-1", question="which way?")
+		m.answer(got["id"], agent="Omri", text="left")
+		self.assertEqual(s.get(got["id"])["waiting_on"], "")
+		m.claim_ticket(got["id"], by="w-1")
+		m.complete(got["id"], by="w-1", summary="done")
+		m.approve_ticket(got["id"], agent="Omri")
+		self.assertEqual(s.get(got["id"])["result"]["approved_by"], "Omri")
+		other = next(x for x in (a, b, c) if s.get(x)["status"] == "todo" and x != got["id"])
+		m.claim_ticket(other, by="w-2")
+		m.release(other, by="w-2", reason="no time")
+		self.assertIsNone(s.get(other)["claim"])
+		kids = m.split_ticket(other, titles=["x", "y"], by="planner")["children"]
+		m.delete_ticket(kids[-1]["id"], by="planner")
+		self.assertEqual(len(s.get(other)["blocked_by"]), 2)  # the parent still names the deleted child: only the file went
+		m.arch_add_component("web", "Web", by="planner")
+		m.arch_add_component("store", "Store", by="planner")
+		m.arch_update_component("web", by="planner", summary="the board")
+		self.assertEqual(m.arch_set_edge("web", "store", "tickets as JSON", by="planner")["edges"][0]["text"], "tickets as JSON")
+		self.assertEqual(m.arch_remove_edge("web", "store", by="planner")["edges"], [])
+		m.arch_delete_component("web", by="planner")
+		self.assertEqual([e["agent"] for e in s.activity(limit=6) if e["event"] == "arch"][:1], ["planner"])
+		with self.assertRaisesRegex(ToolError, "say who is acting"):
+			m.add_note(a, text="nobody")
+		with self.assertRaisesRegex(ToolError, "say who is acting"):
+			m.approve_ticket(a)
+
+
+@unittest.skipIf(mcp is None, "mcp not installed")
 class HttpServerTest(unittest.TestCase):
 	"""`python -m unblockd.mcp_server --http` in a subprocess against a temp copy of example/, called with the SDK's HTTP client."""
 
@@ -408,7 +488,7 @@ class HttpServerTest(unittest.TestCase):
 		for n in ("arch_set_edge", "arch_add_component", "architecture_map", "claim_next", "board_info", "accept_ticket", "approve_ticket", "create_tickets"):
 			self.assertIn(n, tools)
 		self.assertIn("components", tools["create_ticket"].input_schema["properties"])
-		self.assertIn("agent", tools["create_ticket"].input_schema["required"])  # the proposal gate's identity, same tool as over stdio
+		self.assertLessEqual({"agent", "by"}, set(tools["create_ticket"].input_schema["properties"]))  # the proposal gate's identity (either name, API-17), same tool as over stdio
 		self.assertEqual(self.call(url, "list_boards", {})["id"], "example")  # one board -> one content block
 		info = self.call(url, "board_info", {"board": "example"})
 		self.assertTrue(info["components"] and {"key", "title"} <= set(info["components"][0]))

@@ -245,5 +245,7 @@ class McpTest(unittest.TestCase):
 	def test_create_ticket_requires_agent_and_accept_exists(self):
 		from unblockd import mcp_server as m
 		tools = {t.name: t for t in asyncio.run(m.mcp.list_tools())}
-		self.assertIn("agent", tools["create_ticket"].input_schema["required"])
+		self.assertLessEqual({"agent", "by"}, set(tools["create_ticket"].input_schema["properties"]))  # either name (API-17)
 		self.assertIn("accept_ticket", tools)
+		with self.assertRaisesRegex(Exception, "say who is acting"):  # no name = refused, so an anonymous ticket never skips the gate
+			m.create_ticket("anon")
