@@ -153,13 +153,14 @@ SUMMARY_KEYS = ("id", "title", "effective_status", "priority", "owner", "pillar"
 # what `fields` may add to a row: every stored field and the derived ones. body and notes are the big ones: a row has them only when
 # they are named, so a planner gets touches / done_when / parent of the whole board for a fraction of full=true's tokens
 LIST_FIELDS = tuple(FIELDS) + ("created", "updated", "children", "progress", "blocks", "unblocks", "missing_blockers", "score",
-                               "stale_days", "claim", "files", "branches")
+                               "stale_days", "claim", "files", "branches", "holder")  # holder = the live claim's agent (or null)
 
 
-def list_fields(fields) -> list[str]:
-	"""`fields` as a list (a comma string is split: REST / CLI), each one checked against LIST_FIELDS."""
+def list_fields(fields, matched: bool = False) -> list[str]:
+	"""`fields` as a list (a comma string is split: REST / CLI), each one checked against LIST_FIELDS. matched = the list was filtered
+	by touches / component: rows then also carry touches and holder, what "who works on this file?" asks next (CORE-52)."""
 	if fields is None:
-		return []
+		fields = []
 	if isinstance(fields, str):
 		fields = fields.split(",")
 	if not isinstance(fields, (list, tuple)) or not all(isinstance(f, str) for f in fields):
@@ -168,12 +169,12 @@ def list_fields(fields) -> list[str]:
 	bad = [f for f in out if f not in LIST_FIELDS]
 	if bad:
 		raise TicketError(f"unknown field(s) {', '.join(bad)} in fields: one of {', '.join(LIST_FIELDS)}")
-	return list(dict.fromkeys(out))
+	return list(dict.fromkeys(out + (["touches", "holder"] if matched else [])))
 
 
 def summarize(t: dict, fields=()) -> dict:
 	"""A list row: SUMMARY_KEYS plus the asked `fields` (already checked by list_fields)."""
-	return {k: t.get(k) for k in (*SUMMARY_KEYS, *fields)}
+	return {k: (t.get("claim") or {}).get("agent") if k == "holder" else t.get(k) for k in (*SUMMARY_KEYS, *fields)}
 
 # The limits of the FIELDS validators above, in numbers: what an error names and what board_info returns as `limits`, so an agent can
 # check before it writes. Keep them equal to the validators (tests/test_tool_docs.py checks each one at its edge).
@@ -905,10 +906,12 @@ class Store:
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
 	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None,
-	         limit: int | None = None) -> list[dict]:
+	         limit: int | None = None, touches: str | None = None, component: str | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none.
 		board = a _board() the caller already read in this locked step (claim), so it is not read again.
-		limit = at most that many (after the filters, in id order)."""
+		touches = a path or glob: tickets whose `touches` overlap it by the claim rule (_overlap: same path, one inside the other, a glob
+		match), so "who works on store.py?" is not a substring search. component = an architecture key: tickets that name it in
+		`components` or whose touches fall in its note's paths (the Map's rule). limit = at most that many (after the filters, in id order)."""
 		if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 0):
 			raise TicketError(f"limit must be a whole number >= 0, not {limit!r}")
 		res = list((self._board() if board is None else board).values())  # cached: filter first, copy what is returned
@@ -929,6 +932,14 @@ class Store:
 			res = [t for t in res if t["parent"] == parent]
 		if milestone:
 			res = [t for t in res if t["milestone"] == (None if milestone == "-" else milestone)]
+		if touches is not None:
+			if not (isinstance(touches, str) and touches.strip()):
+				raise TicketError("touches must be a path or glob, e.g. unblockd/store.py or static/*")
+			res = [t for t in res if any(_overlap(touches.strip(), x) for x in t.get("touches", []))]
+		if component:
+			from .knowledge import components, ticket_components  # lazy: knowledge imports this module
+			arch = components(self)
+			res = [t for t in res if component in t.get("components", []) or component in ticket_components(t, arch)]
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]

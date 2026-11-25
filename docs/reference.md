@@ -371,7 +371,7 @@ Every ticket comes back with derived fields: `effective_status`,
 `missing_blockers`, `stale_days`, `agent` and `score` = priority weight
 (P0 8, P1 4, P2 2, P3 1) x (1 + `unblocks`).
 
-**Lists for planners** (AI-47): `list_tickets` (MCP) returns short rows (`id`, `title`, `effective_status`, `priority`, `owner`, `pillar`, `milestone`, `tags`, `agent`, `open_blockers`); `fields=["touches", "parent", "done_when"]` adds exactly those keys per row (any ticket field or derived one: `claim`, `children`, `unblocks`...; an unknown name is refused listing them), so `body` and `notes`, the big ones, come only when named. That is what a planner needs to check overlap, at a fraction of `full=true` (every body and every note). `limit=N` = at most N rows (in id order, after the filters). REST `GET tickets?fields=touches,parent&limit=20` (without `fields` the rows are whole tickets, as the UI reads them), CLI `list --fields touches,parent --limit 20`, `Remote.list(limit=)`.
+**Lists for planners** (AI-47): `list_tickets` (MCP) returns short rows (`id`, `title`, `effective_status`, `priority`, `owner`, `pillar`, `milestone`, `tags`, `agent`, `open_blockers`); `fields=["touches", "parent", "done_when"]` adds exactly those keys per row (any ticket field or derived one: `claim`, `children`, `unblocks`...; an unknown name is refused listing them), so `body` and `notes`, the big ones, come only when named. That is what a planner needs to check overlap, at a fraction of `full=true` (every body and every note). `limit=N` = at most N rows (in id order, after the filters). **Who works on this file?** (CORE-52): `touches="unblockd/store.py"` (a path or glob) keeps the tickets whose `touches` overlap it by the same rule claims use (same path, one folder inside the other, a glob match), not a text search (`q=store.py` also hits every ticket that merely mentions it); `component=KEY` keeps the tickets that name that architecture component or touch its paths (the Map's rule). With either, each row also carries `touches` and `holder` (the agent holding a live claim, or null). REST `GET tickets?fields=touches,parent&limit=20&touches=static/*&component=web` (without `fields`, `touches` or `component` the rows are whole tickets, as the UI reads them), CLI `list --fields touches,parent --limit 20 --touches PATH --component KEY`, `Remote.list(...)` with the same keys.
 
 **Batch create** (a plan in one step): `create_tickets(tickets, agent)` (MCP), `create-many --file PATH|-` (CLI, a JSON array), `POST tickets/batch` (REST, `Remote.create_many`). Each item is what `create_ticket` takes (prefix or id, title, fields). In `blocked_by` and `parent` an item may name an existing id or `"#N"` = the Nth item of the same list (1-based), so the tickets of a plan can wait on each other before they have ids; forward refs are fine, loops are refused and spelled out. It runs under one lock and is all or nothing: one bad item refuses the whole batch with every problem named by item (`#2: title is required | #4: no ticket NOPE-1 on this board`) and nothing is written. The schema and the proposal gate apply to each item exactly as for `create_ticket`. At most 50 per call. The reply: `tickets`, `ids` (`{"#1": "API-7", ...}`) and, for a human whose items break the schema, `warnings` by item. One `created` event per ticket (plus `proposed` on a gated board).
 
@@ -482,7 +482,7 @@ Workers: the protocol is the file `unblockd/WORK_LOOP.md` (shipped in the packag
 
 Tools: `list_boards`, `create_board`, `board_info` (owners, pillars, agent
 profiles, unblockd's `version`; the server's initialize reply carries it too), `work_plan` (orchestrators start here), `next_ready` (single agents
-start here for a read-only queue; `agent=`, `tag=`), `list_tickets` (`fields=`, `limit=`: see Tickets), `get_ticket`, `create_ticket` (needs `agent`), `create_tickets` (a plan in one call, see Tickets), `accept_ticket`, `approve_ticket` (the human side of review: done + who approved),
+start here for a read-only queue; `agent=`, `tag=`), `list_tickets` (`fields=`, `limit=`, `touches=`, `component=`: see Tickets), `get_ticket`, `create_ticket` (needs `agent`), `create_tickets` (a plan in one call, see Tickets), `accept_ticket`, `approve_ticket` (the human side of review: done + who approved),
 `update_ticket`, `split_ticket`, `delete_ticket`; for workers `claim_next`, `claim_ticket`,
 `heartbeat`, `release`, `ask_human`, `complete`, `agents_now`; for knowledge `get_context`,
 `knowledge_graph`, `architecture_map`, `read_doc`, `attach_file`, `detach_file`; to edit the architecture `arch_add_component`, `arch_update_component`, `arch_delete_component`, `arch_set_edge`, `arch_remove_edge` (each takes `agent`; they rewrite only the managed parts of the notes, see Architecture; there is no CLI command for them). Every tool takes `board=`
@@ -518,6 +518,7 @@ python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets agents-md [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md (see Connect the MCP server)
 python -m unblockd.cli --dir <repo>/tickets list --fields touches,parent,done_when --limit 50   # extra keys per row; body / notes only when named
+python -m unblockd.cli --dir <repo>/tickets list --touches unblockd/store.py   # tickets whose touches overlap it (the claim rule), with touches + holder
 python -m unblockd.cli --dir <repo>/tickets get BUG-10
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --json '{"priority":"P1"}' --component api --component store --skill pytest-runner --mcp postgres   # names from the board's registry
 python -m unblockd.cli --dir <repo>/tickets create --prefix BUG --title "..." --agent backend-1   # as a worker: strict schema, may park as a proposal
@@ -564,7 +565,8 @@ POST   /api/boards                    {"id": "my-game", "title": "My game", "roo
                                       in a container a root that is not a mounted volume is refused (the board would vanish with the container)
 # per board under /api/b/<board>/ ; without the prefix = the default board
 GET    meta                           statuses, priorities, fields, config, version, storage {per_file_ms, passes, slow} (files boards; null on a database board)
-GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&parent=&milestone=&q=&limit=&fields=   fields=a,b: summary rows with those keys only (else whole tickets)
+GET    tickets?status=&pillar=&owner=&priority=&tag=&agent=&parent=&milestone=&q=&limit=&fields=&touches=&component=
+                                      fields=a,b: summary rows with those keys only; touches= (overlap rule) / component= add touches + holder; none of the three = whole tickets
 GET    next?owner=&pillar=&agent=&tag=&limit=
 GET    plan?per_agent=
 GET    agents                         who is working what now + recent activity

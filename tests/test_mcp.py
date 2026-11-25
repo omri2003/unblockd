@@ -314,6 +314,19 @@ class WorkLoopTest(unittest.TestCase):
 			m.list_tickets(limit=-1)
 		self.assertIn('fields=["touches", "parent", "done_when"]', str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "g", "path": "s.md"}))))
 
+	def test_list_tickets_by_touches_shows_the_holder(self):
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		s = m.BOARDS.get(None)
+		s.create({"title": "a", "touches": ["src/"]}, tid="B-1")
+		s.create({"title": "b src/x.py", "touches": ["docs/"]}, tid="B-2")
+		s.claim("w-1", tid="B-1")
+		rows = m.list_tickets(touches="src/x.py")
+		self.assertEqual([(r["id"], r["holder"], r["touches"]) for r in rows], [("B-1", "w-1", ["src/"])])
+		self.assertNotIn("holder", m.list_tickets()[0])
+		self.assertIn('touches="<path or glob>"', str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "g", "path": "s.md"}))))
+
 
 @unittest.skipIf(mcp is None, "mcp not installed")
 class HttpServerTest(unittest.TestCase):

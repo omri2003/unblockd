@@ -252,16 +252,20 @@ def next_ready(board: str | None = None, owner: str | None = None, pillar: str |
 def list_tickets(board: str | None = None, status: str | None = None, pillar: str | None = None,
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
                  agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None,
-                 fields: list[str] | None = None, limit: int | None = None, full: bool = False) -> list[dict]:
+                 touches: str | None = None, component: str | None = None, fields: list[str] | None = None, limit: int | None = None,
+                 full: bool = False) -> list[dict]:
 	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
 	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts),
-	milestone (a key from board_info's milestones; "-" = tickets with none), q (words to search).
+	milestone (a key from board_info's milestones; "-" = tickets with none), q (words to search: it matches anywhere in the ticket),
+	touches = a path or glob: tickets whose `touches` overlap it by the claim rule (same file, one folder inside the other, a glob match),
+	component = an architecture key (board_info's components): tickets that name it or touch its paths. With touches / component each
+	row also has `touches` and `holder` (the agent holding a live claim, or null): "who works on this file?" in one call.
 	Returns short summaries (id, title, effective_status, priority, owner, pillar, milestone, tags, agent, open_blockers).
 	fields = extra keys per row, only those: e.g. ["touches", "parent", "done_when"] to plan, ["claim"] for who holds it; body and notes
 	only when you name them. Prefer fields to full=true (every body and every note on the board). limit = at most that many rows."""
-	keep = st.list_fields(fields)
+	keep = st.list_fields(fields, matched=bool(touches or component))
 	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent,
-	                             milestone=milestone, limit=limit)
+	                             milestone=milestone, limit=limit, touches=touches, component=component)
 	return res if full else [st.summarize(t, keep) for t in res]
 
 

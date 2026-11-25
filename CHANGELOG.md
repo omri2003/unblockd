@@ -4,6 +4,7 @@
 
 ### Added
 - `list_tickets(fields=[...], limit=)` adds only the asked keys per row (body and notes only when named), so a planner checks overlap without `full=true`; REST `GET tickets?fields=&limit=`, CLI `list --fields --limit`.
+- `list_tickets(touches=PATH)` finds the tickets whose `touches` overlap a path or glob by the claim rule (not a text search), `component=KEY` those on an architecture component; rows show `touches` and `holder`. REST `?touches=&component=`, CLI `--touches --component`.
 
 ## v0.2.0 (2026-11-22)
 

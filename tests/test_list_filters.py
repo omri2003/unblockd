@@ -1,4 +1,5 @@
-"""Planner lists: list(fields=, limit=) rows with only the asked keys (AI-47), on the Store, REST, CLI and Remote."""
+"""Planner lists: list(fields=, limit=) rows with only the asked keys (AI-47) and touches= / component= by the claim overlap rule
+(CORE-52), on the Store, REST, CLI and Remote."""
 import contextlib
 import io
 import json
@@ -79,6 +80,69 @@ class ListFieldsTest(unittest.TestCase):
 		self.assertEqual(self.cli("list", "--fields", "colour")[0], 1)
 		r = cli.Remote(self.base)
 		self.assertEqual([t["id"] for t in r.list(limit=1)], ["A-1"])
+
+
+class TouchesFilterTest(unittest.TestCase):
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		root = Path(self.tmp.name) / "p"
+		d = root / "tickets"
+		d.mkdir(parents=True)
+		(root / "docs" / "arch").mkdir(parents=True)
+		(root / "docs" / "arch" / "store.md").write_text("---\npaths: unblockd/store.py\n---\n# Store\n", encoding="utf-8")
+		(root / "docs" / "arch" / "web.md").write_text("---\npaths: static/**\n---\n# Web\n", encoding="utf-8")
+		(d / "unblockd.json").write_text("{}", encoding="utf-8")
+		self.s = Store(d)
+		self.s.create({"title": "exact", "touches": ["unblockd/store.py"]}, tid="A-1")
+		self.s.create({"title": "folder", "touches": ["unblockd/"]}, tid="A-2")
+		self.s.create({"title": "glob", "touches": ["unblockd/*.py"]}, tid="A-3")
+		self.s.create({"title": "mentions unblockd/store.py in its body only", "body": "see unblockd/store.py", "touches": ["static/index.html"]}, tid="A-4")
+		self.s.create({"title": "named component", "components": ["web"]}, tid="A-5")
+		from unblockd import web
+		web.BOARDS = Boards([self.tmp.name])
+		self.srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+		threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+		self.base = f"http://127.0.0.1:{self.srv.server_port}"
+
+	def tearDown(self):
+		self.srv.shutdown()
+		self.srv.server_close()
+		self.tmp.cleanup()
+
+	def ids(self, **kw):
+		return [t["id"] for t in self.s.list(**kw)]
+
+	def test_overlap_rule_not_substring(self):
+		self.assertEqual(self.ids(touches="unblockd/store.py"), ["A-1", "A-2", "A-3"])
+		self.assertEqual(self.ids(q="unblockd/store.py"), ["A-1", "A-4"])  # what q= used to give a planner
+		self.assertEqual(self.ids(touches="unblockd/web.py"), ["A-2", "A-3"])
+		self.assertEqual(self.ids(touches="static/*"), ["A-4"])
+		self.assertEqual(self.ids(touches="nothing/here.py"), [])
+		with self.assertRaisesRegex(TicketError, "touches must be"):
+			self.s.list(touches=" ")
+
+	def test_component_explicit_or_by_paths(self):
+		self.assertEqual(self.ids(component="web"), ["A-4", "A-5"])
+		self.assertEqual(self.ids(component="store"), ["A-1", "A-2", "A-3"])  # the folder unblockd/ holds the note's path: it overlaps
+		self.assertEqual(self.ids(component="ghost"), [])
+
+	def test_rows_carry_touches_and_holder_on_every_front_door(self):
+		self.s.claim("w-1", tid="A-3")
+		rows = {r["id"]: r for r in [st.summarize(t, st.list_fields(None, matched=True)) for t in self.s.list(touches="unblockd/store.py")]}
+		self.assertEqual((rows["A-3"]["holder"], rows["A-1"]["holder"], rows["A-3"]["touches"]), ("w-1", None, ["unblockd/*.py"]))
+		with urllib.request.urlopen(self.base + "/api/tickets?touches=unblockd/store.py") as r:
+			rest = json.loads(r.read())
+		self.assertEqual([(x["id"], x["holder"]) for x in rest], [("A-1", None), ("A-2", None), ("A-3", "w-1")])
+		self.assertNotIn("body", rest[0])
+		with urllib.request.urlopen(self.base + "/api/tickets?component=web") as r:
+			self.assertEqual([x["id"] for x in json.loads(r.read())], ["A-4", "A-5"])
+		out = io.StringIO()
+		with contextlib.redirect_stdout(out):
+			self.assertEqual(cli.main(["--dir", str(self.s.dir), "list", "--touches", "unblockd/*"]), 0)
+		self.assertEqual([(x["id"], x["holder"], x["touches"]) for x in json.loads(out.getvalue())],
+		                 [("A-1", None, ["unblockd/store.py"]), ("A-2", None, ["unblockd/"]), ("A-3", "w-1", ["unblockd/*.py"])])
+		r = cli.Remote(self.base)
+		self.assertEqual([t["id"] for t in r.list(touches="static", component="web")], ["A-4"])
 
 
 if __name__ == "__main__":
