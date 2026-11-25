@@ -138,7 +138,7 @@ class Remote:
 		except (TimeoutError, ConnectionError) as e:  # the server went away mid-reply, or hangs
 			raise self.down(e)
 
-	def list(self, **f): return self._call("GET", "/tickets", **f)
+	def list(self, **f): return self._call("GET", "/tickets", **{**f, **({"ids": ",".join(f["ids"])} if isinstance(f.get("ids"), (list, tuple)) else {})})
 	def next_ready(self, **f): return self._call("GET", "/next", **f)
 	def roadmap(self): return self._call("GET", "/roadmap")
 	def work_plan(self, per_agent=3): return self._call("GET", "/plan", per_agent=per_agent)
@@ -200,7 +200,8 @@ def main(argv: list[str] | None = None) -> int:
 	ls = sub.add_parser("list")
 	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
 		ls.add_argument(f"--{f}")
-	ls.add_argument("-q")
+	ls.add_argument("-q", help="words that must ALL appear in one ticket")
+	ls.add_argument("--ids", help="exactly these tickets, comma or space separated (API-23)")
 	ls.add_argument("--touches", help="a path or glob: tickets whose touches overlap it (the claim rule); rows add touches + holder")
 	ls.add_argument("--component", help="an architecture component key: tickets that name it or touch its paths")
 	ls.add_argument("--fields", help="extra keys per row, comma list (e.g. touches,parent,done_when); body and notes only when named")
@@ -351,7 +352,10 @@ def main(argv: list[str] | None = None) -> int:
 		if a.cmd == "list":
 			keep = st.list_fields(a.fields, matched=bool(a.touches or a.component))
 			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone,
-			             limit=a.limit, touches=a.touches, component=a.component)
+			             limit=a.limit, touches=a.touches, component=a.component, ids=a.ids)
+			if a.q and not res:
+				others = any(x not in (None, "") for x in (a.status, a.pillar, a.owner, a.priority, a.tag, a.agent, a.parent, a.milestone, a.touches, a.component, a.ids))
+				print(f"hint: {st.q_hint(a.q, others)}", file=sys.stderr)  # stdout stays the JSON list
 			out = [st.summarize(t, keep) for t in res]
 		elif a.cmd == "next":
 			out = [{**{k: t.get(k) for k in ("id", "title", "priority", "owner", "pillar", "agent")}, "score": t["score"], "unblocks": t["unblocks"]}

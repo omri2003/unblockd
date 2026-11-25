@@ -101,7 +101,7 @@ def _num(q: dict, key: str, default: int) -> int:
 # too); what an idle poll still costs is the board read (files: the stat pass; databases: the version query).
 _BODY: dict[str, tuple] = {}  # board key -> (board signature, body bytes, ETag)
 _NEEDS: dict = {}  # requested board (None = every board) -> (key, body, ETag) of the last /api/needs for it; entries replaced whole
-TICKET_FILTERS = ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent", "milestone")
+TICKET_FILTERS = ("status", "pillar", "owner", "priority", "q", "tag", "agent", "parent", "milestone", "ids")  # ids=A-1,B-2 (API-23)
 
 
 def _etag(data: bytes) -> str:

@@ -7,9 +7,11 @@
 - `split_ticket(parts=[...])`: parts with their own `done_when`, `touches`, `body`, `components` and `"#N"` blockers, validated all or nothing; `claim=k` takes part #k in the same call. `titles` still works. REST `parts` / `claim`, CLI `split --parts FILE --claim K`.
 - `update_tickets` changes several tickets in one all-or-nothing call (MCP, REST `PATCH tickets`, CLI `update-many`); the board's bulk bar sends one request (and one for Undo), and a refused bulk edit changes nothing.
 - `list_tickets(touches=PATH)` finds the tickets whose `touches` overlap a path or glob by the claim rule (not a text search), `component=KEY` those on an architecture component; rows show `touches` and `holder`. REST `?touches=&component=`, CLI `--touches --component`.
+- `list_tickets(ids=[...])` (REST `?ids=`, CLI `list --ids`) returns exactly those tickets; a `q` that matches nothing says every word must match, and points at `ids=` for a pasted list of ids (API-23).
 
 ### Changed
 - Big boards write fast: a write re-derives only the tickets it reaches instead of the whole board, and a files board reads its folder once per locked step. At 20,000 tickets a write holds the board lock 2-80 ms instead of 0.4-0.9 s, so 200 agents at once no longer give up waiting for it.
+- `ask_human` works on an unclaimed todo ticket: no claim (and no context) needed just to ask; a ticket someone else holds is still refused. A `release` whose reason names a person or a decision hints at `ask_human` (AI-56).
 
 ### Fixed
 - Files board on Windows: a write no longer fails with `PermissionError` when another agent or program is reading the same file at that moment; it retries for up to 5 s, then says which file is held open (CORE-86).
