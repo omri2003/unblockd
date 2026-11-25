@@ -251,6 +251,12 @@ Each found by hand on slow Docker board (CORE-58); mechanics in "The cache" abov
 - Keep LF line endings: worktree `core.autocrlf false`, `git diff --stat` must equal `git diff --ignore-cr-at-eol --stat` (CRLF flip made 52-line PR #82 show 2,500 lines).
 - Claim before you start, even in your own worktree; pass `--branch` / `UNBLOCKD_BRANCH` so touches overlapping claim on another branch warn, not refuse (CORE-80).
 
+## Filing new ideas
+
+- Before a new idea (feature, redesign, process change) becomes a ticket, a SEPARATE agent (never the proposer) reviews it: steelman (strongest case), premortem (how it fails), overlap (search existing titles, bodies, notes). Ticket body records outcome in 2-3 lines (DOCS-24).
+- Skip: bugs and owner-requested chores, filed as stated.
+- Why: 2026-11-20..22 review caught duplicates (DOCS-14, UI-76), made UI-85 a recommendation not a push, swapped UI-84's overlay tour for a guided flow, made CORE-88 warn-first.
+
 ## Not built yet (ideas, in rough priority)
 
 1. Shared chat between people: needs server-side threads + some identity (there's no auth).
