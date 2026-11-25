@@ -139,11 +139,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   prefix, parent, pillar, owner, tags, touches, docs and components, body `Rest of <id>.`, waiting on `blocked_by`, so it becomes
   ready by itself when they are done. The reply's `followup` names it; `result.followup` keeps its id. A `release` whose reason names
   another ticket id answers with a `hint` pointing at this.
-- **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (whole text,
+- **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (same caps,
   flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
   numbers as `result.unread` for the reviewer.
-- **Notes reach the holder**: a `heartbeat` reply (MCP, REST, CLI) carries `inbox` {count, notes: [{ticket, n, by, kind, at, text}]} when
-  someone else added notes to a ticket the worker holds since it was last shown them (first line each; `get_ticket` has the rest). To ask
+- **Notes reach the holder**: a `heartbeat` reply (MCP, REST, CLI) carries `inbox` {count, notes: [{ticket, n, by, kind, at, text, reply_to?, truncated?}], truncated?} when
+  someone else added notes to a ticket the worker holds since it was last shown them (the last 10; each note's whole text up to 2000 chars, 6000 for all of
+  them, the newest first served; a cut note has `truncated: true` and only then does the worker need `get_ticket`, AI-44). To ask
   another worker for a change in a file its ticket touches, `add_note` on THAT ticket: its holder sees it within one heartbeat.
 - **Too big? Split it** instead of half-doing it: `split_ticket(id, titles, sequential?)`
   (REST `POST tickets/<id>/split`, CLI `split`, drawer menu *Split…*) makes one child per

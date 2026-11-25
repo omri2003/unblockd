@@ -76,6 +76,7 @@ PINNED_KINDS = ("decision", "finding", "warning", "answer", "approved", "rejecte
 NOTES_SHORT = 3000  # chars of note text a claim sends whole; past it: every pinned note + the last NOTES_TAIL others
 NOTES_TAIL = 5
 QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
+INBOX_NOTES, INBOX_NOTE_MAX, INBOX_MAX = 10, 2000, 6000  # inbox: notes shown, chars per note, chars in all (AI-44)
 LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is left
 REQUESTS_MAX = 500  # request_ids remembered per board (runtime doc `requests`), oldest dropped first (CORE-74)
 REQUEST_RE = re.compile(r"^[\w.:-]{1,100}$")
@@ -1658,8 +1659,10 @@ class Store:
 
 	def inbox(self, agent: str, mark: bool = False) -> dict | None:
 		"""Notes others left on the tickets `agent` holds that it has not been shown yet: {count, notes: [{ticket, n, by, kind, at,
-		text: first line}]} (oldest first, the last 10), or None. A note on a ticket you hold used to wait until you re-read the ticket,
-		so a "please add these 3 lines to your file" request took a human 3 hops. Seen = the claim's `seen` (note count when last shown;
+		text, reply_to?, truncated?}], truncated?} (oldest first, the last INBOX_NOTES), or None. A note on a ticket you hold used to wait
+		until you re-read the ticket, so a "please add these 3 lines to your file" request took a human 3 hops. Each note's whole text
+		comes along up to INBOX_NOTE_MAX chars, all of them up to INBOX_MAX (the newest get the room first); a note cut short has
+		`truncated: true` (and so has the inbox): only then is get_ticket needed. Seen = the claim's `seen` (note count when last shown;
 		a claim older than that field: notes newer than claimed_at). mark=True (the heartbeat front doors) records what was shown, so each note comes
 		once. Its own mark, not heartbeat_at: the worker's own add_note renews the lease but has not read anyone's note."""
 		mine = {tid: c for tid, c in self._live_claims().items() if c["agent"] == agent}
@@ -1667,7 +1670,7 @@ class Store:
 		for tid, c in mine.items():
 			notes = self.get(tid).get("notes", [])
 			seen[tid] = len(notes)
-			out += [{**n, "text": n["text"].splitlines()[0][:200] if n["text"] else ""} for n in self._unseen(tid, notes, c, agent)]
+			out += self._unseen(tid, notes, c, agent)
 		if mark and mine:
 			def save():
 				claims = self._claims()
@@ -1676,23 +1679,38 @@ class Store:
 						claims[tid]["seen"] = k
 				self._save_claims(claims)
 			self._locked(save)
-		return {"count": len(out), "notes": out[-10:]} if out else None
+		return self._pack_inbox(out)
+
+	@staticmethod
+	def _pack_inbox(items: list[dict]) -> dict | None:
+		"""{count, notes, truncated?} from inbox items: the last INBOX_NOTES, each text cut at INBOX_NOTE_MAX, all of them at INBOX_MAX."""
+		if not items:
+			return None
+		keep, room, cut = items[-INBOX_NOTES:], INBOX_MAX, False
+		for it in reversed(keep):  # newest first: the latest request is the one to act on
+			cap = min(INBOX_NOTE_MAX, room)
+			if len(it["text"]) > cap:
+				it["text"], it["truncated"], cut = it["text"][:cap], True, True
+			room -= len(it["text"])
+		return {"count": len(items), "notes": keep, **({"truncated": True, "hint": "a note was cut short: get_ticket(id) shows it whole"} if cut else {})}
 
 	@staticmethod
 	def _unseen(tid: str, notes: list[dict], c: dict, agent: str) -> list[dict]:
-		"""Notes by others on tid that claim c has not been shown (its `seen` count; an older claim: notes after claimed_at), whole text."""
+		"""Notes by others on tid that claim c has not been shown (its `seen` count; an older claim: notes after claimed_at), whole text
+		(_pack_inbox caps it)."""
 		first, out = c.get("seen"), []
 		for i, n in enumerate(notes):
 			new = i >= first if isinstance(first, int) else _ts(n.get("at") or "1970-01-01T00:00:00+00:00") > _ts(c["claimed_at"])
 			if new and n.get("by") != agent:
 				out.append({"ticket": tid, "n": n.get("n", i + 1), "by": n.get("by"), "kind": n.get("kind"), "at": n.get("at"),
-				            "text": (n.get("text") or "").strip()[:2000]})
+				            "text": (n.get("text") or "").strip(), **({"reply_to": n["reply_to"]} if n.get("reply_to") else {})})
 		return out
 
 	def _with_unread(self, t: dict, late: list[dict], what: str) -> dict:
 		"""complete / release / ask reply plus `inbox` with the notes others left that the worker had not been shown when its claim
 		ended (a note between its last heartbeat and this call was otherwise never read), flagged unread_before_<what> (AI-50)."""
-		return {**t, "inbox": {"count": len(late), "notes": late[-10:], f"unread_before_{what}": True}} if late else t
+		box = self._pack_inbox(late)
+		return {**t, "inbox": {**box, f"unread_before_{what}": True}} if box else t
 
 	def late_notes(self, t: dict) -> list[dict]:
 		"""Notes that arrived after the work was finished, for the human who looks next (AI-50). A ticket in review: every note

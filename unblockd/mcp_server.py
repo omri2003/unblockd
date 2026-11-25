@@ -375,9 +375,10 @@ def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None,
 	least every few minutes. Pass the same principal you claimed with. until = UTC ISO time a long run (build, render, test suite)
 	ends: the claim then stays alive until that time without more heartbeats (capped at the board's lease_max_minutes; the reply's
 	expires_at says when it ends). Returns {ok, id, status, lease_left_s, expires_at} plus `inbox` {count, notes: [{ticket, n,
-	by, kind, text: first line}]} when someone left notes on a ticket you hold since your last heartbeat: read them (get_ticket) and act
-	on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold). complete, release and
-	ask_human replies carry `inbox` too (whole text, flagged unread_before_complete / _release / _ask) for notes that came after your
+	by, kind, at, text, reply_to?, truncated?}], truncated?} when someone left notes on a ticket you hold since your last heartbeat. Each
+	note's whole text is there (up to 2000 chars a note, 6000 in all): read it from the reply, and call get_ticket only if `truncated` is
+	set. Act on a request that is in your ticket's scope (e.g. another worker asking for a few lines in a file you hold). complete, release and
+	ask_human replies carry `inbox` too (same caps, flagged unread_before_complete / _release / _ask) for notes that came after your
 	last heartbeat: read them; a request you could not act on goes in an add_note or a new ticket."""
 	s = BOARDS.get(board)
 	box = s.inbox(agent, mark=True)
