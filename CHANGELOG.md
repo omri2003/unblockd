@@ -10,6 +10,7 @@
 
 ### Fixed
 - Files board on Windows: a write no longer fails with `PermissionError` when another agent or program is reading the same file at that moment; it retries for up to 5 s, then says which file is held open (CORE-86).
+- Files board on Windows: `unblockd.json` is written with LF line endings like the ticket files, so `migrate` back to a folder gives it byte for byte and saving tools in the Agents panel no longer turns a committed config CRLF (CORE-87).
 
 ## v0.2.0 (2026-11-22)
 

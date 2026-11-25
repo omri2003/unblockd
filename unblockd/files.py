@@ -105,7 +105,7 @@ class FileBackend:
 	def write_config(self, raw: dict) -> None:
 		p = self.dir / CONFIG_FILE
 		tmp = p.with_suffix(".tmp")
-		tmp.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+		tmp.write_text(json.dumps(raw, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")  # LF on every OS: a committed config must not turn CRLF (CORE-87)
 		replace(tmp, p)
 
 	# ---------- tickets ----------

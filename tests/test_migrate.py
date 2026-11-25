@@ -16,6 +16,7 @@ from unblockd.store import Store, TicketError
 CFG = {"title": "Payments", "owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}]}
 PG = os.environ.get("UNBLOCKD_TEST_PG")
 MONGO = os.environ.get("UNBLOCKD_TEST_MONGO_RS") or os.environ.get("UNBLOCKD_TEST_MONGO")
+CFG_BYTES = (json.dumps(CFG, indent=2, ensure_ascii=False) + "\n").encode()
 OLD = {"id": "OLD-1", "title": "written by an old unblockd", "status": "pending", "body": "the why\n\n— omri, 2026-01-02T03:04:05+00:00: a note in the body",
        "created": "2026-01-01", "updated": "2026-01-02"}  # no rev, notes inside the body, a stored `pending`
 
@@ -27,7 +28,7 @@ class MigrateTest(unittest.TestCase):
 		self.addCleanup(sql.disconnect)
 		self.src = self.tmp / "a" / "tickets"
 		self.src.mkdir(parents=True)
-		(self.src / "unblockd.json").write_text(json.dumps(CFG), encoding="utf-8")
+		(self.src / "unblockd.json").write_bytes(CFG_BYTES)  # unblockd's own format (what write_config writes), LF
 		s = Store(self.src)
 		a = s.create({"title": "parent", "body": "why it matters", "priority": "P1", "done_when": ["it works"]}, prefix="PAY")
 		s.add_note(a["id"], "Omri", "a human note", kind="decision")
@@ -59,7 +60,7 @@ class MigrateTest(unittest.TestCase):
 		back.mkdir(parents=True)
 		connectors.migrate(db, str(back))
 		self.assertEqual(self.files_of(back), self.files_of(self.src))  # byte for byte, the old-format file too
-		self.assertEqual(json.loads((back / "unblockd.json").read_text(encoding="utf-8")), CFG)
+		self.assertEqual((back / "unblockd.json").read_bytes(), CFG_BYTES)  # byte for byte, LF on Windows too (CORE-87)
 		self.assertEqual((back / "files" / "PAY-2" / "log.txt").read_bytes(), b"line one\nline two")
 		s = Store(backend=connectors.open_backend(db, create=False))
 		self.assertEqual(sorted(t["id"] for t in s.list()), ["OLD-1", "PAY-1", "PAY-2", "PAY-3"])
@@ -85,6 +86,12 @@ class MigrateTest(unittest.TestCase):
 		url = with_db(MONGO, "ub_test_" + uuid.uuid4().hex[:8])
 		self.addCleanup(lambda: mongo._client(url)[0].drop_database(mongo._client(url)[1].name))
 		self.round_trip(url + "#pay")
+
+	def test_config_writes_are_lf_on_every_os(self):  # the Agents panel's Save (set_tools) rewrites unblockd.json (CORE-87)
+		Store(self.src).set_tools(["claim_next", "complete"], {})
+		raw = (self.src / "unblockd.json").read_bytes()
+		self.assertNotIn(b"\r", raw)
+		self.assertEqual(json.loads(raw)["worker_tools"], ["claim_next", "complete"])
 
 	def test_a_target_with_a_board_is_refused_unless_forced(self):
 		db = self.sqlite()
