@@ -39,6 +39,15 @@ jobs:
       - run: pip install -r requirements.txt -r requirements-db.txt  # the same as the Docker image, so the MCP, Postgres and MongoDB tests run instead of skipping
       - run: python -m unittest -v
 
+  py310:  # pyproject says requires-python >=3.10: a 3.12-only f-string once broke import there (CORE-89)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: python -m compileall -q unblockd tests scripts
+
   ui:
     runs-on: ubuntu-latest
     steps:
@@ -55,7 +64,7 @@ jobs:
 
   image:
     # publishes ghcr.io/<owner>/unblockd on pushes to main (tag: latest) and on v* tags
-    needs: [test, ui]
+    needs: [test, py310, ui]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

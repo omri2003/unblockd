@@ -42,7 +42,7 @@ docs/writing-for-agents.md  Style guide for docs agents load (DOCS-17): what nev
 docs/reference.md       Everything long: env vars, boards, profiles, claims, knowledge, chat, config, ticket format, UI, MCP, CLI, REST API.
 docs/screenshots/       README images (+ agent-loop.gif: Playwright recordVideo of board while CLI claims, notes and completes ticket, ffmpeg palettegen, <= 3 MB). Regenerate: copy example/ to temp root, add tickets + few claims via CLI, run server, capture 1400px (2x) with Playwright (board light, graph dark, drawer, 390px mobile).
 example/tickets/        Demo board + config; what `docker compose up` shows with no .env.
-.github/workflows/ci.yml  tests, then builds + pushes ghcr.io/<owner>/unblockd on main / v* tags (a v* tag differing from `__version__` fails before the build).
+.github/workflows/ci.yml  tests + Python 3.10 compile check (`py310`: requires-python >=3.10, no 3.12-only f-strings, CORE-89), then builds + pushes ghcr.io/<owner>/unblockd on main / v* tags (a v* tag differing from `__version__` fails before the build).
 ```
 
 
