@@ -10,6 +10,7 @@ import fnmatch
 import json
 import os
 import re
+import threading
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -93,7 +94,11 @@ BRANCH_DAYS = 14  # a linked branch with no commit for this long is still listed
 # The derived board per connector (its key), shared by every Store on it (the web server builds one per request). Re-derived
 # only when the connector's version (tickets, claims, attachments), the date or the config changed. Never written back.
 # The connectors keep their own caches of what they read (files: _RAW, _LOG in files.py).
-_DEC: dict[str, tuple] = {}  # board key -> (signature, {id: decorated ticket})
+# In-process queue in front of the board lock (CORE-85): threads of one process (the web server, the shared MCP server) wait here,
+# blocked, instead of polling the connector's lock (files: a new try every 50 ms, so 200 threads at once starved some past
+# the 10 s wait). Re-entrant per thread. Across processes the connector's lock still decides.
+_QUEUE: dict[str, threading.RLock] = {}
+_DEC: dict[str, tuple] = {}  # board key -> (signature, {id: decorated ticket}, the state _derive patches the next board from)
 
 # Field -> (default, validator). Add a field here and the API + MCP accept it.
 FIELDS = {
@@ -483,19 +488,29 @@ class Store:
 	def _all_raw(self) -> list[dict]:
 		return [_copy(t) for t in self.backend.tickets().values()]
 
+	def _raw(self) -> dict[str, dict]:
+		"""{id: ticket} as stored, NOT copied (the connector's cache): for checks that only read. CORE-85: _all_raw() deep-copied all
+		20,000 tickets for each check, 0.3 s per create."""
+		return self.backend.tickets()
+
 	def _board(self, raw: dict | None = None) -> dict[str, dict]:
-		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket, the claims, an attachment, the config or the date changed.
-		raw = what the caller's own backend.tickets() call just returned (claim: it keeps that read to patch its write in)."""
+		"""Every ticket, decorated, by id (in id order). Re-derived only when a ticket, the claims, an attachment, the config or the date changed,
+		and then only for what changed (CORE-85, _derive). raw = what the caller's own backend.tickets() call just returned (claim: it keeps
+		that read to patch its write in)."""
 		self._live_claims()  # expire stale claims first, so their tickets are read back as todo
 		raw = self.backend.tickets() if raw is None else raw
-		sig = (self.backend.version(), date.today(), self._cfg_sig,
-		       *((_stamp(self.rt / "branches.json"), _stamp(self.rt / "branches_ignored.json")) if self.rt else ()))
+		base = self._base()
+		sig = (self.backend.version(), *base)
 		hit = _DEC.get(self._key)
 		if hit and hit[0] == sig:
 			return hit[1]
-		dec = {t["id"]: t for t in self._decorate(list(raw.values()))}  # _decorate builds new dicts and only reads the cached ones
-		_DEC[self._key] = (sig, dec)
+		dec, state = self._derive(raw, base, hit[2] if hit else None)
+		_DEC[self._key] = (sig, dec, state)
 		return dec
+
+	def _base(self) -> tuple:
+		"""What every decorated ticket depends on besides the tickets, claims and attachments: the date, the config, a files board's branch stamps."""
+		return (date.today(), self._cfg_sig, *((_stamp(self.rt / "branches.json"), _stamp(self.rt / "branches_ignored.json")) if self.rt else ()))
 
 	# ---------- validation ----------
 	def _clean(self, data: dict, partial: bool) -> dict:
@@ -552,8 +567,10 @@ class Store:
 		"""Refuse blocked_by that makes a ticket wait on itself, directly or down a chain. extra = more edges (a create_many batch)."""
 		if tid in blocked_by:
 			raise TicketError(f"{tid} can't be blocked by itself")
-		graph = {t["id"]: t.get("blocked_by", []) for t in self._all_raw()} | extra
-		graph[tid] = blocked_by
+		raw = self._raw()
+
+		def edges(x):
+			return blocked_by if x == tid else extra[x] if x in extra else raw[x].get("blocked_by", []) if x in raw else []
 		parent: dict[str, str] = {}
 		stack = [(b, tid) for b in blocked_by]
 		while stack:
@@ -566,11 +583,11 @@ class Store:
 				while path[-1] != tid or len(path) == 1:
 					path.append(parent[path[-1]])
 				raise TicketError("blocked_by makes a loop: " + " → ".join(reversed(path)) + " (each would wait on the other forever)")
-			stack += [(b, x) for b in graph.get(x, [])]
+			stack += [(b, x) for b in edges(x)]
 
 	def _check_blockers(self, new: list[str], old: list[str]) -> None:
 		"""Refuse blocked_by ids that don't exist, unless already on the ticket (a blocker deleted later keeps it editable)."""
-		have = {t["id"] for t in self._all_raw()}
+		have = self._raw()
 		bad = [b for b in new if b not in have and b not in old]
 		if bad:
 			raise TicketError("; ".join(f"no ticket {b} on this board" for b in bad) + ": fix the id or create it first")
@@ -710,45 +727,63 @@ class Store:
 			return
 		if parent == tid:
 			raise TicketError(f"{tid} can't be its own parent")
-		up = {t["id"]: t.get("parent") for t in self._all_raw()} | extra
-		if parent not in up:
+		raw = self._raw()
+
+		def up(x):
+			return extra[x] if x in extra else raw[x].get("parent") if x in raw else None
+		if parent not in raw and parent not in extra:
 			raise TicketError(f"parent {parent} doesn't exist: create it first or set parent to null")
-		chain, x = [tid, parent], up[parent]
+		chain, x = [tid, parent], up(parent)
 		while x and x not in chain:
 			chain.append(x)
-			x = up.get(x)
+			x = up(x)
 		if x == tid:
 			raise TicketError("parent makes a loop: " + " → ".join(chain + [tid]) + " (a ticket can't be part of its own part)")
 
 	# ---------- derived view ----------
 	def _decorate(self, tickets: list[dict]) -> list[dict]:
-		"""Add derived fields. A todo with an open blocker, a waiting_on (a question for a human) or a proposed_by (not accepted yet) shows as pending (effective_status).
+		"""Add derived fields to every ticket (the whole board, re-derived; _board() re-derives only what changed). A todo with an open
+		blocker, a waiting_on (a question for a human) or a proposed_by (not accepted yet) shows as pending (effective_status).
 		unblocks = not-done tickets downstream, missing_blockers = blocked_by ids with no file,
 		stale_days = days since update for a doing ticket, score = priority weight x (1 + unblocks)."""
+		return list(self._derive({t["id"]: t for t in tickets}, None, None)[0].values())
+
+	def _derive(self, raw: dict, base: tuple | None, prev: dict | None) -> tuple[dict, dict]:
+		"""(decorated board by id, state for the next call). With prev (the last derive's state on this board, same _base()) only what
+		changed is re-derived (CORE-85: at 20,000 tickets every write re-derived the whole board, 0.3-0.5 s, mostly under the lock): the
+		tickets whose stored object, claim or attachments changed and, when one appeared, went, turned done / not done or changed its
+		blocked_by or parent, its dependents (open_blockers), its blockers (blocks), its parents (children, progress) and everything
+		upstream of it (unblocks, score). The whole board (_full) when there is no prev, a blocked_by loop, or a big part changed."""
 		live = self._live_claims()
-		links = self._branch_links()
-		attached = self.backend.attachment_names()
-		by_id = {t["id"]: t for t in tickets}
-		blocks: dict[str, list[str]] = {t["id"]: [] for t in tickets}
-		kids: dict[str, list[dict]] = {}
-		for t in tickets:
-			if t.get("parent") in by_id:
-				kids.setdefault(t["parent"], []).append(t)
-		for t in tickets:
+		ctx = {"raw": raw, "today": date.today(), "links": self._branch_links(), "attached": self.backend.attachment_names(),
+		       "claims": {tid: {**{k: v for k, v in c.items() if k not in ("age_s", "quiet_s")},  # expires_at: profile lease or heartbeat(until=) (CORE-83)
+		                        "expires_at": _iso(self._expires(c))} for tid, c in live.items()}}
+		out = self._redecorate(ctx, prev) if prev is not None and base is not None and prev["base"] == base else None
+		dec, state = out or self._full(ctx)
+		state["base"] = base
+		return dec, state
+
+	def _full(self, ctx: dict) -> tuple[dict, dict]:
+		raw = ctx["raw"]
+		rev: dict[str, list[str]] = {}  # blocker id (may not exist) -> tickets naming it in blocked_by, in id order
+		kids: dict[str, list[str]] = {}  # parent id -> its children, in id order
+		for i, t in raw.items():
+			if t.get("parent") is not None:
+				kids.setdefault(t["parent"], []).append(i)
 			for b in t.get("blocked_by", []):
-				if b in blocks:
-					blocks[b].append(t["id"])
+				rev.setdefault(b, []).append(i)
 		# everything downstream of each ticket as one bitset, built in a single pass (a ticket's set = its dependents' sets + them)
-		idx = {x: i for i, x in enumerate(by_id)}
+		idx = {x: i for i, x in enumerate(raw)}
 		open_mask = 0
-		for x, t in by_id.items():
+		for x, t in raw.items():
 			if t.get("status") != "done":
 				open_mask |= 1 << idx[x]
 		down: dict[str, int] = {}
-		for root in by_id:
+		loop = False
+		for root in raw:
 			if root in down:
 				continue
-			acc, onpath, stack = {root: 0}, {root}, [(root, iter(blocks[root]))]
+			acc, onpath, stack = {root: 0}, {root}, [(root, iter(rev.get(root, ())))]
 			while stack:
 				x, it = stack[-1]
 				for y in it:
@@ -756,10 +791,11 @@ class Store:
 						acc[x] |= down[y] | 1 << idx[y]
 					elif y in onpath:  # a blocked_by loop in an old file: count it, don't follow it
 						acc[x] |= 1 << idx[y]
+						loop = True
 					else:
 						onpath.add(y)
 						acc[y] = 0
-						stack.append((y, iter(blocks[y])))
+						stack.append((y, iter(rev.get(y, ()))))
 						break
 				else:
 					stack.pop()
@@ -767,38 +803,119 @@ class Store:
 					down[x] = acc.pop(x)
 					if stack:
 						acc[stack[-1][0]] |= down[x] | 1 << idx[x]
+		dec = {i: self._dec1(t, ctx, rev, kids, bin(down[i] & open_mask & ~(1 << idx[i])).count("1")) for i, t in raw.items()}
+		return dec, {"raw": raw, "dec": dec, "rev": rev, "kids": kids, "claims": ctx["claims"], "attached": ctx["attached"], "loop": loop}
 
-		def unblocks(tid: str) -> int:
-			return bin(down[tid] & open_mask & ~(1 << idx[tid])).count("1")
+	def _dec1(self, t: dict, ctx: dict, rev: dict, kids: dict, n: int) -> dict:
+		"""One ticket decorated; n = its unblocks."""
+		raw, i = ctx["raw"], t["id"]
+		open_b = [b for b in t.get("blocked_by", []) if b in raw and raw[b].get("status") != "done"]
+		eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on") or t.get("proposed_by")) else t.get("status")
+		br = ctx["links"].get(i, []) if t.get("status") != "done" else []
+		if eff == "todo" and any(b["active"] for b in br):
+			eff = "doing"  # work on an unmerged branch nobody claimed here (another clone, a cloud session): derived, never written
+		stale = None
+		if t.get("status") == "doing":
+			try:
+				stale = max(0, (ctx["today"] - date.fromisoformat(str(t.get("updated"))[:10])).days)
+			except ValueError:
+				stale = None
+		ks = kids.get(i, [])
+		return {**t, "parent": t.get("parent"), "milestone": t.get("milestone"), "components": t.get("components", []), "skills": t.get("skills", []), "mcp": t.get("mcp", []), "children": list(ks),
+		        "progress": {"done": sum(raw[k].get("status") == "done" for k in ks), "total": len(ks)},
+		        "effective_status": eff, "open_blockers": open_b, "blocks": list(rev.get(i, [])),
+		        "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in raw],
+		        "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
+		        "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
+		        # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
+		        "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": ctx["attached"].get(i, []), "branches": br,
+		        "claim": ctx["claims"].get(i), **({"unreported": True} if _unreported(t) else {})}
 
-		today = date.today()
-		out = []
-		for t in tickets:
-			open_b = [b for b in t.get("blocked_by", []) if b in by_id and by_id[b].get("status") != "done"]
-			eff = "pending" if t.get("status") == "todo" and (open_b or t.get("waiting_on") or t.get("proposed_by")) else t.get("status")
-			br = links.get(t["id"], []) if t.get("status") != "done" else []
-			if eff == "todo" and any(b["active"] for b in br):
-				eff = "doing"  # work on an unmerged branch nobody claimed here (another clone, a cloud session): derived, never written
-			n = unblocks(t["id"])
-			stale = None
-			if t.get("status") == "doing":
-				try:
-					stale = max(0, (today - date.fromisoformat(str(t.get("updated"))[:10])).days)
-				except ValueError:
-					stale = None
-			ks = kids.get(t["id"], [])
-			out.append({**t, "parent": t.get("parent"), "milestone": t.get("milestone"), "components": t.get("components", []), "skills": t.get("skills", []), "mcp": t.get("mcp", []), "children": [k["id"] for k in ks],
-			            "progress": {"done": sum(k.get("status") == "done" for k in ks), "total": len(ks)},
-			            "effective_status": eff, "open_blockers": open_b, "blocks": blocks[t["id"]],
-			            "unblocks": n, "missing_blockers": [b for b in t.get("blocked_by", []) if b not in by_id],
-			            "stale_days": stale, "score": PRIO_WEIGHT.get(t.get("priority"), 1) * (1 + n),
-			            "tags": t.get("tags", []), "touches": t.get("touches", []), "agent": self.route(t),
-			            # timestamps only (no ages), so a ticket's JSON doesn't change while nothing happens
-			            "docs": t.get("docs", []), "notes": t.get("notes", []), "needs": t.get("needs", []), "files": attached.get(t["id"], []), "branches": br,
-			            "claim": {**{k: v for k, v in live[t["id"]].items() if k not in ("age_s", "quiet_s")},  # expires_at: profile lease or heartbeat(until=) (CORE-83)
-			                      "expires_at": _iso(self._expires(live[t["id"]]))} if t["id"] in live else None,
-			            **({"unreported": True} if _unreported(t) else {})})
-		return out
+	def _redecorate(self, ctx: dict, prev: dict) -> tuple[dict, dict] | None:
+		"""_derive's incremental half. None = derive the whole board (a blocked_by loop, or too much changed)."""
+		raw, old, claims, attached = ctx["raw"], prev["raw"], ctx["claims"], ctx["attached"]
+		if prev["loop"]:
+			return None
+		changed = {i for i, t in raw.items() if old.get(i) is not t}  # a connector hands out the same object while a ticket is unchanged
+		if len(raw) - sum(i not in old for i in changed) != len(old):
+			changed |= {i for i in old if i not in raw}
+		cap = max(64, len(raw) // 20)
+		touched = set(changed)
+		touched |= {i for i in claims.keys() | prev["claims"].keys() if claims.get(i) != prev["claims"].get(i)}
+		touched |= {i for i in attached.keys() | prev["attached"].keys() if attached.get(i) != prev["attached"].get(i)}
+		if len(touched) > cap:
+			return None
+
+		def done(t):
+			return t.get("status") == "done"
+		struct = [i for i in changed if i not in old or i not in raw or done(old[i]) != done(raw[i])
+		          or old[i].get("blocked_by", []) != raw[i].get("blocked_by", []) or old[i].get("parent") != raw[i].get("parent")]
+		rev, kids = prev["rev"], prev["kids"]
+		up: set[str] = set()  # tickets whose unblocks may have changed
+		if struct:
+			rev, kids = dict(rev), dict(kids)  # copy on write: another thread may be deriving from prev right now
+			fix_r, fix_k = set(), set()
+			for i in struct:
+				o, t = old.get(i) or {}, raw.get(i) or {}
+				ob, nb = o.get("blocked_by", []), t.get("blocked_by", [])
+				if ob != nb:
+					for b in set(ob):
+						rev[b] = [x for x in rev.get(b, []) if x != i]
+					for b in nb:
+						rev[b] = rev.get(b, []) + [i]
+					fix_r |= set(ob) | set(nb)
+				op, np = o.get("parent"), t.get("parent")
+				if op != np:
+					if op is not None:
+						kids[op] = [x for x in kids.get(op, []) if x != i]
+						fix_k.add(op)
+					if np is not None:
+						kids[np] = kids.get(np, []) + [i]
+						fix_k.add(np)
+				touched |= set(rev.get(i, [])) | set(prev["rev"].get(i, [])) | set(ob) | set(nb) | ({op, np} - {None})
+				for graph, start in ((raw, nb), (old, ob)):  # everything upstream, before and after the change: its downstream changed
+					seen, stack = set(), list(start)
+					while stack:
+						x = stack.pop()
+						if x == i and graph is raw:
+							return None  # a new blocked_by loop (a hand edit or a pull): the whole board counts it
+						if x in seen or x not in graph:
+							continue
+						seen.add(x)
+						stack.extend(graph[x].get("blocked_by", []))
+					up |= seen
+					if len(up) > cap:
+						return None
+			if fix_r or fix_k:
+				pos = {x: k for k, x in enumerate(raw)}  # id order, as _full builds them
+				for d, fix in ((rev, fix_r), (kids, fix_k)):
+					for k in fix:
+						if d.get(k):
+							d[k] = sorted(d[k], key=pos.__getitem__)
+						else:
+							d.pop(k, None)
+		up = {x for x in up if x in raw} | {i for i in changed if i in raw and i not in old}  # a new ticket: count its downstream too
+		touched = {x for x in touched | up if x in raw}
+		if len(touched) > cap:
+			return None
+		odec, new, work = prev["dec"], {}, 0
+		for x in touched:
+			if x in up:  # open tickets downstream of x (not x itself), over the new graph
+				seen, stack = {x}, list(rev.get(x, []))
+				while stack:
+					y = stack.pop()
+					if y not in seen:
+						seen.add(y)
+						stack.extend(rev.get(y, []))
+				work += len(seen)
+				if work > 20 * cap:
+					return None
+				n = sum(1 for y in seen if y != x and raw[y].get("status") != "done")
+			else:
+				n = odec[x]["unblocks"]
+			new[x] = self._dec1(raw[x], ctx, rev, kids, n)
+		dec = {i: new[i] if i in new else odec[i] for i in raw}
+		return dec, {"raw": raw, "dec": dec, "rev": rev, "kids": kids, "claims": claims, "attached": attached, "loop": False}
 
 	def _branch_links(self) -> dict[str, list[dict]]:
 		"""{ticket id: [branch]} from branches.json (written by the web server's branches thread; absent = no git evidence).
@@ -1577,7 +1694,7 @@ class Store:
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		if agent and self.profile_of(agent) and t.get("owner") in humans:
 			raise TicketError(f"{tid} is owned by {t['owner']} (a human): a worker can't delete it; add_note or ask_human")
-		refs = [x["id"] for x in self._all_raw() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
+		refs = [x["id"] for x in self._raw().values() if tid in x.get("blocked_by", []) or x.get("parent") == tid]
 		self.backend.delete(tid)  # and its attachments
 		self._drop_claim(tid, "ticket deleted")
 		self._log("deleted", tid, agent, t["title"] + (f" (rejected: {reason.strip()})" if reason.strip() else ""))
@@ -1593,12 +1710,18 @@ class Store:
 		holds it while next_ready() may expire stale claims, which needs it too."""
 		if getattr(self, "_held", False):
 			return fn()
-		with self.backend.lock(lambda p: type(self)._steal(p)):  # looked up per call, so a test can replace Store._steal
-			self._held = True
-			try:
-				return fn()
-			finally:
-				self._held = False
+		q = _QUEUE.setdefault(self._key, threading.RLock())
+		if not q.acquire(timeout=getattr(self.backend, "busy_s", 10)):  # as long as the connector's own lock waits
+			raise TicketError("another claim is in progress; try again")
+		try:
+			with self.backend.lock(lambda p: type(self)._steal(p)):  # looked up per call, so a test can replace Store._steal
+				self._held = True
+				try:
+					return fn()
+				finally:
+					self._held = False
+		finally:
+			q.release()
 
 	_steal = staticmethod(steal_stale)  # files boards: remove a stale lock file (see files.steal_stale)
 
@@ -1832,7 +1955,8 @@ class Store:
 		got, read = self._locked(take)
 		if not got:
 			return None, read
-		board = {x["id"]: x for x in self._decorate(list(read.values()))}  # outside the lock; the claim is in claims already
+		hit = _DEC.get(self._key)  # outside the lock; the claim is in claims already. Patched from the cached board (CORE-85), not stored
+		board = self._derive(read, self._base(), hit[2] if hit else None)[0]
 		t, c = _copy(board[got]), self._claims()[got]
 		lease, exp = self.lease_minutes(c.get("profile")), self._expires(c)
 		t["notes"], left = self.lean_notes(t["notes"])
@@ -2142,7 +2266,7 @@ class Store:
 		live = self._live_claims()
 		profile = self.profile_of(agent)
 		t = self.get(tid)
-		if not self._claimable(t, live, {x["id"]: x for x in self._all_raw()}, profile):
+		if not self._claimable(t, live, self._raw(), profile):
 			return None
 		principal = principal or ev.get("principal")
 		claims, now = self._claims(), _now()
@@ -2162,7 +2286,7 @@ class Store:
 		if not c:
 			if self._lapsed(tid, agent):
 				t = self.get(tid)
-				why = self._unclaimable(t, self._live_claims(), {x["id"]: x for x in self._all_raw()}, self.profile_of(agent))
+				why = self._unclaimable(t, self._live_claims(), self._raw(), self.profile_of(agent))
 				raise TicketError(f"you no longer hold {tid}: your claim expired (no heartbeat for {_fmt_min(self.lease_minutes(self.profile_of(agent)))} min) "
 				                  f"and it can't be taken back: {why}")
 			raise TicketError(f"{tid} isn't claimed (or the claim expired): claim it again")
@@ -2517,7 +2641,7 @@ class Store:
 	def agents_now(self) -> dict:
 		"""The live view: one row per working agent, plus recent activity."""
 		live = self._live_claims()
-		titles = {t["id"]: t.get("title", "") for t in self._all_raw()}
+		titles = {i: t.get("title", "") for i, t in self._raw().items()}
 		working = [{"agent": c["agent"], "profile": c.get("profile"), "ticket": tid, "title": titles.get(tid, ""),
 		            "note": c.get("note", ""), "principal": c.get("principal"), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
 		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]

@@ -176,6 +176,7 @@ def _schema(c: _Conn) -> None:
 class SqlBackend:
 	"""One board in a SQL database. url: sqlite:///<path> or postgres://user:pass@host/db; board: its id in that database."""
 	kind = "sql"
+	busy_s = property(lambda self: BUSY_S)  # the lock wait (store.Store._locked's in-process queue waits as long)
 
 	def __init__(self, url: str, board: str, parse=lambda t: t, create: bool = True):
 		if not BOARD_RE.match(board or ""):
@@ -256,8 +257,20 @@ class SqlBackend:
 		hit = _CACHE.get((self.key, self.parse))
 		if not dirty and hit and hit[0] == ver:  # nothing was written since: no need to scan the rows (versions only grow, in commit order)
 			return hit[2]
-		vers = dict(c.q("SELECT id, ver FROM ub_tickets WHERE board = ?", (self.board,)))
 		old_v, old_t = hit[1:] if hit else ({}, {})
+		if hit and ver > hit[0]:  # CORE-85: only the rows written since the cached version (ver = the board version that wrote them), unless one went
+			n = c.q("SELECT COUNT(*) FROM ub_tickets WHERE board = ?", (self.board,))[0][0]
+			rows = c.q("SELECT id, doc, ver FROM ub_tickets WHERE board = ? AND ver > ?", (self.board, hit[0]))
+			if n == len(old_v) + sum(i not in old_v for i, _, _ in rows):  # no row deleted (a delete makes the count fall short)
+				new_v, new_t = dict(old_v), dict(old_t)
+				for i, doc, v in rows:
+					new_v[i], new_t[i] = v, self.parse(json.loads(doc))
+				if len(new_t) != len(old_t):  # a new id: back into id order
+					new_t = dict(sorted(new_t.items()))
+				if not dirty:
+					_CACHE[(self.key, self.parse)] = (ver, new_v, new_t)
+				return new_t
+		vers = dict(c.q("SELECT id, ver FROM ub_tickets WHERE board = ?", (self.board,)))
 		need = [i for i, v in vers.items() if old_v.get(i) != v]
 		got = {}
 		for k in range(0, len(need), PAGE):

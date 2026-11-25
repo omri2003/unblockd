@@ -7,12 +7,14 @@ Stdlib only.
 """
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import re
 import shutil
 import stat
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -23,6 +25,7 @@ CONFIG_FILE = "unblockd.json"  # optional, next to the tickets
 ID_RE = re.compile(r"^[A-Z0-9]+-\d+[a-z]?$")  # also the filename: blocks path traversal
 ACTIVITY_MAX = 5_000_000  # bytes; past this activity.jsonl becomes activity.1.jsonl (one old file kept)
 LOCK_STALE = 30  # seconds: a lock file older than this was left by a crash
+BUSY_S = 10  # how long a write waits for the board lock before "try again"
 _UMASK = os.umask(0)  # read once at import (os.umask is process-wide: setting it per write would race the web server's threads)
 os.umask(_UMASK)
 NEW_MODE = 0o666 & ~_UMASK  # what open() gives a new file: 0644 under the usual umask 022 (CORE-75)
@@ -34,6 +37,14 @@ REPLACE_WAIT = 5  # seconds replace() retries a Windows PermissionError (a reade
 # changed, so another process's write, a git pull or a hand edit is seen on the next call. Never written back.
 _RAW: dict[tuple, dict] = {}  # (tickets folder, parse) -> {stem: (stamp, parsed ticket)}: a raw reader never shares a parsed cache
 _LOG: dict[str, tuple] = {}  # activity file -> (inode, bytes parsed, [events oldest first])
+_TIX: dict[tuple, tuple] = {}  # _RAW key -> (the _RAW dict, tickets() built from it)
+_VER: dict[tuple, tuple] = {}  # _RAW key -> (that _RAW dict, its number from _GEN): version()'s ticket part
+_GEN = itertools.count(1)
+# Single-flight stat passes (CORE-85): one pass per folder at a time in this process; a thread that asks while a pass runs waits for
+# it and reuses the NEXT pass that started after it asked (as fresh as its own would be), so 200 threads reading the board make a
+# few passes, not 200. _PASS[key] = (passes started, last pass done)
+_SCANQ: dict[tuple, threading.Lock] = {}
+_PASS: dict[tuple, tuple] = {}
 # Reuse of a fresh stat pass (CORE-60): one page load reads the same board ~4 times. A read OUTSIDE the lock may reuse the
 # folder's last stat pass while it is younger than SCAN_REUSE_S and this process wrote no ticket since; under the lock every
 # read stats again (claims and read-modify-writes must see other processes' writes). The reuse also needs the folder's own
@@ -75,13 +86,16 @@ def storage(tickets_dir: str | os.PathLike, key: str | None = None) -> dict:
 class FileBackend:
 	"""A board stored as files. `parse` turns a ticket file's JSON into the stored form (the rules' upgrade of old files)."""
 	kind = "files"
+	busy_s = property(lambda self: BUSY_S)  # the lock wait (store.Store._locked's in-process queue waits as long)
 
 	def __init__(self, tickets_dir: str | os.PathLike, parse=lambda t: t):
 		self.dir = Path(tickets_dir)
 		self.dir.mkdir(parents=True, exist_ok=True)
 		self.parse = parse
 		self.key = str(self.dir.resolve())
-		self._held = False  # inside lock(): every _scan stats (CORE-60)
+		self._held = False  # inside lock(): the first _scan of the hold stats (CORE-60), later ones reuse it (_lraw, CORE-85)
+		self._lraw = None  # the stat pass of the current lock hold, with this backend's own writes patched in
+		self._v = None  # the number of the stat pass tickets() last returned (version())
 		# runtime state: <tickets>/.unblockd, except in a linked git worktree, where it is the MAIN checkout's copy of the same
 		# folder: every worktree then shares one lock and one claims.json (ticket files stay per branch)
 		wt = linked_worktree(self.dir.resolve())
@@ -117,40 +131,108 @@ class FileBackend:
 
 	def tickets(self) -> dict[str, dict]:
 		"""{id: ticket} for every ticket, in id order, re-parsing only the files that changed since the last call (any Store,
-		this process). The dicts are shared with the cache: callers copy before changing them."""
-		return {k: t for k, (_, t) in self._scan().items()}
+		this process). The dicts (and the {id: ticket} one itself, kept while nothing changed: CORE-85) are shared with the cache:
+		callers copy before changing them."""
+		raw, ck = self._scan(), (self.key, self.parse)
+		hit = _TIX.get(ck)
+		if hit is None or hit[0] is not raw:
+			hit = _TIX[ck] = (raw, {k: t for k, (_, t) in raw.items()})
+		return hit[1]
 
 	def _scan(self) -> dict[str, tuple]:
 		ck = (self.key, self.parse)
+		if self._held and self._lraw is not None:  # CORE-85: one stat pass per lock hold (no other process writes meanwhile;
+			return self._lraw  # this one's own writes patch it in, _patch)
 		gen, last = _WROTE.get(self.key, 0), _SCANNED.get(ck)
 		mt = os.stat(self.dir).st_mtime_ns if SCAN_REUSE_S else 0  # read before the pass: a write during it changes it
 		if (last and last[1] == gen and last[2] == mt and not self._held and time.monotonic() - last[0] < SCAN_REUSE_S
 				and ck in _RAW):
-			return _RAW[ck]  # fresh, nothing written by this process since, no file added / replaced / removed (outside the lock only)
+			return self._seen(ck, _RAW[ck])  # fresh, nothing written by this process since, no file added / replaced / removed (outside the lock only)
+		asked = _PASS.get(ck, (0, 0))[0]  # passes started before this call: none of them is fresh enough
+		with _SCANQ.setdefault(ck, threading.Lock()):
+			began, done = _PASS.get(ck, (0, 0))
+			if done > asked and ck in _RAW:  # a pass that started after this call asked has finished meanwhile
+				raw = self._seen(ck, _RAW[ck])
+				if self._held:
+					self._lraw = raw
+				return raw
+			_PASS[ck] = (began + 1, done)
+			raw = self._pass(ck, gen, mt)
+			_PASS[ck] = (began + 1, began + 1)
+			return raw
+
+	def _pass(self, ck: tuple, gen: int, mt: int) -> dict[str, tuple]:
 		started = time.monotonic()  # taken before the pass: a file changed during it is not older than the stamp says
-		old, new, spent = _RAW.get(ck, {}), {}, 0.0
+		old, new, spent, timed, same = _RAW.get(ck, {}), {}, 0.0, 0, True
 		with os.scandir(self.dir) as it:
-			for e in it:
-				if not e.name.endswith(".json") or not ID_RE.match(stem := e.name[:-5]):
+			for k, e in enumerate(it):
+				name = e.name
+				if not name.endswith(".json"):
 					continue
-				t0 = time.perf_counter()
-				st = _stat(e)
-				spent += time.perf_counter() - t0  # UI-81: what a stat costs on this storage (storage())
-				stamp = (st.st_ino, st.st_mtime_ns, st.st_size)  # os.replace makes a new file, so a rewrite changes the stamp even within one clock tick
+				stem = name[:-5]
 				hit = old.get(stem)
-				new[stem] = hit if hit and hit[0] == stamp else (stamp, self.read_file(Path(e.path)))
-		if len(new) >= SLOW_MIN:
-			_STAT_MS[self.key] = (_STAT_MS.get(self.key, []) + [spent * 1000 / len(new)])[-SLOW_PASSES:]
-		_RAW[ck] = dict(sorted(new.items()))
+				if hit is None and not ID_RE.match(stem):  # a name seen before already matched
+					continue
+				if k & 7:
+					st = _stat(e)
+				else:  # UI-81: what a stat costs on this storage (storage()), timed on every 8th file: timing each one cost
+					t0 = time.perf_counter()  # a quarter of a 20,000-ticket pass (CORE-85)
+					st = _stat(e)
+					spent += time.perf_counter() - t0
+					timed += 1
+				stamp = (st.st_ino, st.st_mtime_ns, st.st_size)  # os.replace makes a new file, so a rewrite changes the stamp even within one clock tick
+				if hit and hit[0] == stamp:
+					new[stem] = hit
+				else:
+					new[stem], same = (stamp, self.read_file(Path(e.path))), False
+		if len(new) >= SLOW_MIN and timed:
+			_STAT_MS[self.key] = (_STAT_MS.get(self.key, []) + [spent * 1000 / timed])[-SLOW_PASSES:]
 		_SCANNED[ck] = (started, gen, mt)  # gen and mt read before the pass: a write during it drops the reuse
-		return _RAW[ck]
+		if same and len(new) == len(old) and ck in _RAW:
+			raw = self._seen(ck, _RAW[ck])  # nothing changed: the cached dict (and so the version) stays, no sort
+		else:
+			raw = self._publish(ck, dict(sorted(new.items())))
+		if self._held:
+			self._lraw = raw
+		return raw
+
+	def _publish(self, ck: tuple, raw: dict) -> dict:
+		_RAW[ck] = raw
+		self._v = next(_GEN)
+		_VER[ck] = (raw, self._v)
+		return raw
+
+	def _seen(self, ck: tuple, raw: dict) -> dict:
+		v = _VER.get(ck)
+		if v is None or v[0] is not raw:  # the cache was emptied or replaced from outside: a new version
+			return self._publish(ck, raw)
+		self._v = v[1]
+		return raw
+
+	def _patch(self, tid: str, deleted: bool = False) -> None:
+		"""Inside the lock, after this backend wrote or deleted tid: the hold's stat pass with that one file changed, so the next read
+		in the same hold needs no new pass (CORE-85: a create read the 20,000-file folder 4 times under the lock)."""
+		if not (self._held and self._lraw is not None):
+			return
+		raw = dict(self._lraw)
+		if deleted:
+			raw.pop(tid, None)
+		else:
+			p = self.path(tid)
+			st = os.stat(p)
+			new = tid not in raw
+			raw[tid] = ((st.st_ino, st.st_mtime_ns, st.st_size), self.read_file(p))
+			if new:
+				raw = dict(sorted(raw.items()))
+		self._lraw = self._publish((self.key, self.parse), raw)
 
 	def _wrote(self) -> None:
 		_WROTE[self.key] = _WROTE.get(self.key, 0) + 1  # the next read stats again (CORE-60)
 
 	def version(self):
-		"""Changes whenever a ticket, a claim or an attachment changed (read after tickets()): the derived board is rebuilt only then."""
-		return (tuple((k, v[0]) for k, v in _RAW.get((self.key, self.parse), {}).items()), _stamp(self.rt / "claims.json"), self._files_sig())
+		"""Changes whenever a ticket, a claim or an attachment changed (read after tickets()): the derived board is rebuilt only then.
+		The ticket part = the number of the stat pass tickets() returned (CORE-85: was a tuple of 20,000 stamps per call)."""
+		return (self._v if self._v is not None else object(), _stamp(self.rt / "claims.json"), self._files_sig())
 
 	def _files_sig(self) -> tuple:
 		fd = self.dir / "files"
@@ -183,17 +265,19 @@ class FileBackend:
 		os.chmod(tmp, mode)  # mkstemp makes it 0600 and os.replace keeps that: a root server left tickets other users couldn't read (CORE-75)
 		replace(tmp, p)  # atomic: a reader never sees half a file
 		self._wrote()
+		self._patch(t["id"])
 
 	def delete(self, tid: str) -> None:
 		"""The ticket and its attachments."""
 		self.path(tid).unlink()
 		self._wrote()
+		self._patch(tid, deleted=True)
 		shutil.rmtree(self.dir / "files" / tid, ignore_errors=True)
 
 	def numbers(self, prefix: str) -> list[int]:
 		"""Numbers already used by ids with this prefix (ART-23a counts as 23)."""
-		pat = re.compile(rf"(?<![A-Z0-9]){re.escape(prefix)}-(\d+)")
-		return [int(m) for p in self.dir.glob(f"{prefix}-*.json") for m in pat.findall(p.stem)]
+		pat = re.compile(rf"{re.escape(prefix)}-(\d+)")  # from the stat pass (CORE-85: a glob of the folder was a third of a create at 20,000)
+		return [int(m.group(1)) for tid in self.tickets() if (m := pat.match(tid))]
 
 	# ---------- the board lock ----------
 	def runtime(self) -> Path:
@@ -209,7 +293,7 @@ class FileBackend:
 		stale one (store.Store._steal: re-checks the age under a guard). Not re-entrant: store.Store makes it so."""
 		steal = steal or steal_stale
 		lock = self.runtime() / "lock"
-		deadline = time.monotonic() + 10
+		deadline = time.monotonic() + BUSY_S
 		while True:
 			try:
 				fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -228,11 +312,11 @@ class FileBackend:
 				if time.monotonic() > deadline:
 					raise TicketError("another claim is in progress; try again")
 				time.sleep(0.05)
-		self._held = True
+		self._held, self._lraw = True, None
 		try:
 			yield
 		finally:
-			self._held = False
+			self._held, self._lraw = False, None
 			self._wrote()  # a locked step may have written or deleted a ticket: drop the reuse (CORE-60)
 			os.close(fd)
 			lock.unlink(missing_ok=True)
