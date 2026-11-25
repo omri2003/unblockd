@@ -108,6 +108,7 @@ def disconnect(url: str | None = None) -> None:
 class MongoBackend:
 	"""One board in a MongoDB database. url: mongodb://[user:pass@]host[:port]/[database] (default database: unblockd)."""
 	kind = "mongo"
+	busy_s = property(lambda self: BUSY_S)  # the lock wait (store.Store._locked's in-process queue waits as long)
 
 	def __init__(self, url: str, board: str, parse=lambda t: t, create: bool = True):
 		if not BOARD_RE.match(board or ""):

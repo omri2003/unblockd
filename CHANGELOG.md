@@ -8,6 +8,9 @@
 - `update_tickets` changes several tickets in one all-or-nothing call (MCP, REST `PATCH tickets`, CLI `update-many`); the board's bulk bar sends one request (and one for Undo), and a refused bulk edit changes nothing.
 - `list_tickets(touches=PATH)` finds the tickets whose `touches` overlap a path or glob by the claim rule (not a text search), `component=KEY` those on an architecture component; rows show `touches` and `holder`. REST `?touches=&component=`, CLI `--touches --component`.
 
+### Changed
+- Big boards write fast: a write re-derives only the tickets it reaches instead of the whole board, and a files board reads its folder once per locked step. At 20,000 tickets a write holds the board lock 2-80 ms instead of 0.4-0.9 s, so 200 agents at once no longer give up waiting for it.
+
 ### Fixed
 - Files board on Windows: a write no longer fails with `PermissionError` when another agent or program is reading the same file at that moment; it retries for up to 5 s, then says which file is held open (CORE-86).
 - Files board on Windows: `unblockd.json` is written with LF line endings like the ticket files, so `migrate` back to a folder gives it byte for byte and saving tools in the Agents panel no longer turns a committed config CRLF (CORE-87).
