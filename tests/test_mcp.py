@@ -358,6 +358,77 @@ class WorkLoopTest(unittest.TestCase):
 
 
 @unittest.skipIf(mcp is None, "mcp not installed")
+class NeedsYouTest(unittest.TestCase):
+	"""AI-43: needs_you = GET /api/needs (one shared Boards.needs), and the human-side writes answer short."""
+
+	def setUp(self):
+		from unblockd import mcp_server as m, web
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		root = Path(self.tmp.name)
+		for bid, extra in (("a", {"review": True, "agent_tickets": "propose"}), ("b", {})):
+			(root / bid / "tickets").mkdir(parents=True)
+			(root / bid / "tickets" / "unblockd.json").write_text(json.dumps({"id": bid, "title": bid.upper(), **extra,
+				"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}], "default_owner": "Claude"}), encoding="utf-8")
+		boards = m.bd.Boards([str(root)])
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		self.addCleanup(setattr, web, "BOARDS", web.BOARDS)
+		m.BOARDS = web.BOARDS = boards
+		self.m, self.a, self.b = m, boards.get("a"), boards.get("b")
+		from http.server import ThreadingHTTPServer
+		import threading
+		self.srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+		threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+		self.addCleanup(self.srv.server_close)
+		self.addCleanup(self.srv.shutdown)
+
+	def api_needs(self):
+		import urllib.request
+		with urllib.request.urlopen(f"http://127.0.0.1:{self.srv.server_port}/api/needs") as r:
+			return json.loads(r.read())
+
+	def test_same_items_as_the_panel_and_short_acks(self):
+		m, a, b = self.m, self.a, self.b
+		self.assertEqual(m.needs_you(), [])
+		a.create({"title": "to review", "priority": "P1"}, tid="A-1")
+		a.claim("w-1", tid="A-1")
+		a.complete("A-1", "w-1", "did it", refs=["https://example.com/pr/1"])
+		a.create({"title": "a question"}, tid="A-2")
+		a.claim("w-1", tid="A-2")
+		a.ask("A-2", "w-1", "left or right?")
+		a.create({"title": "proposed"}, tid="A-3", agent="w-1")
+		a.create({"title": "to reject"}, tid="A-4")
+		a.claim("w-2", tid="A-4")
+		a.complete("A-4", "w-2", "meh")
+		b.create({"title": "parked", "waiting_on": "later"}, tid="B-1")  # hand-parked: never listed
+		b.create({"title": "orphan"}, tid="B-2")
+		raw = b.dir / "B-2.json"
+		raw.write_text(json.dumps({**json.loads(raw.read_text(encoding="utf-8")), "blocked_by": ["B-99"]}), encoding="utf-8")
+		mine = m.needs_you()
+		self.assertEqual(json.loads(json.dumps(mine, ensure_ascii=False)), self.api_needs())  # the very same reply as the web panel's
+		self.assertEqual([(g["id"], {i["id"]: i["kind"] for i in g["items"]}) for g in mine],  # order: score, then since (a date or a UTC time)
+		                 [("a", {"A-1": "review", "A-2": "question", "A-3": "proposal", "A-4": "review"}), ("b", {"B-2": "stuck"})])
+		self.assertEqual(mine[0]["items"][0]["id"], "A-1")  # the P1 first
+		self.assertEqual(mine[0]["items"][0]["result"]["refs"], ["https://example.com/pr/1"])
+		self.assertEqual(m.needs_you(board="b"), [g for g in mine if g["id"] == "b"])
+		with self.assertRaisesRegex(Exception, "no board 'nope'"):
+			m.needs_you(board="nope")
+		# the four human-side writes answer short, like the worker writes
+		replies = [m.approve_ticket("A-1", by="Omri"), m.answer("A-2", by="Omri", text="left"), m.accept_ticket("A-3", by="Omri"),
+		           m.reject("A-4", by="Omri", reason="redo")]
+		for r in replies:
+			self.assertEqual(set(r) - {"note", "lease_left_s", "warnings"}, {"ok", "id", "status", "effective_status", "rev"})
+			self.assertLess(len(json.dumps(r)), 200)
+		self.assertEqual([r["status"] for r in replies], ["done", "todo", "todo", "todo"])
+		self.assertEqual(self.api_needs(), [{"id": "b", "title": "B", "items": self.api_needs()[0]["items"]}])  # board a is clear
+
+	def test_human_tool_not_a_worker_tool(self):
+		from unblockd import store as st
+		self.assertIn("needs_you", st.MCP_TOOLS)
+		self.assertNotIn("needs_you", st.WORKER_TOOLS)
+
+
+@unittest.skipIf(mcp is None, "mcp not installed")
 class ActorNameTest(unittest.TestCase):
 	"""API-17: every tool that names who is acting takes `agent` and `by`; agent wins; neither is refused."""
 	ACTORS = {"create_ticket", "create_tickets", "accept_ticket", "update_ticket", "update_tickets", "split_ticket", "delete_ticket", "claim_next", "claim_ticket",

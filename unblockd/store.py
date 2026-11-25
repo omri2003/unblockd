@@ -256,10 +256,12 @@ TOOL_RE = re.compile(r"^[a-z][a-z_]{0,39}$")
 MCP_TOOLS = ("accept_ticket", "add_note", "agents_now", "answer", "approve_ticket", "arch_add_component", "arch_delete_component",
              "arch_remove_edge", "arch_set_edge", "arch_update_component", "architecture_map", "ask_human", "attach_file", "board_info",
              "claim_next", "claim_ticket", "complete", "create_board", "create_ticket", "create_tickets", "delete_ticket", "detach_file", "get_context",
-             "get_ticket", "heartbeat", "knowledge_graph", "list_boards", "list_tickets", "next_ready", "read_doc", "reject", "release",
+             "get_ticket", "heartbeat", "knowledge_graph", "list_boards", "list_tickets", "needs_you", "next_ready", "read_doc", "reject", "release",
              "report_ticket", "roadmap", "split_ticket", "update_ticket", "update_tickets", "work_plan")
 BATCH_MAX = 50  # tickets per create_many
 UPDATE_MAX = 200  # tickets per update_many (the UI's bulk bar sends its whole selection in one request)
+NEEDS_BODY = 6000  # Store.needs: chars of body (the description) sent per item
+NEEDS_NOTES = 10  # Store.needs: the newest notes sent per item (the panel shows the last 3 that are not the question itself)
 SKILL_KEYS, MCP_KEYS = {"path", "description"}, {"hint", "doc", "required"}
 
 
@@ -2044,6 +2046,51 @@ class Store:
 			elif e["event"] in OUTCOMES:
 				out.setdefault(tid, []).append({"agent": e["agent"], "outcome": OUTCOMES[e["event"]], "at": e["ts"], "note": e["note"]})
 		return {t: a for t, a in out.items() if len(a) >= n}
+
+	def needs(self, prs: dict | None = None) -> list[dict]:
+		"""The open tickets that wait on a person, the Needs you panel's items (REST GET /api/needs via Boards.needs, MCP needs_you):
+		an agent's question, work in review, a proposal, work stuck (a doing ticket with an open blocker, untouched for stale_days, a
+		blocker that no longer exists, a missing tool, or >= 3 failed attempts) and a person's note on finished work (late_note, AI-50;
+		review items carry `late` too). One kind each, in that precedence: late_note (done tickets only), review, proposal, question, stuck. Sorted by score, then oldest first. list() may sweep expired claims, like the notifier does.
+		prs = the PR cache already read (web's /api/needs keys its cache on it); None = read it."""
+		from collections import Counter
+		ts = self.list()
+		items, by_id, failing = [], {t["id"]: t for t in ts}, self.failing()
+		prs = self.backend.get_doc("prs") if prs is None else prs  # github.py's PR cache (any connector); web passes the one it keyed on
+		for t in ts:
+			tries = []
+			late = self.late_notes(t) if t["status"] in ("review", "done") else []
+			if t["status"] == "done":
+				if not late:
+					continue
+				kind, at = "late_note", late[-1].get("at")  # a person wrote on finished work: reopen it or dismiss the note
+			elif t["status"] == "review":
+				kind, at = "review", (t.get("result") or {}).get("at")
+			elif t.get("proposed_by"):
+				kind, at = "proposal", None
+			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
+				kind, at = "question", t.get("asked_at")
+			elif t.get("needs") or t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= self.stale_days) or (not t.get("claim") and t["id"] in failing):
+				kind, at = "stuck", None
+				tries = [] if t.get("claim") else failing.get(t["id"], [])
+			else:
+				continue
+			stuck = kind == "stuck"
+			outcomes = Counter(a["outcome"] for a in tries) if stuck else {}
+			items.append({"id": t["id"], "kind": kind, "title": t["title"], "priority": t.get("priority"), "score": t["score"],
+			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
+			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
+			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= self.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
+			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
+			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
+			              **({"late": late} if late else {}),
+			              **({"needs": t["needs"]} if stuck and t.get("needs") else {}),
+			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
+			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
+			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
+			                  "attempts": tries, "failed": f"Failed {len(tries)} times ({', '.join(f'{k} ×{v}' for k, v in outcomes.items())})" if tries else ""} if stuck else {})})
+		items.sort(key=lambda i: (-i["score"], i["since"]))
+		return items
 
 	def _keepalive(self, tid: str, agent: str | None) -> None:
 		"""Any write that names the live holder of tid counts as a heartbeat (agents can't ping during a long test run). Caller holds the lock."""

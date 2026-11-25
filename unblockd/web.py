@@ -65,7 +65,6 @@ import hashlib
 import hmac
 import json
 import os
-from collections import Counter
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -121,10 +120,6 @@ def _tickets_body(store) -> tuple[bytes, str]:
 	return data, etag
 
 
-NEEDS_BODY = 6000  # chars of body (the description) sent per item
-NEEDS_NOTES = 10  # the newest notes sent per item: the panel shows the last 3 that are not the question itself
-
-
 def _needs_body(board: str | None = None) -> tuple[bytes, str]:
 	"""/api/needs, serialized again only when its inputs changed: per board the board signature, the activity log's cursor
 	(failing(); files: activity.jsonl's size, databases: the event counter) and the PR cache (github). Any connector. A board
@@ -156,52 +151,16 @@ def _needs_body(board: str | None = None) -> tuple[bytes, str]:
 
 
 def _needs(boards: list | None = None) -> list[dict]:
-	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
-	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
-	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does.
-	boards = [(board id, Store, PR cache)] already opened by _needs_body; None = every board."""
+	"""Per board, Store.needs() (the items MCP needs_you returns too, via Boards.needs): [{id, title, items}], boards with items only.
+	boards = [(board id, Store, PR cache)] already opened by _needs_body; None = every board. A broken config hides only its own board."""
 	out = []
 	for bid, s, prs in boards if boards is not None else ((b, p, None) for b, p in BOARDS.all().items()):
 		try:
 			s = s if isinstance(s, st.Store) else BOARDS.open(s)
-			ts = s.list()
+			items = s.needs(prs)
 		except st.TicketError:
-			continue  # a broken config hides only its own board
-		items, by_id, failing = [], {t["id"]: t for t in ts}, s.failing()
-		prs = s.backend.get_doc("prs") if prs is None else prs
-		for t in ts:
-			late = s.late_notes(t) if t["status"] in ("review", "done") else []
-			if t["status"] == "done":
-				if not late:
-					continue
-				kind, at = "late_note", late[-1].get("at")  # a person wrote on finished work: reopen it or dismiss the note
-			elif t["status"] == "review":
-				kind, at = "review", (t.get("result") or {}).get("at")
-			elif t.get("proposed_by"):
-				kind, at = "proposal", None
-			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
-				kind, at = "question", t.get("asked_at")
-			elif t.get("needs") or t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days) or (not t.get("claim") and t["id"] in failing):
-				kind, at = "stuck", None
-				tries = [] if t.get("claim") else failing.get(t["id"], [])
-			else:
-				continue
-			stuck = kind == "stuck"
-			outcomes = Counter(a["outcome"] for a in tries) if stuck else {}
-			items.append({"id": t["id"], "kind": kind, "title": t["title"], "priority": t.get("priority"), "score": t["score"],
-			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
-			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
-			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
-			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
-			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
-			              **({"late": late} if late else {}),
-			              **({"needs": t["needs"]} if stuck and t.get("needs") else {}),
-			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
-			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
-			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
-			                  "attempts": tries, "failed": f"Failed {len(tries)} times ({', '.join(f'{k} ×{v}' for k, v in outcomes.items())})" if tries else ""} if stuck else {})})
+			continue
 		if items:
-			items.sort(key=lambda i: (-i["score"], i["since"]))
 			out.append({"id": bid, "title": s.config["title"], "items": items})
 	return out
 

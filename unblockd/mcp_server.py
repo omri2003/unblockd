@@ -3,13 +3,13 @@
 UNBLOCKD_TOKEN = Bearer token; MCP_ALLOWED_HOSTS = extra Host values, comma list, e.g. "myhost:*"; MCP_WAIT_MAX = the claim_next(wait_s=)
 cap, default 30): ONE shared server for every project.
 `--tools worker [--profile P]` (env UNBLOCKD_MCP_TOOLS / UNBLOCKD_PROFILE) = only the worker tools (store.WORKER_TOOLS, the board's
-`worker_tools`, plus profile P's `tools`); `--tools a,b` = those. Worker writes return a short ack (_ack); stdio claims skip board /
+`worker_tools`, plus profile P's `tools`); `--tools a,b` = those. Worker writes and the human-side answer / approve_ticket / reject / accept_ticket return a short ack (_ack); stdio claims skip board /
 profile docs already sent unchanged in this process (_dedupe).
 
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
 Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
-create_ticket, create_tickets, accept_ticket, approve_ticket, report_ticket, update_ticket, update_tickets, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
+create_ticket, create_tickets, needs_you, accept_ticket, approve_ticket, report_ticket, update_ticket, update_tickets, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, roadmap, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
 Errors come back as tool errors with a plain message (bad id, bad field, unknown board...).
 """
@@ -344,10 +344,21 @@ def roadmap(board: str | None = None) -> dict:
 
 
 @tool
+def needs_you(board: str | None = None) -> list[dict]:
+	"""What waits on a person (the web board's Needs you panel, same items as GET /api/needs): per board [{id, title, items}], boards
+	with items only; board= one board, omitted = every board. Each item: id, kind (late_note | review | proposal | question | stuck), title, priority,
+	score, unblocks, since, waiting_on (the question), done_when, result (a review's summary, files, refs, handoff), body (the end of it),
+	notes (the newest 10), late (notes written after the work finished: on review and late_note items), pr (GitHub PR state of a review), and for stuck: open_blockers, missing_blockers, needs (a missing tool),
+	stale_days, claim_note, attempts / failed. Act on them with answer, approve_ticket, reject, accept_ticket (get_ticket for more);
+	a late_note: reopen with update_ticket(status todo) or leave it for the person to dismiss on the board."""
+	return BOARDS.needs(board)
+
+
+@tool
 def accept_ticket(id: str, by: str | None = None, board: str | None = None, agent: str | None = None) -> dict:
 	"""The human side of the proposal gate: accept a ticket an agent created (proposed_by is cleared, it becomes ready). Reject = delete_ticket.
 	by = the human accepting (agent= is accepted too)."""
-	return BOARDS.get(board).accept(id, _who(agent, by))
+	return _ack(BOARDS.get(board).accept(id, _who(agent, by)))
 
 
 @tool
@@ -471,14 +482,14 @@ def add_note(id: str, agent: str | None = None, text: str = "", kind: str = "not
 def answer(id: str, by: str | None = None, text: str = "", board: str | None = None, agent: str | None = None) -> dict:
 	"""The human side of ask_human: record the answer (note "Answer to: <question> — <text>"), clear waiting_on so the ticket is ready again.
 	Refused unless the ticket is waiting_on a question. by = the human answering (agent= is accepted too)."""
-	return BOARDS.get(board).answer(id, _who(agent, by), text)
+	return _ack(BOARDS.get(board).answer(id, _who(agent, by), text))
 
 
 @tool
 def approve_ticket(id: str, by: str | None = None, board: str | None = None, agent: str | None = None) -> dict:
 	"""The human side of review: approve a ticket in review. It becomes done and records who approved (result.approved_by). Refused unless its status is review, for a worker, and for whoever completed it.
 	by = the human approving (agent= is accepted too)."""
-	return BOARDS.get(board).approve(id, _who(agent, by))
+	return _ack(BOARDS.get(board).approve(id, _who(agent, by)))
 
 
 @tool(need=("summary",))
@@ -494,7 +505,7 @@ def report_ticket(id: str, by: str | None = None, summary: str = "", files: list
 def reject(id: str, by: str | None = None, reason: str = "", board: str | None = None, agent: str | None = None) -> dict:
 	"""The human side of review: send a ticket in review back to todo with the reason as a note. Refused unless its status is review.
 	by = the human rejecting (agent= is accepted too)."""
-	return BOARDS.get(board).reject(id, _who(agent, by), reason)
+	return _ack(BOARDS.get(board).reject(id, _who(agent, by), reason))
 
 
 @tool
