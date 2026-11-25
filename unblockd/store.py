@@ -1419,11 +1419,28 @@ class Store:
 		if self.profile_of(by.strip()):
 			raise TicketError(f"{action} is a human action, and {by.strip()!r} is a worker: tell the human (ask_human) or add_note")
 
-	def split(self, tid: str, titles: list[str], sequential: bool = False, by: str | None = None) -> dict:
-		"""Break a ticket that is too big into parts. One child per title (same prefix; pillar, owner, priority,
-		tags, touches, docs, components copied; inherits the parent's blocked_by; sequential = each also waits on the one before),
-		and the parent now waits on all of them (a doing parent goes back to todo, its claim dropped).
-		Returns {"parent": ..., "children": [...]}."""
+	def split(self, tid: str, titles: list[str] | None = None, sequential: bool = False, by: str | None = None,
+	          parts: list[dict] | None = None, claim: int | None = None, principal: str | None = None, branch: str | None = None) -> dict:
+		"""Break a ticket that is too big into parts (same prefix, next free ids, parent = tid; pillar, owner, priority, tags, touches,
+		docs, components, skills, mcp, milestone copied unless the part sets its own; every part inherits the parent's blocked_by;
+		sequential = each also waits on the one before), and the parent now waits on all of them (a doing parent goes back to todo,
+		its claim dropped). titles = the short form, one part per title (body "Split from X."). parts = [{title, done_when, touches,
+		body, components, blocked_by, ...}] (CORE-50): each part is what create() takes, minus id / prefix / parent / status; its
+		blocked_by may name existing ids or "#N" = the Nth part; validated like create_many items, all or nothing ("#2: ...").
+		claim = k: `by` (a worker) claims part #k in the same call (checked before anything is written: it must have no open
+		blocker and no human owner; branch as in claim). Returns {"parent", "children", "claimed"?: what claim() returns, "claim_error"?}."""
+		if parts is not None and titles:
+			raise TicketError("give titles (the short form) or parts, not both")
+		if claim is not None:
+			if not (isinstance(by, str) and by):
+				raise TicketError("claim=k needs by / agent: the worker that takes part #k")
+			if isinstance(claim, bool) or not isinstance(claim, int):
+				raise TicketError(f"claim must be a part number (1-based), not {claim!r}")
+			self.worker_profile(by)  # a name matching no profile is refused before anything is written, as claim() would
+			humans = [o["name"] for o in self.config["owners"] if o.get("kind") == "human"]
+			if principal and principal not in humans:
+				raise TicketError(f"principal {principal!r} is not a human owner on this board: {', '.join(humans) or 'no human owners configured'}")
+
 		def run():
 			parent = self.get(tid)
 			self._holder_only(tid, by)
@@ -1432,26 +1449,101 @@ class Store:
 			open_kids = [k for k in parent["children"] if self.get(k)["status"] != "done"]
 			if open_kids:
 				raise TicketError(f"{tid} is already split into {', '.join(open_kids)}: work those, or split one of them")
-			if not (isinstance(titles, list) and all(isinstance(x, str) for x in titles)):
-				raise TicketError("titles must be a list of strings, one per part")
-			titles_ = [x.strip() for x in titles if x.strip()]
-			if len(titles_) < 2:
+			if parts is None:
+				if not (isinstance(titles, list) and all(isinstance(x, str) for x in titles)):
+					raise TicketError("titles must be a list of strings, one per part")
+				items = [{"title": x.strip(), "body": f"Split from {tid}."} for x in titles if x.strip()]
+			elif not isinstance(parts, list):
+				raise TicketError("parts must be a list of objects: [{title, done_when, touches, body, components, blocked_by: [\"#1\"]}]")
+			else:
+				items = parts
+			if len(items) < 2:
 				raise TicketError("split needs at least 2 parts: give 2 or more non-empty titles (for one part, just edit the ticket)")
-			for x in titles_:  # validate everything before creating anything
-				self._clean({"title": x}, partial=True)
+			if len(items) > BATCH_MAX:
+				raise TicketError(f"{len(items)} parts: at most {BATCH_MAX}")
+			if claim is not None and not 1 <= claim <= len(items):
+				raise TicketError(f"claim={claim} is not a part of this split (1 to {len(items)})")
 			prefix = tid.split("-")[0]
+			first = int(self.next_id(prefix).rsplit("-", 1)[1])
+			ids = [f"{prefix}-{first + i}" for i in range(len(items))]
 			keep = {k: parent[k] for k in ("pillar", "owner", "priority", "tags", "touches", "docs", "components", "skills", "mcp", "milestone") if k in parent}
-			kids: list[dict] = []
-			for x in titles_:
-				blocked = list(parent["blocked_by"]) + ([kids[-1]["id"]] if sequential and kids else [])
-				kids.append(self._create({**keep, "title": x, "body": f"Split from {tid}.", "blocked_by": blocked, "parent": tid}, prefix=prefix, inherited=parent["blocked_by"], inherited_components=parent.get("components", []), inherited_caps=parent))
-			ids = [k["id"] for k in kids]
+			errs: list[str] = []
+			def bad(i, e):
+				errs.append(f"#{i}: {e}")
+			def ref(x):
+				if isinstance(x, str) and x.startswith("#"):
+					k = int(x[1:]) if x[1:].isdigit() else 0
+					if not 1 <= k <= len(items):
+						raise TicketError(f"{x} is not a part of this split (#1 to #{len(items)})")
+					return ids[k - 1]
+				return x
+			datas: list[dict | None] = []
+			for i, it in enumerate(items):
+				try:
+					if not isinstance(it, dict):
+						raise TicketError("a part must be an object {title, ...}")
+					fixed = sorted(set(it) & {"id", "prefix", "parent", "status"})
+					if fixed:
+						raise TicketError(f"a part can't set {', '.join(fixed)}: ids come next free with {prefix}, the parent is {tid}, a part starts as todo")
+					own = it.get("blocked_by", [])
+					if not isinstance(own, list):
+						raise TicketError("blocked_by must be a list of ids or \"#N\" (the Nth part)")
+					own = [ref(x) for x in own]
+					d = {**keep, "body": f"Split from {tid}.", **it, "parent": tid,
+					     "blocked_by": list(dict.fromkeys(list(parent["blocked_by"]) + own + ([ids[i - 1]] if sequential and i else [])))}
+					datas.append(d)
+				except TicketError as e:
+					bad(i + 1, e)
+					datas.append(None)
+			graph = {ids[i]: d["blocked_by"] for i, d in enumerate(datas) if d}
+			ups = {x: tid for x in ids}
+			built = []
+			for i, d in enumerate(datas):
+				if d is None:
+					continue
+				try:
+					built.append(self._prepare(d, ids[i], inherited=parent["blocked_by"], inherited_caps=parent,
+					                           inherited_components=parent.get("components", []), batch=(set(ids), graph, ups)))
+				except TicketError as e:
+					bad(i + 1, e)
+			if claim is not None and not errs:  # the part to claim must be claimable once the split is written: say so now, not after
+				t = built[claim - 1]
+				humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+				board = self._board()
+				waits = [b for b in t["blocked_by"] if b in ids or (b in board and board[b]["status"] != "done")]
+				if waits:
+					bad(claim, f"claim={claim} refused: that part waits on {', '.join(waits)}; claim a part with no open blocker")
+				elif t["owner"] in humans:
+					bad(claim, f"claim={claim} refused: that part is owned by {t['owner']} (a human)")
+			if errs:
+				if parts is None and len(errs) == 1:
+					raise TicketError(errs[0].split(": ", 1)[1])  # the short form keeps its old one-problem messages
+				errs.sort(key=lambda e: int(e[1:].split(":", 1)[0]))  # by part number
+				raise TicketError(self._batch_refusal(errs, "split"))
+			done = []
+			try:
+				for t in built:
+					self._write(t)
+					done.append(t["id"])
+			except OSError as e:
+				for x in done:  # a database connector's write is inside the lock's transaction: it rolls back on its own
+					if self._exists(x):
+						self.backend.delete(x)
+				raise TicketError(f"could not write the parts ({e}): nothing was split")
+			for t in built:
+				self._log("created", t["id"], None, t["title"])
 			changes = {"blocked_by": list(parent["blocked_by"]) + ids}
 			if parent["status"] == "doing":
 				changes["status"] = "todo"  # update() drops the claim; a doing ticket can't have open blockers
 			self.update(tid, changes)
 			self._log("split", tid, by, ", ".join(ids))
-			return {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
+			out = {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
+			if claim is not None:
+				try:
+					out["claimed"] = self.claim(by, tid=ids[claim - 1], principal=principal, branch=branch)
+				except TicketError as e:  # e.g. its touches overlap another live claim: the split stands
+					out["claim_error"] = f"split done, but {ids[claim - 1]} could not be claimed: {e}"
+			return out
 		return self._locked(run)
 
 	def delete(self, tid: str, agent: str | None = None, reason: str = "") -> dict:

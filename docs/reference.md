@@ -146,10 +146,11 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   someone else added notes to a ticket the worker holds since it was last shown them (the last 10; each note's whole text up to 2000 chars, 6000 for all of
   them, the newest first served; a cut note has `truncated: true` and only then does the worker need `get_ticket`, AI-44). To ask
   another worker for a change in a file its ticket touches, `add_note` on THAT ticket: its holder sees it within one heartbeat.
-- **Too big? Split it** instead of half-doing it: `split_ticket(id, titles, sequential?)`
-  (REST `POST tickets/<id>/split`, CLI `split`, drawer menu *Split…*) makes one child per
-  title with the parent's pillar, owner, priority, tags, touches, docs and components, and the parent
-  now waits on all of them (your claim ends); then `claim_next`. *Do in order* chains the parts. A ticket with open children is refused ("already split into ...": work those, or split one of them); once they are all done it can be split again.
+- **Too big? Split it** instead of half-doing it: `split_ticket(id, agent, titles | parts, sequential?, claim?)`
+  (REST `POST tickets/<id>/split` `{titles | parts, sequential?, by?, claim?, principal?}`, CLI `split --title ... | --parts FILE|-  [--by A --claim K]`, `Remote.split`, drawer menu *Split…*).
+  `titles` (the short form) makes one child per title with the parent's pillar, owner, priority, tags, touches, docs, components, skills, mcp and milestone and the body "Split from X.".
+  `parts` (CORE-50) = `[{title, done_when, touches, body, components, blocked_by, ...}]`: each part is what `create_ticket` takes minus id / prefix / parent / status, and what it leaves out is copied from the parent as above; give each part its own `touches` (parts with the parent's touches overlap, so only one could be claimed at a time) and `done_when`. A part's `blocked_by` may name existing ids or `"#N"` = the Nth part (every part also inherits the parent's `blocked_by`). Parts are validated like `create_tickets` items, all or nothing: one bad part refuses the split with every problem named by part (`#2: invalid title`), nothing written. `claim=k` (with `by` / `agent` a worker name) claims part #k for it in the same call, returned as `claimed` (with `context` from MCP / CLI); the part must have no open blocker and no human owner (refused before anything is written); if the claim still fails (its touches overlap another live claim) the split stands and the reply has `claim_error`.
+  The parent now waits on all of them (your claim ends). *Do in order* (`sequential`) chains the parts. A ticket with open children is refused ("already split into ...": work those, or split one of them); once they are all done it can be split again. The drawer's *Split…* form is titles only.
 
 A claimed card carries a **liveness line** (agent, `live · 40 s` with a filled dot, or
 `quiet · 11 min` with a hollow dot once the last heartbeat is older than half the lease, plus a

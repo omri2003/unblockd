@@ -329,6 +329,20 @@ class WorkLoopTest(unittest.TestCase):
 			m.update_tickets([{"id": "B-1", "changes": {"priority": "P3"}}, {"id": "B-2", "changes": {"priority": "P7"}}], agent="planner")
 		self.assertEqual(s.get("B-1")["priority"], "P1")
 
+	def test_split_ticket_parts_and_claim(self):
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		s = m.BOARDS.get(None)
+		s.create({"title": "big", "touches": ["ui/"]}, tid="B-1")
+		m.claim_ticket("B-1", "w-1")
+		out = m.split_ticket("B-1", "w-1", parts=[{"title": "a", "touches": ["ui/a.js"], "done_when": ["a works"]},
+		                                         {"title": "b", "touches": ["ui/b.js"], "blocked_by": ["#1"]}], claim=1)
+		self.assertEqual([(k["id"], k["touches"], k["blocked_by"]) for k in out["children"]], [("B-2", ["ui/a.js"], []), ("B-3", ["ui/b.js"], ["B-2"])])
+		self.assertEqual((out["claimed"]["id"], out["claimed"]["claim"]["agent"]), ("B-2", "w-1"))
+		self.assertIn("context", out["claimed"])
+		self.assertEqual(len(m.split_ticket("B-3", "w-2", titles=["x", "y"])["children"]), 2)  # the short form
+
 	def test_list_tickets_by_touches_shows_the_holder(self):
 		from unblockd import mcp_server as m
 		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)

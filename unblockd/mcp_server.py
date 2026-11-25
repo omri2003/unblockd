@@ -351,12 +351,22 @@ def update_tickets(tickets: list[dict], agent: str, board: str | None = None) ->
 
 
 @tool
-def split_ticket(id: str, titles: list[str], agent: str, sequential: bool = False, board: str | None = None) -> dict:
-	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it, then
-	claim_next. One child per title (pillar, owner, priority, tags, touches, docs, components, skills, mcp copied); the parent
-	then waits on all of them. sequential=true makes each part wait on the one before. If you hold the
-	claim, the parent goes back to todo and your claim ends. agent = your worker name (a ticket another agent holds can't be split). Returns {parent, children}."""
-	return BOARDS.get(board).split(id, titles, sequential=sequential, by=agent)
+def split_ticket(id: str, agent: str, titles: list[str] | None = None, parts: list[dict] | None = None, sequential: bool = False,
+                 claim: int | None = None, principal: str | None = None, branch: str | None = None, board: str | None = None) -> dict:
+	"""Use this when a ticket is too big to finish in one go: split it instead of half-doing it. Give titles (short form: one part per
+	title, each a copy of the parent: pillar, owner, priority, tags, touches, docs, components, skills, mcp) or parts = [{title, done_when,
+	touches, body, components, blocked_by, ...}]: each part sets its own fields (what create_ticket takes; the rest is copied from the
+	parent), so give each part its OWN touches (parts with the parent's touches overlap and can't run in parallel) and done_when.
+	A part's blocked_by may say "#N" = the Nth part. All or nothing: any problem refuses the split with every one listed ("#2: ...").
+	The parent then waits on all parts. sequential=true makes each part wait on the one before. If you hold the claim, the parent goes back
+	to todo and your claim ends; claim=k then takes part #k for you in the same call (it must have no open blocker; principal and branch as in
+	claim_next), returned as `claimed` with its context. agent = your worker name (a ticket another agent holds can't be split).
+	Returns {parent, children, claimed?, claim_error?}."""
+	store = BOARDS.get(board)
+	out = store.split(id, titles, sequential=sequential, by=agent, parts=parts, claim=claim, principal=principal, branch=branch)
+	if out.get("claimed"):
+		out["claimed"] = _dedupe(board, agent, kn.with_context(store, out["claimed"]))
+	return out
 
 
 @tool

@@ -26,6 +26,7 @@
     python -m unblockd.cli update-many --file changes.json|- [--agent A]   # [{"id": "UI-12", "changes": {...}}, ...], all or nothing
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
+    python -m unblockd.cli split ID --parts parts.json|- [--by AGENT --claim K]   # parts with their own done_when / touches / body; "#N" refs; claim part K
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
@@ -153,7 +154,8 @@ class Remote:
 	def update_many(self, items, agent=None, by=None):
 		return self._call("PATCH", "/tickets", {"tickets": items, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
-	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
+	def split(self, tid, titles=None, sequential=False, by=None, parts=None, claim=None, principal=None, branch=None):
+		return self._call("POST", f"/tickets/{tid}/split", {"titles": titles or [], "sequential": sequential, "by": by, "parts": parts, "claim": claim, "principal": principal, **({"branch": branch} if branch else {})})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
 	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None, wait_s=0):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal,
@@ -290,6 +292,10 @@ def main(argv: list[str] | None = None) -> int:
 	sp.add_argument("--title", action="append", default=[])
 	sp.add_argument("--sequential", action="store_true")
 	sp.add_argument("--by")
+	sp.add_argument("--parts", help='instead of --title: a JSON array file (or - for stdin) of parts [{"title", "done_when", "touches", "body", "blocked_by": ["#1"]}]')
+	sp.add_argument("--claim", type=int, help="with --by: claim part K (1-based) in the same step")
+	sp.add_argument("--principal", default=pr, help="with --claim: the human owner you work for (default: env UNBLOCKD_PRINCIPAL)")
+	sp.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="with --claim: same as claim")
 	de = sub.add_parser("delete")
 	de.add_argument("id")
 	de.add_argument("--agent", help="the worker deleting: it can't delete a ticket another agent holds")
@@ -402,7 +408,10 @@ def main(argv: list[str] | None = None) -> int:
 			f = Path(a.file)
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
-			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
+			parts = json.loads(sys.stdin.read() if a.parts == "-" else Path(a.parts).read_text(encoding="utf-8")) if a.parts else None
+			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by, parts=parts, claim=a.claim, principal=a.principal if a.claim else None, branch=a.branch if a.claim else None)
+			if out.get("claimed"):  # like claim: the part comes with what to read
+				out["claimed"] = {**out["claimed"], "context": ctx(out["claimed"]["id"])}
 		elif a.cmd == "answer":
 			out = s.answer(a.id, a.by, a.text)
 		elif a.cmd == "reject":

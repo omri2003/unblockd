@@ -420,7 +420,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.report(rest[1], str(b.get("by") or "human"), b.get("summary"), files=b.get("files"), refs=b.get("refs")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
-				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
+				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by") or b.get("agent"),
+				                                    parts=b.get("parts"), claim=b.get("claim"), principal=b.get("principal"), branch=b.get("branch")))
 			if method == "POST" and rest == ["tickets", "batch"]:
 				b = self._body()
 				return self._send(201, store.create_many(b.get("tickets"), agent=b.get("agent")))
