@@ -21,6 +21,35 @@ except ImportError:
 	mcp = None
 
 
+class CliNextTest(unittest.TestCase):  # AI-42: no mcp needed
+	def test_complete_release_ask_next(self):
+		import contextlib
+		import io
+		from unittest import mock
+		from unblockd import cli
+		from unblockd.store import Store
+		with tempfile.TemporaryDirectory() as tmp:
+			s = Store(tmp)
+			for i in (1, 2, 3):
+				s.create({"title": str(i)}, tid=f"B-{i}")
+			s.claim("w-1", tid="B-1")
+
+			def run(*args):
+				out = io.StringIO()
+				with mock.patch.dict(os.environ, {"UNBLOCKD_URL": ""}), contextlib.redirect_stdout(out):
+					self.assertEqual(cli.main(["--dir", tmp, *args]), 0)
+				return json.loads(out.getvalue())
+			r = run("complete", "B-1", "--agent", "w-1", "--summary", "done", "--next")
+			self.assertEqual((r["done"]["status"], r["next"]["id"], r["next"]["status"]), ("done", "B-2", "doing"))
+			self.assertIn("context", r["next"])
+			r = run("release", "B-2", "--agent", "w-1", "--reason", "stuck", "--next")
+			self.assertEqual((r["done"]["status"], r["next"]["id"]), ("todo", "B-2"))  # released, best ticket again
+			r = run("ask", "B-2", "--agent", "w-1", "--question", "which?", "--next")
+			self.assertEqual(r["next"]["id"], "B-3")
+			r = run("complete", "B-3", "--agent", "w-1", "--summary", "done", "--next")
+			self.assertEqual(r["next"]["reason"], "waiting")  # B-2 waits on a human
+
+
 @unittest.skipIf(mcp is None, "mcp not installed")
 class WorkLoopTest(unittest.TestCase):
 	def setUp(self):
@@ -109,6 +138,48 @@ class WorkLoopTest(unittest.TestCase):
 		          m.update_ticket("B-1", {"priority": "P1"}, "w-1"), m.complete("B-1", "w-1", "done")):
 			self.assertEqual(set(r) - {"note", "lease_left_s", "expires_at", "warnings"}, {"ok", "id", "status", "effective_status", "rev"})
 			self.assertLess(len(json.dumps(r)), 200)
+
+	def test_next_true_finishes_and_claims_in_one_reply(self):  # AI-42
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		(Path(self.tmp.name) / "unblockd.json").write_text(json.dumps({"session_tickets": 3}), encoding="utf-8")
+		m.BOARDS = m.bd.from_env()
+		for i in (1, 2, 3, 4):
+			m.BOARDS.get(None).create({"title": str(i)}, tid=f"B-{i}")
+		m.SENT.clear()
+		m.CLAIMS.clear()
+		m.DEDUPE = True
+		try:
+			first = m.claim_next("w-1")
+			r = m.complete(first["id"], "w-1", "done", next=True)
+			self.assertEqual((r["done"]["id"], r["done"]["status"]), (first["id"], "done"))
+			self.assertEqual(r["next"]["status"], "doing")
+			self.assertIn("context", r["next"])  # the same reply claim_next gives
+			r2 = m.release(r["next"]["id"], "w-1", "stuck", next=True)
+			self.assertEqual(r2["done"]["status"], "todo")
+			self.assertEqual(r2["next"]["claim"]["agent"], "w-1")
+			r3 = m.ask_human(r2["next"]["id"], "w-1", "which way?", next=True)
+			self.assertEqual(r3["done"]["effective_status"], "pending")
+			self.assertEqual(r3["next"]["reason"], "session_done")  # 3 claims in this session: the cap still ends it
+		finally:
+			m.DEDUPE = False
+		left = m.claim_next("w-2")
+		self.assertNotIn("next", m.complete(left["id"], "w-2", "done"))  # next=false: the plain ack
+
+	def test_next_true_when_nothing_is_left_or_the_claim_fails(self):
+		from unblockd import mcp_server as m
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		(Path(self.tmp.name) / "unblockd.json").write_text(json.dumps({"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}]}), encoding="utf-8")
+		m.BOARDS = m.bd.from_env()
+		for i in (1, 2):
+			m.BOARDS.get(None).create({"title": str(i)}, tid=f"B-{i}")
+		m.claim_ticket("B-1", "w-1")
+		r = m.complete("B-1", "w-1", "done", principal="Claude", next=True)  # Claude is no human owner: complete ignores it, the claim refuses it
+		self.assertEqual(r["done"]["status"], "done")
+		self.assertIn("not a human owner", r["next"]["error"])
+		m.claim_ticket("B-2", "w-1")
+		r = m.complete("B-2", "w-1", "done", next=True)
+		self.assertEqual(r["next"]["reason"], "dry")
 
 	def test_board_docs_are_sent_once_per_session(self):
 		from unblockd import mcp_server as m

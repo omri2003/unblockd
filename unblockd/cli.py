@@ -5,9 +5,10 @@
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
-    python -m unblockd.cli release ID --agent A [--reason "..."]
-    python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
-    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}']
+    python -m unblockd.cli release ID --agent A [--reason "..."] [--next]
+    python -m unblockd.cli ask ID --agent A --question "what only a human can decide" [--next]   # releases the claim, waits on a human
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}'] [--next]
+        # --next (complete / release / ask): also claim the next ticket (with --principal / --branch): prints {"done": ..., "next": <what claim prints>}
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
     python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
     python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
@@ -253,10 +254,11 @@ def main(argv: list[str] | None = None) -> int:
 		if name == "release":
 			x.add_argument("--missing", default="", help="a tool you need and do not have")
 			x.add_argument("--why", default="", help="with --missing: one line on what you needed it for")
-		if name != "ask":
-			x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)")
+		x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)" + ("; only used by --next" if name == "ask" else ""))
 		if name != "heartbeat":
 			x.add_argument("--request-id", help="a fresh id for this write: a retry with the same id changes nothing and answers already: true")
+			x.add_argument("--next", action="store_true", help="then claim the next ticket in the same run: prints {done, next}")
+			x.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="with --next: same as claim")
 	cp = sub.choices["complete"]
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
@@ -324,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
 		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
 			st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
 		ctx = s.context if url else lambda tid: kn.context(s, tid)
+		with_ctx = lambda got: {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		if a.cmd == "list":
 			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone)
 			out = [{k: t.get(k) for k in ("id", "title", "effective_status", "priority", "owner", "pillar", "agent", "open_blockers")} for t in res]
@@ -350,7 +353,7 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "claim":
 			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch) if a.id else \
 				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch)
-			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
+			out = with_ctx(got)
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
 			out = s.heartbeat(a.id, a.agent, a.note, a.principal, until=a.until)
@@ -407,6 +410,11 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.report(a.id, a.by, a.summary, files=a.file, refs=a.ref)
 		else:
 			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
+		if a.cmd in ("release", "ask", "complete") and a.next:  # AI-42: one run finishes this ticket and takes the next
+			try:
+				out = {"done": out, "next": with_ctx(s.claim_next(a.agent, principal=a.principal, branch=a.branch))}
+			except st.TicketError as e:  # the write above landed: say so, with why no next ticket came
+				out = {"done": out, "next": {"ticket": None, "error": str(e)}}
 	except (st.TicketError, json.JSONDecodeError, OSError) as e:  # OSError: a --file / attach path that can't be read
 		return _fail(e, as_json)
 	print(json.dumps(out, indent=2, ensure_ascii=False))

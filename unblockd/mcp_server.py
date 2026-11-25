@@ -152,6 +152,19 @@ def _dedupe(board: str | None, agent: str, res: dict | None, fresh: bool = False
 	return res
 
 
+def _then(done: dict, board: str | None, agent: str, nxt: bool, principal: str | None = None, branch: str | None = None) -> dict:
+	"""next=true on complete / release / ask_human: the write's ack plus what claim_next would answer now, in ONE reply ({done, next}),
+	through the same session cap (_session_done) and doc dedupe (_dedupe). A claim that fails (e.g. a bad principal) comes back as
+	next = {ticket: null, error}: the write before it already landed."""
+	if not nxt:
+		return done
+	try:
+		n = claim_next(agent, principal=principal, branch=branch, board=board)
+	except ToolError as e:
+		n = {"ticket": None, "error": str(e)}
+	return {"done": done, "next": n}
+
+
 def limit_tools(mode: str | None, profile: str | None = None) -> list[str]:
 	"""Keep only the tools a worker needs. mode: None / "all" = every tool (humans, orchestrators); "worker" = the default board's
 	`worker_tools` (default WORKER_TOOLS) plus the profile's `tools`; or a comma list of names. Returns the kept names."""
@@ -373,10 +386,12 @@ def heartbeat(id: str, agent: str, note: str = "", principal: str | None = None,
 
 
 @tool
-def ask_human(id: str, agent: str, question: str, request_id: str | None = None, board: str | None = None) -> dict:
+def ask_human(id: str, agent: str, question: str, request_id: str | None = None, next: bool = False, principal: str | None = None,
+              branch: str | None = None, board: str | None = None) -> dict:
 	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
-	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket. request_id: see complete."""
-	return _ack(BOARDS.get(board).ask(id, agent, question, request_id=request_id))
+	is not claimable until a human clears waiting_on), and notifies. Move on to the next ticket: next=true also claims it in the same call
+	and returns {done: <this reply>, next: <what claim_next answers>} (principal, branch = the ones you claim with). request_id: see complete."""
+	return _then(_ack(BOARDS.get(board).ask(id, agent, question, request_id=request_id)), board, agent, next, principal, branch)
 
 
 @tool
@@ -419,25 +434,30 @@ def reject(id: str, by: str, reason: str, board: str | None = None) -> dict:
 
 @tool
 def release(id: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
-            request_id: str | None = None, board: str | None = None) -> dict:
+            request_id: str | None = None, next: bool = False, branch: str | None = None, board: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). Say why. Missing a tool you need (a browser, a database, an unblockd tool)?
 	missing = its name, why = one line on what you needed it for: the human is told, and workers like you skip it until it is fixed.
-	request_id: see complete."""
-	return _ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id))
+	request_id: see complete. next=true = also claim your next ticket in the same call (branch: see claim_next): the reply is
+	{done: <this reply>, next: <what claim_next answers>}."""
+	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id)),
+	             board, agent, next, principal, branch)
 
 
 @tool
 def complete(id: str, agent: str, summary: str, files: list[str] | None = None, refs: list[str] | None = None,
              handoff: str | None = None, principal: str | None = None, request_id: str | None = None, followup: dict | None = None,
-             board: str | None = None) -> dict:
+             next: bool = False, branch: str | None = None, board: str | None = None) -> dict:
 	"""Finish your claimed ticket: status done (review on boards that require a human look), summary appended to its body. summary = cause ->
 	fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files = paths you changed, refs = PR / commit / URL,
 	handoff = what tickets waiting on this one must know; they get it in their context as `upstream`. Pass the same principal you claimed with.
 	A write that timed out may still have landed: get_ticket before retrying, or retry with the same request_id (any fresh id you pick
 	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true.
 	Part done, rest waiting on another ticket: followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?} completes this one AND
-	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing."""
-	return _ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal, request_id=request_id, followup=followup))
+	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing.
+	next=true = also claim your next ticket in the same call (branch: see claim_next): the reply is {done: <this reply>, next: <what
+	claim_next answers: a ticket with its context, or {ticket: null, reason} incl. session_done>}."""
+	return _then(_ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal,
+	                                             request_id=request_id, followup=followup)), board, agent, next, principal, branch)
 
 
 @tool
