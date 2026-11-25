@@ -176,6 +176,7 @@ class Remote:
 		                                                       **({"followup": followup} if followup is not None else {})})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
+	def read_docs(self, paths): return self._call("GET", "/docs?" + urllib.parse.urlencode([("path", p) for p in paths]))
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
 
 
@@ -282,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
 	cp.add_argument("--followup", help="JSON {title, done_when?, blocked_by?, body?, priority?, touches?}: the part left to do becomes its own ticket, ready once blocked_by is done")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
-	sub.add_parser("doc").add_argument("path")
+	sub.add_parser("doc", help="print a repo doc; several paths = one reply {docs} within the board's context_budget").add_argument("path", nargs="+")
 	at = sub.add_parser("attach")
 	at.add_argument("id")
 	at.add_argument("file")
@@ -403,7 +404,10 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "context":
 			out = ctx(a.id)
 		elif a.cmd == "doc":
-			out = s.read_doc(a.path) if url else kn.read_doc(s, a.path)
+			if len(a.path) > 1:
+				out = s.read_docs(a.path) if url else kn.read_docs(s, a.path)
+			else:
+				out = s.read_doc(a.path[0]) if url else kn.read_doc(s, a.path[0])
 		elif a.cmd == "attach":
 			f = Path(a.file)
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))

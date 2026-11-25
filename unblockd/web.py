@@ -49,6 +49,7 @@ PATCH  architecture/components/<key>     {"title"?, "summary"?, "paths"?, "by"?}
 DELETE architecture/components/<key>?by= 400 while an open ticket lists it in `components`; else deletes the note and the lines in other notes that link to it
 PUT    architecture/edges                {"from", "to", "text"?, "by"?}  create or replace the Connections line `- [<to title>](<to>.md) — text`
 DELETE architecture/edges?from=&to=&by=  remove that line     (by defaults to human; each write logs one `arch` activity event)
+GET    docs?path=&path=[&budget=]        several docs in ONE reply within context_budget {docs, budget, used, note?}
 GET    doc?path=                         one text file from the project repo (+ its links)
 GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
 POST   tickets/<id>/files                {"name", "content"}  attach a text file
@@ -323,6 +324,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, kn.architecture(store))
 			if rest[:2] == ["architecture", "components"] and len(rest) <= 3 or rest == ["architecture", "edges"]:
 				return self._send(*self._arch(store, method, rest, q))
+			if method == "GET" and rest == ["docs"]:  # several docs in one reply (AI-45): docs?path=a&path=b[&budget=]
+				return self._send(200, kn.read_docs(store, parse_qs(url.query).get("path", []), budget=int(q["budget"]) if q.get("budget", "").isdigit() else None))
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":

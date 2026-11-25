@@ -539,6 +539,78 @@ class KnowledgeTest(unittest.TestCase):
 			kn.LIST_MAX = old
 
 
+class ReadDocsTest(unittest.TestCase):
+	"""AI-45: several docs in ONE reply, within the context budget; errors inline, over-budget ones listed as skipped."""
+
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		repo = Path(self.tmp.name) / "p"
+		(repo / "docs").mkdir(parents=True)
+		for name, n in (("a.md", 40), ("big.md", 200), ("c.md", 30)):
+			(repo / "docs" / name).write_text("x" * n, encoding="utf-8")
+		(repo / "docs" / "pic.png").write_bytes(b"\x89PNG")
+		(repo / "tickets").mkdir()
+		(repo / "tickets" / "unblockd.json").write_text(json.dumps({"context_budget": 100}), encoding="utf-8")
+		self.s = Store(repo / "tickets")
+
+	def test_one_reply_within_the_budget(self):
+		r = kn.read_docs(self.s, ["docs/a.md", "docs/big.md", "nope.md", "docs/pic.png", "../x.md", "docs/c.md", "docs/a.md"])
+		self.assertEqual((r["budget"], r["used"]), (100, 70))
+		got = [(d["path"], "content" in d, d.get("skipped"), "error" in d) for d in r["docs"]]
+		self.assertEqual(got, [("docs/a.md", True, None, False), ("docs/big.md", False, "budget", False), ("nope.md", False, None, True),
+		                       ("docs/pic.png", False, None, True), ("../x.md", False, None, True), ("docs/c.md", True, None, False)])  # a.md once
+		self.assertEqual(r["docs"][1]["chars"], 200)
+		self.assertIn("read_doc(path)", r["note"])
+		self.assertEqual(kn.read_docs(self.s, ["docs/big.md"], budget=500)["docs"][0]["content"], "x" * 200)
+		self.assertNotIn("note", kn.read_docs(self.s, ["docs/a.md"]))
+		with self.assertRaisesRegex(TicketError, "needs paths"):
+			kn.read_docs(self.s, [])
+		with self.assertRaisesRegex(TicketError, "at most 50"):
+			kn.read_docs(self.s, [f"d{i}.md" for i in range(51)])
+
+	def test_front_doors(self):
+		import io
+		import threading
+		import urllib.request
+		from contextlib import redirect_stdout
+		from http.server import ThreadingHTTPServer
+		from unittest import mock
+		from unblockd import boards as bd, chat, cli, web
+		boards = bd.Boards(dirs=[str(self.s.dir)])
+		paths = ["docs/a.md", "docs/big.md", "nope.md"]
+		want = kn.read_docs(self.s, paths)
+		self.assertEqual(chat.run_tool(boards, None, "read_doc", {"paths": paths})["budget"], 15_000)  # the chat's own budget, like its get_context
+		self.assertEqual(chat.run_tool(boards, None, "read_doc", {"path": "docs/a.md"})["content"], "x" * 40)  # one path: unchanged
+		with mock.patch.object(web, "BOARDS", boards):
+			srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+			threading.Thread(target=srv.serve_forever, daemon=True).start()
+			try:
+				base = f"http://127.0.0.1:{srv.server_port}"
+				with urllib.request.urlopen(base + "/api/docs?path=docs/a.md&path=docs/big.md&path=nope.md") as r:
+					self.assertEqual(json.loads(r.read()), want)
+				with urllib.request.urlopen(base + "/api/docs?path=docs/big.md&budget=1000") as r:
+					self.assertEqual(json.loads(r.read())["used"], 200)
+				self.assertEqual(cli.Remote(base).read_docs(paths), want)
+			finally:
+				srv.shutdown()
+				srv.server_close()
+		out = io.StringIO()
+		with redirect_stdout(out):
+			cli.main(["--dir", str(self.s.dir), "doc", *paths])
+		self.assertEqual(json.loads(out.getvalue()), want)
+		try:
+			from unblockd import mcp_server as m
+		except ImportError:
+			return
+		with mock.patch.object(m, "BOARDS", boards):
+			self.assertEqual(m.read_doc(paths=paths), want)
+			self.assertEqual(m.read_doc(path="docs/a.md")["content"], "x" * 40)
+			self.assertEqual([d["path"] for d in m.read_doc(path="docs/c.md", paths=["docs/a.md"])["docs"]], ["docs/c.md", "docs/a.md"])
+			with self.assertRaisesRegex(Exception, "needs path"):
+				m.read_doc()
+
+
 class CapabilitiesTest(unittest.TestCase):
 	def setUp(self):
 		self.tmp = tempfile.TemporaryDirectory()

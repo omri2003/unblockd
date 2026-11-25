@@ -315,6 +315,40 @@ def read_doc(store, path: str) -> dict:
 	return {"path": rel, "content": text, "links": links_of(text, p, base), **({"warning": bad} if bad else {})}
 
 
+READ_MAX = 50  # paths per read_docs call
+
+
+def read_docs(store, paths: list[str], budget: int | None = None) -> dict:
+	"""Several docs in ONE reply (AI-45: a worker read the docs a claim left out, its skills and a spec one read_doc call each).
+	In the given order, duplicates once, up to `budget` chars of content in all (default: the board's context_budget): each entry is
+	read_doc's reply, {path, error} for a doc that can't be read (missing, outside the project, not text, too big), or
+	{path, skipped: "budget", chars} when its content no longer fits what is left (later, smaller docs are still read).
+	Returns {docs, budget, used} plus a `note` when something was skipped."""
+	paths = [p for p in dict.fromkeys(str(p) for p in paths or []) if p]
+	if not paths:
+		raise TicketError("read_docs needs paths: a list of repo paths (path relative to the project root)")
+	if len(paths) > READ_MAX:
+		raise TicketError(f"read_docs takes at most {READ_MAX} paths in one call ({len(paths)} given): split the list")
+	budget = int(store.config.get("context_budget") or BUDGET) if budget is None else max(0, int(budget))
+	left, docs = budget, []
+	for path in paths:
+		try:
+			d = read_doc(store, path)
+		except TicketError as e:
+			docs.append({"path": path, "error": str(e)})
+			continue
+		n = len(d["content"])
+		if n > left:
+			docs.append({"path": d["path"], "skipped": "budget", "chars": n})
+			continue
+		left -= n
+		docs.append(d)
+	out = {"docs": docs, "budget": budget, "used": budget - left}
+	if any("skipped" in d for d in docs):
+		out["note"] = "skipped: did not fit the budget; read_doc(path) them one at a time, or fewer per call"
+	return out
+
+
 def sources(store, t: dict, comps: list[tuple[str, str]] = ()) -> list[tuple[str, str]]:
 	"""(docs entry, where it came from) for a ticket: board, the board's docs for each of its tags (`docs_by_tag`, in tag order),
 	its agent profile, its component notes (`comps` = [(path, key)], context() only), the ticket."""
