@@ -152,6 +152,35 @@ FIELDS = {
 
 RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup"}  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
 FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
+LIST_IDS_MAX = 200  # list(ids=): a pasted plan or review, not a board dump
+
+
+def list_ids(ids) -> list[str]:
+	"""ids= of list(): a list, or a comma / space separated string; stripped, deduplicated, order kept (API-23)."""
+	if isinstance(ids, str):
+		ids = ids.replace(",", " ").split()
+	if not isinstance(ids, (list, tuple)) or not all(isinstance(i, str) for i in ids):
+		raise TicketError("ids must be a list of ticket ids, e.g. [\"AI-56\", \"API-23\"]")
+	out = list(dict.fromkeys(i.strip() for i in ids if i.strip()))
+	if len(out) > LIST_IDS_MAX:
+		raise TicketError(f"ids names {len(out)} tickets, at most {LIST_IDS_MAX} per call")
+	return out
+
+
+def q_hint(q: str, filtered: bool = False) -> str:
+	"""What a list with q and no hits says: q needs every word in one ticket; a q made of ticket ids wants ids= (API-23: a lead
+	pasted a list of ids into q and found nothing). filtered = other filters were given too, so a ticket may match q but not them."""
+	words = (q or "").split()
+	looks = [w.strip(",;").upper() for w in words if _ID_TOKEN.fullmatch(w.strip(",;").upper())]
+	out = (f"no ticket has every word of q ({len(words)} words): q needs ALL its words in one ticket. Search fewer words"
+	       if len(words) > 1 else "no ticket contains q")
+	if filtered:
+		out += " (with your other filters: try q alone)"
+	if len(looks) > 1 or (looks and len(looks) == len(words)):
+		out += f"; for a list of tickets pass ids={looks[:10]}"
+	return out
+
+
 # a release reason that names a person or a decision: ask_human is what it needed (AI-56)
 _HUMAN_WORDS = re.compile(r"\b(human|person|decid\w*|decision|approv\w*|sign[- ]?off|choose|choice|prefer\w*|pick between)\b", re.I)  # not owner / confirm / answer / permission: ordinary error text has them ("permission denied")
 _ID_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Z][A-Z0-9]*-\d+(?![A-Za-z0-9_-])")  # a ticket id in free text (release reason)
@@ -1028,15 +1057,24 @@ class Store:
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
 	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None,
-	         limit: int | None = None, touches: str | None = None, component: str | None = None) -> list[dict]:
+	         limit: int | None = None, touches: str | None = None, component: str | None = None, ids=None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none.
 		board = a _board() the caller already read in this locked step (claim), so it is not read again.
 		touches = a path or glob: tickets whose `touches` overlap it by the claim rule (_overlap: same path, one inside the other, a glob
 		match), so "who works on store.py?" is not a substring search. component = an architecture key: tickets that name it in
-		`components` or whose touches fall in its note's paths (the Map's rule). limit = at most that many (after the filters, in id order)."""
+		`components` or whose touches fall in its note's paths (the Map's rule). limit = at most that many (after the filters, in id order;
+		with ids, in their order).
+		ids = only those tickets (a list, or a comma string: REST / CLI), in that order; ids not on the board are left out (API-23).
+		q = words that must ALL appear in one ticket (q_hint says so when nothing matched)."""
 		if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 0):
 			raise TicketError(f"limit must be a whole number >= 0, not {limit!r}")
-		res = list((self._board() if board is None else board).values())  # cached: filter first, copy what is returned
+		cur = self._board() if board is None else board  # cached: filter first, copy what is returned
+		if ids is None:
+			res = list(cur.values())
+		else:  # case-blind match on the stored id (a-12b finds A-12b), deduplicated after matching (a-2 and A-2 are one ticket)
+			upper = {k.upper(): k for k in cur}
+			keys = (i if i in cur else upper.get(i.upper()) for i in list_ids(ids))
+			res = [cur[k] for k in dict.fromkeys(k for k in keys if k)]
 		if status:
 			res = [t for t in res if t["effective_status"] == status]
 		if pillar:

@@ -271,20 +271,27 @@ def list_tickets(board: str | None = None, status: str | None = None, pillar: st
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
                  agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None,
                  touches: str | None = None, component: str | None = None, fields: list[str] | None = None, limit: int | None = None,
-                 full: bool = False) -> list[dict]:
+                 full: bool = False, ids: list[str] | None = None) -> list[dict] | dict:
 	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
 	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts),
-	milestone (a key from board_info's milestones; "-" = tickets with none), q (words to search: it matches anywhere in the ticket),
+	milestone (a key from board_info's milestones; "-" = tickets with none), q (words that must ALL appear in one ticket: not
+	for a list of ids), ids (exactly these tickets, in this order, e.g. ["AI-56", "API-23"]; at most 200),
 	touches = a path or glob: tickets whose `touches` overlap it by the claim rule (same file, one folder inside the other, a glob match),
 	component = an architecture key (board_info's components): tickets that name it or touch its paths. With touches / component each
 	row also has `touches` and `holder` (the agent holding a live claim, or null): "who works on this file?" in one call.
 	Returns short summaries (id, title, effective_status, priority, owner, pillar, milestone, tags, agent, open_blockers).
 	fields = extra keys per row, only those: e.g. ["touches", "parent", "done_when"] to plan, ["claim"] for who holds it; body and notes
-	only when you name them. Prefer fields to full=true (every body and every note on the board). limit = at most that many rows."""
+	only when you name them. Prefer fields to full=true (every body and every note on the board). limit = at most that many rows.
+	When q matches nothing, or some ids are not listed, the reply is {tickets, hint} saying why."""
 	keep = st.list_fields(fields, matched=bool(touches or component))
 	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent,
-	                             milestone=milestone, limit=limit, touches=touches, component=component)
-	return res if full else [st.summarize(t, keep) for t in res]
+	                             milestone=milestone, limit=limit, touches=touches, component=component, ids=ids)
+	rows = res if full else [st.summarize(t, keep) for t in res]
+	others = any(x not in (None, "") for x in (status, pillar, owner, priority, tag, agent, parent, milestone, touches, component, ids))
+	hint = st.q_hint(q, others) if q and not res else ""
+	if ids and (gone := [i for i in st.list_ids(ids) if i.upper() not in {t["id"].upper() for t in res}]):
+		hint = "; ".join(x for x in (hint, f"not listed: {', '.join(gone[:20])} (not on this board, or left out by the other filters or limit)") if x)
+	return {"tickets": rows, "hint": hint} if hint else rows
 
 
 @tool
