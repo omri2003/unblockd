@@ -43,7 +43,7 @@ class InboxTest(unittest.TestCase):
 		box = self.s.inbox("backend-1", mark=True)
 		self.assertEqual(box["count"], 2)
 		self.assertEqual([(n["ticket"], n["n"], n["by"], n["text"]) for n in box["notes"]],
-		                 [("CMB-1", 2, "backend-2", "CMB-2 needs 3 lines in scripts/hud.gd: emit parried(dmg) after _on_hit"),
+		                 [("CMB-1", 2, "backend-2", "CMB-2 needs 3 lines in scripts/hud.gd: emit parried(dmg) after _on_hit" + chr(10) + "line 2 detail"),
 		                  ("CMB-1", 4, "Omri", "also check the font")])
 		self.assertIsNone(self.s.inbox("backend-2"))  # CMB-2's holder got nothing
 		self.assertIsNone(self.s.inbox("backend-1"))  # shown once
@@ -55,7 +55,7 @@ class InboxTest(unittest.TestCase):
 		out = io.StringIO()
 		with mock.patch.dict(os.environ, {"UNBLOCKD_URL": ""}), contextlib.redirect_stdout(out):
 			self.assertEqual(cli.main(["--dir", str(self.dir), "heartbeat", "CMB-1", "--agent", "backend-1"]), 0)
-		self.assertEqual(json.loads(out.getvalue())["inbox"]["notes"][0]["text"], "first line")
+		self.assertEqual(json.loads(out.getvalue())["inbox"]["notes"][0]["text"], "first line" + chr(10) + "second line")
 		self.s.add_note("CMB-1", "Omri", "for the MCP")
 		try:
 			from unblockd import mcp_server
@@ -70,6 +70,26 @@ class InboxTest(unittest.TestCase):
 			mcp_server.BOARDS = old
 		self.assertEqual([n["text"] for n in r["inbox"]["notes"]], ["for the MCP"])
 		self.assertNotIn("inbox", again)
+
+
+	def test_whole_text_up_to_the_caps(self):  # AI-44
+		from unblockd import store
+		self.s.add_note("CMB-1", "Omri", "Don't use the old font loader." + chr(10) + "Use FontCache.get(): the old one leaks on Windows, see UI-12.")
+		self.s.add_note("CMB-1", "backend-2", "ok, which file?", reply_to=2)
+		box = self.s.inbox("backend-1", mark=True)
+		self.assertEqual(box["notes"][0]["text"].splitlines()[1], "Use FontCache.get(): the old one leaks on Windows, see UI-12.")
+		self.assertEqual(box["notes"][1]["reply_to"], 2)
+		self.assertNotIn("truncated", box)
+		self.assertNotIn("reply_to", box["notes"][0])
+		self.s.add_note("CMB-1", "Omri", "a" * 2500)  # past the per-note cap
+		box = self.s.inbox("backend-1", mark=True)
+		self.assertEqual((len(box["notes"][0]["text"]), box["notes"][0]["truncated"], box["truncated"]), (store.INBOX_NOTE_MAX, True, True))
+		for i in range(4):  # 4 x 1900 = 7600 chars: past the total cap, the oldest is the one cut
+			self.s.add_note("CMB-1", "Omri", str(i) * 1900)
+		box = self.s.inbox("backend-1", mark=True)
+		self.assertEqual([len(n["text"]) for n in box["notes"]], [6000 - 3 * 1900, 1900, 1900, 1900])
+		self.assertEqual([bool(n.get("truncated")) for n in box["notes"]], [True, False, False, False])
+		self.assertEqual(sum(len(n["text"]) for n in box["notes"]), store.INBOX_MAX)
 
 
 if __name__ == "__main__":

@@ -25,8 +25,9 @@ GET    meta                              statuses, priorities, fields, config (u
 GET    agents                            who is working what right now + recent activity
 GET    activity?ticket=&limit=&since=    the claim / heartbeat / release / expired / complete / created / done log, newest first;
                                          since=<ISO time> keeps only newer events (the "While you were away" digest)
-POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner, "branch"?: your worktree's git branch}  best claimable ticket, or null
-POST   tickets/<id>/claim                {"agent", "note"?, "principal"?, "branch"?}
+POST   claim                             {"agent", "profile"?, "note"?, "principal"?: a human owner, "branch"?: your worktree's git branch, "wait_s"?: <= 120}
+                                         best claimable ticket, or {ticket: null, reason...} (conflict: held_by + retry_after_s; wait_s = wait for a conflicting claim to free up)
+POST   tickets/<id>/claim                {"agent", "note"?, "principal"?, "branch"?, "wait_s"?: wait for an overlapping claim to end}
 POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?, "until"? (ISO: keep the claim alive until then, capped at lease_max_minutes)}
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
@@ -48,6 +49,7 @@ PATCH  architecture/components/<key>     {"title"?, "summary"?, "paths"?, "by"?}
 DELETE architecture/components/<key>?by= 400 while an open ticket lists it in `components`; else deletes the note and the lines in other notes that link to it
 PUT    architecture/edges                {"from", "to", "text"?, "by"?}  create or replace the Connections line `- [<to title>](<to>.md) — text`
 DELETE architecture/edges?from=&to=&by=  remove that line     (by defaults to human; each write logs one `arch` activity event)
+GET    docs?path=&path=[&budget=]        several docs in ONE reply within context_budget {docs, budget, used, note?}
 GET    doc?path=                         one text file from the project repo (+ its links)
 GET    tickets/<id>/files/<name>         an attached file  {"name", "content"}
 POST   tickets/<id>/files                {"name", "content"}  attach a text file
@@ -64,7 +66,6 @@ import hashlib
 import hmac
 import json
 import os
-from collections import Counter
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -120,10 +121,6 @@ def _tickets_body(store) -> tuple[bytes, str]:
 	return data, etag
 
 
-NEEDS_BODY = 6000  # chars of body (the description) sent per item
-NEEDS_NOTES = 10  # the newest notes sent per item: the panel shows the last 3 that are not the question itself
-
-
 def _needs_body(board: str | None = None) -> tuple[bytes, str]:
 	"""/api/needs, serialized again only when its inputs changed: per board the board signature, the activity log's cursor
 	(failing(); files: activity.jsonl's size, databases: the event counter) and the PR cache (github). Any connector. A board
@@ -155,52 +152,16 @@ def _needs_body(board: str | None = None) -> tuple[bytes, str]:
 
 
 def _needs(boards: list | None = None) -> list[dict]:
-	"""Per board, the open tickets that wait on a person: an agent's question, work in review, work stuck (a doing ticket
-	with an open blocker, or untouched for stale_days, or a blocker that no longer exists).
-	Same Boards -> Store path as every other route; list() may sweep expired claims, like the notifier does.
-	boards = [(board id, Store, PR cache)] already opened by _needs_body; None = every board."""
+	"""Per board, Store.needs() (the items MCP needs_you returns too, via Boards.needs): [{id, title, items}], boards with items only.
+	boards = [(board id, Store, PR cache)] already opened by _needs_body; None = every board. A broken config hides only its own board."""
 	out = []
 	for bid, s, prs in boards if boards is not None else ((b, p, None) for b, p in BOARDS.all().items()):
 		try:
 			s = s if isinstance(s, st.Store) else BOARDS.open(s)
-			ts = s.list()
+			items = s.needs(prs)
 		except st.TicketError:
-			continue  # a broken config hides only its own board
-		items, by_id, failing = [], {t["id"]: t for t in ts}, s.failing()
-		prs = s.backend.get_doc("prs") if prs is None else prs
-		for t in ts:
-			late = s.late_notes(t) if t["status"] in ("review", "done") else []
-			if t["status"] == "done":
-				if not late:
-					continue
-				kind, at = "late_note", late[-1].get("at")  # a person wrote on finished work: reopen it or dismiss the note
-			elif t["status"] == "review":
-				kind, at = "review", (t.get("result") or {}).get("at")
-			elif t.get("proposed_by"):
-				kind, at = "proposal", None
-			elif t.get("waiting_on") and t.get("asked_by"):  # a hand-set waiting_on (no asked_by) is parked, not a question
-				kind, at = "question", t.get("asked_at")
-			elif t.get("needs") or t["missing_blockers"] or (t["status"] == "doing" and t["open_blockers"]) or (t["stale_days"] is not None and t["stale_days"] >= s.stale_days) or (not t.get("claim") and t["id"] in failing):
-				kind, at = "stuck", None
-				tries = [] if t.get("claim") else failing.get(t["id"], [])
-			else:
-				continue
-			stuck = kind == "stuck"
-			outcomes = Counter(a["outcome"] for a in tries) if stuck else {}
-			items.append({"id": t["id"], "kind": kind, "title": t["title"], "priority": t.get("priority"), "score": t["score"],
-			              "unblocks": t["unblocks"], "since": at or str(t.get("updated"))[:10] + "T00:00:00",
-			              "waiting_on": t.get("waiting_on", ""), "missing_blockers": t["missing_blockers"],
-			              "stale_days": t["stale_days"] if t["stale_days"] is not None and t["stale_days"] >= s.stale_days else None, "done_when": t.get("done_when", []), "result": t.get("result"),
-			              "body": (t.get("body") or "")[-NEEDS_BODY:], "notes": t.get("notes", [])[-NEEDS_NOTES:],
-			              **({"proposed_by": t["proposed_by"]} if kind == "proposal" else {}),
-			              **({"late": late} if late else {}),
-			              **({"needs": t["needs"]} if stuck and t.get("needs") else {}),
-			              **({"pr": {k: v for k, v in prs[t["id"]].items() if k != "noted"}} if kind == "review" and t["id"] in prs else {}),
-			              **({"open_blockers": [{"id": b, "effective_status": by_id[b]["effective_status"], "title": by_id[b]["title"]} for b in t["open_blockers"]],
-			                  "claim_note": ({"by": c["agent"], "at": c["heartbeat_at"], "text": c["note"]} if (c := t.get("claim")) and c.get("note") else None),
-			                  "attempts": tries, "failed": f"Failed {len(tries)} times ({', '.join(f'{k} ×{v}' for k, v in outcomes.items())})" if tries else ""} if stuck else {})})
+			continue
 		if items:
-			items.sort(key=lambda i: (-i["score"], i["since"]))
 			out.append({"id": bid, "title": s.config["title"], "items": items})
 	return out
 
@@ -346,7 +307,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.activity(q.get("ticket"), _num(q, "limit", 50), q.get("since")))
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
-				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch")))
+				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", "")), principal=b.get("principal"),
+				                                        branch=b.get("branch"), wait_s=b.get("wait_s") or 0))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["files"]:
@@ -362,6 +324,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, kn.architecture(store))
 			if rest[:2] == ["architecture", "components"] and len(rest) <= 3 or rest == ["architecture", "edges"]:
 				return self._send(*self._arch(store, method, rest, q))
+			if method == "GET" and rest == ["docs"]:  # several docs in one reply (AI-45): docs?path=a&path=b[&budget=]
+				return self._send(200, kn.read_docs(store, parse_qs(url.query).get("path", []), budget=int(q["budget"]) if q.get("budget", "").isdigit() else None))
 			if method == "GET" and rest == ["doc"]:
 				return self._send(200, kn.read_doc(store, q.get("path", "")))
 			if rest[:1] == ["tickets"] and len(rest) == 3 and rest[2] == "context" and method == "GET":
@@ -387,7 +351,8 @@ class Handler(BaseHTTPRequestHandler):
 				b, tid, act = self._body(), rest[1], rest[2]
 				agent = str(b.get("agent", ""))
 				if act == "claim":
-					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch")))
+					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch"),
+					                                   wait_s=b.get("wait_s") or 0))
 				if act == "heartbeat":
 					box = store.inbox(agent, mark=True)
 					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None)
@@ -417,7 +382,8 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(200, store.report(rest[1], str(b.get("by") or "human"), b.get("summary"), files=b.get("files"), refs=b.get("refs")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
-				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by")))
+				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by") or b.get("agent"),
+				                                    parts=b.get("parts"), claim=b.get("claim"), principal=b.get("principal"), branch=b.get("branch")))
 			if method == "POST" and rest == ["tickets", "batch"]:
 				b = self._body()
 				return self._send(201, store.create_many(b.get("tickets"), agent=b.get("agent")))
@@ -425,15 +391,21 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None
 			if method == "GET" and tid is None:
-				if not any(q.get(k) for k in TICKET_FILTERS):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
+				if not any(q.get(k) for k in (*TICKET_FILTERS, "touches", "component", "fields", "limit")):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
 					data, etag = _tickets_body(store)
 					return self._send(200, data, etag=etag)
-				return self._send(200, store.list(**{k: q.get(k) for k in TICKET_FILTERS}))
+				# fields=a,b: summary rows with those keys (AI-47); touches= / component= add touches + holder (CORE-52); neither = whole tickets
+				keep = st.list_fields(q.get("fields"), matched=bool(q.get("touches") or q.get("component")))
+				res = store.list(**{k: q.get(k) for k in (*TICKET_FILTERS, "touches", "component")}, limit=_num(q, "limit", 0) if q.get("limit") else None)
+				return self._send(200, [st.summarize(t, keep) for t in res] if keep else res)
 			if method == "GET":
 				return self._send(200, store.with_blockers(store.get(tid)))
 			if method == "POST" and tid is None:
 				b = self._body()
 				return self._send(201, store.create(b, tid=b.pop("id", None), prefix=b.pop("prefix", None), agent=b.pop("agent", None), request_id=b.pop("request_id", None)))  # agent: the creating worker (cli.Remote); none = a human
+			if method == "PATCH" and tid is None:  # update_many: {"tickets": [{id, changes, expected_rev?}], "agent"?}, all or nothing
+				b = self._body()
+				return self._send(200, store.update_many(b.get("tickets"), agent=b.get("agent"), by=b.get("by")))
 			if method == "PATCH" and tid:
 				b = self._body()
 				m = (self.headers.get("If-Match") or "").strip().strip('"')  # the rev the client last saw; none = last write wins, as before

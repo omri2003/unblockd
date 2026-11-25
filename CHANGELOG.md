@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- `list_tickets(fields=[...], limit=)` adds only the asked keys per row (body and notes only when named), so a planner checks overlap without `full=true`; REST `GET tickets?fields=&limit=`, CLI `list --fields --limit`.
+- `split_ticket(parts=[...])`: parts with their own `done_when`, `touches`, `body`, `components` and `"#N"` blockers, validated all or nothing; `claim=k` takes part #k in the same call. `titles` still works. REST `parts` / `claim`, CLI `split --parts FILE --claim K`.
+- `update_tickets` changes several tickets in one all-or-nothing call (MCP, REST `PATCH tickets`, CLI `update-many`); the board's bulk bar sends one request (and one for Undo), and a refused bulk edit changes nothing.
+- `list_tickets(touches=PATH)` finds the tickets whose `touches` overlap a path or glob by the claim rule (not a text search), `component=KEY` those on an architecture component; rows show `touches` and `holder`. REST `?touches=&component=`, CLI `--touches --component`.
+
 ## v0.2.0 (2026-11-22)
 
 79 pull requests since v0.1.0. Drafted with `scripts/release_notes.py v0.1.0`, then edited (docs/releasing.md).

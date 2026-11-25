@@ -1,13 +1,14 @@
 """Command line over the same Store (for agents without the MCP server).
 
-    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
+    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS] [--touches PATH] [--component KEY] [--fields touches,done_when] [--limit N]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
-    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for
+    python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B] [--wait S]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for; --wait (<= 120) = on a conflict, wait for it to free up
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
-    python -m unblockd.cli release ID --agent A [--reason "..."]
-    python -m unblockd.cli ask ID --agent A --question "what only a human can decide"   # releases the claim, waits on a human
-    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}']
+    python -m unblockd.cli release ID --agent A [--reason "..."] [--next]
+    python -m unblockd.cli ask ID --agent A --question "what only a human can decide" [--next]   # releases the claim, waits on a human
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}'] [--next]
+        # --next (complete / release / ask): also claim the next ticket (with --principal / --branch): prints {"done": ..., "next": <what claim prints>}
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
     python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
     python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
@@ -22,8 +23,10 @@
     python -m unblockd.cli approve ID [--by NAME]  # a human approves work in review: done, with the approver recorded
     python -m unblockd.cli report ID "summary" [--by NAME] [--file PATH]... [--ref URL]...   # a person adds the summary a done ticket was closed without
     python -m unblockd.cli update ID [--rev N] [--json '{"status": "done"}'] [--component KEY]... [--skill NAME]... [--mcp NAME]... [--agent A]   # --component SETS the ticket's components (the board's architecture notes)
+    python -m unblockd.cli update-many --file changes.json|- [--agent A]   # [{"id": "UI-12", "changes": {...}}, ...], all or nothing
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
+    python -m unblockd.cli split ID --parts parts.json|- [--by AGENT --claim K]   # parts with their own done_when / touches / body; "#N" refs; claim part K
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
@@ -116,13 +119,13 @@ class Remote:
 		except (TimeoutError, OSError) as e:
 			raise self.down(e)
 
-	def _call(self, method: str, path: str, body=None, headers=None, **q):
+	def _call(self, method: str, path: str, body=None, headers=None, timeout: float = 30, **q):
 		q = {k: v for k, v in q.items() if v is not None}
 		req = urllib.request.Request(self.base + path + ("?" + urllib.parse.urlencode(q) if q else ""), method=method,
 		                             data=None if body is None else json.dumps(body).encode(),
 		                             headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.token}"} if self.token else {}), **(headers or {})})
 		try:
-			with urllib.request.urlopen(req, timeout=30) as r:
+			with urllib.request.urlopen(req, timeout=timeout) as r:
 				return json.loads(r.read())
 		except urllib.error.HTTPError as e:
 			try:
@@ -148,12 +151,17 @@ class Remote:
 	def update(self, tid, changes, agent=None, by=None, expected_rev=None):
 		return self._call("PATCH", f"/tickets/{tid}", {**changes, **({"agent": agent} if agent else {}), **({"by": by} if by else {})},
 		                  headers={"If-Match": str(expected_rev)} if expected_rev is not None else None)
+	def update_many(self, items, agent=None, by=None):
+		return self._call("PATCH", "/tickets", {"tickets": items, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
-	def split(self, tid, titles, sequential=False, by=None): return self._call("POST", f"/tickets/{tid}/split", {"titles": titles, "sequential": sequential, "by": by})
+	def split(self, tid, titles=None, sequential=False, by=None, parts=None, claim=None, principal=None, branch=None):
+		return self._call("POST", f"/tickets/{tid}/split", {"titles": titles or [], "sequential": sequential, "by": by, "parts": parts, "claim": claim, "principal": principal, **({"branch": branch} if branch else {})})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
-	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None):
-		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal, **({"branch": branch} if branch else {})})
-	def claim_next(self, agent, profile=None, note="", principal=None, branch=None): return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch)  # the server answers with the reason when empty
+	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None, wait_s=0):
+		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal,
+		                  **({"branch": branch} if branch else {}), **({"wait_s": wait_s} if wait_s else {})}, timeout=30 + min(float(wait_s or 0), st.WAIT_MAX))
+	def claim_next(self, agent, profile=None, note="", principal=None, branch=None, wait_s=0):  # the server answers with the reason when empty
+		return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=wait_s)
 	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
 	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None):
 		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id})
@@ -168,6 +176,7 @@ class Remote:
 		                                                       **({"followup": followup} if followup is not None else {})})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
+	def read_docs(self, paths): return self._call("GET", "/docs?" + urllib.parse.urlencode([("path", p) for p in paths]))
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
 
 
@@ -192,6 +201,10 @@ def main(argv: list[str] | None = None) -> int:
 	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
 		ls.add_argument(f"--{f}")
 	ls.add_argument("-q")
+	ls.add_argument("--touches", help="a path or glob: tickets whose touches overlap it (the claim rule); rows add touches + holder")
+	ls.add_argument("--component", help="an architecture component key: tickets that name it or touch its paths")
+	ls.add_argument("--fields", help="extra keys per row, comma list (e.g. touches,parent,done_when); body and notes only when named")
+	ls.add_argument("--limit", type=int, help="at most N rows")
 	nx = sub.add_parser("next")
 	nx.add_argument("--owner")
 	nx.add_argument("--pillar")
@@ -234,11 +247,16 @@ def main(argv: list[str] | None = None) -> int:
 	rp.add_argument("--by", default="human")
 	rp.add_argument("--file", action="append", help="a path that changed (repeatable)")
 	rp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
+	um = sub.add_parser("update-many", help='several tickets in one all-or-nothing step: a JSON array of {"id", "changes", "expected_rev"?}')
+	um.add_argument("--file", required=True, help="path to the JSON array, or - for stdin")
+	um.add_argument("--agent", help="the worker making the changes (holder rule and worker limits, as for update)")
+	um.add_argument("--by", help="who a human change is by (as update)")
 	cl = sub.add_parser("claim")
 	cl.add_argument("--agent", required=True)
 	cl.add_argument("--id")
 	cl.add_argument("--profile")
 	cl.add_argument("--note", default="")
+	cl.add_argument("--wait", type=float, default=0, help=f"seconds (<= {st.WAIT_MAX}): on a conflict, wait for a claim in the way to free up instead of returning at once")
 	pr = os.environ.get("UNBLOCKD_PRINCIPAL")
 	cl.add_argument("--principal", default=pr, help="the human owner you work for (default: env UNBLOCKD_PRINCIPAL)")
 	cl.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="the git branch you work on in your own worktree (default: env UNBLOCKD_BRANCH): "
@@ -253,10 +271,11 @@ def main(argv: list[str] | None = None) -> int:
 		if name == "release":
 			x.add_argument("--missing", default="", help="a tool you need and do not have")
 			x.add_argument("--why", default="", help="with --missing: one line on what you needed it for")
-		if name != "ask":
-			x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)")
+		x.add_argument("--principal", default=pr, help="same as claim (default: env UNBLOCKD_PRINCIPAL)" + ("; only used by --next" if name == "ask" else ""))
 		if name != "heartbeat":
 			x.add_argument("--request-id", help="a fresh id for this write: a retry with the same id changes nothing and answers already: true")
+			x.add_argument("--next", action="store_true", help="then claim the next ticket in the same run: prints {done, next}")
+			x.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="with --next: same as claim")
 	cp = sub.choices["complete"]
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
@@ -264,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
 	cp.add_argument("--followup", help="JSON {title, done_when?, blocked_by?, body?, priority?, touches?}: the part left to do becomes its own ticket, ready once blocked_by is done")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
-	sub.add_parser("doc").add_argument("path")
+	sub.add_parser("doc", help="print a repo doc; several paths = one reply {docs} within the board's context_budget").add_argument("path", nargs="+")
 	at = sub.add_parser("attach")
 	at.add_argument("id")
 	at.add_argument("file")
@@ -274,6 +293,10 @@ def main(argv: list[str] | None = None) -> int:
 	sp.add_argument("--title", action="append", default=[])
 	sp.add_argument("--sequential", action="store_true")
 	sp.add_argument("--by")
+	sp.add_argument("--parts", help='instead of --title: a JSON array file (or - for stdin) of parts [{"title", "done_when", "touches", "body", "blocked_by": ["#1"]}]')
+	sp.add_argument("--claim", type=int, help="with --by: claim part K (1-based) in the same step")
+	sp.add_argument("--principal", default=pr, help="with --claim: the human owner you work for (default: env UNBLOCKD_PRINCIPAL)")
+	sp.add_argument("--branch", default=os.environ.get("UNBLOCKD_BRANCH"), help="with --claim: same as claim")
 	de = sub.add_parser("delete")
 	de.add_argument("id")
 	de.add_argument("--agent", help="the worker deleting: it can't delete a ticket another agent holds")
@@ -324,9 +347,12 @@ def main(argv: list[str] | None = None) -> int:
 		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
 			st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
 		ctx = s.context if url else lambda tid: kn.context(s, tid)
+		with_ctx = lambda got: {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		if a.cmd == "list":
-			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone)
-			out = [{k: t.get(k) for k in ("id", "title", "effective_status", "priority", "owner", "pillar", "agent", "open_blockers")} for t in res]
+			keep = st.list_fields(a.fields, matched=bool(a.touches or a.component))
+			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone,
+			             limit=a.limit, touches=a.touches, component=a.component)
+			out = [st.summarize(t, keep) for t in res]
 		elif a.cmd == "next":
 			out = [{**{k: t.get(k) for k in ("id", "title", "priority", "owner", "pillar", "agent")}, "score": t["score"], "unblocks": t["unblocks"]}
 			       for t in s.next_ready(owner=a.owner, pillar=a.pillar, agent=a.agent, tag=a.tag, limit=a.limit)]
@@ -338,9 +364,12 @@ def main(argv: list[str] | None = None) -> int:
 			pairs = [p.split("=", 1) for p in a.pairs]
 			if not all(len(p) == 2 and p[0] and p[1] for p in pairs):
 				raise st.TicketError("give pairs like REL-1=v0.1 (the version epic's id = the milestone key in unblockd.json)")
-			out = {}
+			out, items = {}, []
 			for parent, key in pairs:  # every ticket under that epic: milestone set, parent cleared (it was the version, not a feature epic)
-				out[parent] = [s.update(t["id"], {"milestone": key, "parent": None})["id"] for t in s.list(parent=parent)]
+				out[parent] = [t["id"] for t in s.list(parent=parent)]
+				items += [{"id": x, "changes": {"milestone": key, "parent": None}} for x in out[parent]]
+			for i in range(0, len(items), st.UPDATE_MAX):  # update_many: all or nothing per call (one call up to UPDATE_MAX tickets)
+				s.update_many(items[i:i + st.UPDATE_MAX])
 		elif a.cmd == "plan":
 			out = s.work_plan(per_agent=a.per_agent)
 			short = lambda t: {k: t.get(k) for k in ("id", "title", "priority", "score")}
@@ -348,9 +377,9 @@ def main(argv: list[str] | None = None) -> int:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch) if a.id else \
-				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch)
-			out = {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait) if a.id else \
+				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait)
+			out = with_ctx(got)
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
 			out = s.heartbeat(a.id, a.agent, a.note, a.principal, until=a.until)
@@ -375,12 +404,18 @@ def main(argv: list[str] | None = None) -> int:
 		elif a.cmd == "context":
 			out = ctx(a.id)
 		elif a.cmd == "doc":
-			out = s.read_doc(a.path) if url else kn.read_doc(s, a.path)
+			if len(a.path) > 1:
+				out = s.read_docs(a.path) if url else kn.read_docs(s, a.path)
+			else:
+				out = s.read_doc(a.path[0]) if url else kn.read_doc(s, a.path[0])
 		elif a.cmd == "attach":
 			f = Path(a.file)
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
-			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by)
+			parts = json.loads(sys.stdin.read() if a.parts == "-" else Path(a.parts).read_text(encoding="utf-8")) if a.parts else None
+			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by, parts=parts, claim=a.claim, principal=a.principal if a.claim else None, branch=a.branch if a.claim else None)
+			if out.get("claimed"):  # like claim: the part comes with what to read
+				out["claimed"] = {**out["claimed"], "context": ctx(out["claimed"]["id"])}
 		elif a.cmd == "answer":
 			out = s.answer(a.id, a.by, a.text)
 		elif a.cmd == "reject":
@@ -399,6 +434,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.create({**json.loads(a.json), "title": a.title, **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp), ("milestone", a.milestone)) if v}}, tid=a.id, prefix=a.prefix, agent=a.agent, request_id=a.request_id)
 		elif a.cmd == "create-many":
 			out = s.create_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent)
+		elif a.cmd == "update-many":
+			out = s.update_many(json.loads(sys.stdin.read() if a.file == "-" else Path(a.file).read_text(encoding="utf-8")), agent=a.agent, by=a.by)
 		elif a.cmd == "update":
 			out = s.update(a.id, {**json.loads(a.json), **{k: v for k, v in (("components", a.component), ("skills", a.skill), ("mcp", a.mcp)) if v},
 			                     **({"milestone": None if a.milestone == "-" else a.milestone} if a.milestone else {})}, agent=a.agent, by=a.by,
@@ -407,6 +444,11 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.report(a.id, a.by, a.summary, files=a.file, refs=a.ref)
 		else:
 			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
+		if a.cmd in ("release", "ask", "complete") and a.next:  # AI-42: one run finishes this ticket and takes the next
+			try:
+				out = {"done": out, "next": with_ctx(s.claim_next(a.agent, principal=a.principal, branch=a.branch))}
+			except st.TicketError as e:  # the write above landed: say so, with why no next ticket came
+				out = {"done": out, "next": {"ticket": None, "error": str(e)}}
 	except (st.TicketError, json.JSONDecodeError, OSError) as e:  # OSError: a --file / attach path that can't be read
 		return _fail(e, as_json)
 	print(json.dumps(out, indent=2, ensure_ascii=False))

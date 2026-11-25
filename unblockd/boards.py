@@ -122,6 +122,27 @@ class Boards:
 				out.append({"id": bid, "title": bid, "path": cn.describe(str(p)), "error": str(e)})
 		return out
 
+	def needs(self, board: str | None = None) -> list[dict]:
+		"""What waits on a person, per board: [{id, title, items}] (Store.needs), boards with items only. board = just that one
+		(unknown -> NotFound); None = every board, and a broken config hides only its own board. GET /api/needs and MCP needs_you."""
+		boards = self.all()
+		if board is not None and board not in boards:
+			raise st.NotFound(f"no board {board!r}. Boards: {', '.join(boards)}")
+		out = []
+		for bid, path in boards.items():
+			if board is not None and bid != board:
+				continue
+			try:
+				s = self.open(path)
+				items = s.needs()
+			except st.TicketError:
+				if board is not None:
+					raise
+				continue
+			if items:
+				out.append({"id": bid, "title": s.config["title"], "items": items})
+		return out
+
 	def create(self, board_id: str, title: str = "", root: str | None = None) -> dict:
 		"""New board under a root (default the first): <root>/<id>/tickets/unblockd.json. In a container, a root that is not on a mounted
 		volume is refused: the board would live in the container's own filesystem and vanish when it is recreated. The reply adds

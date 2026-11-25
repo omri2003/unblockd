@@ -82,9 +82,10 @@ TOOLS = [
 	                                 "components": {"type": "array", "items": {"type": "string"}},
 	                                 "blocked_by": {"type": "array", "items": {"type": "string"}}},
 	                  "required": ["title"]}}}, "required": ["tickets"]}},
-	{"name": "read_doc", "description": "A text file from the board's project repo (path relative to its root).",
-	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}, "path": {"type": "string"}},
-	                  "required": ["path"]}},
+	{"name": "read_doc", "description": "A text file from the board's project repo (path relative to its root). Several: paths=[...] "
+	 "returns {docs: [...]} in one reply, within a budget (a doc that does not fit is listed as skipped).",
+	 "input_schema": {"type": "object", "properties": {"board": {"type": "string"}, "path": {"type": "string"},
+	                                                   "paths": {"type": "array", "items": {"type": "string"}}}}},
 ]
 
 
@@ -112,6 +113,8 @@ def run_tool(boards: bd.Boards, default_board: str | None, name: str, args: dict
 	if name == "get_context":
 		return kn.context(store, str(args.get("id", "")), budget=15_000)
 	if name == "read_doc":
+		if args.get("paths"):
+			return kn.read_docs(store, ([str(args["path"])] if args.get("path") else []) + [str(p) for p in args["paths"]], budget=15_000)
 		return kn.read_doc(store, str(args.get("path", "")))
 	raise st.TicketError(f"unknown tool {name}")
 

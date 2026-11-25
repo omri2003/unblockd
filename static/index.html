@@ -1356,15 +1356,13 @@ function renderBulk(){ // rebuilt only when the selection changes or after an ed
   el.innerHTML=`<b>${n} selected</b>${sel('status','Status',COLS.filter(c=>c[0]!=='pending'))}${sel('owner','Owner',CFG.owners.map(o=>[o.name,o.name]))}${sel('priority','Priority',PLAB.map(([v,l])=>[v||'-',l]))}${PILLARS.length?sel('pillar',CFG.pillar_label,[...PILLARS.map(p=>[p,pname(p)]),['-','None']]):''}${COMPS().length?sel('components','Component',COMPS().map(c=>[c.key,c.title])):''}<input data-bulk="tags" placeholder="+ tag" aria-label="Add tag">${pickHtml('bulkParent',[],{single:1,none:1,ph:'Parent…'})}<button type="button" class="btn ghost sm" data-bulkclear>Clear</button>`;
   document.documentElement.style.setProperty('--bulkh',el.offsetHeight+'px');
 }
-async function bulk(field,val){ // one PATCH per ticket through api(); failures are listed, one Undo puts the others back
-  const ids=[...SEL].filter(id=>BY.has(id)),was=new Map(ids.map(id=>[id,BY.get(id)[field]])),ok=[],bad=[];
-  for(const id of ids){
-    const v=field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:field==='components'?[...new Set([...BY.get(id).components||[],val])]:val==='-'?null:val; // tags and components are ADDED
-    try{await api('PATCH','/'+id,{[field]:v});ok.push(id);}catch(er){bad.push(`${id}: ${er.message}`);}
-  }
+async function bulk(field,val){ // ONE request for the whole selection (PATCH tickets = update_many, all or nothing); its Undo is one request too
+  const ids=[...SEL].filter(id=>BY.has(id)); if(!ids.length) return;
+  const was=ids.map(id=>({id,changes:{[field]:BY.get(id)[field]??null}}));
+  const items=ids.map(id=>({id,changes:{[field]:field==='tags'?[...new Set([...BY.get(id).tags||[],val.toLowerCase()])]:field==='components'?[...new Set([...BY.get(id).components||[],val])]:val==='-'?null:val}})); // tags and components are ADDED
+  try{await api('PATCH','',{tickets:items});}catch(er){await load(true);renderBulk();toast(er.message,{err:1});return;} // the server names every refused ticket; nothing changed
   await load(true); renderBulk();
-  if(bad.length) toast(`${bad.length} failed. ${bad[0]}`,{err:1});
-  if(ok.length) toast(`${ok.length} updated`,{undo:async()=>{for(const id of ok)try{await api('PATCH','/'+id,{[field]:was.get(id)});}catch{} await load(true);toast('Reverted');}});
+  toast(`${ids.length} updated`,{undo:async()=>{try{await api('PATCH','',{tickets:was});toast('Reverted');}catch(er){toast(`Couldn't undo: ${er.message}`,{err:1});} await load(true);}});
 }
 document.addEventListener('change',e=>{const f=e.target.dataset?.bulk,v=e.target.value.trim();if(f&&v)bulk(f,v);});
 const mvMenu=t=>`<details class="mv"><summary aria-label="Move ${esc(t.id)} to another column">Move to ▸</summary><div class="mvm">${COLS.filter(([k])=>k!==(onBr(t).length?'doing':t.status)&&k!=='pending').map(([k,n])=>`<button type="button" data-moveto="${k}" data-id="${esc(t.id)}">${n}</button>`).join('')}</div></details>`;

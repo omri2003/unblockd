@@ -722,10 +722,18 @@ try {
 		await visible('#bulk', 'bulk bar');
 		ok((await page.locator('#bulk b').innerText()).startsWith('2 selected'), `[${tag}] bulk bar should say 2 selected`);
 		await noOverflow('bulk bar');
+		const bsel = [...new Set(await page.$$eval('#board .card.sel', (els) => els.map((e) => e.dataset.open)))], bprio = bsel.map((id) => JSON.parse(cli('get', id)).priority);
+		const patches = [], onPatch = (r) => { if (r.method() === 'PATCH') patches.push(r.url()); };
+		page.on('request', onPatch);
 		await page.selectOption('#bulk [data-bulk="priority"]', 'P3');
 		await visible('#toasts .toast:has-text("2 updated")', 'bulk update toast');
-		await page.click('#toasts .toast button');
+		ok(patches.length === 1 && /\/tickets$/.test(patches[0]), `[${tag}] bulk edit should send ONE PATCH tickets, sent ${JSON.stringify(patches)}`);
+		ok(bsel.length === 2 && bsel.every((id) => JSON.parse(cli('get', id)).priority === 'P3'), `[${tag}] bulk should set P3 on ${bsel}`);
+		await page.click('#toasts .toast:has-text("2 updated") button');
 		await visible('#toasts .toast:has-text("Reverted")', 'bulk undo toast');
+		ok(patches.length === 2, `[${tag}] bulk Undo should be ONE request, sent ${patches.length - 1}`);
+		ok(bsel.every((id, i) => JSON.parse(cli('get', id)).priority === bprio[i]), `[${tag}] bulk Undo should restore ${bprio}`);
+		page.off('request', onPatch);
 		await page.click('#bulkParent .pq'); // Parent picker: lists tickets, no free text
 		await visible('#bulkParent .pl [data-pk]', 'bulk parent picker list');
 		await noOverflow('bulk parent picker');
