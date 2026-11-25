@@ -10,6 +10,7 @@
 
 ### Changed
 - Big boards write fast: a write re-derives only the tickets it reaches instead of the whole board, and a files board reads its folder once per locked step. At 20,000 tickets a write holds the board lock 2-80 ms instead of 0.4-0.9 s, so 200 agents at once no longer give up waiting for it.
+- `ask_human` works on an unclaimed todo ticket: no claim (and no context) needed just to ask; a ticket someone else holds is still refused. A `release` whose reason names a person or a decision hints at `ask_human` (AI-56).
 
 ### Fixed
 - Files board on Windows: a write no longer fails with `PermissionError` when another agent or program is reading the same file at that moment; it retries for up to 5 s, then says which file is held open (CORE-86).

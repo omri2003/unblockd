@@ -461,7 +461,7 @@ def ask_human(id: str, agent: str | None = None, question: str = "", request_id:
 	"""Ask a human a question you can't decide yourself: ends your claim, sets waiting_on to the question (the ticket
 	is not claimable until a human clears waiting_on), and notifies. agent = your worker name (by= is accepted too). Move on to the next ticket:
 	next=true also claims it in the same call and returns {done: <this reply>, next: <what claim_next answers>} (principal, branch = the ones
-	you claim with). request_id: see complete."""
+	you claim with). An unclaimed todo ticket needs no claim first (ask straight away); one someone else holds is refused. request_id: see complete."""
 	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).ask(id, agent, question, request_id=request_id)), board, agent, next, principal, branch)
 
@@ -513,7 +513,8 @@ def release(id: str, agent: str | None = None, reason: str = "", principal: str 
             request_id: str | None = None, next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Give your claimed ticket back (it returns to todo). agent = your worker name (by= is accepted too). Say why. Missing a tool you need
 	(a browser, a database, an unblockd tool)? missing = its name, why = one line on what you needed it for: the human is told, and workers
-	like you skip it until it is fixed. request_id: see complete. next=true = also claim your next ticket in the same call (branch: see
+	like you skip it until it is fixed. Waiting on a human's decision? ask_human, not release (a reason naming a person or a decision gets
+	that `hint`). request_id: see complete. next=true = also claim your next ticket in the same call (branch: see
 	claim_next): the reply is {done: <this reply>, next: <what claim_next answers>}."""
 	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id)),

@@ -118,6 +118,37 @@ class ClaimTest(unittest.TestCase):
 		self.assertEqual(self.s.get("CMB-2")["effective_status"], "todo")
 		self.assertEqual(self.s.claim("backend-1", tid="CMB-2")["id"], "CMB-2")
 
+	def test_ask_without_a_claim_on_an_unclaimed_todo(self):  # AI-56
+		t = self.s.ask("CMB-2", "backend-1", "Omri: keep the dodge i-frames?")
+		self.assertEqual((t["status"], t["effective_status"], t["claim"], t["asked_by"]), ("todo", "pending", None, "backend-1"))
+		self.assertEqual(self.s.activity("CMB-2")[0]["event"], "question")
+		self.assertNotIn("claim", [e["event"] for e in self.s.activity("CMB-2")])
+		with self.assertRaisesRegex(TicketError, "already waits on a human"):  # a second question would hide the first
+			self.s.ask("CMB-2", "backend-2", "and the parry?")
+		for nobody in ("", "  "):  # no claim to name the asker: an empty name would show "Question from" with no one (review 2026-11-26)
+			with self.assertRaisesRegex(TicketError, "ask needs who is asking"):
+				self.s.ask("CMB-3", nobody, "who decides?")
+		self.s.claim("backend-1", tid="CMB-1")
+		with self.assertRaisesRegex(TicketError, "claimed by backend-1, not backend-2"):  # someone else's claim: still refused
+			self.s.ask("CMB-1", "backend-2", "who?")
+		self.s.update("CMB-1", {"status": "done"})
+		with self.assertRaisesRegex(TicketError, "isn't claimed"):  # done (not todo): refused as before
+			self.s.ask("CMB-1", "backend-2", "reopen?")
+
+	def test_release_naming_a_human_hints_at_ask_human(self):  # AI-56
+		for reason, hinted in (("needs Omri to pick the parry window", True), ("waiting for a decision on the art style", True),
+		                       ("need product to choose between A and B", True), ("build is broken on main", False), ("", False),
+		                       # ordinary error text, not a person (review 2026-11-26): no hint
+		                       ("the API answer is 500", False), ("permission denied on tickets/", False),
+		                       ("can't confirm the fix on Windows", False), ("owner field broken", False)):
+			self.s.claim("backend-1", tid="CMB-2")
+			r = self.s.release("CMB-2", "backend-1", reason)
+			self.assertEqual("ask_human(CMB-2" in r.get("hint", ""), hinted, reason)
+		self.s.claim("backend-1", tid="CMB-2")  # with a waiting ticket too: both hints
+		r = self.s.release("CMB-2", "backend-1", "waits on CMB-1 and a human decision")
+		self.assertIn("followup=", r["hint"])
+		self.assertIn("ask_human(CMB-2", r["hint"])
+
 	def test_ask_records_asked_at_and_by_answer_clears_them(self):
 		self.s.claim("backend-1", tid="CMB-2")
 		t = self.s.ask("CMB-2", "backend-1", "keep i-frames?")

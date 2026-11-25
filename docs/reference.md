@@ -139,6 +139,10 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   prefix, parent, pillar, owner, tags, touches, docs and components, body `Rest of <id>.`, waiting on `blocked_by`, so it becomes
   ready by itself when they are done. The reply's `followup` names it; `result.followup` keeps its id. A `release` whose reason names
   another ticket id answers with a `hint` pointing at this.
+- **Ask without a claim** (AI-56): `ask_human` / `ask` works on an unclaimed todo ticket with no question yet (no claim, so no
+  context is sent only to ask); a ticket someone else holds is still refused, and so is one that already waits on a human (add a
+  note instead). A `release` whose reason names a person or a decision (a human owner's name, `human`, `decide`, `approve`,
+  `confirm`, `sign-off`...) answers with a `hint`: use `ask_human` (a release counts as a failed attempt).
 - **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (same caps,
   flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
   numbers as `result.unread` for the reviewer.

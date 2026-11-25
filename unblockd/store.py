@@ -152,6 +152,8 @@ FIELDS = {
 
 RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup"}  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
 FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
+# a release reason that names a person or a decision: ask_human is what it needed (AI-56)
+_HUMAN_WORDS = re.compile(r"\b(human|person|decid\w*|decision|approv\w*|sign[- ]?off|choose|choice|prefer\w*|pick between)\b", re.I)  # not owner / confirm / answer / permission: ordinary error text has them ("permission denied")
 _ID_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Z][A-Z0-9]*-\d+(?![A-Za-z0-9_-])")  # a ticket id in free text (release reason)
 # a list row (list_tickets, REST GET tickets?fields=, CLI list): these keys, plus what `fields` asks for (AI-47)
 SUMMARY_KEYS = ("id", "title", "effective_status", "priority", "owner", "pillar", "milestone", "tags", "agent", "open_blockers")
@@ -2375,24 +2377,45 @@ class Store:
 			out["hint"] = (f"if part of {tid} is done and the rest waits on {', '.join(waits)}: claim it again and "
 			               f"complete({tid}, summary, followup={{title, done_when, blocked_by: {waits}}}) records the done part "
 			               f"and makes the rest its own ticket, ready by itself once {', '.join(waits)} is done")
+		if self._names_human(reason):  # AI-56: a release counts as a failed attempt, and the next worker hits the same question
+			ask = (f"if {tid} waits on a decision only a human can make: ask_human({tid}, agent, question) parks it with the question "
+			       f"until it is answered (no claim needed on a todo ticket); a release counts as a failed attempt and the next worker hits the same wall")
+			out["hint"] = f"{out['hint']}. {ask}" if out.get("hint") else ask
 		return out
+
+	def _names_human(self, text: str) -> bool:
+		"""text (a release reason) names a person or a decision: a word of _HUMAN_WORDS or a kind-human owner's name."""
+		if not (text or "").strip():
+			return False
+		if _HUMAN_WORDS.search(text):
+			return True
+		names = [o["name"] for o in self.config["owners"] if o.get("kind") == "human"]
+		return any(re.search(rf"(?<!\w){re.escape(n)}(?!\w)", text, re.I) for n in names if n.strip())
 
 	def ask(self, tid: str, agent: str, question: str, request_id: str | None = None) -> dict:
 		"""Hand a decision to a human: the claim ends, waiting_on = question, status todo. A todo with a waiting_on is
-		pending (not ready, not claimable) until someone clears it."""
+		pending (not ready, not claimable) until someone clears it. Works on a ticket you hold, or on an unclaimed todo with no
+		question yet (no claim needed, AI-56); a ticket someone else holds is refused."""
 		q = question.strip() if isinstance(question, str) else ""
 		if not q:
 			raise TicketError("ask needs a question: say what the human must decide")
 		if len(q) > QUESTION_MAX:
 			raise TicketError(f"question is {len(q)} chars, the limit is {QUESTION_MAX}: shorten it, or put the background in add_note and ask the decision")
+		if not (agent or "").strip():
+			raise TicketError("ask needs who is asking: pass agent (your worker name), so the human sees who the question is from")
 		def run():
 			if (seen := self._seen_request(agent, request_id, "ask", tid)):
 				return seen
 			if tid not in self._claims() and (cur := self._fresh(tid)) and cur.get("waiting_on") == q and cur.get("asked_by") == agent:
 				return {"already": True, "ticket": tid, "at": cur.get("asked_at", "")}  # the same question again: it is already asked
-			c = self._holder(tid, agent)
 			raw = self._fresh(tid)
-			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
+			if tid in self._live_claims() or raw.get("status") != "todo":
+				c = self._holder(tid, agent)  # claimed by someone else, or doing / review / done: refused as before
+			elif raw.get("waiting_on"):
+				raise TicketError(f"{tid} already waits on a human: {raw['waiting_on'][:200]!r}. add_note to add to it, or wait for the answer")
+			else:  # AI-56: an unclaimed todo can be asked about without a claim (a lead used to claim it, 24k chars of context, only to ask)
+				c = {}
+			late[:] = self._unseen(tid, raw.get("notes", []), c, agent) if c else []
 			raw.update(status="todo", waiting_on=q, asked_at=_now(), asked_by=agent, updated=date.today().isoformat())
 			_append_note(raw, agent, q, kind="question")  # refuses before the claim is touched
 			claims = self._claims()
