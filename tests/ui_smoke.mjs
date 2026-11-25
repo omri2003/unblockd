@@ -975,15 +975,27 @@ try {
 		ok((await page.locator(`${mrow} [data-release]`).count()) === 0 && (await page.locator(`${mrow} [data-open]`).count()) === 2, `[${tag}] a missing blocker only gets Open (id + button)`);
 		ok((await page.locator(`${srow} .nd-q`).innerText()).startsWith('In progress for '), `[${tag}] stale hint`);
 		await noOverflow('stuck rows');
-		// failed-N-times cue on the card: 3 claim+release rounds, gone after a human note
+		// failed-N-times (UI-26): 3 claim+release rounds = a stuck row saying so, with a note box instead of Release; the card gets the cue; a note from the row clears both
 		const fid = JSON.parse(cli('create', '--prefix', 'ST', '--title', 'keeps failing', '--json', '{"owner":"Claude"}')).id;
 		for (let i = 0; i < 3; i++) { cli('claim', '--agent', 'backend-1', '--id', fid); cli('release', fid, '--agent', 'backend-1', '--reason', 'tried ' + i); }
 		await refresh();
+		const frow = `#npList .nr[data-key="${boardId}/${fid}"]`;
+		await page.waitForSelector(`${frow} form[data-nform=notes]`);
 		await page.waitForFunction((i) => /Failed 3 times/.test(document.querySelector(`#board [data-open="${i}"] .wl.fail`)?.textContent || ''), fid);
-		cli('note', fid, 'try the other approach', '--by', 'human');
-		await refresh();
+		{ const q = await page.locator(`${frow} .nd-q`).innerText();
+			ok(q.startsWith('Failed 3 times (released ×3).') && q.includes('Add a note for the next attempt'), `[${tag}] failed row names the failures: ${q}`); }
+		ok((await page.locator(`${frow} .nb`).innerText()) === 'Stuck' && (await page.locator(`${frow} [data-release]`).count()) === 0, `[${tag}] failed row is Stuck, with a note box instead of Release`);
+		ok((await page.locator(`${frow} .nd-ln`).innerText()).includes('tried 2'), `[${tag}] failed row shows the last attempt's note: ${await page.locator(`${frow} .nd-ln`).innerText()}`);
+		ok((await page.locator('#npSum').innerText()) === '4 stuck', `[${tag}] header counts the failed row: ${await page.locator('#npSum').innerText()}`);
+		await noOverflow('failed stuck row');
+		await page.fill(`${frow} [data-draft]`, 'try the other approach');
+		await page.click(`${frow} form[data-nform=notes] button[type=submit]`);
+		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${fid}`);
 		await page.waitForFunction((i) => !document.querySelector(`#board [data-open="${i}"] .wl.fail`), fid);
-		ok(true, `[${tag}] failed-3-times cue shows on the card and clears after a human note`);
+		{ const ft = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), fid);
+			ok(ft.notes.some((n) => n.kind === 'note' && n.by === 'human' && n.text === 'try the other approach') && ft.status === 'todo', `[${tag}] the row's note should be on the ticket: ${JSON.stringify(ft.notes.slice(-1))}`); }
+		ok((await page.locator('#npSum').innerText()) === '3 stuck', `[${tag}] the failed row left the count: ${await page.locator('#npSum').innerText()}`);
+		cli('delete', fid);
 		await page.click(`${srow} [data-release]`);
 		await page.waitForFunction((k) => !document.querySelector(`#npList .nr[data-key="${k}"]`), `${boardId}/${sid}`);
 		const rel = await page.evaluate((i) => fetch('/api/tickets/' + i).then((r) => r.json()), sid);
