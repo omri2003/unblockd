@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- `list_tickets(fields=[...], limit=)` adds only the asked keys per row (body and notes only when named), so a planner checks overlap without `full=true`; REST `GET tickets?fields=&limit=`, CLI `list --fields --limit`.
+
 ## v0.2.0 (2026-11-22)
 
 79 pull requests since v0.1.0. Drafted with `scripts/release_notes.py v0.1.0`, then edited (docs/releasing.md).

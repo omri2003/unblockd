@@ -288,6 +288,32 @@ class WorkLoopTest(unittest.TestCase):
 			m.create_tickets([{"prefix": "A", "title": "c"}, {"prefix": "A"}], agent="planner")
 		self.assertEqual(len(m.BOARDS.get(None).list()), 2)
 
+	def test_list_tickets_fields_and_limit(self):
+		from unblockd import mcp_server as m
+		from mcp.server.mcpserver.exceptions import ToolError
+		self.addCleanup(setattr, m, "BOARDS", m.BOARDS)
+		m.BOARDS = m.bd.from_env()
+		s = m.BOARDS.get(None)
+		s.create({"title": "epic", "body": "long " * 400}, tid="B-1")
+		s.create({"title": "part", "parent": "B-1", "touches": ["ui/x.js"], "done_when": ["it works"]}, tid="B-2")
+		s.add_note("B-2", "omri", "a note")
+		plain = m.list_tickets()
+		self.assertEqual(set(plain[0]), set(st_keys := ("id", "title", "effective_status", "priority", "owner", "pillar", "milestone", "tags", "agent", "open_blockers")))
+		rows = m.list_tickets(fields=["touches", "parent", "done_when"])
+		self.assertEqual(set(rows[1]), set(st_keys) | {"touches", "parent", "done_when"})  # only the asked keys
+		self.assertEqual((rows[1]["touches"], rows[1]["parent"], rows[1]["done_when"]), (["ui/x.js"], "B-1", ["it works"]))
+		self.assertNotIn("body", rows[0])
+		self.assertNotIn("notes", rows[1])
+		self.assertLess(len(json.dumps(rows)), len(json.dumps(m.list_tickets(full=True))) / 3)
+		self.assertEqual(m.list_tickets(fields=["notes"])[1]["notes"][0]["text"], "a note")  # notes / body: when named
+		self.assertTrue(m.list_tickets(fields=["body"])[0]["body"].startswith("long"))
+		self.assertEqual([t["id"] for t in m.list_tickets(limit=1)], ["B-1"])
+		with self.assertRaisesRegex(ToolError, "unknown field.*colour.*one of"):
+			m.list_tickets(fields=["colour"])
+		with self.assertRaisesRegex(ToolError, "limit must be"):
+			m.list_tickets(limit=-1)
+		self.assertIn('fields=["touches", "parent", "done_when"]', str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "g", "path": "s.md"}))))
+
 
 @unittest.skipIf(mcp is None, "mcp not installed")
 class HttpServerTest(unittest.TestCase):

@@ -148,6 +148,32 @@ FIELDS = {
 RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup"}  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
 FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
 _ID_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])[A-Z][A-Z0-9]*-\d+(?![A-Za-z0-9_-])")  # a ticket id in free text (release reason)
+# a list row (list_tickets, REST GET tickets?fields=, CLI list): these keys, plus what `fields` asks for (AI-47)
+SUMMARY_KEYS = ("id", "title", "effective_status", "priority", "owner", "pillar", "milestone", "tags", "agent", "open_blockers")
+# what `fields` may add to a row: every stored field and the derived ones. body and notes are the big ones: a row has them only when
+# they are named, so a planner gets touches / done_when / parent of the whole board for a fraction of full=true's tokens
+LIST_FIELDS = tuple(FIELDS) + ("created", "updated", "children", "progress", "blocks", "unblocks", "missing_blockers", "score",
+                               "stale_days", "claim", "files", "branches")
+
+
+def list_fields(fields) -> list[str]:
+	"""`fields` as a list (a comma string is split: REST / CLI), each one checked against LIST_FIELDS."""
+	if fields is None:
+		return []
+	if isinstance(fields, str):
+		fields = fields.split(",")
+	if not isinstance(fields, (list, tuple)) or not all(isinstance(f, str) for f in fields):
+		raise TicketError("fields must be a list of field names, e.g. [\"touches\", \"done_when\"]")
+	out = [f.strip() for f in fields if f.strip()]
+	bad = [f for f in out if f not in LIST_FIELDS]
+	if bad:
+		raise TicketError(f"unknown field(s) {', '.join(bad)} in fields: one of {', '.join(LIST_FIELDS)}")
+	return list(dict.fromkeys(out))
+
+
+def summarize(t: dict, fields=()) -> dict:
+	"""A list row: SUMMARY_KEYS plus the asked `fields` (already checked by list_fields)."""
+	return {k: t.get(k) for k in (*SUMMARY_KEYS, *fields)}
 
 # The limits of the FIELDS validators above, in numbers: what an error names and what board_info returns as `limits`, so an agent can
 # check before it writes. Keep them equal to the validators (tests/test_tool_docs.py checks each one at its edge).
@@ -878,9 +904,13 @@ class Store:
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
-	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None) -> list[dict]:
+	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None,
+	         limit: int | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none.
-		board = a _board() the caller already read in this locked step (claim), so it is not read again."""
+		board = a _board() the caller already read in this locked step (claim), so it is not read again.
+		limit = at most that many (after the filters, in id order)."""
+		if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 0):
+			raise TicketError(f"limit must be a whole number >= 0, not {limit!r}")
 		res = list((self._board() if board is None else board).values())  # cached: filter first, copy what is returned
 		if status:
 			res = [t for t in res if t["effective_status"] == status]
@@ -902,7 +932,7 @@ class Store:
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]
-		return [_copy(t) for t in res]
+		return [_copy(t) for t in (res if limit is None else res[:limit])]
 
 	def next_ready(self, owner: str | None = None, pillar: str | None = None, limit: int = 5,
 	               agent: str | None = None, tag: str | None = None, board: dict | None = None) -> list[dict]:

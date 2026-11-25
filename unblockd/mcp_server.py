@@ -188,8 +188,7 @@ def limit_tools(mode: str | None, profile: str | None = None) -> list[str]:
 
 
 def _summary(t: dict) -> dict:
-	keys = ("id", "title", "effective_status", "priority", "owner", "pillar", "milestone", "tags", "agent", "open_blockers")
-	return {k: t.get(k) for k in keys}
+	return st.summarize(t)
 
 
 @tool
@@ -252,13 +251,18 @@ def next_ready(board: str | None = None, owner: str | None = None, pillar: str |
 @tool
 def list_tickets(board: str | None = None, status: str | None = None, pillar: str | None = None,
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
-                 agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None, full: bool = False) -> list[dict]:
+                 agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None,
+                 fields: list[str] | None = None, limit: int | None = None, full: bool = False) -> list[dict]:
 	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
 	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts),
 	milestone (a key from board_info's milestones; "-" = tickets with none), q (words to search).
-	Returns short summaries unless full=true."""
-	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent, milestone=milestone)
-	return res if full else [_summary(t) for t in res]
+	Returns short summaries (id, title, effective_status, priority, owner, pillar, milestone, tags, agent, open_blockers).
+	fields = extra keys per row, only those: e.g. ["touches", "parent", "done_when"] to plan, ["claim"] for who holds it; body and notes
+	only when you name them. Prefer fields to full=true (every body and every note on the board). limit = at most that many rows."""
+	keep = st.list_fields(fields)
+	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent,
+	                             milestone=milestone, limit=limit)
+	return res if full else [st.summarize(t, keep) for t in res]
 
 
 @tool
@@ -354,7 +358,7 @@ def claim_next(agent: str, profile: str | None = None, note: str = "", principal
 	name (<profile>-N, e.g. backend-1; on a board with agent profiles a name matching none is refused); principal = the human owner (kind human, see board_info) you work for: stored in the claim, copied to result.principal, and the claim then can't be touched by another human's worker of the same name; profile defaults to the profile your name starts with. Skips tickets
 	owned by humans, already claimed, or whose `touches` overlap a live claim. When there is nothing to
 	take it returns {ticket: null, reason, counts, ids, orphaned}: reason "conflict" = ready tickets are blocked by
-	live claims' touches: the reply has `held_by` [{id, agent, expires_at, blocks}] and `retry_after_s`; call again with wait_s=120 and it returns as
+	live claims' touches: the reply has `held_by` [{id, agent, files, blocks, expires_at}] and `retry_after_s`; call again with wait_s=120 and it returns as
 	soon as one frees up (the server may cap the wait: the reply says `waited_s`); "waiting" = open tickets exist but none is ready (in
 	flight, in review, waiting on a human, blocked) and "dry" = nothing open: on those stop and report the ids (`ids`; `orphaned` = doing with no live claim).
 	"session_done" = you reached the board's tickets-per-session limit: stop and report. fresh=true = send every doc again (after your context was compacted).

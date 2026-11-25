@@ -428,10 +428,12 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None
 			if method == "GET" and tid is None:
-				if not any(q.get(k) for k in TICKET_FILTERS):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
+				if not any(q.get(k) for k in (*TICKET_FILTERS, "fields", "limit")):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
 					data, etag = _tickets_body(store)
 					return self._send(200, data, etag=etag)
-				return self._send(200, store.list(**{k: q.get(k) for k in TICKET_FILTERS}))
+				keep = st.list_fields(q.get("fields"))  # fields=a,b: summary rows with those keys (AI-47); none = whole tickets
+				res = store.list(**{k: q.get(k) for k in TICKET_FILTERS}, limit=_num(q, "limit", 0) if q.get("limit") else None)
+				return self._send(200, [st.summarize(t, keep) for t in res] if keep else res)
 			if method == "GET":
 				return self._send(200, store.with_blockers(store.get(tid)))
 			if method == "POST" and tid is None:

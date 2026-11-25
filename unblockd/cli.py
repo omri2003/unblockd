@@ -1,6 +1,6 @@
 """Command line over the same Store (for agents without the MCP server).
 
-    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS]
+    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS] [--fields touches,done_when] [--limit N]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B] [--wait S]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for; --wait (<= 120) = on a conflict, wait for it to free up
@@ -195,6 +195,8 @@ def main(argv: list[str] | None = None) -> int:
 	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
 		ls.add_argument(f"--{f}")
 	ls.add_argument("-q")
+	ls.add_argument("--fields", help="extra keys per row, comma list (e.g. touches,parent,done_when); body and notes only when named")
+	ls.add_argument("--limit", type=int, help="at most N rows")
 	nx = sub.add_parser("next")
 	nx.add_argument("--owner")
 	nx.add_argument("--pillar")
@@ -331,8 +333,9 @@ def main(argv: list[str] | None = None) -> int:
 		ctx = s.context if url else lambda tid: kn.context(s, tid)
 		with_ctx = lambda got: {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		if a.cmd == "list":
-			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone)
-			out = [{k: t.get(k) for k in ("id", "title", "effective_status", "priority", "owner", "pillar", "agent", "open_blockers")} for t in res]
+			keep = st.list_fields(a.fields)
+			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone, limit=a.limit)
+			out = [st.summarize(t, keep) for t in res]
 		elif a.cmd == "next":
 			out = [{**{k: t.get(k) for k in ("id", "title", "priority", "owner", "pillar", "agent")}, "score": t["score"], "unblocks": t["unblocks"]}
 			       for t in s.next_ready(owner=a.owner, pillar=a.pillar, agent=a.agent, tag=a.tag, limit=a.limit)]
