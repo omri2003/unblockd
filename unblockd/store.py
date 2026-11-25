@@ -2543,7 +2543,8 @@ def _check_result_input(op: str, summary, files, refs, handoff) -> None:
 		raise TicketError(f"{op} needs a summary: cause -> fix -> tests, and what was NOT verified")
 	for name, v in (("files", files), ("refs", refs)):
 		if v is not None and not _short_list(v):
-			raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {'[\"unblockd/store.py\"]' if name == 'files' else '[\"https://github.com/o/r/pull/7\"]'}")
+			eg = '["unblockd/store.py"]' if name == "files" else '["https://github.com/o/r/pull/7"]'  # outside the f-string: 3.10 allows no backslash in {} (CORE-89)
+			raise TicketError(f"{name} must be a list of short strings (max 50, each up to 300 chars), e.g. {eg}")
 	if len(summary.strip()) > SUMMARY_MAX:
 		raise TicketError(f"summary is {len(summary.strip())} chars, the limit is {SUMMARY_MAX}: keep cause -> fix -> tests, move detail into an attached file")
 	if handoff is not None and not (isinstance(handoff, str) and len(handoff) <= 2000):
