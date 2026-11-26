@@ -22,6 +22,9 @@
 - Files board on Windows: `unblockd.json` is written with LF line endings like the ticket files, so `migrate` back to a folder gives it byte for byte and saving tools in the Agents panel no longer turns a committed config CRLF (CORE-87).
 - Python 3.10 and 3.11: `unblockd` imports again (one error message used an f-string only 3.12 can parse); CI now compiles everything on 3.10 (CORE-89).
 
+### Changed
+- The Docs view's suggestions (GET knowledge) keep what each repo doc names and read a doc again only when it changes: a warm call reads no doc (on a 350-doc, 500-ticket test board 40 s -> 1 s), same suggestions.
+
 ## v0.2.0 (2026-11-22)
 
 79 pull requests since v0.1.0. Drafted with `scripts/release_notes.py v0.1.0`, then edited (docs/releasing.md).
