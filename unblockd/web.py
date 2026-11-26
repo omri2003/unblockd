@@ -37,7 +37,7 @@ POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
 POST   tickets/<id>/dismiss              {"by"?, "notes": [n, ...], "undo"?}  a person read late notes on a finished ticket: Needs you stops listing them
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
-POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?, "followup"?: {title, done_when?, blocked_by?, body?, priority?, touches?}, "closes"?: [ids]}  also stored as the ticket's `result`; followup = the rest as a new ticket; closes = other tickets this work finished (done under it, all or nothing)
+POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?, "followup"?: {title, done_when?, blocked_by?, body?, priority?, touches?}, "closes"?: [ids], "touched"?: [paths]}  also stored as the ticket's `result`; followup = the rest as a new ticket; closes = other tickets this work finished (done under it, all or nothing); touched = paths really edited (warns on ones outside touches, CORE-47)
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it (?content=0: each doc's `sent` without its text; a sent doc over a third of the budget also gets `outline` + `outline_chars`; when a doc did not fit, `fits_budget` = the smallest budget that sends all)
 GET    knowledge                         who reads what: tickets, docs, ticket->doc (with the tag / profile it came from) and doc->doc edges, the rules that send docs, plus no_docs / broken / hubs / orphans
@@ -367,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or ""), request_id=b.get("request_id"), session=self._session(b)))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", "")), request_id=b.get("request_id")))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id"), followup=b.get("followup"), session=self._session(b), closes=b.get("closes")))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id"), followup=b.get("followup"), session=self._session(b), closes=b.get("closes"), touched=b.get("touched")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text"), kind=b.get("kind") or "note", pin=bool(b.get("pin")),

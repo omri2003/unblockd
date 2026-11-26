@@ -151,7 +151,7 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup", "closes", "under"}  # closes / under: complete(closes=) (AI-57)  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup", "closes", "under", "touched", "outside"}  # closes / under: complete(closes=) (AI-57); touched / outside: complete(touched=) (CORE-47)  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
 CLOSES_MAX = 20  # tickets one complete(closes=) may close (AI-57)
 FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
 LIST_IDS_MAX = 200  # list(ids=): a pasted plan or review, not a board dump
@@ -2062,8 +2062,23 @@ class Store:
 			            "Read previous_attempts and the latest notes first: someone may have left half-done work")
 		if not principal and len(humans) > 1:
 			warn.append("no principal: this board has several human owners; pass principal=<the human you work for> so the result says who answers for it")
+		near = self._doing_overlaps(t, board)
 		return {**t, "lease_minutes": lease, "lease_left_s": int(lease * 60), "expires_at": _iso(exp),
-		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}, board
+		        "previous_attempts": self.attempts(got, 5), **({"overlapping": near} if near else {}), **({"warnings": warn} if warn else {})}, board
+
+	def _doing_overlaps(self, t: dict, board: dict) -> list[dict]:
+		"""CORE-47: the OTHER doing tickets (claimed, orphaned, or work on a branch) whose touches meet t's:
+		[{id, title, agent (live claim's, or null), files: t's touches it meets, branch}] from a decorated board."""
+		mine, out = t.get("touches", []), []
+		for o in board.values() if mine else ():
+			if o["id"] == t["id"] or o.get("effective_status") != "doing" or not o.get("touches"):
+				continue
+			files = [a for a in mine if any(_overlap(a, b) for b in o["touches"])]
+			if files:
+				c = o.get("claim") or {}
+				act = next((b["name"] for b in o.get("branches", []) if b.get("active")), None)
+				out.append({"id": o["id"], "title": o.get("title", ""), "agent": c.get("agent"), "files": files, "branch": c.get("branch") or act})
+		return out
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None, branch: str | None = None,
 	               wait_s: float = 0, session: str | None = None) -> dict:
@@ -2651,7 +2666,8 @@ class Store:
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
 	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None,
-	             followup: dict | None = None, session: str | None = None, closes: list[str] | None = None) -> dict:
+	             followup: dict | None = None, session: str | None = None, closes: list[str] | None = None,
+	             touched: list[str] | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
 		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`.
@@ -2660,9 +2676,14 @@ class Store:
 		blocked_by, so it turns ready by itself when they are done. All or nothing: a bad followup refuses the complete too.
 		closes = ids of other open tickets whose work landed in this one (AI-57): each goes to the same status (done, or review on a review
 		board) with a note and result "Done under <id>: <summary>"; all or nothing (a closed, missing, claimed-by-another ticket refuses the
-		complete too). result.closes lists them, each one's result.under = this id."""
+		complete too). result.closes lists them, each one's result.under = this id.
+		touched = the paths the work really edited (CORE-47): stored as result.touched; the ones outside the ticket's touches as
+		result.outside, and the reply warns about them and about any other doing ticket whose touches meet one of them."""
 		_check_result_input("complete", summary, files, refs, handoff)
 		closes = _closes_input(tid, closes)
+		if touched is not None:
+			_check_result_input("complete", summary, touched, None, None)
+			touched = list(dict.fromkeys(x.strip() for x in touched if x.strip()))
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
@@ -2679,6 +2700,10 @@ class Store:
 			shut = self._closes(tid, closes, agent) if closes else []  # validated before anything changes too
 			if shut:
 				result["closes"] = [x["id"] for x in shut]
+			if touched:
+				result["touched"] = touched
+				if (extra := [x for x in touched if not any(_overlap(x, b) for b in raw.get("touches", []))]):
+					result["outside"] = extra
 			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
 			if late:  # the reviewer is shown them next to the result: the worker finished without reading them
 				result["unread"] = [n["n"] for n in late if isinstance(n.get("n"), int)]
@@ -2715,12 +2740,25 @@ class Store:
 		out = self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
 		if clash:
 			out["warnings"] = clash + out.get("warnings", [])
+		if touched and (tw := self._touched_warnings(out)):
+			out["warnings"] = out.get("warnings", []) + tw
 		if closes and (ids := (out.get("result") or {}).get("closes")):
 			out["closed"] = [{"id": x, "status": (b := self.get(x))["status"], "title": b["title"]} for x in ids]
 		if followup is not None and (fid := (out.get("result") or {}).get("followup")):
 			f = self.get(fid)
 			out["followup"] = {k: f.get(k) for k in ("id", "title", "effective_status", "blocked_by", "open_blockers", "proposed_by")}
 		return out
+
+	def _touched_warnings(self, t: dict) -> list[str]:
+		"""CORE-47: complete(touched=)'s warnings: paths edited outside the ticket's touches, and other doing tickets whose touches meet them."""
+		res, warn = t.get("result") or {}, []
+		if res.get("outside"):
+			warn.append(f"you edited {', '.join(res['outside'])} outside {t['id']}'s touches: claims are kept apart by touches, so another worker "
+			            "may have been editing them too. Check the merge, and list such paths in touches next time (update_ticket before you edit)")
+		for o in self._doing_overlaps({"id": t["id"], "touches": res.get("touched", [])}, self._board()):
+			warn.append(f"{', '.join(o['files'])} also in {o['id']}'s touches ({o['agent'] or 'no live claim'} doing it"
+			            f"{', branch ' + o['branch'] if o['branch'] else ''}): tell them (add_note on {o['id']}); expect a merge conflict")
+		return warn
 
 	def _closes(self, tid: str, ids: list[str], agent: str) -> list[dict]:
 		"""Caller holds the lock. complete(closes=)'s tickets, read and checked (AI-57); every problem refuses the complete, listed at once."""

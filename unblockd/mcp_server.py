@@ -537,7 +537,7 @@ def release(id: str, agent: str | None = None, reason: str = "", principal: str 
 @tool(need=("summary",))
 def complete(id: str, agent: str | None = None, summary: str = "", files: list[str] | None = None, refs: list[str] | None = None,
              handoff: str | None = None, principal: str | None = None, request_id: str | None = None, followup: dict | None = None,
-             closes: list[str] | None = None, next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
+             closes: list[str] | None = None, touched: list[str] | None = None, next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Finish your claimed ticket (agent = your worker name, by= is accepted too): status done (review on boards that require a human look),
 	summary appended to its body. summary = cause -> fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files =
 	paths you changed, refs = PR / commit / URL, handoff = what tickets waiting on this one must know; they get it in their context as
@@ -548,11 +548,12 @@ def complete(id: str, agent: str | None = None, summary: str = "", files: list[s
 	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing.
 	Your work also finished other open tickets: closes=[their ids] moves them to done under this one (note + result "Done under <id>"), all or
 	nothing (a done, missing or claimed-by-another one refuses the complete); the reply lists them as `closed`.
+	touched = the paths you really edited: ones outside the ticket's touches, or in another doing ticket's touches, come back as warnings.
 	next=true = also claim your next ticket in the same call (branch: see claim_next): the reply is {done: <this reply>, next: <what
 	claim_next answers: a ticket with its context, or {ticket: null, reason} incl. session_done>}."""
 	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal,
-	                                             request_id=request_id, followup=followup, session=SESSION, closes=closes)), board, agent, next, principal, branch)
+	                                             request_id=request_id, followup=followup, session=SESSION, closes=closes, touched=touched)), board, agent, next, principal, branch)
 
 
 @tool

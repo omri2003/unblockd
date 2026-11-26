@@ -7,7 +7,7 @@
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."] [--next]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide" [--next]   # releases the claim, waits on a human
-    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}'] [--closes ID]... [--next]
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}'] [--closes ID]... [--touched PATH]... [--next]
         # --next (complete / release / ask): also claim the next ticket (with --principal / --branch): prints {"done": ..., "next": <what claim prints>}
         # env UNBLOCKD_SESSION (claim / heartbeat / release / complete): an id of this worker's session; another session under the same name is warned (CORE-88)
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
@@ -177,9 +177,9 @@ class Remote:
 	def dismiss_notes(self, tid, by, ns, undo=False): return self._call("POST", f"/tickets/{tid}/dismiss", {"by": by, "notes": ns, "undo": undo})
 	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None, request_id=None):
 		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes, "request_id": request_id})
-	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None, followup=None, session=None, closes=None):
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None, followup=None, session=None, closes=None, touched=None):
 		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id,
-		                                                       **({"followup": followup} if followup is not None else {}), **_ses(session), **({"closes": closes} if closes else {})})
+		                                                       **({"followup": followup} if followup is not None else {}), **_ses(session), **({"closes": closes} if closes else {}), **({"touched": touched} if touched is not None else {})})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def read_docs(self, paths): return self._call("GET", "/docs?" + urllib.parse.urlencode([("path", p) for p in paths]))
@@ -288,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
 	cp.add_argument("--handoff", help="what tickets waiting on this one must know")
+	cp.add_argument("--touched", action="append", help="a path you really edited (repeatable): ones outside the ticket's touches, or in another doing ticket's, are warned about")
 	cp.add_argument("--closes", action="append", help="another open ticket this work also finished: it goes to done under this one (repeatable; all or nothing)")
 	cp.add_argument("--followup", help="JSON {title, done_when?, blocked_by?, body?, priority?, touches?}: the part left to do becomes its own ticket, ready once blocked_by is done")
 	sub.add_parser("agents")
@@ -404,7 +405,7 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.ask(a.id, a.agent, a.question, request_id=a.request_id)
 		elif a.cmd == "complete":
 			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id, session=ses,
-			                 **({"closes": a.closes} if a.closes else {}), **({"followup": json.loads(a.followup)} if a.followup else {}))
+			                 **({"closes": a.closes} if a.closes else {}), **({"touched": a.touched} if a.touched else {}), **({"followup": json.loads(a.followup)} if a.followup else {}))
 		elif a.cmd == "agents-md":
 			board = a.board or (os.environ.get("UNBLOCKD_BOARD") or "default" if url else s.config["id"])
 			text = bd.agents_md(board, a.dir)

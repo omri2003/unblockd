@@ -159,6 +159,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   named: closing is never a way around a person's decision or a blocker. At most 20. Finding them: `list_tickets(stale_days=N)` (REST `GET tickets?stale_days=N`,
   CLI `list --stale-days N`) = todo tickets with no activity event and no edit for N days, each with `idle_days`; `work_plan` marks such
   rows (`idle_days`, `stale_hint`; top-level `stale` = their count) using the board's `stale_days`.
+- **Touches vs the real edits** (CORE-47): `complete(..., touched=[paths])` (MCP arg, CLI `--touched PATH` repeatable, REST body key,
+  `Remote.complete`) = the paths the work really edited, stored as `result.touched`; the ones no `touches` entry covers (same path,
+  inside a folder, glob match) go to `result.outside`, and the reply `warnings` name them and every other doing ticket (claimed,
+  orphaned, or work on a branch) whose touches meet one of them. Never refused. `files` alone is not checked. A claim reply carries
+  `overlapping` [{id, title, agent (live claim's, or null), files, branch}] = the other doing tickets whose touches meet the claimed
+  one's (with no live claim in the way, or on another branch, the claim is allowed; this says who else is in those files).
 - **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (same caps,
   flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
   numbers as `result.unread` for the reviewer.
