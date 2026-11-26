@@ -52,6 +52,7 @@ DEFAULT_CONFIG = {
 	"mcp": {},  # {"postgres": {"hint": "claude mcp add ... (<= 300 chars, NEVER a credential)", "doc": "docs/mcp-postgres.md", "required": true}}
 	"use_skills": [],  # registry names every ticket on the board gets
 	"use_mcp": [],
+	"strict_sessions": False,  # True: a heartbeat / complete / release from ANOTHER session of the claim's worker name is refused, not just warned (CORE-88)
 	"review": False,  # True: complete() lands the ticket in status "review" (still open, blocks dependents) until a human sets done
 	"context_budget": 60_000,  # characters of docs inlined into a ticket's context; the rest is listed
 	# What a new ticket must look like. None = anything goes. Agents are refused (every problem listed), humans get `warnings`.
@@ -317,6 +318,8 @@ def config_from(user: dict | None, where: str, tickets_dir: Path | None) -> dict
 		if unknown:
 			raise TicketError(f"{where}: unknown key(s) {', '.join(sorted(unknown))}. Known: {', '.join(DEFAULT_CONFIG)}")
 		cfg.update(user)
+	if not isinstance(cfg["strict_sessions"], bool):
+		raise TicketError(f"{CONFIG_FILE}: strict_sessions must be true or false")
 	if not isinstance(cfg["review"], bool):
 		raise TicketError(f"{CONFIG_FILE}: review must be true or false")
 	if cfg["architecture"] is not None and not isinstance(cfg["architecture"], str):
@@ -1579,7 +1582,8 @@ class Store:
 			raise TicketError(f"{action} is a human action, and {by.strip()!r} is a worker: tell the human (ask_human) or add_note")
 
 	def split(self, tid: str, titles: list[str] | None = None, sequential: bool = False, by: str | None = None,
-	          parts: list[dict] | None = None, claim: int | None = None, principal: str | None = None, branch: str | None = None) -> dict:
+	          parts: list[dict] | None = None, claim: int | None = None, principal: str | None = None, branch: str | None = None,
+	          session: str | None = None) -> dict:
 		"""Break a ticket that is too big into parts (same prefix, next free ids, parent = tid; pillar, owner, priority, tags, touches,
 		docs, components, skills, mcp, milestone copied unless the part sets its own; every part inherits the parent's blocked_by;
 		sequential = each also waits on the one before), and the parent now waits on all of them (a doing parent goes back to todo,
@@ -1699,7 +1703,7 @@ class Store:
 			out = {"parent": self.get(tid), "children": [self.get(i) for i in ids]}
 			if claim is not None:
 				try:
-					out["claimed"] = self.claim(by, tid=ids[claim - 1], principal=principal, branch=branch)
+					out["claimed"] = self.claim(by, tid=ids[claim - 1], principal=principal, branch=branch, session=session)
 				except TicketError as e:  # e.g. its touches overlap another live claim: the split stands
 					out["claim_error"] = f"split done, but {ids[claim - 1]} could not be claimed: {e}"
 			return out
@@ -1908,13 +1912,13 @@ class Store:
 		return profile
 
 	def claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None,
-	          branch: str | None = None, wait_s: float = 0) -> dict | None:
+	          branch: str | None = None, wait_s: float = 0, session: str | None = None) -> dict | None:
 		"""See _claim. wait_s (<= WAIT_MAX, with tid only) = when tid is refused only because its touches overlap another live claim,
 		look again every WAIT_POLL_S until that claim ends or the time is up (then the refusal, which names the holder and its expiry)."""
 		wait_s, start = _wait_s(wait_s) if tid else 0, time.time()
 		while True:
 			try:
-				return self._claim(agent, tid, profile, note, principal, branch)[0]
+				return self._claim(agent, tid, profile, note, principal, branch, session)[0]
 			except Busy:
 				left = start + wait_s - time.time()
 				if left <= 0:
@@ -1922,7 +1926,7 @@ class Store:
 				time.sleep(min(WAIT_POLL_S, left))
 
 	def _claim(self, agent: str, tid: str | None = None, profile: str | None = None, note: str = "", principal: str | None = None,
-	           branch: str | None = None) -> tuple:
+	           branch: str | None = None, session: str | None = None) -> tuple:
 		"""(claim()'s reply, the decorated board it read): claim_next reports why nothing was claimable from that same read.
 		The step reads the board ONCE (CORE-61: it used to read every ticket 3 times, twice under the lock), on every connector:
 		one backend.tickets() under the lock serves _claimable's touches, next_ready and, with the written ticket patched in,
@@ -1931,7 +1935,9 @@ class Store:
 		ready ticket for `profile` (default: the profile named like the agent, else any) that no live
 		claim overlaps. Sets it to doing. `principal` = the human owner (kind human) the agent works for; stored in the claim.
 		`branch` = the git branch the agent works on (its own worktree; CORE-80): stored in the claim; an overlap with a claim on another
-		branch is allowed with a warning, and claim_next takes tickets with no overlap first. Returns the ticket, or None when nothing is claimable."""
+		branch is allowed with a warning, and claim_next takes tickets with no overlap first. `session` = an id of the running worker process
+		(stdio MCP server, UNBLOCKD_SESSION; CORE-88): stored in the claim, so a second live worker under the same name is noticed (_holder).
+		Returns the ticket, or None when nothing is claimable."""
 		if not (isinstance(agent, str) and NAME_RE.match(agent)):
 			raise TicketError(f"bad agent name {agent!r}: lowercase a-z, 0-9, - _ (e.g. backend-1)")
 		humans = [o["name"] for o in self.config["owners"] if o.get("kind") == "human"]
@@ -1947,6 +1953,7 @@ class Store:
 		branch = (branch or "").strip() or None
 		if branch and (len(branch) > 200 or any(ch.isspace() for ch in branch)):
 			raise TicketError("branch is a git branch name (no spaces, <= 200 chars), e.g. core-80")
+		session = _session(session)
 		orphan: list[bool] = []
 		meets: list[dict] = []
 
@@ -1984,7 +1991,8 @@ class Store:
 			now = _now()
 			claims[pick["id"]] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": note[:300],
 			                      "seen": len(pick.get("notes", [])),  # inbox(): notes before the claim came with it, they are not news
-				                      **({"principal": principal} if principal else {}), **({"branch": branch} if branch else {})}
+				                      **({"principal": principal} if principal else {}), **({"branch": branch} if branch else {}),
+			                      **({"session": session} if session else {})}
 			self._save_claims(claims)
 			fresh = self._fresh(pick["id"])  # one ticket, read now: the read-modify-write starts from what is stored
 			fresh["status"], fresh["updated"] = "doing", date.today().isoformat()
@@ -2016,7 +2024,7 @@ class Store:
 		        "previous_attempts": self.attempts(got, 5), **({"warnings": warn} if warn else {})}, board
 
 	def claim_next(self, agent: str, profile: str | None = None, note: str = "", principal: str | None = None, branch: str | None = None,
-	               wait_s: float = 0) -> dict:
+	               wait_s: float = 0, session: str | None = None) -> dict:
 		"""claim() for a worker that takes whatever is next: the claimed ticket, or, when there is none, WHY, so the worker
 		knows whether to retry: {"ticket": None, "reason": "dry"|"conflict"|"waiting", "counts": {...}, "ids": {same keys: [ticket ids]}, "orphaned": [doing ids with no live claim]}.
 		conflict = ready tickets exist but their touches overlap a live claim (retry later; the reply adds `held_by` [{id, agent, files,
@@ -2026,7 +2034,7 @@ class Store:
 		(complete, release, an expired lease) or the time is up; the reply then carries `waited_s`. Other reasons return at once."""
 		wait_s, start = _wait_s(wait_s), time.time()
 		while True:
-			got, board = self._claim(agent, profile=profile, note=note, principal=principal, branch=branch)
+			got, board = self._claim(agent, profile=profile, note=note, principal=principal, branch=branch, session=session)
 			res = got or self._why_empty(agent, profile, board, branch)
 			left = start + wait_s - time.time()
 			if got or res["reason"] != "conflict" or left <= 0:
@@ -2297,9 +2305,10 @@ class Store:
 			                     "heartbeat or complete takes it back while nobody else has claimed it"]}
 		return {}
 
-	def _retake(self, tid: str, agent: str, principal: str | None) -> dict | None:
+	def _retake(self, tid: str, agent: str, principal: str | None, session: str | None = None) -> dict | None:
 		"""Give `agent` back the claim it lost to the lease when nobody claimed tid since and it is still claimable. Caller holds the lock.
-		Returns the new claim, or None."""
+		The old claim's session does not count (CORE-88: a restarted worker has a new one and must recover its own ticket); the new claim
+		gets the caller's. Returns the new claim, or None."""
 		ev = self._lapsed(tid, agent)
 		if not ev:
 			return None
@@ -2311,7 +2320,7 @@ class Store:
 		principal = principal or ev.get("principal")
 		claims, now = self._claims(), _now()
 		claims[tid] = {"agent": agent, "profile": profile, "claimed_at": now, "heartbeat_at": now, "note": "taken back after the lease lapsed",
-		               **({"principal": principal} if principal else {})}
+		               **({"principal": principal} if principal else {}), **({"session": session} if session else {})}
 		self._save_claims(claims)
 		raw = self._fresh(tid)
 		raw["status"], raw["updated"] = "doing", date.today().isoformat()
@@ -2319,10 +2328,13 @@ class Store:
 		self._log("claim", tid, agent, "taken back after the lease lapsed (nobody claimed it since)", principal)
 		return {**claims[tid], "retaken": True}
 
-	def _holder(self, tid: str, agent: str, principal: str | None = None, retake: bool = False) -> dict:
+	def _holder(self, tid: str, agent: str, principal: str | None = None, retake: bool = False, session: str | None = None) -> dict:
+		"""The live claim on tid when `agent` (for `principal`) holds it, else a TicketError saying why. Caller holds the lock.
+		A claim made by another session of the same name (CORE-88) comes back with `clash` = the warning (or, strict_sessions, is refused)."""
+		session = _session(session)
 		c = self._live_claims().get(tid)
 		if not c and retake:
-			c = self._retake(tid, agent, principal)
+			c = self._retake(tid, agent, principal, session)
 		if not c:
 			if self._lapsed(tid, agent):
 				t = self.get(tid)
@@ -2334,9 +2346,29 @@ class Store:
 			raise TicketError(f"{tid} is claimed by {c['agent']}, not {agent}")
 		if principal and c.get("principal") and c["principal"] != principal:  # same worker name, another human's worker
 			raise TicketError(f"{tid} is claimed by {agent} for {c['principal']}, not for {principal}")
+		if session and c.get("session") and c["session"] != session:  # both sides named one, and they differ: two live workers, one name
+			c = {**c, "clash": self._clash(tid, agent, c, session)}
 		return c
 
-	def heartbeat(self, tid: str, agent: str, note: str = "", principal: str | None = None, until: str | None = None) -> dict:
+	def _clash(self, tid: str, agent: str, c: dict, session: str) -> str:
+		"""CORE-88: `agent` calls about tid from another session than the one that claimed it. strict_sessions: refused. Else logs
+		`session_clash`, marks the claim (`clash_at`, shown by agents_now) and returns the warning; the call itself goes through.
+		Caller holds the lock."""
+		name = f"{c.get('profile') or agent}-<n>"
+		if self.config["strict_sessions"]:
+			raise TicketError(f"{tid} is held by another session of {agent} (two workers running under one name?): use your own worker name "
+			                  f"({name}) and claim your own ticket. If you ARE the worker that claimed it, restarted: wait until its lease lapses "
+			                  f"({_fmt_min(self.lease_minutes(c.get('profile')))} min with no heartbeat), then heartbeat or complete takes it back")
+		self._log("session_clash", tid, agent, f"session {session[:40]} called; the claim is session {str(c['session'])[:40]}")
+		claims = self._claims()
+		if tid in claims:
+			claims[tid]["clash_at"] = _now()
+			self._save_claims(claims)
+		return (f"{agent} is another session here: {tid} was claimed by a different running worker named {agent}, so each of you keeps the "
+		        f"other's claim alive and either can finish it. Stop and pick another name ({name}) unless you are that worker, restarted")
+
+	def heartbeat(self, tid: str, agent: str, note: str = "", principal: str | None = None, until: str | None = None,
+	              session: str | None = None) -> dict:
 		"""Keep a claim alive and say what you're doing now (shown live on the board). until = an ISO time: the claim stays
 		alive until then even without another heartbeat (a long build or render), capped at lease_max_minutes from now (AI-58)."""
 		cap_warn = []
@@ -2354,7 +2386,9 @@ class Store:
 				cap_warn = [f"until capped to {_iso(end)}: this board allows at most {_fmt_min(mx)} min ahead (lease_max_minutes); heartbeat again before then"]
 
 		def beat():
-			c = self._holder(tid, agent, principal, retake=True)
+			c = self._holder(tid, agent, principal, retake=True, session=session)
+			if c.get("clash"):
+				cap_warn.insert(0, c["clash"])
 			claims = self._claims()
 			claims[tid]["heartbeat_at"] = _now()
 			if end is not None:
@@ -2375,7 +2409,7 @@ class Store:
 		return {**t, **info, **({"warnings": t.get("warnings", []) + warn} if warn else {})}
 
 	def release(self, tid: str, agent: str, reason: str = "", principal: str | None = None, missing: str = "", why: str = "",
-	            request_id: str | None = None) -> dict:
+	            request_id: str | None = None, session: str | None = None) -> dict:
 		"""Give a claimed ticket back: claim ends, ticket returns to todo. missing = a tool the worker needs and does not have (why = one
 		line on what it needed it for): recorded in `needs` with the worker's profile, as a pinned warning note, shown in Needs you; workers
 		of that profile skip the ticket until a human clears `needs`."""
@@ -2387,7 +2421,8 @@ class Store:
 		def rel():
 			if (seen := self._seen_request(agent, request_id, "release", tid) or self._repeat(tid, agent, "release")):
 				return seen
-			c = self._holder(tid, agent, principal)
+			c = self._holder(tid, agent, principal, session=session)
+			clash[:] = [c["clash"]] if c.get("clash") else []
 			claims = self._claims()
 			claims.pop(tid, None)
 			self._save_claims(claims)
@@ -2406,10 +2441,13 @@ class Store:
 			self._log("release", tid, agent, reason + (f" (missing tool {missing})" if missing else ""), c.get("principal"))
 			self._record_request(agent, request_id, "release", tid)
 		late: list[dict] = []
+		clash: list[str] = []
 		seen = self._locked(rel)
 		if seen:
 			return self._already(seen)
 		out = self._with_unread(self.get(tid), late, "release")
+		if clash:
+			out["warnings"] = clash + out.get("warnings", [])
 		waits = [x for x in dict.fromkeys(_ID_TOKEN.findall(reason or "")) if x != tid and self._exists(x)]
 		if waits:  # AI-60: "waiting on CORE-68" is usually half done, half waiting; release records nothing of the done half
 			out["hint"] = (f"if part of {tid} is done and the rest waits on {', '.join(waits)}: claim it again and "
@@ -2571,7 +2609,7 @@ class Store:
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
 	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None,
-	             followup: dict | None = None) -> dict:
+	             followup: dict | None = None, session: str | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
 		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`.
@@ -2584,7 +2622,8 @@ class Store:
 		def done():
 			if (seen := self._seen_request(agent, request_id, "complete", tid) or self._repeat(tid, agent, "complete")):
 				return seen
-			c = self._holder(tid, agent, principal, retake=True)
+			c = self._holder(tid, agent, principal, retake=True, session=session)
+			clash[:] = [c["clash"]] if c.get("clash") else []
 			if c.get("principal"):
 				result["principal"] = c["principal"]
 			raw = self._fresh(tid)
@@ -2618,10 +2657,13 @@ class Store:
 			self._record_request(agent, request_id, "complete", tid)
 			return c.get("retaken")
 		late: list[dict] = []
+		clash: list[str] = []
 		retaken = self._locked(done)
 		if isinstance(retaken, dict):  # a repeat: nothing changed
 			return self._already(retaken)
 		out = self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
+		if clash:
+			out["warnings"] = clash + out.get("warnings", [])
 		if followup is not None and (fid := (out.get("result") or {}).get("followup")):
 			f = self.get(fid)
 			out["followup"] = {k: f.get(k) for k in ("id", "title", "effective_status", "blocked_by", "open_blockers", "proposed_by")}
@@ -2704,7 +2746,8 @@ class Store:
 		live = self._live_claims()
 		titles = {i: t.get("title", "") for i, t in self._raw().items()}
 		working = [{"agent": c["agent"], "profile": c.get("profile"), "ticket": tid, "title": titles.get(tid, ""),
-		            "note": c.get("note", ""), "principal": c.get("principal"), "age_s": c["age_s"], "quiet_s": c["quiet_s"]}
+		            "note": c.get("note", ""), "principal": c.get("principal"), "age_s": c["age_s"], "quiet_s": c["quiet_s"],
+		            "session": c.get("session"), "clash": bool(c.get("clash_at"))}  # clash = another session of this name called (CORE-88)
 		           for tid, c in sorted(live.items(), key=lambda kv: kv[1]["claimed_at"])]
 		return {"working": working, "lease_minutes": self.config["lease_minutes"], "recent": self.activity(limit=20)}
 
@@ -2720,6 +2763,14 @@ _REVIEW_NEEDS_RESULT = ("{id} has no result, so a reviewer has nothing to check:
 def _unreported(t: dict) -> bool:
 	"""Done after UNREPORTED_SINCE with no result summary (moved to done by hand, not finished with complete())."""
 	return t.get("status") == "done" and not (t.get("result") or {}).get("summary") and str(t.get("done_at") or "")[:10] >= UNREPORTED_SINCE
+
+
+def _session(s) -> str | None:
+	"""A worker session id (CORE-88): any short string, stripped; empty = none (old clients, plain CLI: no check)."""
+	s = s.strip() if isinstance(s, str) else ""
+	if len(s) > 100 or any(ch.isspace() for ch in s):
+		raise TicketError("session is an id of the running worker (no spaces, <= 100 chars), e.g. a uuid")
+	return s or None
 
 
 def _check_result_input(op: str, summary, files, refs, handoff) -> None:

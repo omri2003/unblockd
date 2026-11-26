@@ -29,6 +29,8 @@ POST   claim                             {"agent", "profile"?, "note"?, "princip
                                          best claimable ticket, or {ticket: null, reason...} (conflict: held_by + retry_after_s; wait_s = wait for a conflicting claim to free up)
 POST   tickets/<id>/claim                {"agent", "note"?, "principal"?, "branch"?, "wait_s"?: wait for an overlapping claim to end}
 POST   tickets/<id>/heartbeat            {"agent", "note"?, "principal"?, "until"? (ISO: keep the claim alive until then, capped at lease_max_minutes)}
+                                         claim / heartbeat / release / complete / split also take "session"? (or header X-Unblockd-Session):
+                                         the worker process's id; another session under the claim's name is warned (CORE-88)
 POST   tickets/<id>/release              {"agent", "reason"?, "principal"?}
 POST   tickets/<id>/ask                  {"agent", "question"}  hand a decision to a human: ends the claim, sets waiting_on
 POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply_to"?, "supersedes"?}  append a signed note to the ticket's notes (by defaults to "human") -> the ticket
@@ -206,6 +208,10 @@ class Handler(BaseHTTPRequestHandler):
 		except json.JSONDecodeError as e:
 			raise st.TicketError(f"body is not JSON: {e}")
 
+	def _session(self, b: dict):
+		"""The worker session id of a claim / heartbeat / release / complete (CORE-88): body key `session`, else header X-Unblockd-Session."""
+		return b.get("session") or self.headers.get("X-Unblockd-Session") or None
+
 	def _arch(self, store, method: str, rest: list[str], q: dict):
 		"""The architecture writes (docs/reference.md): (status, payload). The store's TicketError becomes a 400 in _route."""
 		by = q.get("by") or "human"
@@ -308,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and rest == ["claim"]:
 				b = self._body()
 				return self._send(200, store.claim_next(str(b.get("agent", "")), profile=b.get("profile"), note=str(b.get("note", "")), principal=b.get("principal"),
-				                                        branch=b.get("branch"), wait_s=b.get("wait_s") or 0))
+				                                        branch=b.get("branch"), wait_s=b.get("wait_s") or 0, session=self._session(b)))
 			if method == "GET" and rest == ["knowledge"]:
 				return self._send(200, kn.graph(store))
 			if method == "GET" and rest == ["files"]:
@@ -352,16 +358,16 @@ class Handler(BaseHTTPRequestHandler):
 				agent = str(b.get("agent", ""))
 				if act == "claim":
 					return self._send(200, store.claim(agent, tid=tid, note=str(b.get("note", "")), principal=b.get("principal"), branch=b.get("branch"),
-					                                   wait_s=b.get("wait_s") or 0))
+					                                   wait_s=b.get("wait_s") or 0, session=self._session(b)))
 				if act == "heartbeat":
 					box = store.inbox(agent, mark=True)
-					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None)
+					t = store.heartbeat(tid, agent, str(b.get("note", "")), b.get("principal"), until=b.get("until") or None, session=self._session(b))
 					return self._send(200, {**t, **({"inbox": box} if box else {})})
 				if act == "release":
-					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or ""), request_id=b.get("request_id")))
+					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or ""), request_id=b.get("request_id"), session=self._session(b)))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", "")), request_id=b.get("request_id")))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id"), followup=b.get("followup")))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id"), followup=b.get("followup"), session=self._session(b)))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text"), kind=b.get("kind") or "note", pin=bool(b.get("pin")),
@@ -383,7 +389,7 @@ class Handler(BaseHTTPRequestHandler):
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "split":
 				b = self._body()
 				return self._send(200, store.split(rest[1], b.get("titles") or [], sequential=bool(b.get("sequential")), by=b.get("by") or b.get("agent"),
-				                                    parts=b.get("parts"), claim=b.get("claim"), principal=b.get("principal"), branch=b.get("branch")))
+				                                    parts=b.get("parts"), claim=b.get("claim"), principal=b.get("principal"), branch=b.get("branch"), session=self._session(b)))
 			if method == "POST" and rest == ["tickets", "batch"]:
 				b = self._body()
 				return self._send(201, store.create_many(b.get("tickets"), agent=b.get("agent")))

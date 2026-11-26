@@ -21,6 +21,7 @@ import hmac
 import json
 import os
 import string
+import uuid
 import sys
 import time
 from pathlib import Path
@@ -136,6 +137,7 @@ def _ack(t: dict) -> dict:
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
 CLAIMS: dict[tuple, int] = {}  # (board, worker) -> claims taken in this session
 DEDUPE = False  # on for stdio, where one server process = one agent session; the shared --http server can't tell sessions apart
+SESSION: str | None = None  # stdio: a uuid at server start, sent with claim / heartbeat / complete / release (CORE-88: two chats under one name are noticed)
 WAIT_MAX = st.WAIT_MAX  # claim_next(wait_s=) cap; the shared --http server lowers it (MCP_WAIT_MAX, default 30): every waiting call holds a worker thread
 
 
@@ -402,7 +404,7 @@ def split_ticket(id: str, agent: str | None = None, titles: list[str] | None = N
 	claim_next), returned as `claimed` with its context. agent = your worker name, by= is accepted too (a ticket another agent holds can't be split).
 	Returns {parent, children, claimed?, claim_error?}."""
 	store, agent = BOARDS.get(board), _who(agent, by)
-	out = store.split(id, titles, sequential=sequential, by=agent, parts=parts, claim=claim, principal=principal, branch=branch)
+	out = store.split(id, titles, sequential=sequential, by=agent, parts=parts, claim=claim, principal=principal, branch=branch, session=SESSION)
 	if out.get("claimed"):
 		out["claimed"] = _dedupe(board, agent, kn.with_context(store, out["claimed"]))
 	return out
@@ -430,7 +432,7 @@ def claim_next(agent: str | None = None, profile: str | None = None, note: str =
 	agent = your worker name (by= is accepted too)."""
 	store, agent = BOARDS.get(board), _who(agent, by)
 	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(
-		agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
+		agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX), session=SESSION)), fresh)
 
 
 @tool
@@ -441,7 +443,7 @@ def claim_ticket(id: str, agent: str | None = None, note: str = "", principal: s
 	like claim_next's) = wait for it to end instead, then claim (or the same refusal when the time is up)."""
 	store, agent = BOARDS.get(board), _who(agent, by)
 	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(
-		agent, tid=id, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
+		agent, tid=id, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX), session=SESSION)), fresh)
 
 
 @tool
@@ -458,7 +460,7 @@ def heartbeat(id: str, agent: str | None = None, note: str = "", principal: str 
 	last heartbeat: read them; a request you could not act on goes in an add_note or a new ticket."""
 	s, agent = BOARDS.get(board), _who(agent, by)
 	box = s.inbox(agent, mark=True)
-	r = _ack(s.heartbeat(id, agent, note, principal, until=until))
+	r = _ack(s.heartbeat(id, agent, note, principal, until=until, session=SESSION))
 	return {**r, "inbox": box} if box else r
 
 
@@ -524,7 +526,7 @@ def release(id: str, agent: str | None = None, reason: str = "", principal: str 
 	that `hint`). request_id: see complete. next=true = also claim your next ticket in the same call (branch: see
 	claim_next): the reply is {done: <this reply>, next: <what claim_next answers>}."""
 	agent = _who(agent, by)
-	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id)),
+	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id, session=SESSION)),
 	             board, agent, next, principal, branch)
 
 
@@ -544,7 +546,7 @@ def complete(id: str, agent: str | None = None, summary: str = "", files: list[s
 	claim_next answers: a ticket with its context, or {ticket: null, reason} incl. session_done>}."""
 	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal,
-	                                             request_id=request_id, followup=followup)), board, agent, next, principal, branch)
+	                                             request_id=request_id, followup=followup, session=SESSION)), board, agent, next, principal, branch)
 
 
 @tool
@@ -679,8 +681,9 @@ def main():
 	if kept:
 		print(f"unblockd MCP: worker tools only: {', '.join(kept)}", file=sys.stderr, flush=True)
 	if "--http" not in args:
-		global DEDUPE
+		global DEDUPE, SESSION
 		DEDUPE = True
+		SESSION = uuid.uuid4().hex  # one stdio process = one worker session
 		mcp.run()
 		return
 	import uvicorn

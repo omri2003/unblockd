@@ -110,6 +110,14 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   by `complete`, and carried by the `claim` / `complete` / `release` activity events. Pass the same principal to `heartbeat` / `release` /
   `complete`: when both the claim and the call name one and they differ, the call is refused, so two people's `backend-1` cannot
   act on each other's claim. On a board with 2+ human owners a claim without one carries `warnings: ["no principal: ..."]` (not stored).
+- **Two workers under one name** (CORE-88): a claim stores an optional `session` = an id of the running worker (stdio MCP server: a uuid
+  made at start; CLI: env `UNBLOCKD_SESSION`, unset = none; REST body key `session` or header `X-Unblockd-Session`; `Remote` sends it;
+  the shared `--http` MCP server sends none). When the claim AND a `heartbeat` / `complete` / `release` both carry one and they differ,
+  the reply warns "backend-1 is another session here: ... pick another name", the log gets a `session_clash` event, and `agents_now`
+  rows show `session` and `clash: true`; the call still goes through. Board config `strict_sessions: true` refuses it instead, saying
+  how to fix it. No session on either side = no check (old clients, one-command CLI workers). A lease that lapsed is taken back by the
+  same name whatever the session (a restarted worker recovers its own ticket; the new claim gets the new session). A self-declared id:
+  it catches accidents (two chats both started as backend-1), not abuse.
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
   (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
@@ -325,6 +333,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `use_skills`, `use_mcp` | Registry names every ticket on the board gets (default `[]`). A profile (`agents[].skills` / `mcp`) and a ticket (`skills` / `mcp`) add more. |
 | `schema` | Optional rules for new tickets, see below. Default `null`: anything goes. |
 | `milestones` | The roadmap, in order: `[{"key": "v0.1", "title": "Foundations", "goal": "one line", "exit_criteria": ["..."], "target": "2026-11-15", "closed": false}]`. Only `key` (letters, digits, `. _ -`) and `title` are required. See Milestones below. Default `[]`. |
+| `strict_sessions` | `true` = a heartbeat / complete / release from another session of the claim's worker name is refused, not just warned (default `false`; see Two workers under one name). |
 | `session_tickets`, `docs_resend` | Claims per worker session before `claim_next` says stop (default 5) and how long an already-sent board / profile doc is skipped (`{"claims": 3, "minutes": 30}`); see Lean worker context. |
 | `worker_tools`, `agents[].tools` | MCP tools a worker's server exposes with `--tools worker` (default: every tool the work loop names: claim_next, claim_ticket, heartbeat, add_note, complete, release, ask_human, read_doc, get_ticket, create_ticket, create_tickets, split_ticket, update_ticket, arch_set_edge, arch_remove_edge, agents_now) and what a profile adds; see Lean worker context. |
 | `agent_tickets` | `"open"` (default): agents create ready tickets. `"propose"`: a ticket an agent creates is a proposal until a human accepts it; turn it on for boards where several people or agents create work you want to vet. |
@@ -593,7 +602,7 @@ GET    plan?per_agent=
 GET    agents                         who is working what now + recent activity
 GET    activity?ticket=&limit=
 POST   claim                          {"agent", "profile"?, "note"?, "principal"?}
-POST   tickets/<id>/claim|heartbeat|release|complete   {"agent", "note" | "reason" | "summary", "principal"?}
+POST   tickets/<id>/claim|heartbeat|release|complete   {"agent", "note" | "reason" | "summary", "principal"?, "session"?}   (session: or header X-Unblockd-Session; CORE-88)
 GET    tickets/<id>/context?inline=0  docs + attached files to read before working it (?content=0: each doc's `sent`, without its text; a sent doc with 2 or more headings also gets `outline` + `outline_chars`; when a doc is too big or the budget ran out, `fits_budget` = the smallest `context_budget` in characters at which every doc would be sent)
 GET    knowledge                      who reads what (tickets, docs, edges with the tag / profile that sent them, rules, budget, problems)
 GET    architecture                   component notes, edges with contracts, open tickets per component, problems
