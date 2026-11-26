@@ -1,14 +1,15 @@
 """Command line over the same Store (for agents without the MCP server).
 
-    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS] [--touches PATH] [--component KEY] [--fields touches,done_when] [--limit N]
+    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS] [--touches PATH] [--component KEY] [--fields touches,done_when] [--limit N] [--stale-days N]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B] [--wait S]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for; --wait (<= 120) = on a conflict, wait for it to free up
     python -m unblockd.cli heartbeat ID --agent A [--note "now: writing tests"] [--until 2026-11-21T18:30:00+00:00]   # --until: a long run ends then (capped at lease_max_minutes)
     python -m unblockd.cli release ID --agent A [--reason "..."] [--next]
     python -m unblockd.cli ask ID --agent A --question "what only a human can decide" [--next]   # releases the claim, waits on a human
-    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}'] [--next]
+    python -m unblockd.cli complete ID --agent A --summary "cause -> fix -> tests; not verified: ..." [--file PATH]... [--ref PR_OR_URL]... [--handoff "what dependents must know"] [--followup '{"title": "rest", "blocked_by": ["CORE-68"]}'] [--closes ID]... [--touched PATH]... [--next]
         # --next (complete / release / ask): also claim the next ticket (with --principal / --branch): prints {"done": ..., "next": <what claim prints>}
+        # env UNBLOCKD_SESSION (claim / heartbeat / release / complete): an id of this worker's session; another session under the same name is warned (CORE-88)
     python -m unblockd.cli answer ID "text" [--by NAME]   # a human answers an ask: note + clears waiting_on
     python -m unblockd.cli reject ID "reason" [--by NAME] # a ticket in review goes back to todo with the reason as a note
     python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
@@ -95,6 +96,11 @@ def _json_mode(argv: list[str]) -> bool:
 		return True
 
 
+def _ses(session) -> dict:
+	"""The session key of a Remote write body: only when there is one (CORE-88), so an old server never sees it."""
+	return {"session": session} if session else {}
+
+
 class Remote:
 	"""The Store calls this CLI makes, sent to a running unblockd.web instead (UNBLOCKD_URL)."""
 	def __init__(self, url: str, token: str | None = None, board: str | None = None):
@@ -154,26 +160,26 @@ class Remote:
 	def update_many(self, items, agent=None, by=None):
 		return self._call("PATCH", "/tickets", {"tickets": items, **({"agent": agent} if agent else {}), **({"by": by} if by else {})})
 	def report(self, tid, by, summary, files=None, refs=None): return self._call("POST", f"/tickets/{tid}/report", {"by": by, "summary": summary, "files": files, "refs": refs})
-	def split(self, tid, titles=None, sequential=False, by=None, parts=None, claim=None, principal=None, branch=None):
-		return self._call("POST", f"/tickets/{tid}/split", {"titles": titles or [], "sequential": sequential, "by": by, "parts": parts, "claim": claim, "principal": principal, **({"branch": branch} if branch else {})})
+	def split(self, tid, titles=None, sequential=False, by=None, parts=None, claim=None, principal=None, branch=None, session=None):
+		return self._call("POST", f"/tickets/{tid}/split", {"titles": titles or [], "sequential": sequential, "by": by, "parts": parts, "claim": claim, "principal": principal, **({"branch": branch} if branch else {}), **_ses(session)})
 	def delete(self, tid, agent=None): return self._call("DELETE", f"/tickets/{tid}", agent=agent)
-	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None, wait_s=0):
+	def claim(self, agent, tid=None, profile=None, note="", principal=None, branch=None, wait_s=0, session=None):
 		return self._call("POST", f"/tickets/{tid}/claim" if tid else "/claim", {"agent": agent, "profile": profile, "note": note, "principal": principal,
-		                  **({"branch": branch} if branch else {}), **({"wait_s": wait_s} if wait_s else {})}, timeout=30 + min(float(wait_s or 0), st.WAIT_MAX))
-	def claim_next(self, agent, profile=None, note="", principal=None, branch=None, wait_s=0):  # the server answers with the reason when empty
-		return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=wait_s)
-	def heartbeat(self, tid, agent, note="", principal=None, until=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until})
-	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None):
-		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id})
+		                  **({"branch": branch} if branch else {}), **({"wait_s": wait_s} if wait_s else {}), **_ses(session)}, timeout=30 + min(float(wait_s or 0), st.WAIT_MAX))
+	def claim_next(self, agent, profile=None, note="", principal=None, branch=None, wait_s=0, session=None):  # the server answers with the reason when empty
+		return self.claim(agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=wait_s, session=session)
+	def heartbeat(self, tid, agent, note="", principal=None, until=None, session=None): return self._call("POST", f"/tickets/{tid}/heartbeat", {"agent": agent, "note": note, "principal": principal, "until": until, **_ses(session)})
+	def release(self, tid, agent, reason="", principal=None, missing="", why="", request_id=None, session=None):
+		return self._call("POST", f"/tickets/{tid}/release", {"agent": agent, "reason": reason, "principal": principal, "missing": missing, "why": why, "request_id": request_id, **_ses(session)})
 	def ask(self, tid, agent, question, request_id=None): return self._call("POST", f"/tickets/{tid}/ask", {"agent": agent, "question": question, "request_id": request_id})
 	def answer(self, tid, by, text): return self._call("POST", f"/tickets/{tid}/answer", {"by": by, "text": text})
 	def reject(self, tid, by, reason): return self._call("POST", f"/tickets/{tid}/reject", {"by": by, "reason": reason})
 	def dismiss_notes(self, tid, by, ns, undo=False): return self._call("POST", f"/tickets/{tid}/dismiss", {"by": by, "notes": ns, "undo": undo})
 	def add_note(self, tid, by, text, kind="note", pin=False, reply_to=None, supersedes=None, request_id=None):
 		return self._call("POST", f"/tickets/{tid}/notes", {"by": by, "text": text, "kind": kind, "pin": pin, "reply_to": reply_to, "supersedes": supersedes, "request_id": request_id})
-	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None, followup=None):
+	def complete(self, tid, agent, summary, files=None, refs=None, handoff=None, principal=None, request_id=None, followup=None, session=None, closes=None, touched=None):
 		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id,
-		                                                       **({"followup": followup} if followup is not None else {})})
+		                                                       **({"followup": followup} if followup is not None else {}), **_ses(session), **({"closes": closes} if closes else {}), **({"touched": touched} if touched is not None else {})})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def read_docs(self, paths): return self._call("GET", "/docs?" + urllib.parse.urlencode([("path", p) for p in paths]))
@@ -206,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
 	ls.add_argument("--component", help="an architecture component key: tickets that name it or touch its paths")
 	ls.add_argument("--fields", help="extra keys per row, comma list (e.g. touches,parent,done_when); body and notes only when named")
 	ls.add_argument("--limit", type=int, help="at most N rows")
+	ls.add_argument("--stale-days", type=int, help="only todo tickets with no event and no edit for N days (rows add idle_days): work that may have landed under another ticket")
 	nx = sub.add_parser("next")
 	nx.add_argument("--owner")
 	nx.add_argument("--pillar")
@@ -281,6 +288,8 @@ def main(argv: list[str] | None = None) -> int:
 	cp.add_argument("--file", action="append", help="a path you changed (repeatable)")
 	cp.add_argument("--ref", action="append", help="a PR / commit / URL (repeatable)")
 	cp.add_argument("--handoff", help="what tickets waiting on this one must know")
+	cp.add_argument("--touched", action="append", help="a path you really edited (repeatable): ones outside the ticket's touches, or in another doing ticket's, are warned about")
+	cp.add_argument("--closes", action="append", help="another open ticket this work also finished: it goes to done under this one (repeatable; all or nothing)")
 	cp.add_argument("--followup", help="JSON {title, done_when?, blocked_by?, body?, priority?, touches?}: the part left to do becomes its own ticket, ready once blocked_by is done")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
@@ -348,11 +357,12 @@ def main(argv: list[str] | None = None) -> int:
 		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
 			st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
 		ctx = s.context if url else lambda tid: kn.context(s, tid)
+		ses = os.environ.get("UNBLOCKD_SESSION") or None  # CORE-88: the worker session's id; unset = no session check (one command per process)
 		with_ctx = lambda got: {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		if a.cmd == "list":
-			keep = st.list_fields(a.fields, matched=bool(a.touches or a.component))
+			keep = st.list_fields(a.fields, matched=bool(a.touches or a.component), idle=a.stale_days is not None)
 			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone,
-			             limit=a.limit, touches=a.touches, component=a.component, ids=a.ids)
+			             limit=a.limit, touches=a.touches, component=a.component, ids=a.ids, **({"stale_days": a.stale_days} if a.stale_days is not None else {}))
 			if a.q and not res:
 				others = any(x not in (None, "") for x in (a.status, a.pillar, a.owner, a.priority, a.tag, a.agent, a.parent, a.milestone, a.touches, a.component, a.ids))
 				print(f"hint: {st.q_hint(a.q, others)}", file=sys.stderr)  # stdout stays the JSON list
@@ -376,26 +386,26 @@ def main(argv: list[str] | None = None) -> int:
 				s.update_many(items[i:i + st.UPDATE_MAX])
 		elif a.cmd == "plan":
 			out = s.work_plan(per_agent=a.per_agent)
-			short = lambda t: {k: t.get(k) for k in ("id", "title", "priority", "score")}
+			short = lambda t: {k: t.get(k) for k in ("id", "title", "priority", "score", "idle_days") if k in t}
 			for g in out["agents"]:
 				g["tickets"] = [short(t) for t in g["tickets"]]
 			out["unrouted"] = [short(t) for t in out["unrouted"]]
 		elif a.cmd == "claim":
-			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait) if a.id else \
-				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait)
+			got = s.claim(a.agent, tid=a.id, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait, session=ses) if a.id else \
+				s.claim_next(a.agent, profile=a.profile, note=a.note, principal=a.principal, branch=a.branch, wait_s=a.wait, session=ses)
 			out = with_ctx(got)
 		elif a.cmd == "heartbeat":
 			box = None if url else s.inbox(a.agent, mark=True)  # remote: the server adds it
-			out = s.heartbeat(a.id, a.agent, a.note, a.principal, until=a.until)
+			out = s.heartbeat(a.id, a.agent, a.note, a.principal, until=a.until, session=ses)
 			if box:
 				out = {**out, "inbox": box}
 		elif a.cmd == "release":
-			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why, request_id=a.request_id)
+			out = s.release(a.id, a.agent, a.reason, a.principal, missing=a.missing, why=a.why, request_id=a.request_id, session=ses)
 		elif a.cmd == "ask":
 			out = s.ask(a.id, a.agent, a.question, request_id=a.request_id)
 		elif a.cmd == "complete":
-			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id,
-			                 **({"followup": json.loads(a.followup)} if a.followup else {}))
+			out = s.complete(a.id, a.agent, a.summary, files=a.file, refs=a.ref, handoff=a.handoff, principal=a.principal, request_id=a.request_id, session=ses,
+			                 **({"closes": a.closes} if a.closes else {}), **({"touched": a.touched} if a.touched else {}), **({"followup": json.loads(a.followup)} if a.followup else {}))
 		elif a.cmd == "agents-md":
 			board = a.board or (os.environ.get("UNBLOCKD_BOARD") or "default" if url else s.config["id"])
 			text = bd.agents_md(board, a.dir)
@@ -417,7 +427,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = (s.attach if url else lambda *x: kn.attach(s, *x))(a.id, a.name or f.name, f.read_text(encoding="utf-8"))
 		elif a.cmd == "split":
 			parts = json.loads(sys.stdin.read() if a.parts == "-" else Path(a.parts).read_text(encoding="utf-8")) if a.parts else None
-			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by, parts=parts, claim=a.claim, principal=a.principal if a.claim else None, branch=a.branch if a.claim else None)
+			out = s.split(a.id, a.title, sequential=a.sequential, by=a.by, parts=parts, claim=a.claim, principal=a.principal if a.claim else None, branch=a.branch if a.claim else None,
+			              session=ses if a.claim else None)
 			if out.get("claimed"):  # like claim: the part comes with what to read
 				out["claimed"] = {**out["claimed"], "context": ctx(out["claimed"]["id"])}
 		elif a.cmd == "answer":
@@ -450,7 +461,7 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.add_note(a.id, a.by, a.text, kind=a.kind, pin=a.pin, reply_to=a.reply_to, supersedes=a.supersedes, request_id=a.request_id)
 		if a.cmd in ("release", "ask", "complete") and a.next:  # AI-42: one run finishes this ticket and takes the next
 			try:
-				out = {"done": out, "next": with_ctx(s.claim_next(a.agent, principal=a.principal, branch=a.branch))}
+				out = {"done": out, "next": with_ctx(s.claim_next(a.agent, principal=a.principal, branch=a.branch, session=ses))}
 			except st.TicketError as e:  # the write above landed: say so, with why no next ticket came
 				out = {"done": out, "next": {"ticket": None, "error": str(e)}}
 	except (st.TicketError, json.JSONDecodeError, OSError) as e:  # OSError: a --file / attach path that can't be read

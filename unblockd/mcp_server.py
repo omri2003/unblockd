@@ -21,6 +21,7 @@ import hmac
 import json
 import os
 import string
+import uuid
 import sys
 import time
 from pathlib import Path
@@ -130,12 +131,13 @@ def _ack(t: dict) -> dict:
 	"""What a write returns to a worker: enough to know it landed, not the whole ticket again (that cost tokens on every heartbeat)."""
 	return {"ok": True, "id": t["id"], "status": t["status"], "effective_status": t.get("effective_status"), "rev": t.get("rev"),
 	        **({"note": t["notes"][-1]["n"]} if t.get("notes") else {}),
-	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox", "followup", "hint") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
+	        **{k: t[k] for k in ("lease_left_s", "expires_at", "warnings", "already", "first_at", "request_id", "inbox", "followup", "hint", "closed") if k in t}}  # incl. notes it had not read (AI-50)  # lease left / "you no longer hold this": the worker must see them
 
 
 SENT: dict[tuple, dict] = {}  # (board, worker) -> {doc path: (content hash, claim number, time sent)}
 CLAIMS: dict[tuple, int] = {}  # (board, worker) -> claims taken in this session
 DEDUPE = False  # on for stdio, where one server process = one agent session; the shared --http server can't tell sessions apart
+SESSION: str | None = None  # stdio: a uuid at server start, sent with claim / heartbeat / complete / release (CORE-88: two chats under one name are noticed)
 WAIT_MAX = st.WAIT_MAX  # claim_next(wait_s=) cap; the shared --http server lowers it (MCP_WAIT_MAX, default 30): every waiting call holds a worker thread
 
 
@@ -242,11 +244,13 @@ def board_info(board: str | None = None) -> dict:
 def work_plan(board: str | None = None, per_agent: int = 3) -> dict:
 	"""Ready tickets (not owned by a human) grouped by the agent profile that should take them, best first, each group with
 	the profile's instructions and model; plus tickets no profile claims (unrouted). For an
-	orchestrator: spawn one agent per group, each works its tickets one at a time."""
+	orchestrator: spawn one agent per group, each works its tickets one at a time. A ticket with `idle_days` + `stale_hint` had no event and
+	no edit for the board's stale_days: check whether its work already landed under another ticket before handing it out."""
 	plan = BOARDS.get(board).work_plan(per_agent=per_agent)
+	row = lambda t: {**_summary(t), "score": t["score"], **{k: t[k] for k in ("idle_days", "stale_hint") if k in t}}
 	for g in plan["agents"]:
-		g["tickets"] = [{**_summary(t), "score": t["score"]} for t in g["tickets"]]
-	plan["unrouted"] = [{**_summary(t), "score": t["score"]} for t in plan["unrouted"]]
+		g["tickets"] = [row(t) for t in g["tickets"]]
+	plan["unrouted"] = [row(t) for t in plan["unrouted"]]
 	return plan
 
 
@@ -271,7 +275,7 @@ def list_tickets(board: str | None = None, status: str | None = None, pillar: st
                  owner: str | None = None, priority: str | None = None, tag: str | None = None,
                  agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None,
                  touches: str | None = None, component: str | None = None, fields: list[str] | None = None, limit: int | None = None,
-                 full: bool = False, ids: list[str] | None = None) -> list[dict] | dict:
+                 stale_days: int | None = None, full: bool = False, ids: list[str] | None = None) -> list[dict] | dict:
 	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
 	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts),
 	milestone (a key from board_info's milestones; "-" = tickets with none), q (words that must ALL appear in one ticket: not
@@ -282,10 +286,12 @@ def list_tickets(board: str | None = None, status: str | None = None, pillar: st
 	Returns short summaries (id, title, effective_status, priority, owner, pillar, milestone, tags, agent, open_blockers).
 	fields = extra keys per row, only those: e.g. ["touches", "parent", "done_when"] to plan, ["claim"] for who holds it; body and notes
 	only when you name them. Prefer fields to full=true (every body and every note on the board). limit = at most that many rows.
-	When q matches nothing, or some ids are not listed, the reply is {tickets, hint} saying why."""
-	keep = st.list_fields(fields, matched=bool(touches or component))
+	When q matches nothing, or some ids are not listed, the reply is {tickets, hint} saying why.
+	stale_days = N: only todo tickets with no event and no edit for N days (rows add idle_days): work that may have landed under another
+	ticket; if it did, close it with complete(<that ticket>, closes=[...])."""
+	keep = st.list_fields(fields, matched=bool(touches or component), idle=stale_days is not None)
 	res = BOARDS.get(board).list(status=status, pillar=pillar, owner=owner, priority=priority, q=q, tag=tag, agent=agent, parent=parent,
-	                             milestone=milestone, limit=limit, touches=touches, component=component, ids=ids)
+	                             milestone=milestone, limit=limit, touches=touches, component=component, ids=ids, stale_days=stale_days)
 	rows = res if full else [st.summarize(t, keep) for t in res]
 	others = any(x not in (None, "") for x in (status, pillar, owner, priority, tag, agent, parent, milestone, touches, component, ids))
 	hint = st.q_hint(q, others) if q and not res else ""
@@ -402,7 +408,7 @@ def split_ticket(id: str, agent: str | None = None, titles: list[str] | None = N
 	claim_next), returned as `claimed` with its context. agent = your worker name, by= is accepted too (a ticket another agent holds can't be split).
 	Returns {parent, children, claimed?, claim_error?}."""
 	store, agent = BOARDS.get(board), _who(agent, by)
-	out = store.split(id, titles, sequential=sequential, by=agent, parts=parts, claim=claim, principal=principal, branch=branch)
+	out = store.split(id, titles, sequential=sequential, by=agent, parts=parts, claim=claim, principal=principal, branch=branch, session=SESSION)
 	if out.get("claimed"):
 		out["claimed"] = _dedupe(board, agent, kn.with_context(store, out["claimed"]))
 	return out
@@ -430,7 +436,7 @@ def claim_next(agent: str | None = None, profile: str | None = None, note: str =
 	agent = your worker name (by= is accepted too)."""
 	store, agent = BOARDS.get(board), _who(agent, by)
 	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim_next(
-		agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
+		agent, profile=profile, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX), session=SESSION)), fresh)
 
 
 @tool
@@ -441,7 +447,7 @@ def claim_ticket(id: str, agent: str | None = None, note: str = "", principal: s
 	like claim_next's) = wait for it to end instead, then claim (or the same refusal when the time is up)."""
 	store, agent = BOARDS.get(board), _who(agent, by)
 	return _session_done(board, agent) or _dedupe(board, agent, kn.with_context(store, store.claim(
-		agent, tid=id, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX))), fresh)
+		agent, tid=id, note=note, principal=principal, branch=branch, wait_s=min(max(wait_s or 0, 0), WAIT_MAX), session=SESSION)), fresh)
 
 
 @tool
@@ -458,7 +464,7 @@ def heartbeat(id: str, agent: str | None = None, note: str = "", principal: str 
 	last heartbeat: read them; a request you could not act on goes in an add_note or a new ticket."""
 	s, agent = BOARDS.get(board), _who(agent, by)
 	box = s.inbox(agent, mark=True)
-	r = _ack(s.heartbeat(id, agent, note, principal, until=until))
+	r = _ack(s.heartbeat(id, agent, note, principal, until=until, session=SESSION))
 	return {**r, "inbox": box} if box else r
 
 
@@ -524,14 +530,14 @@ def release(id: str, agent: str | None = None, reason: str = "", principal: str 
 	that `hint`). request_id: see complete. next=true = also claim your next ticket in the same call (branch: see
 	claim_next): the reply is {done: <this reply>, next: <what claim_next answers>}."""
 	agent = _who(agent, by)
-	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id)),
+	return _then(_ack(BOARDS.get(board).release(id, agent, reason, principal, missing=missing, why=why, request_id=request_id, session=SESSION)),
 	             board, agent, next, principal, branch)
 
 
 @tool(need=("summary",))
 def complete(id: str, agent: str | None = None, summary: str = "", files: list[str] | None = None, refs: list[str] | None = None,
              handoff: str | None = None, principal: str | None = None, request_id: str | None = None, followup: dict | None = None,
-             next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
+             closes: list[str] | None = None, touched: list[str] | None = None, next: bool = False, branch: str | None = None, board: str | None = None, by: str | None = None) -> dict:
 	"""Finish your claimed ticket (agent = your worker name, by= is accepted too): status done (review on boards that require a human look),
 	summary appended to its body. summary = cause -> fix -> tests, and what was NOT verified. Also stored as the ticket's `result`: files =
 	paths you changed, refs = PR / commit / URL, handoff = what tickets waiting on this one must know; they get it in their context as
@@ -540,11 +546,14 @@ def complete(id: str, agent: str | None = None, summary: str = "", files: list[s
 	per write, e.g. a uuid): a repeat changes nothing and answers already: true. Repeating your own complete / release also answers already: true.
 	Part done, rest waiting on another ticket: followup={title, done_when?, blocked_by: [ids], body?, priority?, touches?} completes this one AND
 	creates the rest as a new ticket (same prefix, parent, pillar, tags, touches), ready by itself once blocked_by is done; all or nothing.
+	Your work also finished other open tickets: closes=[their ids] moves them to done under this one (note + result "Done under <id>"), all or
+	nothing (a done, missing or claimed-by-another one refuses the complete); the reply lists them as `closed`.
+	touched = the paths you really edited: ones outside the ticket's touches, or in another doing ticket's touches, come back as warnings.
 	next=true = also claim your next ticket in the same call (branch: see claim_next): the reply is {done: <this reply>, next: <what
 	claim_next answers: a ticket with its context, or {ticket: null, reason} incl. session_done>}."""
 	agent = _who(agent, by)
 	return _then(_ack(BOARDS.get(board).complete(id, agent, summary, files=files, refs=refs, handoff=handoff, principal=principal,
-	                                             request_id=request_id, followup=followup)), board, agent, next, principal, branch)
+	                                             request_id=request_id, followup=followup, session=SESSION, closes=closes, touched=touched)), board, agent, next, principal, branch)
 
 
 @tool
@@ -679,8 +688,9 @@ def main():
 	if kept:
 		print(f"unblockd MCP: worker tools only: {', '.join(kept)}", file=sys.stderr, flush=True)
 	if "--http" not in args:
-		global DEDUPE
+		global DEDUPE, SESSION
 		DEDUPE = True
+		SESSION = uuid.uuid4().hex  # one stdio process = one worker session
 		mcp.run()
 		return
 	import uvicorn

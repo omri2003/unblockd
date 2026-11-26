@@ -741,5 +741,125 @@ class PrincipalTest(unittest.TestCase):
 		self.assertNotIn("warnings", self.s.claim("backend-1", tid="CMB-3"))
 
 
+class SessionTest(unittest.TestCase):
+	"""CORE-88: two live workers under one name. A session id on the claim; a call from another session warns (strict_sessions: refused)."""
+	def setUp(self):
+		self.tmp = tempfile.TemporaryDirectory()
+		self.addCleanup(self.tmp.cleanup)
+		self.dir = Path(self.tmp.name) / "tickets"
+		self.dir.mkdir()
+		self.cfg(CFG)
+		for i in (1, 2, 3):
+			self.s.create({"title": f"t{i}", "pillar": "COMBAT"}, tid=f"CMB-{i}")
+
+	def cfg(self, c):
+		(self.dir / "unblockd.json").write_text(json.dumps(c), encoding="utf-8")
+		self.s = Store(self.dir)
+
+	def clashes(self, tid="CMB-1"):
+		return [e for e in self.s.activity(tid) if e["event"] == "session_clash"]
+
+	def test_other_session_warns_and_logs_on_heartbeat_complete_release(self):
+		t = self.s.claim("backend-1", tid="CMB-1", session="chat-a")
+		self.assertEqual(t["claim"]["session"], "chat-a")
+		self.assertNotIn("warnings", self.s.heartbeat("CMB-1", "backend-1", "x", session="chat-a"))  # its own session: nothing
+		w = self.s.heartbeat("CMB-1", "backend-1", "y", session="chat-b")["warnings"][0]
+		self.assertIn("backend-1 is another session here", w)
+		self.assertIn("pick another name (backend-<n>)", w)
+		self.assertEqual(len(self.clashes()), 1)
+		row = self.s.agents_now()["working"][0]
+		self.assertEqual((row["session"], row["clash"]), ("chat-a", True))
+		self.assertIn("another session", self.s.release("CMB-1", "backend-1", "", session="chat-b")["warnings"][0])
+		self.s.claim("backend-1", tid="CMB-2", session="chat-a")
+		self.assertFalse(self.s.agents_now()["working"][0]["clash"])
+		done = self.s.complete("CMB-2", "backend-1", "fixed", session="chat-b")
+		self.assertEqual(done["status"], "done")  # warn first: the call goes through
+		self.assertIn("another session", done["warnings"][0])
+		self.assertEqual(len(self.clashes("CMB-2")), 1)
+
+	def test_no_session_on_either_side_is_unchanged(self):
+		self.s.claim("backend-1", tid="CMB-1")  # old client / plain CLI
+		self.assertNotIn("session", self.s.get("CMB-1")["claim"])
+		self.assertNotIn("warnings", self.s.heartbeat("CMB-1", "backend-1", "x", session="chat-b"))  # the claim has none: no check
+		self.s.claim("backend-1", tid="CMB-2", session="chat-a")
+		self.assertNotIn("warnings", self.s.heartbeat("CMB-2", "backend-1", "x"))  # the call has none: no check
+		self.assertNotIn("warnings", self.s.complete("CMB-2", "backend-1", "s"))
+		self.assertEqual(self.clashes() + self.clashes("CMB-2"), [])
+		with self.assertRaisesRegex(TicketError, "no spaces"):
+			self.s.claim("backend-1", tid="CMB-3", session="a b")
+
+	def test_lapsed_claim_retaken_by_a_restarted_worker_with_a_new_session(self):
+		self.cfg({**CFG, "strict_sessions": True})
+		self.s.claim("backend-1", tid="CMB-1", session="before-restart")
+		p = self.dir / ".unblockd" / "claims.json"
+		c = json.loads(p.read_text())
+		c["CMB-1"]["heartbeat_at"] = datetime.fromtimestamp(time.time() - 3600, timezone.utc).isoformat(timespec="seconds")
+		p.write_text(json.dumps(c))
+		self.s.list()  # the sweep: expired
+		t = self.s.heartbeat("CMB-1", "backend-1", "back", session="after-restart")
+		self.assertEqual(t["status"], "doing")
+		self.assertIn("yours again", t["warnings"][0])
+		self.assertEqual(self.s.get("CMB-1")["claim"]["session"], "after-restart")  # the new claim is the new session's
+		self.assertEqual(self.clashes(), [])
+
+	def test_strict_sessions_refuses_with_how_to_fix(self):
+		self.cfg({**CFG, "strict_sessions": True})
+		self.s.claim("backend-1", tid="CMB-1", session="chat-a")
+		for call in (lambda: self.s.heartbeat("CMB-1", "backend-1", "", session="chat-b"),
+		             lambda: self.s.complete("CMB-1", "backend-1", "s", session="chat-b"),
+		             lambda: self.s.release("CMB-1", "backend-1", "", session="chat-b")):
+			with self.assertRaisesRegex(TicketError, r"another session of backend-1.*own worker name \(backend-<n>\).*lease lapses"):
+				call()
+		self.assertEqual(self.s.get("CMB-1")["status"], "doing")
+		self.s.heartbeat("CMB-1", "backend-1", "", session="chat-a")  # the claiming session itself works
+		self.assertEqual(self.s.config["strict_sessions"], True)
+		(self.dir / "unblockd.json").write_text(json.dumps({**CFG, "strict_sessions": "yes"}), encoding="utf-8")
+		with self.assertRaisesRegex(TicketError, "strict_sessions must be true or false"):
+			Store(self.dir).config
+
+	def test_front_doors_carry_a_session(self):
+		import contextlib, io
+		from unblockd import cli
+		with mock.patch.dict(os.environ, {"UNBLOCKD_URL": "", "UNBLOCKD_SESSION": "cli-a"}), contextlib.redirect_stdout(io.StringIO()):
+			self.assertEqual(cli.main(["--dir", str(self.dir), "claim", "--agent", "backend-1", "--id", "CMB-1"]), 0)
+		self.assertEqual(self.s.get("CMB-1")["claim"]["session"], "cli-a")
+		out = io.StringIO()
+		with mock.patch.dict(os.environ, {"UNBLOCKD_URL": "", "UNBLOCKD_SESSION": "cli-b"}), contextlib.redirect_stdout(out):
+			self.assertEqual(cli.main(["--dir", str(self.dir), "heartbeat", "CMB-1", "--agent", "backend-1"]), 0)
+		self.assertIn("another session", json.loads(out.getvalue())["warnings"][0])
+		import threading
+		from http.server import ThreadingHTTPServer
+		from unblockd import web
+		from unblockd.boards import Boards
+		old, web.BOARDS = web.BOARDS, Boards(dirs=[str(self.dir)])
+		srv = ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+		threading.Thread(target=srv.serve_forever, daemon=True).start()
+		try:
+			r = cli.Remote(f"http://127.0.0.1:{srv.server_port}")
+			r.claim("backend-1", tid="CMB-2", session="remote-a")
+			self.assertEqual(self.s.get("CMB-2")["claim"]["session"], "remote-a")
+			self.assertIn("another session", r.heartbeat("CMB-2", "backend-1", session="remote-b")["warnings"][0])
+			hdr = r._call("POST", "/tickets/CMB-2/heartbeat", {"agent": "backend-1"}, headers={"X-Unblockd-Session": "remote-c"})
+			self.assertIn("another session", hdr["warnings"][0])
+			self.assertNotIn("warnings", r.heartbeat("CMB-2", "backend-1"))  # an old client sends none
+		finally:
+			srv.shutdown()
+			srv.server_close()
+			web.BOARDS = old
+		try:
+			from unblockd import mcp_server
+		except ImportError:
+			self.skipTest("mcp not installed")
+		old, mcp_server.BOARDS = mcp_server.BOARDS, Boards(dirs=[str(self.dir)])
+		try:
+			with mock.patch.object(mcp_server, "SESSION", "mcp-a"):
+				mcp_server.claim_ticket("CMB-3", "backend-1")
+			self.assertEqual(self.s.get("CMB-3")["claim"]["session"], "mcp-a")
+			with mock.patch.object(mcp_server, "SESSION", "mcp-b"):
+				self.assertIn("another session", mcp_server.heartbeat("CMB-3", "backend-1")["warnings"][0])
+		finally:
+			mcp_server.BOARDS = old
+
+
 if __name__ == "__main__":
 	unittest.main()
