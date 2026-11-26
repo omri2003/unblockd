@@ -151,6 +151,14 @@ complete(id, agent, summary)   or   release(id, agent, reason)
   context is sent only to ask); a ticket someone else holds is still refused, and so is one that already waits on a human (add a
   note instead). A `release` whose reason names a person or a decision (a human owner's name, `human`, `decide`, `approve`,
   `confirm`, `sign-off`...) answers with a `hint`: use `ask_human` (a release counts as a failed attempt).
+- **Work that landed under another ticket** (AI-57): `complete(id, agent, summary, closes=[ids])` (MCP arg, CLI `--closes ID`
+  repeatable, REST body key, `Remote.complete`) also moves those open tickets to the same status (done, or review on a review board)
+  with a note and a `result` "Done under <id>: <first line of summary>" (`result.under` = id; the completing ticket's `result.closes`
+  lists them; the reply's `closed` too). All or nothing: a missing one, one already done / in review, one another worker holds, one waiting on a
+  human's answer, an unaccepted proposal, one still blocked, or (for a worker) one a person owns refuses the complete, every problem
+  named: closing is never a way around a person's decision or a blocker. At most 20. Finding them: `list_tickets(stale_days=N)` (REST `GET tickets?stale_days=N`,
+  CLI `list --stale-days N`) = todo tickets with no activity event and no edit for N days, each with `idle_days`; `work_plan` marks such
+  rows (`idle_days`, `stale_hint`; top-level `stale` = their count) using the board's `stale_days`.
 - **Notes that land as a worker finishes** (AI-50): `complete`, `release` and `ask_human` replies carry the same `inbox` (same caps,
   flag `unread_before_complete` / `_release` / `_ask`) for notes left after the worker's last heartbeat, and `complete` stores their
   numbers as `result.unread` for the reviewer.
@@ -317,7 +325,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `owners` | Who tickets can belong to. `kind: human` gets the warm chip; new tickets from agents default to the first `agent`. Other names are refused. |
 | `pillars` | Workstreams. Each is a board colour, a filter chip and a graph lane. Colours are optional (a palette checked against the status colours is used). With no pillars, any `pillar` value is accepted. |
 | `pillar_label` | What your project calls them ("Area", "Track"…). |
-| `stale_days` | A `doing` ticket untouched this long is flagged. |
+| `stale_days` | A `doing` ticket untouched this long is flagged; `work_plan` also marks a todo ticket with no event or edit for this long (`idle_days`, AI-57). |
 | `wip_limit` | More than this many `doing` tickets shows a WIP badge on the column (default `null` = none). |
 | `done_window_days` | The board's Done column shows only tickets done within this many days (default 7, whole number > 0), newest first, at most 20 cards, with `+N more → view all`. UI only: the API, MCP and CLI still list every done ticket. Edited in `unblockd.json` like every other board setting. |
 | `lease_minutes` | A claim with no heartbeat this long expires (default 15). A profile can set its own (`agents[].lease_minutes`). |

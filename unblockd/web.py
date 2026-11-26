@@ -37,7 +37,7 @@ POST   tickets/<id>/notes                {"by"?, "text", "kind"?, "pin"?, "reply
 POST   tickets/<id>/answer               {"by"?, "text"}  a human answers an ask: note "Answer to: ...", clears waiting_on (400 unless waiting_on is set)
 POST   tickets/<id>/dismiss              {"by"?, "notes": [n, ...], "undo"?}  a person read late notes on a finished ticket: Needs you stops listing them
 POST   tickets/<id>/reject               {"by"?, "reason"}  review -> todo with the reason as a note (400 unless status is review)
-POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?, "followup"?: {title, done_when?, blocked_by?, body?, priority?, touches?}}  also stored as the ticket's `result`; followup = the rest as a new ticket
+POST   tickets/<id>/complete             {"agent", "summary", "files"?: [paths], "refs"?: [PR/commit/URL], "handoff"?: text, "principal"?, "followup"?: {title, done_when?, blocked_by?, body?, priority?, touches?}, "closes"?: [ids]}  also stored as the ticket's `result`; followup = the rest as a new ticket; closes = other tickets this work finished (done under it, all or nothing)
 POST   tickets/<id>/split                {"titles": [...], "sequential"?, "by"?}  too big: make children, the parent waits on them -> {"parent", "children"}
 GET    tickets/<id>/context              docs + attached files to read before working it (?content=0: each doc's `sent` without its text; a sent doc over a third of the budget also gets `outline` + `outline_chars`; when a doc did not fit, `fits_budget` = the smallest budget that sends all)
 GET    knowledge                         who reads what: tickets, docs, ticket->doc (with the tag / profile it came from) and doc->doc edges, the rules that send docs, plus no_docs / broken / hubs / orphans
@@ -367,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
 					return self._send(200, store.release(tid, agent, str(b.get("reason", "")), b.get("principal"), missing=str(b.get("missing") or ""), why=str(b.get("why") or ""), request_id=b.get("request_id"), session=self._session(b)))
 				if act == "ask":
 					return self._send(200, store.ask(tid, agent, str(b.get("question", "")), request_id=b.get("request_id")))
-				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id"), followup=b.get("followup"), session=self._session(b)))
+				return self._send(200, store.complete(tid, agent, str(b.get("summary", "")), files=b.get("files"), refs=b.get("refs"), handoff=b.get("handoff"), principal=b.get("principal"), request_id=b.get("request_id"), followup=b.get("followup"), session=self._session(b), closes=b.get("closes")))
 			if method == "POST" and len(rest) == 3 and rest[0] == "tickets" and rest[2] == "notes":
 				b = self._body()
 				return self._send(200, store.add_note(rest[1], str(b.get("by") or "human"), b.get("text"), kind=b.get("kind") or "note", pin=bool(b.get("pin")),
@@ -397,12 +397,13 @@ class Handler(BaseHTTPRequestHandler):
 				return self._send(404, {"error": "not found"})
 			tid = rest[1] if len(rest) == 2 else None
 			if method == "GET" and tid is None:
-				if not any(q.get(k) for k in (*TICKET_FILTERS, "touches", "component", "fields", "limit")):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
+				if not any(q.get(k) for k in (*TICKET_FILTERS, "touches", "component", "fields", "limit", "stale_days")):  # the UI's poll: cached body + ETag while the board is unchanged (CORE-65)
 					data, etag = _tickets_body(store)
 					return self._send(200, data, etag=etag)
 				# fields=a,b: summary rows with those keys (AI-47); touches= / component= add touches + holder (CORE-52); neither = whole tickets
-				keep = st.list_fields(q.get("fields"), matched=bool(q.get("touches") or q.get("component")))
-				res = store.list(**{k: q.get(k) for k in (*TICKET_FILTERS, "touches", "component")}, limit=_num(q, "limit", 0) if q.get("limit") else None)
+				keep = st.list_fields(q.get("fields"), matched=bool(q.get("touches") or q.get("component")), idle=bool(q.get("stale_days")) and bool(q.get("fields")))
+				res = store.list(**{k: q.get(k) for k in (*TICKET_FILTERS, "touches", "component")}, limit=_num(q, "limit", 0) if q.get("limit") else None,
+				                 stale_days=_num(q, "stale_days", 0) if q.get("stale_days") else None)  # AI-57: todo tickets idle that long
 				return self._send(200, [st.summarize(t, keep) for t in res] if keep else res)
 			if method == "GET":
 				return self._send(200, store.with_blockers(store.get(tid)))

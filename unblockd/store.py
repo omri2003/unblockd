@@ -151,7 +151,8 @@ FIELDS = {
 }
 
 
-RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup"}  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
+RESULT_KEYS = {"summary", "files", "refs", "handoff", "by", "at", "principal", "approved_by", "approved_at", "unread", "followup", "closes", "under"}  # closes / under: complete(closes=) (AI-57)  # unread = note numbers the worker had not seen when it completed (AI-50); followup = id complete(followup=) created (AI-60)
+CLOSES_MAX = 20  # tickets one complete(closes=) may close (AI-57)
 FOLLOWUP_KEYS = {"title", "done_when", "blocked_by", "body", "priority", "touches"}  # what complete(followup=) takes; the rest is copied (AI-60)
 LIST_IDS_MAX = 200  # list(ids=): a pasted plan or review, not a board dump
 
@@ -190,12 +191,13 @@ SUMMARY_KEYS = ("id", "title", "effective_status", "priority", "owner", "pillar"
 # what `fields` may add to a row: every stored field and the derived ones. body and notes are the big ones: a row has them only when
 # they are named, so a planner gets touches / done_when / parent of the whole board for a fraction of full=true's tokens
 LIST_FIELDS = tuple(FIELDS) + ("created", "updated", "children", "progress", "blocks", "unblocks", "missing_blockers", "score",
-                               "stale_days", "claim", "files", "branches", "holder")  # holder = the live claim's agent (or null)
+                               "stale_days", "claim", "files", "branches", "holder", "idle_days")  # holder = the live claim's agent (or null); idle_days: list(stale_days=) rows (AI-57)
 
 
-def list_fields(fields, matched: bool = False) -> list[str]:
+def list_fields(fields, matched: bool = False, idle: bool = False) -> list[str]:
 	"""`fields` as a list (a comma string is split: REST / CLI), each one checked against LIST_FIELDS. matched = the list was filtered
-	by touches / component: rows then also carry touches and holder, what "who works on this file?" asks next (CORE-52)."""
+	by touches / component: rows then also carry touches and holder, what "who works on this file?" asks next (CORE-52).
+	idle = filtered by stale_days: rows carry idle_days (AI-57)."""
 	if fields is None:
 		fields = []
 	if isinstance(fields, str):
@@ -206,7 +208,7 @@ def list_fields(fields, matched: bool = False) -> list[str]:
 	bad = [f for f in out if f not in LIST_FIELDS]
 	if bad:
 		raise TicketError(f"unknown field(s) {', '.join(bad)} in fields: one of {', '.join(LIST_FIELDS)}")
-	return list(dict.fromkeys(out + (["touches", "holder"] if matched else [])))
+	return list(dict.fromkeys(out + (["touches", "holder"] if matched else []) + (["idle_days"] if idle else [])))
 
 
 def summarize(t: dict, fields=()) -> dict:
@@ -1045,22 +1047,51 @@ class Store:
 
 	def work_plan(self, per_agent: int = 3) -> dict:
 		"""Ready tickets not owned by a human, grouped by the agent profile that should take them
-		(best first), for an orchestrator to fan out: {"agents": [{profile..., "tickets": [...]}], "unrouted": [...]}."""
+		(best first), for an orchestrator to fan out: {"agents": [{profile..., "tickets": [...]}], "unrouted": [...]}.
+		A ticket with no event and no write for the board's stale_days carries `idle_days` + `stale_hint` (AI-57): its work may have
+		landed under another ticket, so check before handing it out. `stale` = how many such tickets the plan holds."""
 		ready = self.next_ready(limit=10_000)
 		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
 		ready = [t for t in ready if t.get("owner") not in humans]  # a person's ticket is theirs, whatever its tags
+		idle = self._idle(ready, self.stale_days)
+		for t in ready:
+			if t["id"] in idle:
+				t["idle_days"], t["stale_hint"] = idle[t["id"]], _STALE_HINT
 		out = []
 		for ag in self.config["agents"]:
 			mine = [t for t in ready if t["agent"] == ag["name"]]
 			out.append({**ag, "skills": ag.get("skills", []), "mcp": ag.get("mcp", []), "ready": len(mine), "tickets": mine[:max(0, int(per_agent))]})
 		unrouted = [t for t in ready if t["agent"] is None]
-		return {"agents": out, "unrouted": unrouted[:max(0, int(per_agent))], "unrouted_count": len(unrouted)}
+		return {"agents": out, "unrouted": unrouted[:max(0, int(per_agent))], "unrouted_count": len(unrouted), "stale": len(idle)}
+
+	def _idle(self, tickets: list[dict], days: int) -> dict:
+		"""AI-57: {id: idle days} for the todo tickets among `tickets` with no activity event and no write (`updated`) for `days` days or
+		more (idle days = since `updated`, at least `days`). One newest-first pass over the log, stopped at the cutoff."""
+		todo = {t["id"]: t for t in tickets if t.get("status") == "todo"}
+		if not todo:
+			return {}
+		cutoff, recent = time.time() - days * 86400, set()
+		for e in self.backend.events_newest_first():
+			if _ts(e["ts"]) < cutoff:
+				break
+			recent.add(e.get("ticket"))
+		today, out = date.today(), {}
+		for tid, t in todo.items():
+			if tid in recent:
+				continue
+			try:
+				idle = (today - date.fromisoformat(str(t.get("updated") or t.get("created") or "")[:10])).days
+			except ValueError:
+				idle = days
+			if idle >= days:
+				out[tid] = idle
+		return out
 
 	# ---------- CRUD ----------
 	def list(self, status: str | None = None, pillar: str | None = None, owner: str | None = None,
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
 	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None,
-	         limit: int | None = None, touches: str | None = None, component: str | None = None, ids=None) -> list[dict]:
+	         limit: int | None = None, touches: str | None = None, component: str | None = None, ids=None, stale_days: int | None = None) -> list[dict]:
 		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none.
 		board = a _board() the caller already read in this locked step (claim), so it is not read again.
 		touches = a path or glob: tickets whose `touches` overlap it by the claim rule (_overlap: same path, one inside the other, a glob
@@ -1068,9 +1099,13 @@ class Store:
 		`components` or whose touches fall in its note's paths (the Map's rule). limit = at most that many (after the filters, in id order;
 		with ids, in their order).
 		ids = only those tickets (a list, or a comma string: REST / CLI), in that order; ids not on the board are left out (API-23).
-		q = words that must ALL appear in one ticket (q_hint says so when nothing matched)."""
+		q = words that must ALL appear in one ticket (q_hint says so when nothing matched).
+		stale_days = N: only todo tickets with no activity event and no write for N days or more, each with `idle_days` (AI-57: its
+		work may have landed under another ticket: close it with complete(closes=[...]) if so)."""
 		if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or limit < 0):
 			raise TicketError(f"limit must be a whole number >= 0, not {limit!r}")
+		if stale_days is not None and (isinstance(stale_days, bool) or not isinstance(stale_days, int) or stale_days < 1):
+			raise TicketError(f"stale_days must be a whole number of days >= 1, not {stale_days!r}")
 		cur = self._board() if board is None else board  # cached: filter first, copy what is returned
 		if ids is None:
 			res = list(cur.values())
@@ -1106,7 +1141,14 @@ class Store:
 		if q:
 			words = q.lower().split()
 			res = [t for t in res if all(w in json.dumps(t, ensure_ascii=False).lower() for w in words)]
-		return [_copy(t) for t in (res if limit is None else res[:limit])]
+		idle = None
+		if stale_days is not None:
+			idle = self._idle(res, stale_days)
+			res = [t for t in res if t["id"] in idle]
+		out = [_copy(t) for t in (res if limit is None else res[:limit])]
+		for t in out if idle else ():
+			t["idle_days"] = idle[t["id"]]
+		return out
 
 	def next_ready(self, owner: str | None = None, pillar: str | None = None, limit: int = 5,
 	               agent: str | None = None, tag: str | None = None, board: dict | None = None) -> list[dict]:
@@ -2609,14 +2651,18 @@ class Store:
 
 	def complete(self, tid: str, agent: str, summary: str, files: list[str] | None = None,
 	             refs: list[str] | None = None, handoff: str | None = None, principal: str | None = None, request_id: str | None = None,
-	             followup: dict | None = None, session: str | None = None) -> dict:
+	             followup: dict | None = None, session: str | None = None, closes: list[str] | None = None) -> dict:
 		"""Finish a claimed ticket: status done (or review when the board's `review` is on), summary appended to the body (dated, signed).
 		Also stored as `result` {summary, files, refs, handoff, by, at}: files = paths changed, refs = PR / commit / URL, handoff = what a
 		downstream ticket must know. `result.principal` = the human the claim was made for (copied from the claim). Tickets that wait on this one get it in their context() as `upstream`.
 		followup = {title, done_when?, blocked_by?, body?, priority?, touches?} (AI-60): the part that could not be done yet becomes its own
 		ticket in the same step (same prefix, parent, pillar, owner, tags, touches, docs, components; body "Rest of <id>."), waiting on
-		blocked_by, so it turns ready by itself when they are done. All or nothing: a bad followup refuses the complete too."""
+		blocked_by, so it turns ready by itself when they are done. All or nothing: a bad followup refuses the complete too.
+		closes = ids of other open tickets whose work landed in this one (AI-57): each goes to the same status (done, or review on a review
+		board) with a note and result "Done under <id>: <summary>"; all or nothing (a closed, missing, claimed-by-another ticket refuses the
+		complete too). result.closes lists them, each one's result.under = this id."""
 		_check_result_input("complete", summary, files, refs, handoff)
+		closes = _closes_input(tid, closes)
 		result = {"summary": summary.strip(), "files": [x.strip() for x in files or []], "refs": [x.strip() for x in refs or []],
 		          "handoff": (handoff or "").strip(), "by": agent, "at": _now()}
 		def done():
@@ -2630,6 +2676,9 @@ class Store:
 			fu = self._followup(raw, followup, agent) if followup is not None else None  # validated before anything changes
 			if fu:
 				result["followup"] = fu["id"]
+			shut = self._closes(tid, closes, agent) if closes else []  # validated before anything changes too
+			if shut:
+				result["closes"] = [x["id"] for x in shut]
 			late[:] = self._unseen(tid, raw.get("notes", []), c, agent)
 			if late:  # the reviewer is shown them next to the result: the worker finished without reading them
 				result["unread"] = [n["n"] for n in late if isinstance(n.get("n"), int)]
@@ -2650,6 +2699,8 @@ class Store:
 					self.backend.delete(fu["id"])
 				raise
 			self._log("complete", tid, agent, summary, c.get("principal"))
+			if shut:
+				self._shut(tid, shut, status, summary.strip(), result, agent)
 			if fu:
 				self._log("created", fu["id"], agent, f"{fu['title']} (rest of {tid})")
 				if fu["proposed_by"]:
@@ -2664,10 +2715,54 @@ class Store:
 		out = self._with_unread(self._with_lease(self.get(tid), None, retaken), late, "complete")
 		if clash:
 			out["warnings"] = clash + out.get("warnings", [])
+		if closes and (ids := (out.get("result") or {}).get("closes")):
+			out["closed"] = [{"id": x, "status": (b := self.get(x))["status"], "title": b["title"]} for x in ids]
 		if followup is not None and (fid := (out.get("result") or {}).get("followup")):
 			f = self.get(fid)
 			out["followup"] = {k: f.get(k) for k in ("id", "title", "effective_status", "blocked_by", "open_blockers", "proposed_by")}
 		return out
+
+	def _closes(self, tid: str, ids: list[str], agent: str) -> list[dict]:
+		"""Caller holds the lock. complete(closes=)'s tickets, read and checked (AI-57); every problem refuses the complete, listed at once."""
+		live, out, bad = self._live_claims(), [], []
+		humans = {o["name"] for o in self.config["owners"] if o.get("kind") == "human"}
+		board = self._board()  # decorated: open blockers
+		for x in ids:
+			raw = self.backend.read(x)
+			if raw is None:
+				bad.append(f"no ticket {x}")
+			elif raw.get("status") in ("done", "review"):
+				bad.append(f"{x} is already {raw['status']}")
+			elif x in live and live[x]["agent"] != agent:
+				bad.append(f"{x} is claimed by {live[x]['agent']}: they finish it, or ask them to release it")
+			# guardrails (owner, 2026-11-26): closing is never a way around a person's decision or a blocker
+			elif raw.get("waiting_on"):
+				bad.append(f"{x} waits on a human ({raw['waiting_on'][:80]!r}): the answer comes first")
+			elif raw.get("proposed_by"):
+				bad.append(f"{x} is a proposal nobody accepted yet: a human accepts or deletes it")
+			elif raw.get("owner") in humans and self.profile_of(agent):
+				bad.append(f"{x} is owned by {raw['owner']}: tell them it looks done (add_note), they close it")
+			elif (ob := (board.get(x) or {}).get("open_blockers")):
+				bad.append(f"{x} still waits on {', '.join(ob)}: close those first, or leave it")
+			else:
+				out.append(raw)
+		if bad:
+			raise TicketError(f"closes refused, {tid} not completed: " + "; ".join(bad))
+		return out
+
+	def _shut(self, tid: str, shut: list[dict], status: str, summary: str, result: dict, agent: str) -> None:
+		"""Caller holds the lock. Write complete(closes=)'s tickets: same status as tid, a note and result "Done under tid" (AI-57)."""
+		claims = self._claims()
+		if any(claims.pop(x["id"], None) for x in shut):  # the completing agent's own claim on one of them
+			self._save_claims(claims)
+		line = f"Done under {tid}: {summary.splitlines()[0][:300]}"
+		for raw in shut:
+			_append_note(raw, agent, line, strict=False, kind="complete", status=status)
+			raw["status"], raw["updated"] = status, date.today().isoformat()
+			raw["done_at"] = _now() if status == "done" else ""
+			raw["result"] = {"summary": line, "files": result["files"], "refs": result["refs"], "handoff": "", "by": agent, "at": result["at"], "under": tid}
+			self._write(raw)
+			self._log("done" if status == "done" else "complete", raw["id"], agent, f"done under {tid}")
 
 	def _followup(self, raw: dict, f, agent: str) -> dict:
 		"""Caller holds the lock. complete(followup=) as an unwritten, validated ticket (AI-60): placed where the ticket it continues is;
@@ -2763,6 +2858,26 @@ _REVIEW_NEEDS_RESULT = ("{id} has no result, so a reviewer has nothing to check:
 def _unreported(t: dict) -> bool:
 	"""Done after UNREPORTED_SINCE with no result summary (moved to done by hand, not finished with complete())."""
 	return t.get("status") == "done" and not (t.get("result") or {}).get("summary") and str(t.get("done_at") or "")[:10] >= UNREPORTED_SINCE
+
+
+def _closes_input(tid: str, closes) -> list[str]:
+	"""complete(closes=) as a clean list of ids (AI-57): refused before anything is read when it is not one."""
+	if closes is None or closes == []:
+		return []
+	if isinstance(closes, str):
+		closes = [x for x in closes.replace(",", " ").split() if x]
+	if not (isinstance(closes, (list, tuple)) and all(isinstance(x, str) and _ID_TOKEN.fullmatch(x.strip()) for x in closes)):
+		raise TicketError("closes is a list of ticket ids, e.g. [\"CORE-12\", \"CORE-14\"]: open tickets whose work landed in this one")
+	ids = list(dict.fromkeys(x.strip() for x in closes))
+	if tid in ids:
+		raise TicketError(f"closes names {tid} itself: list the OTHER tickets this work also finished")
+	if len(ids) > CLOSES_MAX:
+		raise TicketError(f"closes names {len(ids)} tickets, at most {CLOSES_MAX}")
+	return ids
+
+
+_STALE_HINT = ("no event and no edit for a while: its work may have landed under another ticket. Check (git log, the ticket's touches) "
+               "before working it; if it is done, close it with complete(<the ticket that did it>, closes=[this id]) or ask a human")
 
 
 def _session(s) -> str | None:
