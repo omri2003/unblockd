@@ -92,6 +92,7 @@ def _schema(db) -> None:
 	db.ub_claims.create_index([("board", ASCENDING), ("id", ASCENDING)], unique=True)
 	db.ub_events.create_index([("board", ASCENDING), ("n", ASCENDING)], unique=True)
 	db.ub_events.create_index([("board", ASCENDING), ("e.ticket", ASCENDING), ("n", ASCENDING)])
+	db.ub_events.create_index([("board", ASCENDING), ("ts", ASCENDING)])  # history cleanup by age (CORE-37)
 	db.ub_files.create_index([("board", ASCENDING), ("id", ASCENDING), ("name", ASCENDING)], unique=True)
 	db.ub_docs.create_index([("board", ASCENDING), ("name", ASCENDING)], unique=True)
 
@@ -287,6 +288,12 @@ class MongoBackend:
 			n = self.db.ub_boards.find_one_and_update({"_id": self.board}, {"$inc": {"evseq": 1}}, return_document=ReturnDocument.AFTER,
 			                                          session=self._s)["evseq"]
 			self.db.ub_events.insert_one({"board": self.board, "n": n, "ts": line.get("ts", ""), "e": line}, session=self._s)
+
+	def prune_events(self, before: str) -> int:
+		"""Delete the events stamped before `before` (ISO UTC text, like every stored `ts`; no ts = kept). History cleanup (CORE-37):
+		no lock and no transaction (old events take part in no write; a long delete must not hold the board), never evseq, so
+		event numbers and notify's cursor are untouched. Uses the (board, ts) index. Returns how many went."""
+		return self.db.ub_events.delete_many({"board": self.board, "ts": {"$gt": "", "$lt": before}}).deleted_count
 
 	def events_newest_first(self, ticket: str | None = None):
 		"""Every event (only one ticket's: ticket=), newest first, a page at a time."""

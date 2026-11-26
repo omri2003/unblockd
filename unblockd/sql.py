@@ -344,12 +344,22 @@ class SqlBackend:
 			self._bump(c)
 
 	# ---------- activity ----------
-	def append_event(self, line: dict, locked=None, cap=None) -> None:  # cap: files only (history is cleaned by age, CORE-37)
+	def append_event(self, line: dict, locked=None, cap=None) -> None:  # cap: files only (history is cleaned by age: prune_events, CORE-37)
 		with self._tx() as c:
 			c.q("UPDATE ub_boards SET evseq = evseq + 1 WHERE board = ?", (self.board,))
 			n = c.q("SELECT evseq FROM ub_boards WHERE board = ?", (self.board,))[0][0]
 			c.q("INSERT INTO ub_events (board, n, ts, ticket, doc) VALUES (?, ?, ?, ?, ?)",
 			    (self.board, n, line.get("ts", ""), line.get("ticket"), json.dumps(line, ensure_ascii=False)))
+
+	def prune_events(self, before: str) -> int:
+		"""Delete the events stamped before `before` (an ISO UTC time, compared as text like every stored `ts`; an event with no
+		ts is kept: its age is unknown). History cleanup (CORE-37, Store._prune_history): never the counter, so event numbers
+		and notify's cursor are untouched. Uses the (board, ts) index. Returns how many went."""
+		with self._tx() as c:
+			n = c.q("SELECT COUNT(*) FROM ub_events WHERE board = ? AND ts <> '' AND ts < ?", (self.board, before))[0][0]
+			if n:
+				c.q("DELETE FROM ub_events WHERE board = ? AND ts <> '' AND ts < ?", (self.board, before))
+		return n
 
 	def events_newest_first(self, ticket: str | None = None):
 		"""Every event (only one ticket's: ticket=), newest first, read a page at a time (stop iterating early to read less)."""

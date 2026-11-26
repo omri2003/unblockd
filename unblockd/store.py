@@ -10,6 +10,7 @@ import fnmatch
 import json
 import os
 import re
+import sys
 import threading
 import time
 from datetime import date, datetime, timezone
@@ -33,6 +34,7 @@ DEFAULT_CONFIG = {
 	"pillar_label": "Pillar",
 	"pillars": [],  # [{"key": "ART", "name": "Art", "color": "#8A4FB5", "color_dark": "#B58CE6"}]
 	"stale_days": STALE_DAYS,
+	"history_days": 365,  # database boards delete activity events older than this many days, once a day (CORE-37); None = keep forever. Folder boards ignore it (5 MB rotation)
 	"done_window_days": 7,  # the UI's Done column shows tickets done within this many days (the API still returns all)
 	"wip_limit": None,  # int: the UI warns when more tickets than this are in progress; None = no warning
 	"lease_minutes": 15,  # a claim with no heartbeat for this long expires and the ticket goes back to todo (agents[].lease_minutes overrides per profile)
@@ -89,6 +91,8 @@ SUMMARY_MAX = 10_000  # chars in a complete() summary (stored in body and result
 # the day it shipped, so the ~100 older hand-closed tickets never flood the board
 UNREPORTED_SINCE = "2026-11-21"
 ACTIVITY_MAX = 5_000_000  # bytes; past this the activity log rotates (files: activity.jsonl -> activity.1.jsonl, one old file kept)
+HISTORY_DAYS_MAX = 36_500  # config history_days: 1 .. this (100 years), or None
+_PRUNED: dict[str, str] = {}  # connector key -> UTC day this process last ran (or skipped) history cleanup: at most once a day (CORE-37)
 PRIO_WEIGHT = {"P0": 8, "P1": 4, "P2": 2, "P3": 1, None: 1}
 BRANCH_DAYS = 14  # a linked branch with no commit for this long is still listed, but no longer reads as work in progress
 
@@ -330,6 +334,8 @@ def config_from(user: dict | None, where: str, tickets_dir: Path | None) -> dict
 		raise TicketError(f"{CONFIG_FILE}: wip_limit must be a positive number or null")
 	if not (type(cfg["done_window_days"]) is int and cfg["done_window_days"] > 0):
 		raise TicketError(f"{CONFIG_FILE}: done_window_days must be a positive number of days")
+	if cfg["history_days"] is not None and not (type(cfg["history_days"]) is int and 0 < cfg["history_days"] <= HISTORY_DAYS_MAX):
+		raise TicketError(f"{CONFIG_FILE}: history_days must be a number of days from 1 to {HISTORY_DAYS_MAX} (activity older than that is deleted on database boards), or null to keep it forever")
 	if not cfg["owners"] or not all(isinstance(o, dict) and o.get("name") for o in cfg["owners"]):
 		raise TicketError(f"{CONFIG_FILE}: owners must be a non-empty list of {{\"name\", \"kind\"}}")
 	for pl in cfg["pillars"]:
@@ -1803,11 +1809,13 @@ class Store:
 			with self.backend.lock(lambda p: type(self)._steal(p)):  # looked up per call, so a test can replace Store._steal
 				self._held = True
 				try:
-					return fn()
+					out = fn()
 				finally:
 					self._held = False
 		finally:
 			q.release()
+		self._prune_history()  # after the lock is released: a long delete never holds the board
+		return out
 
 	_steal = staticmethod(steal_stale)  # files boards: remove a stale lock file (see files.steal_stale)
 
@@ -1822,6 +1830,31 @@ class Store:
 		if principal:
 			line["principal"] = principal
 		self.backend.append_event(line, self._locked, ACTIVITY_MAX)
+		if not getattr(self, "_held", False):
+			self._prune_history()
+
+	def _prune_history(self) -> None:
+		"""History cleanup (CORE-37): on a connector with prune_events (SQL, MongoDB; files keep the 5 MB rotation), delete the
+		events older than config history_days, at most once a UTC day per board. Runs after a write, outside the lock (from _log,
+		or when _locked releases), so every front door cleans (CLI / MCP boards with no web server too); cost when not due = one dict
+		lookup, once a day per process = one runtime doc read (`history`: {pruned, deleted, before}), so short CLI processes don't
+		all delete. Deletes a prefix by time only, never the event counter: notify's events_after cursor and newer events stay.
+		A failure never fails the write that triggered it (it is already done): one line on stderr, tried again the next day."""
+		days, prune = self.config.get("history_days"), getattr(self.backend, "prune_events", None)
+		if not days or prune is None:
+			return
+		key, today = self.backend.key, _now()[:10]
+		if _PRUNED.get(key) == today:
+			return
+		_PRUNED[key] = today
+		try:
+			if self.backend.get_doc("history").get("pruned") == today:
+				return
+			before = _iso(time.time() - days * 86400)
+			n = prune(before)
+			self.backend.put_doc("history", {"pruned": today, "deleted": n, "before": before})
+		except Exception as e:  # noqa: BLE001 - housekeeping: the write that triggered it already succeeded
+			print(f"unblockd: history cleanup of {key} failed: {e}", file=sys.stderr)
 
 	def _live_claims(self) -> dict:
 		"""Claims with a recent heartbeat. Expired ones are released here (ticket back to todo)."""
