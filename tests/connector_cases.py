@@ -5,12 +5,15 @@ waits and the no-repo messages. Not a test module itself: tests/test_sql.py and 
 A binding sets `mod` (the connector module: SqlBackend / MongoBackend, boards(), disconnect(), BUSY_S), `atomic` (does a
 failure under the lock roll everything back?) and implements database() and backend(board, create).
 """
+import io
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from unblockd import knowledge as kn
+from unblockd import store as store_mod
 from unblockd.store import Store, TicketError
 
 CFG = {"owners": [{"name": "Omri", "kind": "human"}, {"name": "Claude", "kind": "agent"}]}
@@ -199,6 +202,65 @@ class ConnectorCases:
 		self.assertEqual([e["event"] for e in events], ["created", "note"])
 		self.assertEqual(s.backend.events_after(cur2), ([], cur2))
 		self.assertEqual([e["event"] for e in s.backend.events_newest_first()][:2], ["note", "created"])
+
+	def _old(self, s, days, event, tid="T-1", agent="w-1"):
+		"""An event stamped `days` ago, written straight to the connector (as if logged back then)."""
+		ts = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+		s.backend.append_event({"ts": ts, "event": event, "ticket": tid, "agent": agent, "note": f"{days}d"}, None)
+
+	def test_history_older_than_history_days_is_deleted_once_a_day(self):
+		"""CORE-37: events past history_days go on the first write of the day; newer ones, the counts built on them
+		(failing, attempts, activity since) and notify's cursor stay right."""
+		s = self.s
+		s.backend.write_config({**CFG, "history_days": 30})
+		s = Store(backend=self.backend(self.boards[0]))
+		s.create({"title": "a"}, prefix="T")
+		for days, ev in ((400, "claim"), (400, "expired"), (90, "release"), (40, "rejected"),  # older than 30 days: go
+		                 (5, "claim"), (5, "expired"), (4, "release"), (3, "rejected")):     # newer: stay
+			self._old(s, days, ev)
+		self.assertEqual(len(s.failing()["T-1"]), 6)
+		_, cur = s.backend.events_after(None)
+		store_mod._PRUNED.clear()
+		s.backend.put_doc("history", {})
+		s.create({"title": "trigger"}, prefix="U")  # the day's first write cleans, after its lock
+		self.assertEqual([e["note"] for e in s.backend.events_newest_first()], ["trigger", "3d", "4d", "5d", "5d", "a"])
+		self.assertEqual(s.backend.get_doc("history")["deleted"], 4)
+		self.assertEqual([a["outcome"] for a in s.attempts("T-1")], ["rejected", "released", "expired"])
+		self.assertEqual([a["note"] for a in s.failing()["T-1"]], ["3d", "4d", "5d"])  # only the kept attempts count
+		events, cur2 = s.backend.events_after(cur)  # a cursor taken before the cleanup still reads exactly what came after it
+		self.assertEqual([e["note"] for e in events], ["trigger"])
+		since = (datetime.now(timezone.utc) - timedelta(days=6)).isoformat(timespec="seconds")
+		self.assertEqual(len(s.activity(limit=100, since=since)), 6)  # what the Agents stats read: every kept event
+		self._old(s, 100, "expired")
+		s.add_note("T-1", "Omri", "again")  # same day, same process: not again
+		store_mod._PRUNED.clear()
+		s.add_note("T-1", "Omri", "new process")  # same day, another process: the runtime doc says it already ran
+		self.assertIn("100d", [e["note"] for e in s.backend.events_newest_first()])
+		_, cur3 = s.backend.events_after(cur2)
+		self.assertGreater(cur3, cur2)  # event numbers keep growing after a cleanup
+		s.backend.append_event({"ts": "", "event": "note", "ticket": "T-1", "agent": "x", "note": "no ts"}, None)
+		store_mod._PRUNED.clear()
+		s.backend.put_doc("history", {})
+		s.add_note("T-1", "Omri", "next day")
+		got = [e["note"] for e in s.backend.events_newest_first()]
+		self.assertNotIn("100d", got)
+		self.assertIn("no ts", got)  # unknown age: kept
+		s.backend.write_config({**CFG, "history_days": None})  # null = keep forever
+		s = Store(backend=self.backend(self.boards[0]))
+		self._old(s, 100, "expired")
+		store_mod._PRUNED.clear()
+		s.backend.put_doc("history", {})
+		s.add_note("T-1", "Omri", "kept")
+		self.assertIn("100d", [e["note"] for e in s.backend.events_newest_first()])
+
+	def test_a_failed_cleanup_never_fails_the_write(self):
+		s = self.s
+		store_mod._PRUNED.clear()
+		s.backend.put_doc("history", {})
+		with mock.patch.object(type(s.backend), "prune_events", side_effect=RuntimeError("disk full")), 		     mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+			t = s.create({"title": "a"}, prefix="T")
+		self.assertEqual(s.get(t["id"])["title"], "a")
+		self.assertIn("history cleanup", err.getvalue())
 
 	def test_settings_live_in_the_database(self):
 		s = self.s

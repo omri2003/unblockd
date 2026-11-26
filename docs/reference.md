@@ -334,6 +334,7 @@ Optional. Without it you get two owners (`Me`, `Claude`) and no pillars.
 | `stale_days` | A `doing` ticket untouched this long is flagged; `work_plan` also marks a todo ticket with no event or edit for this long (`idle_days`, AI-57). |
 | `wip_limit` | More than this many `doing` tickets shows a WIP badge on the column (default `null` = none). |
 | `done_window_days` | The board's Done column shows only tickets done within this many days (default 7, whole number > 0), newest first, at most 20 cards, with `+N more → view all`. UI only: the API, MCP and CLI still list every done ticket. Edited in `unblockd.json` like every other board setting. |
+| `history_days` | Database boards (SQL, MongoDB) delete activity events older than this many days (default 365, 1 to 36500; `null` = keep forever). Checked at most once a day per board, right after a write. Folder boards ignore it: their `activity.jsonl` rotates at 5 MB instead. See Storage connectors. |
 | `lease_minutes` | A claim with no heartbeat this long expires (default 15). A profile can set its own (`agents[].lease_minutes`). |
 | `lease_max_minutes` | How far ahead `heartbeat(until=)` may keep a claim alive (default 240, at most 1440). |
 | `legacy_files` | Old ticket lists (relative to the tickets folder): new IDs never reuse a number seen in them. |
@@ -684,6 +685,16 @@ one writer per board at a time (a crash halfway keeps the writes made so far). A
 after 30 seconds (by the database server's clock). A database board has no repo yet, so repo docs
 report "no repo linked", the Map is off and `components` are refused (CORE-36); attachments are stored in the database.
 Tables are prefixed `ub_` and can share a database with other apps.
+
+**History cleanup** (CORE-37): on a database board the activity log (claims, notes, releases, expiries, completions: what
+While you were away, the Agents stats, failed attempts and notifications read) is kept for `history_days` (default 365,
+`null` = forever). The first write of a UTC day, from any front door (web, MCP, CLI: a board with no web server is cleaned
+too), deletes the events stamped before the cutoff, after the write's lock is released, and records the day, the cutoff
+and how many went in the runtime document `history`, so other processes skip it that day. Only whole old events go: newer
+ones, the event numbers and notify's cursor stay, so failed-attempt counts and stats count what is kept. An event with no
+timestamp is kept. A cleanup that fails never fails the write (one line on stderr, tried again the next day). Folder boards
+keep the 5 MB rotation of `activity.jsonl` (one old file kept) and ignore `history_days`. A migrated board brings its whole
+history; the database side then trims it on the first write.
 
 ## Develop
 
