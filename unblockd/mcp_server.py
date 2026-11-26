@@ -276,7 +276,7 @@ def list_tickets(board: str | None = None, status: str | None = None, pillar: st
                  agent: str | None = None, parent: str | None = None, milestone: str | None = None, q: str | None = None,
                  touches: str | None = None, component: str | None = None, fields: list[str] | None = None, limit: int | None = None,
                  stale_days: int | None = None, full: bool = False, ids: list[str] | None = None) -> list[dict] | dict:
-	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status), pillar,
+	"""List tickets. Filters: status (todo|doing|pending|review|done, matches effective status; open = every one but done), pillar,
 	owner, priority (P0-P3), tag, agent (profile name or worker name, resolved to its profile), parent (id: that ticket's parts),
 	milestone (a key from board_info's milestones; "-" = tickets with none), q (words that must ALL appear in one ticket: not
 	for a list of ids), ids (exactly these tickets, in this order, e.g. ["AI-56", "API-23"]; at most 200),

@@ -559,7 +559,9 @@ python -m unblockd.cli --dir <repo>/tickets plan --per-agent 3
 python -m unblockd.cli --dir <repo>/tickets claim --agent backend-1 [--principal Omri] [--wait 120]   # or env UNBLOCKD_PRINCIPAL; heartbeat/release/complete take it too; --wait: on a conflict, wait for it to free up
 python -m unblockd.cli --dir <repo>/tickets heartbeat BUG-10 --agent backend-1 --note "running tests"
 python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --summary "cause -> fix -> tests" [--next]   # --next: also claim the next ticket, prints {done, next}
+python -m unblockd.cli --dir <repo>/tickets list   # open tickets (every status but done); --all adds done ones, --status S picks one, --ids gives exactly those whatever their status (REST / MCP: status=open)
 python -m unblockd.cli --dir <repo>/tickets list --status todo
+python -m unblockd.cli --dir <repo>/tickets knowledge   # open tickets with no doc of their own (+ the docs suggested for each) and broken doc references
 python -m unblockd.cli --dir <repo>/tickets agents-md [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md (see Connect the MCP server)
 python -m unblockd.cli --dir <repo>/tickets list --fields touches,parent,done_when --limit 50   # extra keys per row; body / notes only when named
 python -m unblockd.cli --dir <repo>/tickets list --touches unblockd/store.py   # tickets whose touches overlap it (the claim rule), with touches + holder

@@ -1,6 +1,6 @@
 """Command line over the same Store (for agents without the MCP server).
 
-    python -m unblockd.cli [--dir TICKETS] list [--status S] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS] [--touches PATH] [--component KEY] [--fields touches,done_when] [--limit N] [--stale-days N]
+    python -m unblockd.cli [--dir TICKETS] list [--status S | --all] [--pillar P] [--owner O] [--priority P] [--tag T] [--agent A] [--parent ID] [-q WORDS] [--ids A,B] [--touches PATH] [--component KEY] [--fields touches,done_when] [--limit N] [--stale-days N]
     python -m unblockd.cli next [--owner O] [--pillar P] [--agent A] [--tag T] [--limit N]   # ready, best first
     python -m unblockd.cli plan [--per-agent N]   # ready tickets grouped by agent profile
     python -m unblockd.cli claim --agent backend-1 [--id ID] [--profile P] [--principal HUMAN] [--branch B] [--wait S]   # take the next (or one) ticket; --principal (env UNBLOCKD_PRINCIPAL) = the human owner you work for; --wait (<= 120) = on a conflict, wait for it to free up
@@ -15,6 +15,7 @@
     python -m unblockd.cli agents-md [--board ID] [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md: claim, heartbeat, complete
     python -m unblockd.cli agents                  # who is working what right now
     python -m unblockd.cli context ID              # docs + attached files to read before working ID
+    python -m unblockd.cli knowledge               # open tickets with no doc of their own (+ suggested docs) and broken doc refs
     python -m unblockd.cli doc PATH                # one file from the project repo
     python -m unblockd.cli attach ID FILE [--name N]   # attach a local text file to a ticket
     python -m unblockd.cli get ID
@@ -181,9 +182,19 @@ class Remote:
 		return self._call("POST", f"/tickets/{tid}/complete", {"agent": agent, "summary": summary, "files": files, "refs": refs, "handoff": handoff, "principal": principal, "request_id": request_id,
 		                                                       **({"followup": followup} if followup is not None else {}), **_ses(session), **({"closes": closes} if closes else {}), **({"touched": touched} if touched is not None else {})})
 	def context(self, tid): return self._call("GET", f"/tickets/{tid}/context")
+	def knowledge(self): return self._call("GET", "/knowledge")
 	def read_doc(self, path): return self._call("GET", "/doc", path=path)
 	def read_docs(self, paths): return self._call("GET", "/docs?" + urllib.parse.urlencode([("path", p) for p in paths]))
 	def attach(self, tid, name, content): return self._call("POST", f"/tickets/{tid}/files", {"name": name, "content": content})
+
+
+def blind(g: dict) -> dict:
+	"""The lint part of GET knowledge (API-22): open tickets with no doc of their own (`no_docs`, each with the docs suggest() offers:
+	add one with `update ID --json '{"docs": [...]}'`) and broken doc references, without the graph."""
+	title = {t["id"]: t["title"] for t in g["tickets"]}
+	sug = g.get("suggest") or {}
+	return {"no_docs": [{"id": i, "title": title.get(i), "suggested": [x["path"] for x in sug.get(i, []) if not x.get("weak")]} for i in g["no_docs"]],
+	        "broken": g["broken"]}
 
 
 def _utf8_out() -> None:
@@ -203,8 +214,11 @@ def main(argv: list[str] | None = None) -> int:
 	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
 	ap.add_argument("--json", dest="json_out", action="store_true", help="errors as one JSON object on stdout (default when stdout is not a terminal)")
 	sub = ap.add_subparsers(dest="cmd", required=True)
-	ls = sub.add_parser("list")
-	for f in ("status", "pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
+	ls = sub.add_parser("list", help="open tickets (not done) unless --status or --all")
+	which = ls.add_mutually_exclusive_group()
+	which.add_argument("--status", help="todo|doing|pending|review|done, or open (the default: every one but done)")
+	which.add_argument("--all", action="store_true", help="done tickets too")
+	for f in ("pillar", "owner", "priority", "tag", "agent", "parent", "milestone"):
 		ls.add_argument(f"--{f}")
 	ls.add_argument("-q", help="words that must ALL appear in one ticket")
 	ls.add_argument("--ids", help="exactly these tickets, comma or space separated (API-23)")
@@ -293,6 +307,7 @@ def main(argv: list[str] | None = None) -> int:
 	cp.add_argument("--followup", help="JSON {title, done_when?, blocked_by?, body?, priority?, touches?}: the part left to do becomes its own ticket, ready once blocked_by is done")
 	sub.add_parser("agents")
 	sub.add_parser("context").add_argument("id")
+	sub.add_parser("knowledge", help="tickets that would start blind (no doc of their own) and broken doc references")
 	sub.add_parser("doc", help="print a repo doc; several paths = one reply {docs} within the board's context_budget").add_argument("path", nargs="+")
 	at = sub.add_parser("attach")
 	at.add_argument("id")
@@ -361,8 +376,8 @@ def main(argv: list[str] | None = None) -> int:
 		with_ctx = lambda got: {**got, "context": ctx(got["id"])} if "id" in got else got  # no id = {ticket: null, reason, counts}
 		if a.cmd == "list":
 			keep = st.list_fields(a.fields, matched=bool(a.touches or a.component), idle=a.stale_days is not None)
-			res = s.list(status=a.status, pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone,
-			             limit=a.limit, touches=a.touches, component=a.component, ids=a.ids, **({"stale_days": a.stale_days} if a.stale_days is not None else {}))
+			res = s.list(status=None if (a.all or (a.ids and not a.status)) else (a.status or "open"), pillar=a.pillar, owner=a.owner, priority=a.priority, q=a.q, tag=a.tag, agent=a.agent, parent=a.parent, milestone=a.milestone,
+			             limit=a.limit, touches=a.touches, component=a.component, ids=a.ids, **({"stale_days": a.stale_days} if a.stale_days is not None else {}))  # --ids: exactly those, done ones too
 			if a.q and not res:
 				others = any(x not in (None, "") for x in (a.status, a.pillar, a.owner, a.priority, a.tag, a.agent, a.parent, a.milestone, a.touches, a.component, a.ids))
 				print(f"hint: {st.q_hint(a.q, others)}", file=sys.stderr)  # stdout stays the JSON list
@@ -417,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
 			out = s.agents_now()
 		elif a.cmd == "context":
 			out = ctx(a.id)
+		elif a.cmd == "knowledge":
+			out = blind(s.knowledge() if url else kn.graph(s))
 		elif a.cmd == "doc":
 			if len(a.path) > 1:
 				out = s.read_docs(a.path) if url else kn.read_docs(s, a.path)
