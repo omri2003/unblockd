@@ -274,6 +274,16 @@ class WorkLoopTest(unittest.TestCase):
 		for word in ("docs/spec.md", "board=", "AT MOST 10", "done_when", "STOP", "before that", "ONE `create_tickets", "#N", "all or nothing", "DATA"):
 			self.assertIn(word, text)
 
+	def test_plan_from_spec_challenge_step(self):
+		# AI-61: a separate challenge pass before the plan is shown; its verdicts are a column of step 4's table
+		from unblockd import mcp_server as m
+		text = str(asyncio.run(m.mcp.get_prompt("plan_from_spec", {"board": "g", "path": "s.md"})))
+		for word in ("3b. Challenge the draft (required", "separate agent", "No subagents", "steelman", "premortem", "overlap", "keep | edit", "drop", "Challenge ="):
+			self.assertIn(word, text)
+		self.assertLess(text.index("3b. Challenge"), text.index("4. Show the plan"))
+		self.assertLess(text.index("4. Show the plan"), text.index("ONE `create_tickets"))
+		self.assertIn("STOP. Wait for approval", text)
+
 	def test_create_tickets_one_call_with_temp_refs(self):
 		from unblockd import mcp_server as m
 		from mcp.server.mcpserver.exceptions import ToolError
