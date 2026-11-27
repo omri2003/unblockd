@@ -310,9 +310,9 @@ def entries(value: str, sep: str = os.pathsep) -> list[str]:
 def from_env() -> Boards:
 	sep = os.pathsep
 	env = os.environ
-	dirs = entries(env.get("UNBLOCKD_BOARDS", ""))
-	if env.get("TICKETS_DIR"):
-		dirs.insert(0, env["TICKETS_DIR"])
+	dirs = entries(sy.env("UNBLOCKD_BOARDS", ""))  # _FILE forms too: these may hold database addresses with passwords
+	if sy.env("TICKETS_DIR"):
+		dirs.insert(0, sy.env("TICKETS_DIR"))
 	roots = [r for r in env.get("UNBLOCKD_ROOT", "").split(sep) if r]
 	if not dirs and not roots:
 		dirs = ["tickets"]

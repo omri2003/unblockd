@@ -27,6 +27,9 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_GIT_TOKEN` | Optional token for a private https `origin` on any host. `GITHUB_TOKEN` is used too, but only when origin is on github.com. Sent only to that host, through git's environment (never on a command line). |
 | `GITHUB_TOKEN` (or `UNBLOCKD_GITHUB_TOKEN`), `UNBLOCKD_GITHUB_API` | Optional GitHub token: every 60 s the server reads the PRs in `result.refs` of tickets in `review` (see GitHub PR sync). Unset: off. API base defaults to `https://api.github.com`. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
+| `UNBLOCKD_SECRET_KEY` (or `UNBLOCKD_SECRET_KEY_FILE`) | At least 32 random characters; encrypts the connector passwords kept in the system database. Unset, with a SQLite system database: generated when the first password is stored, saved as `secret.key` next to it (the server says so once), then reused. **Back it up separately from the system database** (one backup holding both defeats the encryption), or set `UNBLOCKD_SECRET_KEY_FILE` from a secrets manager; losing it means re-entering every connector password. A Postgres system database never generates one: set the same key on every server before storing a password. |
+
+Every secret-shaped variable also has a `_FILE` form holding the value in a file (Docker / Kubernetes secrets): `UNBLOCKD_TOKEN`, `UNBLOCKD_WEBHOOK`, `GITHUB_TOKEN`, `UNBLOCKD_GITHUB_TOKEN`, `UNBLOCKD_GIT_TOKEN`, `ANTHROPIC_API_KEY`, `TICKETS_DIR`, `UNBLOCKD_BOARDS` (they may hold database passwords), `UNBLOCKD_SYSTEM_DB`, `UNBLOCKD_SECRET_KEY`. Setting both `NAME` and `NAME_FILE` is refused.
 
 ## Notifications
 
@@ -733,8 +736,24 @@ python -m unblockd.cli system remove-board ops                                # 
 ```
 
 `--location` is a folder (must exist) or a database URL + `#board`; with `--connector` it is the board's key in that
-database (default: the id). A password in an address is refused (no secret key yet): leave it out and let the driver
-find it (`PGPASSWORD`, `~/.pgpass`). A connector that registered boards use can't be removed. Tables are prefixed `us_`
+database (default: the id). A connector that registered boards use can't be removed.
+
+**Passwords** belong to connectors, never to a board's address (refused there). A password in the connector's URL, or
+typed with `--password-stdin` (keeps it out of shell history), is taken out of the address and stored **encrypted**
+with the secret key (Fernet, from the `cryptography` package: `pip install "unblockd[secrets]"`, part of `[db]`,
+`requirements-db.txt` and the Docker image; only needed once a password is stored). No command or API returns it
+again: `system connectors` says `has_password`, every address shown has `***` in its place.
+
+```bash
+printf '%s\n' "$PGPASS" | python -m unblockd.cli system add-connector main postgres://app@db.internal:5432/unblockd --password-stdin
+printf '%s\n' "$PGPASS" | python -m unblockd.cli system set-password main --password-stdin   # new password, or after a lost key
+python -m unblockd.cli system set-password main --clear
+```
+
+A wrong or lost secret key does not crash anything: the boards in that connector show "the secret key ... is not the
+one the stored connector passwords were encrypted with", every other board works, and the web server says so at start.
+Put the old key back, or re-enter each password with `set-password`; adding a new password under a different key is
+refused until then (it would mix two keys). Tables are prefixed `us_`
 (boards use `ub_`), so the system database may share a database with boards. Every row names its organisation
 (`default` for now), so organisations, users and roles come as new tables, not a rewrite.
 

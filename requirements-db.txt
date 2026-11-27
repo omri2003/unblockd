@@ -2,3 +2,5 @@
 # (each imported only when such a board is opened). The Docker image and CI install both.
 psycopg[binary]>=3.2,<4
 pymongo>=4.6,<5
+# Encrypted connector passwords in the system database (Fernet); imported only when a password is stored or read.
+cryptography>=41,<60

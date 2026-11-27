@@ -13,6 +13,7 @@ import threading
 import urllib.request
 
 from .store import _now
+from . import system as sy
 
 INTERVAL = 60
 PR_URL = re.compile(r"^https://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)/?$")
@@ -91,7 +92,7 @@ class Syncer:
 
 
 def start(boards) -> Syncer | None:
-	token = os.environ.get("GITHUB_TOKEN") or os.environ.get("UNBLOCKD_GITHUB_TOKEN")
+	token = sy.env("GITHUB_TOKEN") or sy.env("UNBLOCKD_GITHUB_TOKEN")
 	if not token:
 		return None
 	s = Syncer(boards, token, os.environ.get("UNBLOCKD_GITHUB_API", "https://api.github.com"))

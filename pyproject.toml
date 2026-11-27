@@ -16,7 +16,8 @@ mcp = ["mcp>=2.2,<3"]  # keep equal to requirements.txt (CI and the image instal
 # database connectors (keep equal to requirements-db.txt); files and SQLite boards need none of them
 postgres = ["psycopg[binary]>=3.2,<4"]
 mongo = ["pymongo>=4.6,<5"]
-db = ["unblockd[postgres,mongo]"]
+secrets = ["cryptography>=41,<60"]  # encrypted connector passwords in the system database (Fernet), imported only when one is stored
+db = ["unblockd[postgres,mongo,secrets]"]
 all = ["unblockd[mcp,db]"]
 
 [project.scripts]

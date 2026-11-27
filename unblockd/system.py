@@ -9,7 +9,8 @@ What it holds (tables prefixed us_, so it may share a database with boards, whos
 - us_orgs: organisations. Only "default" for now; every other row names its org, so organisations, users and memberships
   (CORE-69) are new tables added by an upgrade step, not a rewrite of these.
 - us_connectors: named database addresses boards can live in ({org, name, kind sqlite|postgres|mongo, url without password,
-  secret = the encrypted password (CORE-41), created}).
+  secret = the password encrypted with the secret key (secret.py, CORE-41), created}). us_meta key_check = a known text
+  encrypted with that key: a changed or lost key is told apart from a broken password.
 - us_boards: the registered boards ({org, id, title, connector, location, settings JSON, created}). connector NULL: location
   is the board's whole location (a folder path or a database URL + #board, no password); connector set: location is the
   board's key in that connector's database.
@@ -163,11 +164,56 @@ class System:
 		return row[0]
 
 	def connector_url(self, name: str, org: str = ORG) -> str:
-		"""The connector's address to connect with."""
+		"""The connector's address to connect with: its stored password (decrypted, CORE-41) put back in. Never shown: every
+		message about it goes through connectors.describe, which hides it."""
 		url, secret = self._connector(name, org)
-		if secret:  # CORE-41
-			raise TicketError(f"connector {name} has a stored password, which this unblockd can't read")
-		return url
+		if not secret:
+			return url
+		from . import secret as sk  # noqa: PLC0415
+		try:
+			return with_password(url, sk.decrypt(self, secret))
+		except TicketError as e:
+			raise TicketError(f"connector {name}: {e}") from None
+
+	def set_password(self, name: str, password: str | None, org: str = ORG) -> dict:
+		"""Store (encrypted) or clear a connector's password: after a lost key, or when the database's password changes."""
+		self._connector(name, org)
+		enc = self._encrypt(password, rekey=True) if password else None
+		with self._tx() as c:
+			c.q("UPDATE us_connectors SET secret = ? WHERE org = ? AND name = ?", (enc, org, name))
+		return next(x for x in self.connectors(org) if x["name"] == name)
+
+	def _encrypt(self, password: str, rekey: bool = False) -> str:
+		"""Encrypt with the secret key, after checking it is the key earlier passwords were stored with (us_meta key_check):
+		a new connector under another key is refused (it would mix keys). rekey (set_password = re-entering after a lost key):
+		the check moves to this key; passwords not re-entered yet keep saying the key is wrong."""
+		from . import secret as sk  # noqa: PLC0415
+		row = self.c.q("SELECT v FROM us_meta WHERE k = 'key_check'")
+		ok = False
+		if row:
+			try:
+				ok = sk.decrypt(self, row[0][0]) == sk.CHECK
+			except TicketError:
+				if not rekey:
+					raise
+		out = sk.encrypt(self, password)
+		if not ok:
+			with self._tx() as c:
+				c.q("INSERT INTO us_meta (k, v) VALUES ('key_check', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", (sk.encrypt(self, sk.CHECK),))
+		return out
+
+	def key_status(self) -> dict:
+		"""For the start-up line: where the key comes from, how many passwords are stored, and whether the key reads them."""
+		from . import secret as sk  # noqa: PLC0415
+		n = self.c.q("SELECT COUNT(*) FROM us_connectors WHERE secret IS NOT NULL")[0][0]
+		out = {"key": sk.source(self), "passwords": n}
+		row = self.c.q("SELECT v FROM us_meta WHERE k = 'key_check'")
+		if row and n:
+			try:
+				sk.decrypt(self, row[0][0])
+			except TicketError as e:
+				out["error"] = str(e)
+		return out
 
 	def locations(self, org: str = ORG) -> list[tuple[str, str]]:
 		"""[(board id, location to open)] in registration order. A board whose connector can't be used is listed with a location
@@ -184,7 +230,9 @@ class System:
 		return out
 
 	# ---------- write ----------
-	def add_connector(self, name: str, url: str, org: str = ORG) -> dict:
+	def add_connector(self, name: str, url: str, password: str | None = None, org: str = ORG) -> dict:
+		"""Register a database address. A password (in the URL or given) is taken out of the address and stored encrypted with
+		the secret key (CORE-41): no API ever returns it (connectors() says has_password)."""
 		from . import connectors as cn  # noqa: PLC0415
 		from .store import NAME_RE  # noqa: PLC0415
 		if not NAME_RE.match(name or ""):
@@ -194,13 +242,19 @@ class System:
 			url = "postgres://" + url[len("postgresql://"):]
 		if not cn.is_db(url) or "#" in url:
 			raise TicketError(f"a connector is a database address without #board: sqlite:///path.db, postgres://user@host/db or mongodb://host/db (got {cn.describe(url)!r})")
-		if _password(url) is not None:
-			raise TicketError("a password in a connector address needs the secret key (CORE-41): leave it out and let the driver find it "
-			                  "(PGPASSWORD / ~/.pgpass for Postgres), or upgrade unblockd")
+		inline = _password(url)
+		if inline is not None:
+			if password:
+				raise TicketError("give the password once: in the address or separately, not both")
+			from urllib.parse import unquote  # noqa: PLC0415
+			password, url = unquote(inline), with_password(url, None)
+		if self.c.q("SELECT 1 FROM us_connectors WHERE org = ? AND name = ?", (org, name)):
+			raise TicketError(f"connector {name} already exists: remove it first")
+		enc = self._encrypt(password) if password else None  # before the row: no key / no cryptography = nothing stored
 		with self._tx() as c:
 			if c.q("SELECT 1 FROM us_connectors WHERE org = ? AND name = ?", (org, name)):
 				raise TicketError(f"connector {name} already exists: remove it first")
-			c.q("INSERT INTO us_connectors (org, name, kind, url, secret, created) VALUES (?, ?, ?, ?, NULL, ?)", (org, name, kind_of(url), url, _now()))
+			c.q("INSERT INTO us_connectors (org, name, kind, url, secret, created) VALUES (?, ?, ?, ?, ?, ?)", (org, name, kind_of(url), url, enc, _now()))
 		return next(x for x in self.connectors(org) if x["name"] == name)
 
 	def remove_connector(self, name: str, org: str = ORG) -> dict:
@@ -254,6 +308,19 @@ class System:
 
 class Broken(str):
 	"""A location that can't be opened; opening it raises its message (boards.Boards.open)."""
+
+
+def with_password(url: str, password: str | None) -> str:
+	"""url with its password replaced by `password` (None = removed). The user name and everything else stay as written."""
+	from urllib.parse import quote  # noqa: PLC0415
+	scheme, sep, rest = url.partition("://")
+	cut = min([i for i in (rest.find("/"), rest.find("?"), rest.find("#")) if i >= 0], default=len(rest))
+	netloc, tail = rest[:cut], rest[cut:]
+	user, at, host = netloc.rpartition("@")
+	user = user.split(":", 1)[0] if at else ""
+	if password is None:
+		return f"{scheme}{sep}{user + '@' if user else ''}{host}{tail}"
+	return f"{scheme}{sep}{user}:{quote(password, safe='')}@{host}{tail}"
 
 
 def _password(url: str) -> str | None:

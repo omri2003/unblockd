@@ -83,6 +83,7 @@ from . import github
 from . import knowledge as kn
 from . import notify
 from . import store as st
+from . import system as sy
 
 STATIC = Path(__file__).resolve().parent / "static"  # an installed package (pyproject.toml) carries the UI here
 if not (STATIC / "index.html").is_file():
@@ -251,7 +252,7 @@ class Handler(BaseHTTPRequestHandler):
 		url = urlparse(self.path)
 		parts = [p for p in url.path.split("/") if p]
 		q = {k: v[0] for k, v in parse_qs(url.query).items()}
-		token = os.environ.get("UNBLOCKD_TOKEN")
+		token = sy.env("UNBLOCKD_TOKEN")
 		try:
 			if token and hmac.compare_digest(q.get("token", "").encode(), token.encode()):
 				rest_q = urlencode({k: v for k, v in q.items() if k != "token"})
@@ -442,12 +443,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
-	st.refuse_open_bind(host, os.environ.get("UNBLOCKD_TOKEN"))
+	st.refuse_open_bind(host, sy.env("UNBLOCKD_TOKEN"))
 	files.SCAN_REUSE_S = 1.0  # one page load reads a files board ~4 times: share one stat pass (CORE-60); a write by this server drops it at once
 	if BOARDS.system is not None:  # created on first start (CORE-34): a fresh install needs no setup
 		try:
 			i = BOARDS.system.info()
 			print(f"system database: {i['url']} (schema {i['schema']}, {i['boards']} registered boards)", flush=True)
+			ks = BOARDS.system.key_status()
+			print(f"secret key: {ks['key']} ({ks['passwords']} stored passwords)" + (f": {ks['error']}" if ks.get("error") else ""), flush=True)
 		except Exception as e:  # noqa: BLE001 - the scanned boards still work
 			print(f"system database: {BOARDS.system.where}: {e} (registered boards are not listed)", flush=True)
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "

@@ -116,7 +116,7 @@ class SystemDbTest(unittest.TestCase):
 			self.sys.add_connector("main", db)
 		with self.assertRaises(NotFound):
 			self.boards.register("x", connector="nope")
-		for bad, why in (("postgres://u:pw@h/db", "password"), (db + "#b", "without #board"), ("/a/folder", "database address")):
+		for bad, why in ((db + "#b", "without #board"), ("/a/folder", "database address")):
 			with self.assertRaisesRegex(TicketError, why):
 				self.sys.add_connector("bad", bad)
 		with self.assertRaisesRegex(TicketError, "add the database as a connector"):
