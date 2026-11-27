@@ -188,6 +188,31 @@ class Boards:
 				out.append({"id": bid, "title": s.config["title"], "items": items})
 		return out
 
+	def databases(self) -> list:
+		"""Every database URL boards live in (UNBLOCKD_BOARDS / TICKETS_DIR entries, registered boards, connectors), each once,
+		for `db status` / `db upgrade`. A connector that can't be read is listed as (name, error)."""
+		urls, out = [], []
+		def add(u):
+			if u not in urls:
+				urls.append(u)
+		for d in self.dirs:
+			if isinstance(d, str):
+				try:
+					add(cn.split(d)[0])
+				except st.TicketError:
+					pass
+		known = self.system is not None and self.system.exists()
+		for _, loc in self.registered() if known else ():
+			if isinstance(loc, str) and not isinstance(loc, sy.Broken) and cn.is_db(loc):
+				add(cn.split(loc)[0])
+		if known:
+			for c in self.system.connectors():
+				try:
+					add(self.system.connector_url(c["name"]))
+				except st.TicketError as e:
+					out.append((c["name"], str(e)))
+		return urls + out
+
 	def register(self, board_id: str, location: str = "", connector: str | None = None, title: str = "") -> dict:
 		"""Add a board to the system database (CORE-34): refused when the id is already in the board list."""
 		if self.system is None:

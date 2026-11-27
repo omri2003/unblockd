@@ -32,8 +32,8 @@ from .errors import NotFound, TicketError
 ORG = "default"
 _LOCAL = threading.local()
 
-# Numbered upgrade steps: STEPS[n] takes a database from schema n to n + 1. SCHEMA = len(STEPS). Never edit a released step:
-# add one. "{BLOB}" is BLOB on SQLite, BYTEA on Postgres.
+# Numbered upgrade steps (upgrade.py, CORE-38): STEPS[n] takes a database from schema n to n + 1. SCHEMA = len(STEPS).
+# Never edit a released step: add one. "{BLOB}" is BLOB on SQLite, BYTEA on Postgres; "{NOW}" the time it runs.
 STEPS = [
 	"""
 	CREATE TABLE IF NOT EXISTS us_orgs (id TEXT PRIMARY KEY, name TEXT NOT NULL, created TEXT NOT NULL);
@@ -110,9 +110,17 @@ class System:
 			if self.url.startswith("sqlite:///"):
 				Path(self.url[len("sqlite:///"):]).parent.mkdir(parents=True, exist_ok=True)
 			c = sql._Conn(self.url)
-			self._upgrade(c)
+			try:
+				self._upgrade(c)
+			except BaseException:
+				c.db.close()
+				raise
 			conns[self.url] = c
 		return c
+
+	def exists(self) -> bool:
+		"""False only for a SQLite file nobody created yet (status commands must not create it)."""
+		return not self.url.startswith("sqlite:///") or Path(self.url[len("sqlite:///"):]).exists()
 
 	def close(self) -> None:
 		c = getattr(_LOCAL, "conns", {}).pop(self.url, None)
@@ -122,25 +130,23 @@ class System:
 	def _tx(self):
 		return _Tx(self.c)
 
-	def _upgrade(self, c) -> None:
-		c.begin()
-		ok = False
+	def _upgrade(self, c, mode: str = "auto") -> dict:
+		from . import upgrade  # noqa: PLC0415
+		return upgrade.sql(c, "us_meta", STEPS, f"the system database {self.where}", mode)
+
+	def schema(self, mode: str = "status") -> dict:
+		"""db status / db upgrade, on a connection of its own."""
+		from . import sql  # noqa: PLC0415
+		if self.url.startswith("sqlite:///"):
+			f = Path(self.url[len("sqlite:///"):])
+			if mode == "status" and not f.exists():
+				return {"database": f"the system database {self.where}", "kind": "sqlite", "schema": 0, "latest": SCHEMA, "note": "not created yet: the first start creates it"}
+			f.parent.mkdir(parents=True, exist_ok=True)
+		c = sql._Conn(self.url)
 		try:
-			c.q("CREATE TABLE IF NOT EXISTS us_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-			row = c.q("SELECT v FROM us_meta WHERE k = 'schema'")
-			have = int(row[0][0]) if row else 0
-			if have > SCHEMA:
-				raise TicketError(f"the system database {self.where} was set up by a newer unblockd (schema {have}, this one knows "
-				                  f"{SCHEMA}): upgrade unblockd, or point UNBLOCKD_SYSTEM_DB elsewhere")
-			for step in STEPS[have:]:
-				sqltext = step.replace("{BLOB}", "BLOB" if c.kind == "sqlite" else "BYTEA").replace("{NOW}", _now())
-				for stmt in filter(str.strip, sqltext.split(";")):
-					c.q(stmt)
-			if have < SCHEMA:
-				c.q("INSERT INTO us_meta (k, v) VALUES ('schema', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", (str(SCHEMA),))
-			ok = True
+			return self._upgrade(c, mode)
 		finally:
-			c.end(ok)
+			c.db.close()
 
 	# ---------- read ----------
 	def info(self) -> dict:

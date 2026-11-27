@@ -32,6 +32,7 @@
     python -m unblockd.cli system info|boards|connectors   # the system database: unblockd's own data (registered boards, connectors)
     python -m unblockd.cli system add-board ID --location FOLDER_OR_URL#BOARD | --connector NAME [--title T]   # listed next to scanned boards
     python -m unblockd.cli system add-connector NAME URL [--password-stdin] | set-password NAME --password-stdin|--clear | remove-board ID | remove-connector NAME   # passwords stored encrypted (UNBLOCKD_SECRET_KEY)
+    python -m unblockd.cli db status|upgrade [--url URL]...   # schema versions of the system database + every database boards live in; upgrade applies missing steps
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
@@ -214,6 +215,29 @@ def _stdin_password() -> str:
 	if not pw:
 		raise st.TicketError("no password on stdin")
 	return pw
+
+
+def _db(a) -> list[dict]:
+	"""db status / db upgrade: one row per database; one that fails says why in its row, the others still run."""
+	from . import mongo, sql  # noqa: PLC0415
+	mode = "status" if a.dcmd == "status" else "upgrade"
+	b = bd.from_env()
+	rows, todo = [], a.url or None
+	if todo is None:
+		try:
+			rows.append(b.system.schema(mode))
+		except st.TicketError as e:
+			rows.append({"database": f"the system database {b.system.where}", "error": str(e)})
+		todo = b.databases()
+	for u in todo:
+		if isinstance(u, tuple):
+			rows.append({"database": f"connector {u[0]}", "error": u[1]})
+			continue
+		try:
+			rows.append((mongo if u.startswith("mongodb") else sql).schema(u, mode))
+		except st.TicketError as e:
+			rows.append({"database": connectors.describe(u), "error": str(e)})
+	return rows
 
 
 def _system(a) -> dict | list:
@@ -405,10 +429,23 @@ def main(argv: list[str] | None = None) -> int:
 	sp_.add_argument("--password-stdin", action="store_true", help="read it from stdin")
 	sp_.add_argument("--clear", action="store_true", help="remove the stored password")
 	ss.add_parser("remove-connector", help="refused while a registered board uses it").add_argument("name")
+	dbp = sub.add_parser("db", help="database schema versions: the system database and every database boards live in (built-in upgrades)")
+	dbs = dbp.add_subparsers(dest="dcmd", required=True)
+	for name, what in (("status", "each database's schema version and the one this unblockd needs; changes nothing"),
+	                   ("upgrade", "apply the missing upgrade steps (what a start does, unless UNBLOCKD_AUTO_UPGRADE=0)")):
+		x = dbs.add_parser(name, help=what)
+		x.add_argument("--url", action="append", default=[], help="only this database (sqlite:///..., postgres://..., mongodb://...); repeatable")
 	try:
 		a = ap.parse_args(argv)
 	except _Usage as e:
 		return _fail(e, True)
+	if a.cmd == "db":
+		try:
+			out = _db(a)
+		except st.TicketError as e:
+			return _fail(e, as_json)
+		print(json.dumps(out, indent=2, ensure_ascii=False))
+		return 1 if any(r.get("error") for r in out) else 0
 
 	if a.cmd == "system":  # unblockd's own data, not a board (--dir is not used)
 		try:

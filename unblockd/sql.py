@@ -27,7 +27,6 @@ from urllib.parse import unquote, urlsplit
 
 from .errors import NotFound, TicketError
 
-SCHEMA = 1  # bump with a migration step in _migrate (CORE-38)
 BUSY_S = 10  # how long a write waits for the board lock before "try again", like the files connector
 CONNECT_S = 10  # seconds to reach a Postgres server
 PAGE = 500
@@ -53,6 +52,9 @@ CREATE TABLE IF NOT EXISTS ub_docs (board TEXT NOT NULL, name TEXT NOT NULL, doc
 CREATE INDEX IF NOT EXISTS ub_events_ts ON ub_events (board, ts);
 CREATE INDEX IF NOT EXISTS ub_events_ticket ON ub_events (board, ticket, n);
 """
+# Upgrade steps (upgrade.py, CORE-38): STEPS[n] takes a database from schema n to n + 1. Never edit a released step: add one.
+STEPS = [TABLES]
+SCHEMA = len(STEPS)
 BOARD_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
 
@@ -142,8 +144,13 @@ def connect(url: str) -> _Conn:
 		conns = _LOCAL.conns = {}
 	c = conns.get(url)
 	if c is None:
-		c = conns[url] = _Conn(url)
-		_schema(c)
+		c = _Conn(url)
+		try:
+			_schema(c)  # upgrades an older database (CORE-38); refused = not kept, so the next call checks again
+		except BaseException:
+			c.db.close()
+			raise
+		conns[url] = c
 	return c
 
 
@@ -156,21 +163,22 @@ def disconnect(url: str | None = None) -> None:
 			c.db.close()
 
 
-def _schema(c: _Conn) -> None:
-	ddl = TABLES.replace("{BLOB}", "BLOB" if c.kind == "sqlite" else "BYTEA")
-	c.begin()
-	ok = False
+def _schema(c: _Conn, mode: str = "auto") -> dict:
+	from . import upgrade  # noqa: PLC0415
+	return upgrade.sql(c, "ub_meta", STEPS, redact(c.url), mode)
+
+
+def schema(url: str, mode: str = "status") -> dict:
+	"""db status / db upgrade for one SQL database, on a connection of its own (connect() would upgrade on its own)."""
+	if url.startswith("postgresql://"):
+		url = "postgres://" + url[len("postgresql://"):]
+	if mode == "status" and url.startswith("sqlite:///") and not Path(unquote(url[len("sqlite:///"):])).exists():
+		return {"database": redact(url), "kind": "sqlite", "schema": 0, "latest": SCHEMA, "note": "not created yet"}
+	c = _Conn(url)
 	try:
-		for stmt in filter(str.strip, ddl.split(";")):
-			c.q(stmt)
-		row = c.q("SELECT v FROM ub_meta WHERE k = 'schema'")
-		if not row:
-			c.q("INSERT INTO ub_meta (k, v) VALUES ('schema', ?)", (str(SCHEMA),))
-		elif int(row[0][0]) > SCHEMA:
-			raise TicketError(f"{redact(c.url)} was set up by a newer unblockd (schema {row[0][0]}, this one knows {SCHEMA}): upgrade unblockd")
-		ok = True
+		return _schema(c, mode)
 	finally:
-		c.end(ok)
+		c.db.close()
 
 
 class SqlBackend:
