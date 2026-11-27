@@ -408,6 +408,54 @@ class KnowledgeTest(unittest.TestCase):
 		self.assertEqual(sug, [])  # folder heading 2, counted once, not twice
 		self.assertEqual([x["score"] for x in self._sug("CMB-3", {}, ["src/a.py", "src/b.py"], weak=True)], [2])  # a weak match at most
 
+	def _doc_reads(self):
+		"""graph()'s suggestions, and how many .md / .txt files it opened to make them."""
+		import io
+		from unittest import mock
+		n, real = [0], io.open
+
+		def counted(f, *a, **k):
+			if str(f).endswith((".md", ".txt")):
+				n[0] += 1
+			return real(f, *a, **k)
+
+		with mock.patch.object(io, "open", counted):
+			sug = kn.graph(self.s)["suggest"]
+		return sug, n[0]
+
+	def test_suggest_reads_a_doc_only_when_it_changed(self):
+		"""CORE-67: suggest() keeps what each doc names per file stamp, so a second call with no doc changed reads no doc, a new
+		ticket's suggestions are a lookup, and an edited, new or deleted doc shows on the next call."""
+		sug = self._sug("CMB-2", {"A.md": "See static/index.html.", "B.md": "Nothing here."}, ["static/index.html"])
+		self.assertEqual([x["path"] for x in sug], ["docs/A.md"])
+		got, reads = self._doc_reads()
+		self.assertEqual(reads, 0)
+		self.assertEqual([x["path"] for x in got["CMB-2"]], ["docs/A.md"])
+		self.s.create({"title": "other", "touches": ["docs/HANDOFF.md"]}, tid="CMB-3")  # a new ticket: no doc read either
+		got, reads = self._doc_reads()
+		self.assertEqual(reads, 0)
+		(self.repo / "docs" / "B.md").write_text("# static/index.html\nThe UI, now.", encoding="utf-8")  # edited
+		(self.repo / "docs" / "C.md").write_text("Edit static/index.html here.", encoding="utf-8")  # new
+		got, reads = self._doc_reads()
+		self.assertEqual(reads, 2)  # only the two that changed
+		self.assertEqual([x["path"] for x in got["CMB-2"]], ["docs/B.md", "docs/A.md", "docs/C.md"])
+		(self.repo / "docs" / "B.md").unlink()  # deleted
+		got, reads = self._doc_reads()
+		self.assertEqual((reads, [x["path"] for x in got["CMB-2"]]), (0, ["docs/A.md", "docs/C.md"]))
+
+	def test_the_mention_index_finds_what_the_text_scan_finds(self):
+		"""CORE-67: the index answers exactly like _mentions() on the text: ./ prefixes, a sentence's final dot, longer names,
+		link targets, headings, folders, a name with a space (matched on the text), CRLF read as LF."""
+		text = ("# src/store.py\n./src/store.py, store.py. store.pyx src/store.py.bak src/x x/src/store.py\r\n"
+		        "[l](../src/store.py) [m](../src/) Dockerfile. Dockerfile.dev docs/a b.md\n## static/\nstatic/index.html5 é/src/store.py\n")
+		(self.repo / "docs" / "T.md").write_text(text, encoding="utf-8", newline="")
+		text = (self.repo / "docs" / "T.md").read_text(encoding="utf-8")
+		names = [("path", "src/store.py"), ("folder", "src/"), ("file", "store.py"), ("path", "Dockerfile"), ("path", "docs/a b.md"),
+		         ("folder", "static/"), ("path", "static/index.html")]
+		want = kn._mentions(text, "docs/T.md", names, {})
+		self.assertEqual(kn._mentions_kept(kn._index(text, "docs/T.md"), self.repo, "docs/T.md", names, {}), want)
+		self.assertGreater(len(want), 8)
+
 	def test_a_docs_entry_can_name_a_section(self):
 		"""AI-14: `path#heading` sends only that section (down to the next heading of its level) plus the doc's outline."""
 		lines = ["# Mechanics", "intro", "## Combat", "parry", "```", "## not a heading in code", "```", "### Timing", "0.2s", "## Movement", "run"]

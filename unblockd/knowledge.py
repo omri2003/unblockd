@@ -1018,7 +1018,7 @@ def remove_edge(store, frm, to, by=None) -> dict:
 
 
 SUGGEST_MAX = 3      # suggestions per ticket
-SUGGEST_FILES = 400  # markdown / text files read once per graph() call to look for mentions
+SUGGEST_FILES = 400  # markdown / text files looked at per graph() call for mentions (each read only when it changed: _IDX)
 SUGGEST_MIN = 3      # the score a doc needs: an exact path in prose (3) qualifies; folders count only next to a file of the ticket
 WEAK_MAX = 2         # weak matches (score > 0, under SUGGEST_MIN or folders only) offered to a ticket that got no real suggestion
 # what one mention of a touched thing is worth: kind = the exact path, its file name (only when no other file in the repo has it),
@@ -1084,6 +1084,114 @@ def _mentions(text: str, here: str, names: list[tuple[str, str]], rx: dict) -> l
 	return list(hits.values())
 
 
+# The mention index (CORE-67): what each repo doc names, kept per doc while its file has the same stamp, so a GET knowledge with no
+# doc changed reads no doc, and a new or edited ticket's suggestions are a lookup. Built from the text once; never written to disk.
+_IDX: dict[tuple[str, str], tuple] = {}  # (root, doc) -> (stamp, index)
+TOKEN = re.compile(r"[\w/.-]+")  # a run that can hold a name: every name _mentions() looks for starts a run like this
+SAFE_NAME = re.compile(r"[\w/.-]+")  # a name made only of such chars can be looked up; any other is matched on the text
+_WORD = re.compile(r"\w")
+
+
+def _index(text: str, here: str) -> dict:
+	"""One doc's mention index: everything _mentions() needs, without the text.
+	{size: chars, heads: _headings(), outline, links: [(start, end, target resolved from the doc's folder)],
+	 tokens: {run without a leading ./: [offsets]}, keys: the sorted runs holding / or . (prefix lookups), line: {offset: line}}."""
+	starts = [0] + [m.end() for m in re.finditer("\n", text)]
+	heads = _headings(text)
+	folder = here.rpartition("/")[0]
+	links, tokens, line = [], {}, {}
+	for m in re.finditer(r"\]\(([^)\s#]+)", text):
+		parts = []
+		for seg in (f"{folder}/{m.group(1)}" if folder else m.group(1)).split("/"):
+			if seg == "..":
+				parts = parts[:-1]
+			elif seg not in ("", "."):
+				parts.append(seg)
+		links.append((m.start(1), m.end(1), "/".join(parts)))
+		line[m.start(1)] = bisect.bisect_right(starts, m.start(1)) - 1
+	for m in TOKEN.finditer(text):
+		t = m.group()
+		if t.startswith("./"):
+			t = t[2:]  # the optional ./ in front of a name
+		if len(t) < 4:  # every name is >= 4 chars
+			continue
+		tokens.setdefault(t, []).append(m.start())
+		line[m.start()] = bisect.bisect_right(starts, m.start()) - 1
+	return {"size": len(text), "heads": heads, "outline": outline(text) if heads else [], "links": links, "tokens": tokens,
+	        "keys": sorted(k for k in tokens if "/" in k or "." in k), "line": line}
+
+
+def _found(ix: dict, name: str) -> list[int]:
+	"""Offsets where `name` (made of SAFE_NAME chars) is mentioned as _mentions()'s regex would find it: a run equal to it, or,
+	for a folder, any run starting with it; a path may be followed by a `.` that ends the run or is not followed by a word char."""
+	keys, n = ix["keys"], len(name)
+	hits = list(ix["tokens"].get(name, []))
+	i = bisect.bisect_left(keys, name)
+	while i < len(keys) and keys[i].startswith(name):
+		k = keys[i]
+		if len(k) > n and (name.endswith("/") or (k[n] == "." and (len(k) == n + 1 or not _WORD.match(k[n + 1])))):
+			hits += ix["tokens"][k]
+		i += 1
+	return sorted(hits)
+
+
+def _doc_index(base: Path, rel: str) -> dict | None:
+	"""The kept index of one doc, rebuilt only when its file's stamp changed; None when it is missing, unreadable or over MAX_FILE."""
+	p = base / rel
+	st = _stamp(p)
+	if st is None or st[3] or st[2] > MAX_FILE:
+		return None
+	key = (str(base), rel)
+	hit = _IDX.get(key)
+	if hit and hit[0] == st:
+		return hit[1]
+	try:
+		text = p.read_text(encoding="utf-8", errors="replace")
+	except OSError:
+		return None
+	if len(_IDX) > 20000:
+		_IDX.clear()
+	ix = _index(text, rel)
+	_IDX[key] = (st, ix)
+	return ix
+
+
+def _mentions_kept(ix: dict, base: Path, here: str, names: list[tuple[str, str]], rx: dict) -> list[tuple[float, str, str, str, int]]:
+	"""_mentions() from the doc's index, same hits in the same order. A name with a char outside SAFE_NAME (a space...) is matched
+	on the text, read for that call only."""
+	heads = {h[0] for h in ix["heads"]}
+	spans, hits, text = [], {}, None
+	for a, b, rel in ix["links"]:
+		spans.append((a, b))
+		for kind, name in names:
+			if (kind == "path" and rel == name) or (kind == "folder" and (rel + "/").startswith(name)):
+				w = WEIGHT[kind]["link"]
+				if w > hits.get(a, (0,))[0]:
+					hits[a] = (w, kind, name, "link", a)
+	for kind, name in names:
+		if SAFE_NAME.fullmatch(name):
+			offs = _found(ix, name)
+		else:
+			if text is None:
+				try:
+					text = (base / here).read_text(encoding="utf-8", errors="replace")
+				except OSError:
+					text = ""
+			if name not in rx:
+				rx[name] = re.compile(r"(?<![\w/.-])(?:\./)?" + re.escape(name) + ("" if name.endswith("/") else NAME_END))
+			offs = [m.start() for m in rx[name].finditer(text)]
+		for o in offs:
+			if any(a <= o < b for a, b in spans):
+				continue  # inside a link target: the link pass above decided
+			if o not in ix["line"]:  # an odd name matched where no run starts: place it like _mentions() does
+				ix["line"][o] = text.count("\n", 0, o)
+			where = "heading" if ix["line"][o] in heads else "text"
+			w = WEIGHT[kind][where]
+			if w > hits.get(o, (0,))[0]:
+				hits[o] = (w, kind, name, where, o)
+	return list(hits.values())
+
+
 def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], budget: int) -> dict:
 	"""Docs a ticket with no doc of its own could get, scored by how they name what it `touches` (UI-66).
 	Per touch: its best mention (WEIGHT: exact path > unique file name > folder; heading or link > anywhere else) + EXTRA per
@@ -1098,7 +1206,7 @@ def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], b
 	heading, would only ever send a path: never offered. A ticket with no such doc gets at most WEAK_MAX `weak: true` matches
 	instead (a doc that fits, scoring > 0 but under SUGGEST_MIN, folders-only docs included), best first, so the human sees the
 	closest thing and why it is weak. Never a doc the board sends to everyone, one over MAX_FILE bytes or one in the tickets
-	folder; reads <= SUGGEST_FILES docs. No repo (a database board): {}.
+	folder; looks at <= SUGGEST_FILES docs, reading one only when its stamp changed (_IDX, CORE-67). No repo (a database board): {}.
 	{ticket: [{path, size, score, why: [{touch, kind, name, where, count}], too_big?, outline?, sections?, weak?}]}. Read-only;
 	the UI adds one with a PATCH of `docs`."""
 	if root(store) is None:
@@ -1120,23 +1228,17 @@ def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], b
 	for rel in files:
 		if len(texts) >= SUGGEST_FILES:
 			break
-		p = base / rel
-		if rel in board or p.suffix.lower() not in (".md", ".txt") or rel.startswith("tickets/"):
+		if rel in board or Path(rel).suffix.lower() not in (".md", ".txt") or rel.startswith("tickets/"):
 			continue
-		try:
-			if p.stat().st_size > MAX_FILE:
-				continue
-			text = p.read_text(encoding="utf-8", errors="replace")
-		except OSError:
-			continue
-		if len(text) <= budget or _headings(text):  # too big with no headings: nothing to pick, it would only send a path
-			texts[rel] = text
-	out, rx, heads = {}, {}, {}
+		ix = _doc_index(base, rel)
+		if ix is not None and (ix["size"] <= budget or ix["heads"]):  # too big with no headings: nothing to pick, it would only send a path
+			texts[rel] = ix
+	out, rx = {}, {}
 	for tid, touches in want.items():
 		names = list(dict.fromkeys(n for _, ns in touches for n in ns))
 		scored, weak = [], []
-		for rel, text in texts.items():
-			found = _mentions(text, rel, names, rx)
+		for rel, ix in texts.items():
+			found = _mentions_kept(ix, base, rel, names, rx)
 			if not found:
 				continue
 			score, why, used = 0.0, [], set()
@@ -1150,35 +1252,33 @@ def suggest(store, no_docs: list[str], tickets: list[dict], rules: list[dict], b
 				used.add((best[1], best[2]))
 				score += best[0] + min(EXTRA * (len(mine) - 1), EXTRA_MAX)
 				why.append({"touch": touch, "kind": best[1], "name": best[2], "where": best[3], "count": len(mine)})
-			big = len(text) > budget
+			big = ix["size"] > budget
 			if all(f[1] == "folder" for f in found) or score < SUGGEST_MIN:  # folders alone never qualify: a folder only counts next to a file
 				if not big and score > 0:
 					weak.append((score, rel, why, None))
 				continue
 			secs = None
 			if big:  # offered only for the sections that name the ticket's files: those are what Pick sections starts with
-				if rel not in heads:
-					starts = [0] + [m.end() for m in re.finditer("\n", text)]
-					heads[rel] = (starts, _headings(text))
-				starts, hs = heads[rel]
+				hs = ix["heads"]
 				secs = []
 				for f in sorted(found, key=lambda f: f[4]):
 					if f[1] == "folder":
 						continue
-					line = bisect.bisect_right(starts, f[4]) - 1
+					line = ix["line"][f[4]]
 					h = next((h for h in reversed(hs) if h[0] <= line), None)
 					if h and _slug(h[2]) not in secs:
 						secs.append(_slug(h[2]))
 				if not secs:
 					continue  # every mention is before the first heading: no section to pick holds it
 			scored.append((score, rel, why, secs))
-		scored.sort(key=lambda s: (len(texts[s[1]]) > budget, len(texts[s[1]]) * BIG_SHARE > budget, -s[0], len(texts[s[1]]), s[1]))
+		size = lambda rel: texts[rel]["size"]
+		scored.sort(key=lambda s: (size(s[1]) > budget, size(s[1]) * BIG_SHARE > budget, -s[0], size(s[1]), s[1]))
 		lo = not scored
 		if lo:
-			scored = sorted(weak, key=lambda s: (-s[0], len(texts[s[1]]), s[1]))[:WEAK_MAX]
+			scored = sorted(weak, key=lambda s: (-s[0], size(s[1]), s[1]))[:WEAK_MAX]
 		if scored:
-			out[tid] = [{"path": rel, "size": len(texts[rel]), "score": score, "why": why}
-			            | ({"too_big": True, "outline": outline(texts[rel]), "sections": secs} if secs is not None else {})
+			out[tid] = [{"path": rel, "size": size(rel), "score": score, "why": why}
+			            | ({"too_big": True, "outline": list(texts[rel]["outline"]), "sections": secs} if secs is not None else {})
 			            | ({"weak": True} if lo else {}) for score, rel, why, secs in scored[:SUGGEST_MAX]]
 	return out
 

@@ -1098,7 +1098,7 @@ class Store:
 	         priority: str | None = None, q: str | None = None, tag: str | None = None,
 	         agent: str | None = None, parent: str | None = None, milestone: str | None = None, board: dict | None = None,
 	         limit: int | None = None, touches: str | None = None, component: str | None = None, ids=None, stale_days: int | None = None) -> list[dict]:
-		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos). milestone "-" = none.
+		"""All tickets, decorated. Filters match effective_status (so 'pending' includes blocked todos; 'open' = all but done). milestone "-" = none.
 		board = a _board() the caller already read in this locked step (claim), so it is not read again.
 		touches = a path or glob: tickets whose `touches` overlap it by the claim rule (_overlap: same path, one inside the other, a glob
 		match), so "who works on store.py?" is not a substring search. component = an architecture key: tickets that name it in
@@ -1119,7 +1119,9 @@ class Store:
 			upper = {k.upper(): k for k in cur}
 			keys = (i if i in cur else upper.get(i.upper()) for i in list_ids(ids))
 			res = [cur[k] for k in dict.fromkeys(k for k in keys if k)]
-		if status:
+		if status == "open":  # every status but done (the CLI's default, API-22)
+			res = [t for t in res if t["effective_status"] != "done"]
+		elif status:
 			res = [t for t in res if t["effective_status"] == status]
 		if pillar:
 			res = [t for t in res if (t.get("pillar") or "").upper() == pillar.upper()]

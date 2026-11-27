@@ -12,10 +12,14 @@
 - `complete(touched=[paths])` warns about edits outside the ticket's touches and in other doing tickets' touches (`result.touched` / `outside`); a claim reply lists the doing tickets whose touches overlap (`overlapping`) (CORE-47).
 - `list_tickets(touches=PATH)` finds the tickets whose `touches` overlap a path or glob by the claim rule (not a text search), `component=KEY` those on an architecture component; rows show `touches` and `holder`. REST `?touches=&component=`, CLI `--touches --component`.
 - `list_tickets(ids=[...])` (REST `?ids=`, CLI `list --ids`) returns exactly those tickets; a `q` that matches nothing says every word must match, and points at `ids=` for a pasted list of ids (API-23).
+- `cli knowledge` lists the open tickets that would start with no doc of their own (with the docs suggested for each) and the broken doc references; locally and through `UNBLOCKD_URL`.
+- `status=open` on `list_tickets`, REST `GET tickets` and the CLI = every status but done.
 
 ### Changed
 - Big boards write fast: a write re-derives only the tickets it reaches instead of the whole board, and a files board reads its folder once per locked step. At 20,000 tickets a write holds the board lock 2-80 ms instead of 0.4-0.9 s, so 200 agents at once no longer give up waiting for it.
 - `ask_human` works on an unclaimed todo ticket: no claim (and no context) needed just to ask; a ticket someone else holds is still refused. A `release` whose reason names a person or a decision hints at `ask_human` (AI-56).
+- **CLI `list` shows open tickets by default** (every status but done): a planner's `list` no longer prints every finished ticket. `list --all` gives every ticket as before; `--status done` still lists done ones.
+- The Docs view's suggestions (GET knowledge) keep what each repo doc names and read a doc again only when it changes: a warm call reads no doc (on a 350-doc, 500-ticket test board 40 s -> 1 s), same suggestions.
 
 ### Fixed
 - Files board on Windows: a write no longer fails with `PermissionError` when another agent or program is reading the same file at that moment; it retries for up to 5 s, then says which file is held open (CORE-86).

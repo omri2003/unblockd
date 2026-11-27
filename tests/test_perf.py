@@ -44,7 +44,7 @@ BUDGETS = {
 	"/api/b/big/plan": (812, "541 / 537"),
 	"/api/b/big/agents": (806, "537 / 533"),
 	"/api/b/big/activity": (53, "35 / 31"),
-	"/api/b/big/knowledge": (2439, "1578 / 1626"),
+	"/api/b/big/knowledge": (914, "609 / not measured: CORE-67 board with lib/tool.py"),
 	"/api/b/big/files": (197, "124 / 131"),
 	"/api/b/big/tools": (50, "33 / 29"),
 	"/api/b/big/roadmap": (812, "541 / 537"),
@@ -160,6 +160,8 @@ def make_project(root: Path) -> Path:
 	for key, (paths, links) in arch.items():
 		conn = "".join(f"- [{t}]({t}.md) — {key} calls {t}\n" for t in links)
 		write(proj / "docs" / "arch" / f"{key}.md", f"---\npaths: {paths}\n---\n# {key}\nThe {key} part.\n\n## Connections\n{conn}")
+	write(proj / "lib" / "tool.py", "x = 1\n")  # touched by every 20th ticket: no component, so those have no doc (suggest() works)
+	write(proj / "docs" / "lib.md", "# Lib\n\nlib/tool.py holds the tool.\n")
 	for part in arch:
 		for i in range(10):
 			write(proj / "src" / part / f"m{i}.py", "x = 1\n")
@@ -172,7 +174,7 @@ def make_project(root: Path) -> Path:
 			"owner": "Me" if i % 7 == 0 else "Claude", "pillar": pre,
 			"blocked_by": [f"{'UI' if i % 2 else 'API'}-{i - 1}"] if i % 3 == 0 and i > 1 else [],
 			"parent": "API-1" if i % 50 == 0 else None,
-			"tags": ["perf"] if i % 5 == 0 else [], "touches": [f"src/{list(arch)[i % 4]}/**"],
+			"tags": ["perf"] if i % 5 == 0 else [], "touches": [f"src/{list(arch)[i % 4]}/**" if i % 20 != 1 else "lib/tool.py"],
 			"docs": ["docs/api.md"] if i % 4 == 0 else [], "components": ["store"] if i % 9 == 0 else [],
 			"milestone": "v1" if i % 2 else "v2", "body": "Some text.", "created": "2026-11-01", "updated": "2026-11-10",
 		}
@@ -246,6 +248,22 @@ class PerfTest(unittest.TestCase):
 			with self.subTest(route=path):
 				self.assertLessEqual(got[path], budget, f"GET {path} made {got[path]} filesystem calls, budget {budget} "
 				                     f"(measured {measured}). A route touching the disk per request again? See tests/test_perf.py.")
+
+	def test_a_warm_knowledge_reads_no_doc(self):
+		"""CORE-67: GET knowledge's suggestions come from the mention index kept per doc stamp; with no doc changed it opens none
+		(it read every repo doc, up to 400, on every call). Opens are not in the call budgets above, so they are counted here."""
+		import io
+		self.get("/api/b/big/knowledge")
+		n, real = [0], io.open
+
+		def counted(f, *a, **k):
+			if str(f).endswith((".md", ".txt")):
+				n[0] += 1
+			return real(f, *a, **k)
+
+		with mock.patch.object(io, "open", counted):
+			self.get("/api/b/big/knowledge")
+		self.assertEqual(n[0], 0)
 
 
 if __name__ == "__main__":

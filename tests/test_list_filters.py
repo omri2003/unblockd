@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -10,6 +11,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 from unblockd import cli
 from unblockd import store as st
@@ -61,6 +63,42 @@ class ListFieldsTest(unittest.TestCase):
 			st.list_fields(["touches", "nope"])
 		row = st.summarize(self.s.get("A-2"), ["touches"])
 		self.assertEqual(list(row), [*st.SUMMARY_KEYS, "touches"])
+
+	def test_cli_list_is_open_tickets_unless_asked(self):
+		"""API-22: a planner's `list` printed every done ticket's row too (84 KB on a real board). Now: open (not done) by default,
+		--all for every ticket, --status still picks one (done included); the limit counts after the filter. Same through Remote."""
+		self.s.create({"title": "old", "status": "done"}, tid="A-4")
+		self.s.create({"title": "new"}, tid="A-5")
+		ids = lambda *a: [r["id"] for r in self.cli("list", *a)[1]]
+		self.assertEqual(ids(), ["A-1", "A-2", "A-3", "A-5"])
+		self.assertEqual(ids("--limit", "4"), ["A-1", "A-2", "A-3", "A-5"])
+		self.assertEqual(ids("--all"), ["A-1", "A-2", "A-3", "A-4", "A-5"])
+		self.assertEqual(ids("--status", "done"), ["A-4"])
+		self.assertEqual(self.cli("list", "--all", "--status", "done")[0], 1)  # one or the other
+		self.assertEqual([t["id"] for t in self.s.list(status="open")], ["A-1", "A-2", "A-3", "A-5"])
+		r = cli.Remote(self.base)
+		self.assertEqual([t["id"] for t in r.list(status="open", limit=2)], ["A-1", "A-2"])
+		self.assertEqual(len(r.list()), 5)
+		with mock.patch.dict(os.environ, {"UNBLOCKD_URL": self.base}):
+			self.assertEqual(ids(), ["A-1", "A-2", "A-3", "A-5"])
+			self.assertEqual(ids("--all", "--fields", "touches")[3], "A-4")
+
+	def test_cli_knowledge_lists_blind_tickets_and_broken_docs(self):
+		"""API-22: `cli knowledge` = the lint part of GET knowledge: open tickets with no doc of their own (with suggested docs) and
+		broken doc refs, locally and through Remote, without the whole graph."""
+		root = self.s.dir.parent
+		(root / "docs").mkdir()
+		(root / "docs" / "store.md").write_text("unblockd/store.py keeps the rules.", encoding="utf-8")
+		self.s.update("A-3", {"docs": ["docs/nope.md"]})
+		self.s.create({"title": "shipped", "status": "done"}, tid="A-4")
+		code, got = self.cli("knowledge")
+		self.assertEqual(code, 0)
+		self.assertEqual(set(got), {"no_docs", "broken"})
+		self.assertEqual([(t["id"], t["title"], t["suggested"]) for t in got["no_docs"]],
+		                 [("A-1", "epic", []), ("A-2", "api", ["docs/store.md"]), ("A-3", "ui", [])])  # done A-4 is not listed
+		self.assertEqual([(b["path"], b["tickets"]) for b in got["broken"]], [("docs/nope.md", ["A-3"])])
+		with mock.patch.dict(os.environ, {"UNBLOCKD_URL": self.base}):
+			self.assertEqual(self.cli("knowledge"), (0, got))
 
 	def test_rest_fields_and_limit(self):
 		code, rows = self.get("/api/tickets?fields=touches,parent&limit=2")
