@@ -121,6 +121,12 @@ complete(id, agent, summary)   or   release(id, agent, reason)
 - **Crashed workers don't hold tickets**: a claim with no heartbeat for
   `lease_minutes` (default 15) expires and the ticket goes back to todo. Any call that names the holder
   (`add_note`, `update_ticket`/`update --agent`, `heartbeat`) renews the lease, so a note before a long test run keeps the claim.
+- **A lead's claim lives while its child agents work** (AI-59): a lead that claimed a parent ticket and handed its children to
+  sub-agents can't heartbeat while it waits on them. Every heartbeat, `add_note`, `update(agent=)` and `complete` on a child also
+  renews each LIVE claim up the child's `parent` chain (parent, grandparent ...) whose `principal` equals the child claim's. Both
+  claims must name one: with no principal on either side nothing is renewed, because a worker name alone does not show the two serve
+  the same person, and a stranger's child must not keep someone else's claim alive. A claim that already lapsed is not revived, no
+  status changes, and the renewal goes into the same `claims.json` write as the child's heartbeat.
 - **Longer leases for slow work** (AI-58): a profile may set its own `lease_minutes` (`agents: [{"name": "artist", "lease_minutes": 30}]`);
   its claims, their expiry and every reply use it. For one long run, `heartbeat(id, agent, note, until=<UTC ISO>)` (CLI `heartbeat --until`,
   REST body `until`) keeps the claim alive until that time with no more heartbeats; it is capped at `lease_max_minutes` (default 240)

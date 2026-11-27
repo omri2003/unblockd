@@ -83,6 +83,7 @@ QUESTION_MAX = 1000  # chars in an ask() question / waiting_on
 INBOX_NOTES, INBOX_NOTE_MAX, INBOX_MAX = 10, 2000, 6000  # inbox: notes shown, chars per note, chars in all (AI-44)
 WAIT_MAX, WAIT_POLL_S = 120, 2.0  # claim_next(wait_s=): the longest wait, and how often it looks again (AI-46)
 LEASE_WARN_S = 180  # a reply to the holder warns when less lease than this is left
+PARENT_DEPTH = 20  # AI-59: how far up the `parent` chain a child's heartbeat renews a lead's claim (loops are refused; this only bounds the walk)
 REQUESTS_MAX = 500  # request_ids remembered per board (runtime doc `requests`), oldest dropped first (CORE-74)
 REQUEST_RE = re.compile(r"^[\w.:-]{1,100}$")
 TRANSITIONS = ("claim", "release", "complete", "question", "expired", "dropped", "rejected", "done", "answered", "deleted", "split")
@@ -2359,9 +2360,33 @@ class Store:
 	def _keepalive(self, tid: str, agent: str | None) -> None:
 		"""Any write that names the live holder of tid counts as a heartbeat (agents can't ping during a long test run). Caller holds the lock."""
 		if agent and (c := self._live_claims().get(tid)) and c["agent"] == agent:
-			claims = self._claims()
-			claims[tid]["heartbeat_at"] = _now()
+			claims, now = self._claims(), _now()
+			claims[tid]["heartbeat_at"] = now
+			self._renew_parents(claims, tid, c, now)
 			self._save_claims(claims)
+
+	def _renew_parents(self, claims: dict, tid: str, c: dict, now: str) -> list[str]:
+		"""AI-59: a lead holds the parent while child agents work its children and can't heartbeat itself. A sign of life on
+		child tid (claim c) renews, in `claims` (the caller saves them: one claims write per heartbeat), every LIVE claim up
+		tid's `parent` chain that names the same `principal` as c. No principal on either side = no renewal: a name alone is
+		no proof the two workers serve the same person, and a stranger's child must not keep someone else's claim alive.
+		A lapsed claim is never revived (the sweep already ended it) and no status changes. Reads tickets only when another
+		claim with c's principal exists, one ticket per level. Returns the parent ids renewed. Caller holds the lock."""
+		p = c.get("principal")
+		want = {o for o, x in claims.items() if o != tid and p and x.get("principal") == p}
+		out, seen, cur = [], {tid}, tid
+		while want and len(seen) <= PARENT_DEPTH:
+			par = ((self.backend.read(cur) or {}).get("parent") or "").strip()
+			if not par or par in seen:
+				break
+			seen.add(par)
+			if par in want:
+				want.discard(par)
+				if time.time() <= self._expires(claims[par]):
+					claims[par]["heartbeat_at"] = now
+					out.append(par)
+			cur = par
+		return out
 
 	def _lapsed(self, tid: str, agent: str) -> dict | None:
 		"""The `claim` event of `agent`'s last claim on tid when that claim EXPIRED and nothing ended or re-took it since
@@ -2481,8 +2506,9 @@ class Store:
 			c = self._holder(tid, agent, principal, retake=True, session=session)
 			if c.get("clash"):
 				cap_warn.insert(0, c["clash"])
-			claims = self._claims()
-			claims[tid]["heartbeat_at"] = _now()
+			claims, now = self._claims(), _now()
+			claims[tid]["heartbeat_at"] = now
+			self._renew_parents(claims, tid, claims[tid], now)
 			if end is not None:
 				claims[tid]["until"] = _iso(end)
 			if note:
@@ -2746,6 +2772,7 @@ class Store:
 			bar = {"done_when": raw["done_when"]} if raw.get("done_when") else {}  # the bar it was finished against, next to the summary
 			_append_note(raw, agent, summary.strip(), kind="complete", status=status, **bar)  # refuses before the claim is touched
 			claims = self._claims()
+			self._renew_parents(claims, tid, c, _now())  # the lead's parent claim lives on after its child is finished (AI-59)
 			claims.pop(tid, None)
 			self._save_claims(claims)
 			raw["status"], raw["updated"], raw["result"] = status, date.today().isoformat(), result
