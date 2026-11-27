@@ -16,6 +16,9 @@
 - `cli knowledge` lists the open tickets that would start with no doc of their own (with the docs suggested for each) and the broken doc references; locally and through `UNBLOCKD_URL`.
 - `status=open` on `list_tickets`, REST `GET tickets` and the CLI = every status but done.
 - A lead's claim stays alive while its child agents work: a heartbeat, note, `update_ticket` or `complete` on a child ticket renews the live claim on its parent (and further up) when both claims name the same `principal`. No principal, no renewal; a lapsed claim is not revived.
+- The system database (`UNBLOCKD_SYSTEM_DB`, default a SQLite file at `~/.unblockd/system.db`, Postgres optional): register boards and connectors with `python -m unblockd.cli system ...`; registered boards appear in the board list next to scanned ones.
+- Built-in database upgrades: an older database (system, SQL, MongoDB) is upgraded on start, a newer one refused; `python -m unblockd.cli db status|upgrade` for admins who set `UNBLOCKD_AUTO_UPGRADE=0`.
+- Connector passwords are stored encrypted with `UNBLOCKD_SECRET_KEY` (unset: generated when the first password is stored, next to a SQLite system database only; back it up separately from it; needs the optional `cryptography` package) and never shown again; every secret env var also takes a `_FILE` form.
 
 ### Changed
 - Big boards write fast: a write re-derives only the tickets it reaches instead of the whole board, and a files board reads its folder once per locked step. At 20,000 tickets a write holds the board lock 2-80 ms instead of 0.4-0.9 s, so 200 agents at once no longer give up waiting for it.

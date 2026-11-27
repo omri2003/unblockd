@@ -10,6 +10,8 @@ import os
 import threading
 import urllib.request
 
+from . import system as sy
+
 INTERVAL = 30  # seconds between polls
 MAX_LINES = 10
 
@@ -94,7 +96,7 @@ class Notifier:
 
 
 def start(boards) -> Notifier | None:
-	url = os.environ.get("UNBLOCKD_WEBHOOK")
+	url = sy.env("UNBLOCKD_WEBHOOK")
 	if not url:
 		return None
 	n = Notifier(boards, url, os.environ.get("UNBLOCKD_WEBHOOK_FORMAT", "json"), os.environ.get("UNBLOCKD_PUBLIC_URL", ""))

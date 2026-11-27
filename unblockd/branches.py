@@ -32,6 +32,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 from .store import ID_RE
+from . import system as sy
 
 INTERVAL = 120
 MAX_BRANCHES = 200   # newest first; a repo with more open branches than this keeps only the newest
@@ -303,7 +304,7 @@ def start(boards) -> Syncer | None:
 	if not shutil.which("git"):
 		print("branches: off, no git binary (rebuild the image: docker compose up -d --build)", flush=True)
 		return None
-	s = Syncer(boards, os.environ.get("UNBLOCKD_GIT_TOKEN"), os.environ.get("GITHUB_TOKEN") or os.environ.get("UNBLOCKD_GITHUB_TOKEN"))
+	s = Syncer(boards, sy.env("UNBLOCKD_GIT_TOKEN"), sy.env("GITHUB_TOKEN") or sy.env("UNBLOCKD_GITHUB_TOKEN"))
 
 	def loop():
 		while True:

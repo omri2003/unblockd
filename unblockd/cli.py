@@ -29,6 +29,10 @@
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli split ID --parts parts.json|- [--by AGENT --claim K]   # parts with their own done_when / touches / body; "#N" refs; claim part K
+    python -m unblockd.cli system info|boards|connectors   # the system database: unblockd's own data (registered boards, connectors)
+    python -m unblockd.cli system add-board ID --location FOLDER_OR_URL#BOARD | --connector NAME [--title T]   # listed next to scanned boards
+    python -m unblockd.cli system add-connector NAME URL [--password-stdin] | set-password NAME --password-stdin|--clear | remove-board ID | remove-connector NAME   # passwords stored encrypted (UNBLOCKD_SECRET_KEY)
+    python -m unblockd.cli db status|upgrade [--url URL]...   # schema versions of the system database + every database boards live in; upgrade applies missing steps
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
@@ -54,6 +58,7 @@ from . import boards as bd
 from . import connectors
 from . import knowledge as kn
 from . import store as st
+from . import system as sy
 
 
 class Down(st.TicketError):
@@ -205,13 +210,65 @@ def _utf8_out() -> None:
 			f.reconfigure(encoding="utf-8")
 
 
+def _stdin_password() -> str:
+	pw = sys.stdin.readline().rstrip(chr(13) + chr(10))
+	if not pw:
+		raise st.TicketError("no password on stdin")
+	return pw
+
+
+def _db(a) -> list[dict]:
+	"""db status / db upgrade: one row per database; one that fails says why in its row, the others still run."""
+	from . import mongo, sql  # noqa: PLC0415
+	mode = "status" if a.dcmd == "status" else "upgrade"
+	b = bd.from_env()
+	rows, todo = [], a.url or None
+	if todo is None:
+		try:
+			rows.append(b.system.schema(mode))
+		except st.TicketError as e:
+			rows.append({"database": f"the system database {b.system.where}", "error": str(e)})
+		todo = b.databases()
+	for u in todo:
+		if isinstance(u, tuple):
+			rows.append({"database": f"connector {u[0]}", "error": u[1]})
+			continue
+		try:
+			rows.append((mongo if u.startswith("mongodb") else sql).schema(u, mode))
+		except st.TicketError as e:
+			rows.append({"database": connectors.describe(u), "error": str(e)})
+	return rows
+
+
+def _system(a) -> dict | list:
+	b = bd.from_env()
+	sysdb = b.system
+	if a.scmd == "info":
+		return sysdb.info()
+	if a.scmd == "boards":
+		return sysdb.boards()
+	if a.scmd == "add-board":
+		return b.register(a.id, a.location, a.connector, a.title)
+	if a.scmd == "remove-board":
+		return sysdb.remove_board(a.id)
+	if a.scmd == "connectors":
+		return sysdb.connectors()
+	if a.scmd == "add-connector":
+		return sysdb.add_connector(a.name, a.url, _stdin_password() if a.password_stdin else None)
+	if a.scmd == "set-password":
+		if a.clear == a.password_stdin:
+			raise st.TicketError("pass --password-stdin (and the password on stdin) or --clear")
+		return sysdb.set_password(a.name, None if a.clear else _stdin_password())
+	return sysdb.remove_connector(a.name)
+
+
 def main(argv: list[str] | None = None) -> int:
 	_utf8_out()
 	argv = sys.argv[1:] if argv is None else list(argv)
 	as_json = _Parser.JSON = _json_mode(argv)
 	ap = _Parser(prog="unblockd.cli")
 	ap.add_argument("--version", action="version", version=f"unblockd {__version__}")
-	ap.add_argument("--dir", default=os.environ.get("TICKETS_DIR", "tickets"))
+	ap.add_argument("--dir", default=sy.env("TICKETS_DIR", "tickets"))
 	ap.add_argument("--json", dest="json_out", action="store_true", help="errors as one JSON object on stdout (default when stdout is not a terminal)")
 	sub = ap.add_subparsers(dest="cmd", required=True)
 	ls = sub.add_parser("list", help="open tickets (not done) unless --status or --all")
@@ -352,10 +409,51 @@ def main(argv: list[str] | None = None) -> int:
 	mg.add_argument("--from", dest="src", required=True, help="where the board is now (a folder or a database URL + #board)")
 	mg.add_argument("--to", dest="dst", required=True, help="where it goes; must be empty unless --force")
 	mg.add_argument("--force", action="store_true", help="REPLACE whatever board is at --to")
+	sysp = sub.add_parser("system", help="the system database (UNBLOCKD_SYSTEM_DB, default ~/.unblockd/system.db): registered boards and connectors")
+	ss = sysp.add_subparsers(dest="scmd", required=True)
+	ss.add_parser("info", help="where it is, its schema version, how many boards and connectors")
+	ss.add_parser("boards", help="the registered boards")
+	ab = ss.add_parser("add-board", help="register a board: it appears in the board list next to the scanned ones")
+	ab.add_argument("id")
+	ab.add_argument("--location", default="", help="a folder, or a database URL + #board (no password: use a connector)")
+	ab.add_argument("--connector", help="a registered connector; --location is then the board's key in it (default: the id)")
+	ab.add_argument("--title", default="")
+	ss.add_parser("remove-board", help="unregister a board (its tickets stay where they are)").add_argument("id")
+	ss.add_parser("connectors", help="the registered database addresses")
+	ac = ss.add_parser("add-connector", help="register a database address boards can live in")
+	ac.add_argument("name")
+	ac.add_argument("url", help="sqlite:///path.db, postgres://user@host/db or mongodb://host/db (no #board); a password in it is taken out and stored encrypted")
+	ac.add_argument("--password-stdin", action="store_true", help="read the password from stdin (keeps it out of shell history); stored encrypted, never shown again")
+	sp_ = ss.add_parser("set-password", help="store (encrypted) or clear a connector's password: after a lost secret key, or a new database password")
+	sp_.add_argument("name")
+	sp_.add_argument("--password-stdin", action="store_true", help="read it from stdin")
+	sp_.add_argument("--clear", action="store_true", help="remove the stored password")
+	ss.add_parser("remove-connector", help="refused while a registered board uses it").add_argument("name")
+	dbp = sub.add_parser("db", help="database schema versions: the system database and every database boards live in (built-in upgrades)")
+	dbs = dbp.add_subparsers(dest="dcmd", required=True)
+	for name, what in (("status", "each database's schema version and the one this unblockd needs; changes nothing"),
+	                   ("upgrade", "apply the missing upgrade steps (what a start does, unless UNBLOCKD_AUTO_UPGRADE=0)")):
+		x = dbs.add_parser(name, help=what)
+		x.add_argument("--url", action="append", default=[], help="only this database (sqlite:///..., postgres://..., mongodb://...); repeatable")
 	try:
 		a = ap.parse_args(argv)
 	except _Usage as e:
 		return _fail(e, True)
+	if a.cmd == "db":
+		try:
+			out = _db(a)
+		except st.TicketError as e:
+			return _fail(e, as_json)
+		print(json.dumps(out, indent=2, ensure_ascii=False))
+		return 1 if any(r.get("error") for r in out) else 0
+
+	if a.cmd == "system":  # unblockd's own data, not a board (--dir is not used)
+		try:
+			out = _system(a)
+		except st.TicketError as e:
+			return _fail(e, as_json)
+		print(json.dumps(out, indent=2, ensure_ascii=False))
+		return 0
 
 	if a.cmd == "migrate":  # needs no board of its own (--dir is not used)
 		try:
@@ -369,7 +467,7 @@ def main(argv: list[str] | None = None) -> int:
 		if not url and not connectors.is_db(a.dir) and not Path(a.dir).is_dir():  # creating it would hand a worker an empty board (e.g. in a git worktree where tickets/ is not committed)
 			raise st.TicketError(f"no board at {Path(a.dir).resolve()}: run from the project root, or pass --dir / set TICKETS_DIR to the tickets folder "
 			                     "(in a git worktree, the main checkout's). To start a new board, create the folder first.")
-		s = Remote(url, os.environ.get("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
+		s = Remote(url, sy.env("UNBLOCKD_TOKEN"), os.environ.get("UNBLOCKD_BOARD")) if url else \
 			st.Store(a.dir, [p for p in os.environ.get("UNBLOCKD_LEGACY", "").split(os.pathsep) if p])
 		ctx = s.context if url else lambda tid: kn.context(s, tid)
 		ses = os.environ.get("UNBLOCKD_SESSION") or None  # CORE-88: the worker session's id; unset = no session check (one command per process)

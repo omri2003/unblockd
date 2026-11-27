@@ -20,6 +20,7 @@ from datetime import date
 from . import boards as bd
 from . import knowledge as kn
 from . import store as st
+from . import system as sy
 
 DEFAULT_MODEL = "claude-sonnet-5-5"
 MAX_ROUNDS = 8          # tool-use round trips per question
@@ -36,7 +37,7 @@ class ChatError(Exception):
 
 
 def enabled() -> dict:
-	return {"enabled": bool(os.environ.get("ANTHROPIC_API_KEY")), "model": os.environ.get("UNBLOCKD_MODEL", DEFAULT_MODEL)}
+	return {"enabled": bool(sy.env("ANTHROPIC_API_KEY")), "model": os.environ.get("UNBLOCKD_MODEL", DEFAULT_MODEL)}
 
 
 def _short(t: dict) -> dict:
@@ -162,7 +163,7 @@ def _system(boards: bd.Boards, board: str | None) -> str:
 
 
 def _post(payload: dict) -> dict:
-	key = os.environ.get("ANTHROPIC_API_KEY")
+	key = sy.env("ANTHROPIC_API_KEY")
 	if not key:
 		raise ChatError("Chat needs ANTHROPIC_API_KEY on the server (add it to .env next to compose.yaml, then restart).")
 	base = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")

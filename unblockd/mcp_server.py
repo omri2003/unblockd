@@ -37,6 +37,7 @@ from . import __version__
 from . import boards as bd
 from . import knowledge as kn
 from . import store as st
+from . import system as sy
 
 BOARDS = bd.from_env()
 mcp = MCPServer(
@@ -694,7 +695,7 @@ def main():
 		mcp.run()
 		return
 	import uvicorn
-	host, port, token = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("MCP_PORT", "8788")), os.environ.get("UNBLOCKD_TOKEN", "")
+	host, port, token = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("MCP_PORT", "8788")), sy.env("UNBLOCKD_TOKEN", "")
 	global WAIT_MAX
 	WAIT_MAX = min(st.WAIT_MAX, int(os.environ.get("MCP_WAIT_MAX", "30")))  # one shared server: a waiting claim_next holds one of its threads
 	st.refuse_open_bind(host, token)

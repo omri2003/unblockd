@@ -25,9 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .errors import TicketError
+from .errors import NotFound, TicketError
 
-SCHEMA = 1
 BUSY_S = 10  # how long a write waits for the board lock before "try again"
 CONNECT_MS = 10_000  # how long to look for a server before giving up
 LOCK_STALE = 30  # seconds: a lock older than this was left by a crash and may be taken over
@@ -47,30 +46,39 @@ def redact(url: str) -> str:
 	return url.replace(f":{u.password}@", ":***@", 1)
 
 
+def _open(url: str):
+	"""(MongoClient, hello reply, database) for url: a new client, nothing checked yet."""
+	try:
+		import pymongo  # noqa: PLC0415 - optional: only boards on Mongo need it
+		from pymongo.errors import PyMongoError  # noqa: PLC0415
+	except ImportError:
+		raise TicketError("this board is on MongoDB, which needs the pymongo package: pip install pymongo "
+		                  "or pip install \"unblockd[mongo]\" (the Docker image includes it)") from None
+	def go():
+		cl = None
+		try:
+			cl = pymongo.MongoClient(url, serverSelectionTimeoutMS=CONNECT_MS, tz_aware=True)
+			return cl, cl.admin.command("hello"), cl.get_default_database(default="unblockd")
+		except PyMongoError as e:
+			if cl is not None:
+				cl.close()
+			raise TicketError(f"can't connect to {redact(url)}: {_first_line(e)}") from None
+	from .connectors import reach  # noqa: PLC0415 - connectors imports this module lazily
+	return reach(url, go)
+
+
 def _client(url: str):
 	with _CLIENTS_LOCK:
 		hit = _CLIENTS.get(url)
 		if hit:
 			return hit
-		try:
-			import pymongo  # noqa: PLC0415 - optional: only boards on Mongo need it
-			from pymongo.errors import PyMongoError  # noqa: PLC0415
-		except ImportError:
-			raise TicketError("this board is on MongoDB, which needs the pymongo package: pip install pymongo "
-			                  "or pip install \"unblockd[mongo]\" (the Docker image includes it)") from None
-		def go():
-			cl = None
-			try:
-				cl = pymongo.MongoClient(url, serverSelectionTimeoutMS=CONNECT_MS, tz_aware=True)
-				return cl, cl.admin.command("hello"), cl.get_default_database(default="unblockd")
-			except PyMongoError as e:
-				if cl is not None:
-					cl.close()
-				raise TicketError(f"can't connect to {redact(url)}: {_first_line(e)}") from None
-		from .connectors import reach  # noqa: PLC0415 - connectors imports this module lazily
-		cl, hello, db = reach(url, go)
+		cl, hello, db = _open(url)
 		tx = bool(hello.get("setName") or hello.get("msg") == "isdbgrid") and os.environ.get("UNBLOCKD_MONGO_TRANSACTIONS") != "0"
-		_schema(db)
+		try:
+			_schema(db, redact(url))  # upgrades an older database (CORE-38); refused = no client kept, the next call checks again
+		except BaseException:
+			cl.close()
+			raise
 		_CLIENTS[url] = (cl, db, tx)
 		return _CLIENTS[url]
 
@@ -79,15 +87,8 @@ def _first_line(e: Exception) -> str:
 	return (str(e).strip().splitlines() or [type(e).__name__])[0][:300]
 
 
-def _schema(db) -> None:
+def _indexes_v1(db) -> None:
 	from pymongo import ASCENDING  # noqa: PLC0415
-	from pymongo.errors import DuplicateKeyError  # noqa: PLC0415
-	try:
-		db.ub_meta.insert_one({"_id": "schema", "v": SCHEMA})
-	except DuplicateKeyError:
-		v = db.ub_meta.find_one({"_id": "schema"})["v"]
-		if v > SCHEMA:
-			raise TicketError(f"this MongoDB database was set up by a newer unblockd (schema {v}, this one knows {SCHEMA}): upgrade unblockd") from None
 	db.ub_tickets.create_index([("board", ASCENDING), ("id", ASCENDING)], unique=True)
 	db.ub_claims.create_index([("board", ASCENDING), ("id", ASCENDING)], unique=True)
 	db.ub_events.create_index([("board", ASCENDING), ("n", ASCENDING)], unique=True)
@@ -95,6 +96,26 @@ def _schema(db) -> None:
 	db.ub_events.create_index([("board", ASCENDING), ("ts", ASCENDING)])  # history cleanup by age (CORE-37)
 	db.ub_files.create_index([("board", ASCENDING), ("id", ASCENDING), ("name", ASCENDING)], unique=True)
 	db.ub_docs.create_index([("board", ASCENDING), ("name", ASCENDING)], unique=True)
+
+
+# Upgrade steps (upgrade.py, CORE-38): STEPS[n](db) takes a database from schema n to n + 1; each must be idempotent (a crash
+# mid-step runs it again). Never edit a released step: add one.
+STEPS = [_indexes_v1]
+SCHEMA = len(STEPS)
+
+
+def _schema(db, where: str = "this MongoDB database", mode: str = "auto") -> dict:
+	from . import upgrade  # noqa: PLC0415
+	return upgrade.mongo(db, STEPS, where, mode)
+
+
+def schema(url: str, mode: str = "status") -> dict:
+	"""db status / db upgrade for one MongoDB database, on a client of its own."""
+	cl, _, db = _open(url)
+	try:
+		return _schema(db, redact(url), mode)
+	finally:
+		cl.close()
 
 
 def disconnect(url: str | None = None) -> None:
@@ -121,10 +142,11 @@ class MongoBackend:
 		self.dir = self.rt = None
 		self._seen = None
 		_, self.db, self.transactions = _client(url)
+		self.created = False  # True when opening made the board (boards.Boards.register says so)
 		if self.db.ub_boards.find_one({"_id": board}, {"_id": 1}) is None:
 			if not create:
-				raise TicketError(f"no board {board!r} in {redact(url)}")
-			self.db.ub_boards.update_one({"_id": board}, {"$setOnInsert": {"config": None, "version": 0, "evseq": 0, "created": _now()}}, upsert=True)
+				raise NotFound(f"no board {board!r} in {redact(url)}")
+			self.created = self.db.ub_boards.update_one({"_id": board}, {"$setOnInsert": {"config": None, "version": 0, "evseq": 0, "created": _now()}}, upsert=True).upserted_id is not None
 		# the lock document exists before anyone takes it ($expr, needed for the server-clock expiry, is not allowed in an upsert)
 		self.db.ub_locks.update_one({"_id": board}, {"$setOnInsert": {"holder": None, "until": datetime(1970, 1, 1, tzinfo=timezone.utc)}}, upsert=True)
 

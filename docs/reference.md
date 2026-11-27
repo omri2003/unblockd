@@ -18,6 +18,7 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_URL`, `UNBLOCKD_BOARD` | CLI only: send commands to a running server (with `UNBLOCKD_TOKEN`) instead of opening the folder. |
 | `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
 | `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional, or database boards (`sqlite:///x.db#payments`, see Storage connectors). |
+| `UNBLOCKD_SYSTEM_DB` (or `UNBLOCKD_SYSTEM_DB_FILE`) | Where unblockd keeps its own data (registered boards, connectors; see The system database): a SQLite file path, `sqlite:///path.db` or `postgres://user:pass@host/db`. Default `~/.unblockd/system.db` (Docker image: `/data/system.db`), created on first start. `_FILE` = a file holding the value (Docker / Kubernetes secrets); setting both is refused. |
 | `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
 | `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
 | `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
@@ -26,6 +27,10 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_GIT_TOKEN` | Optional token for a private https `origin` on any host. `GITHUB_TOKEN` is used too, but only when origin is on github.com. Sent only to that host, through git's environment (never on a command line). |
 | `GITHUB_TOKEN` (or `UNBLOCKD_GITHUB_TOKEN`), `UNBLOCKD_GITHUB_API` | Optional GitHub token: every 60 s the server reads the PRs in `result.refs` of tickets in `review` (see GitHub PR sync). Unset: off. API base defaults to `https://api.github.com`. |
 | `UNBLOCKD_LEGACY` | Extra old-backlog files for numbering (see `legacy_files`). |
+| `UNBLOCKD_AUTO_UPGRADE` | `0` = don't upgrade an older database on start: it is refused until you run `python -m unblockd.cli db upgrade` (see Database upgrades). Default: upgrade automatically. |
+| `UNBLOCKD_SECRET_KEY` (or `UNBLOCKD_SECRET_KEY_FILE`) | At least 32 random characters; encrypts the connector passwords kept in the system database. Unset, with a SQLite system database: generated when the first password is stored, saved as `secret.key` next to it (the server says so once), then reused. **Back it up separately from the system database** (one backup holding both defeats the encryption), or set `UNBLOCKD_SECRET_KEY_FILE` from a secrets manager; losing it means re-entering every connector password. A Postgres system database never generates one: set the same key on every server before storing a password. |
+
+Every secret-shaped variable also has a `_FILE` form holding the value in a file (Docker / Kubernetes secrets): `UNBLOCKD_TOKEN`, `UNBLOCKD_WEBHOOK`, `GITHUB_TOKEN`, `UNBLOCKD_GITHUB_TOKEN`, `UNBLOCKD_GIT_TOKEN`, `ANTHROPIC_API_KEY`, `TICKETS_DIR`, `UNBLOCKD_BOARDS` (they may hold database passwords), `UNBLOCKD_SYSTEM_DB`, `UNBLOCKD_SECRET_KEY`. Setting both `NAME` and `NAME_FILE` is refused.
 
 ## Notifications
 
@@ -570,6 +575,7 @@ python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --
 python -m unblockd.cli --dir <repo>/tickets list   # open tickets (every status but done); --all adds done ones, --status S picks one, --ids gives exactly those whatever their status (REST / MCP: status=open)
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets knowledge   # open tickets with no doc of their own (+ the docs suggested for each) and broken doc references
+python -m unblockd.cli system info|boards|connectors   # the system database (registered boards, connectors): see The system database
 python -m unblockd.cli --dir <repo>/tickets agents-md [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md (see Connect the MCP server)
 python -m unblockd.cli --dir <repo>/tickets list --fields touches,parent,done_when --limit 50   # extra keys per row; body / notes only when named
 python -m unblockd.cli --dir <repo>/tickets list --touches unblockd/store.py   # tickets whose touches overlap it (the claim rule), with touches + holder
@@ -705,6 +711,74 @@ ones, the event numbers and notify's cursor stay, so failed-attempt counts and s
 timestamp is kept. A cleanup that fails never fails the write (one line on stderr, tried again the next day). Folder boards
 keep the 5 MB rotation of `activity.jsonl` (one old file kept) and ignore `history_days`. A migrated board brings its whole
 history; the database side then trims it on the first write.
+
+## The system database
+
+unblockd's own data, separate from every board's tickets (CORE-34): the boards registered with it and the **connectors**
+(named database addresses boards live in). It is a SQLite file at `~/.unblockd/system.db` unless `UNBLOCKD_SYSTEM_DB`
+says otherwise (a path, `sqlite:///...` or `postgres://...`; MongoDB holds boards, not this). Nothing to set up: the
+first start creates it. The Docker image keeps it at `/data/system.db`; compose puts `/data` on the `unblockd-data`
+volume so it survives recreating the containers.
+
+Registered boards appear in the board list (web, MCP `list_boards`, `GET /api/boards`, marked `"registered": true`)
+after the boards found by scanning (`UNBLOCKD_ROOT`, `TICKETS_DIR`, `UNBLOCKD_BOARDS`), and work from every front door.
+A registered id that a scanned board already uses gets `-2`; a folder that is both scanned and registered is listed once.
+A system database that can't be read hides only the registered boards (one line on stderr says why). `add-board` creates a
+database board that is not there yet and says so (`new`: check the `#board` name if you meant an existing one); after that a
+registered board is never created by opening it, so a mistyped or deleted one shows an error instead of an empty board.
+
+```bash
+python -m unblockd.cli system info
+python -m unblockd.cli system add-board ops --location /srv/ops/tickets --title Ops
+python -m unblockd.cli system add-connector main "sqlite:////srv/unblockd/boards.db"
+python -m unblockd.cli system add-board payments --connector main            # board "payments" in that database
+python -m unblockd.cli system boards
+python -m unblockd.cli system remove-board ops                                # the registration only: tickets stay
+```
+
+`--location` is a folder (must exist) or a database URL + `#board`; with `--connector` it is the board's key in that
+database (default: the id). A connector that registered boards use can't be removed.
+
+**Passwords** belong to connectors, never to a board's address (refused there). A password in the connector's URL, or
+typed with `--password-stdin` (keeps it out of shell history), is taken out of the address and stored **encrypted**
+with the secret key (Fernet, from the `cryptography` package: `pip install "unblockd[secrets]"`, part of `[db]`,
+`requirements-db.txt` and the Docker image; only needed once a password is stored). No command or API returns it
+again: `system connectors` says `has_password`, every address shown has `***` in its place.
+
+```bash
+printf '%s\n' "$PGPASS" | python -m unblockd.cli system add-connector main postgres://app@db.internal:5432/unblockd --password-stdin
+printf '%s\n' "$PGPASS" | python -m unblockd.cli system set-password main --password-stdin   # new password, or after a lost key
+python -m unblockd.cli system set-password main --clear
+```
+
+A wrong or lost secret key does not crash anything: the boards in that connector show "the secret key ... is not the
+one the stored connector passwords were encrypted with", every other board works, and the web server says so at start.
+Put the old key back, or re-enter each password with `set-password`; adding a new password under a different key is
+refused until then (it would mix two keys). Tables are prefixed `us_`
+(boards use `ub_`), so the system database may share a database with boards. Every row names its organisation
+(`default` for now), so organisations, users and roles come as new tables, not a rewrite.
+
+## Database upgrades
+
+Every database unblockd keeps data in (the system database, and each SQL or MongoDB database boards live in) stores its
+schema version. When unblockd connects to one made by an older version it applies the missing numbered upgrade steps
+itself: on SQLite and Postgres all of them in one transaction (all or nothing; two servers starting at once upgrade it
+once), on MongoDB one step at a time (a crash resumes at the step that did not finish). One line on stderr says what was
+upgraded. A database made by a NEWER unblockd is refused with "was set up by a newer unblockd (schema N, this one knows
+M): upgrade unblockd". No migration library, nothing to run by hand.
+
+Admins who want to choose the moment set `UNBLOCKD_AUTO_UPGRADE=0`: an older database is then refused ("run python -m
+unblockd.cli db upgrade") until they run:
+
+```bash
+python -m unblockd.cli db status                       # every database: its schema and the one this unblockd needs; changes nothing
+python -m unblockd.cli db upgrade                      # apply the missing steps
+python -m unblockd.cli db upgrade --url "sqlite:///unblockd.db"   # just this one (repeatable)
+```
+
+Without `--url` they cover the system database, the databases named in `UNBLOCKD_BOARDS` / `TICKETS_DIR`, registered
+boards and connectors (passwords hidden in the output). Exit code 1 when any database failed (its row says why). A new,
+empty database is set up either way. Back up before upgrading production; there is no downgrade.
 
 ## Develop
 
