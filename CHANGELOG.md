@@ -14,6 +14,7 @@
 - `list_tickets(ids=[...])` (REST `?ids=`, CLI `list --ids`) returns exactly those tickets; a `q` that matches nothing says every word must match, and points at `ids=` for a pasted list of ids (API-23).
 - `cli knowledge` lists the open tickets that would start with no doc of their own (with the docs suggested for each) and the broken doc references; locally and through `UNBLOCKD_URL`.
 - `status=open` on `list_tickets`, REST `GET tickets` and the CLI = every status but done.
+- A lead's claim stays alive while its child agents work: a heartbeat, note, `update_ticket` or `complete` on a child ticket renews the live claim on its parent (and further up) when both claims name the same `principal`. No principal, no renewal; a lapsed claim is not revived.
 
 ### Changed
 - Big boards write fast: a write re-derives only the tickets it reaches instead of the whole board, and a files board reads its folder once per locked step. At 20,000 tickets a write holds the board lock 2-80 ms instead of 0.4-0.9 s, so 200 agents at once no longer give up waiting for it.
