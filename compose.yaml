@@ -11,6 +11,8 @@ x-unblockd: &unblockd   # shared by both services
   user: "0"
   volumes:
     - ${PROJECTS_DIR:-./example}:/projects
+    # unblockd's own data (the system database /data/system.db: registered boards, connectors), shared by both services
+    - unblockd-data:/data
     # code mounted from this folder: UI edits show on browser reload,
     # Python edits on `docker compose restart`. Rebuild only for requirements.txt.
     - ./static:/app/static:ro
@@ -43,3 +45,6 @@ services:
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-}   # extra Host values, e.g. mypc:* (default: localhost / 127.0.0.1 any port)
     ports:
       - "127.0.0.1:8788:8788"
+
+volumes:
+  unblockd-data:

@@ -18,6 +18,7 @@ default; the board you last opened is remembered.
 | `UNBLOCKD_URL`, `UNBLOCKD_BOARD` | CLI only: send commands to a running server (with `UNBLOCKD_TOKEN`) instead of opening the folder. |
 | `UNBLOCKD_ROOT` | Folder(s) of projects to scan (`:`-separated, `;` on Windows). Needed to create boards. |
 | `TICKETS_DIR`, `UNBLOCKD_BOARDS` | Explicit tickets folders, config optional, or database boards (`sqlite:///x.db#payments`, see Storage connectors). |
+| `UNBLOCKD_SYSTEM_DB` (or `UNBLOCKD_SYSTEM_DB_FILE`) | Where unblockd keeps its own data (registered boards, connectors; see The system database): a SQLite file path, `sqlite:///path.db` or `postgres://user:pass@host/db`. Default `~/.unblockd/system.db` (Docker image: `/data/system.db`), created on first start. `_FILE` = a file holding the value (Docker / Kubernetes secrets); setting both is refused. |
 | `UNBLOCKD_TOKEN` | Optional shared token. Set: `/api/*` needs `Authorization: Bearer <token>` or the cookie that opening `/?token=<token>` once sets. Unset: no auth, so keep it on localhost. |
 | `UNBLOCKD_WEBHOOK` | Optional webhook URL: pushes finished / stuck / "board ran dry" messages (see Notifications). Unset: off. |
 | `UNBLOCKD_WEBHOOK_FORMAT`, `UNBLOCKD_PUBLIC_URL` | `json` (default, Slack + Discord) or `text` (ntfy); base URL of this server, appended to messages as a board link. |
@@ -570,6 +571,7 @@ python -m unblockd.cli --dir <repo>/tickets complete BUG-10 --agent backend-1 --
 python -m unblockd.cli --dir <repo>/tickets list   # open tickets (every status but done); --all adds done ones, --status S picks one, --ids gives exactly those whatever their status (REST / MCP: status=open)
 python -m unblockd.cli --dir <repo>/tickets list --status todo
 python -m unblockd.cli --dir <repo>/tickets knowledge   # open tickets with no doc of their own (+ the docs suggested for each) and broken doc references
+python -m unblockd.cli system info|boards|connectors   # the system database (registered boards, connectors): see The system database
 python -m unblockd.cli --dir <repo>/tickets agents-md [--write CLAUDE.md]   # the short block for CLAUDE.md / AGENTS.md (see Connect the MCP server)
 python -m unblockd.cli --dir <repo>/tickets list --fields touches,parent,done_when --limit 50   # extra keys per row; body / notes only when named
 python -m unblockd.cli --dir <repo>/tickets list --touches unblockd/store.py   # tickets whose touches overlap it (the claim rule), with touches + holder
@@ -705,6 +707,36 @@ ones, the event numbers and notify's cursor stay, so failed-attempt counts and s
 timestamp is kept. A cleanup that fails never fails the write (one line on stderr, tried again the next day). Folder boards
 keep the 5 MB rotation of `activity.jsonl` (one old file kept) and ignore `history_days`. A migrated board brings its whole
 history; the database side then trims it on the first write.
+
+## The system database
+
+unblockd's own data, separate from every board's tickets (CORE-34): the boards registered with it and the **connectors**
+(named database addresses boards live in). It is a SQLite file at `~/.unblockd/system.db` unless `UNBLOCKD_SYSTEM_DB`
+says otherwise (a path, `sqlite:///...` or `postgres://...`; MongoDB holds boards, not this). Nothing to set up: the
+first start creates it. The Docker image keeps it at `/data/system.db`; compose puts `/data` on the `unblockd-data`
+volume so it survives recreating the containers.
+
+Registered boards appear in the board list (web, MCP `list_boards`, `GET /api/boards`, marked `"registered": true`)
+after the boards found by scanning (`UNBLOCKD_ROOT`, `TICKETS_DIR`, `UNBLOCKD_BOARDS`), and work from every front door.
+A registered id that a scanned board already uses gets `-2`; a folder that is both scanned and registered is listed once.
+A system database that can't be read hides only the registered boards (one line on stderr says why). `add-board` creates a
+database board that is not there yet and says so (`new`: check the `#board` name if you meant an existing one); after that a
+registered board is never created by opening it, so a mistyped or deleted one shows an error instead of an empty board.
+
+```bash
+python -m unblockd.cli system info
+python -m unblockd.cli system add-board ops --location /srv/ops/tickets --title Ops
+python -m unblockd.cli system add-connector main "sqlite:////srv/unblockd/boards.db"
+python -m unblockd.cli system add-board payments --connector main            # board "payments" in that database
+python -m unblockd.cli system boards
+python -m unblockd.cli system remove-board ops                                # the registration only: tickets stay
+```
+
+`--location` is a folder (must exist) or a database URL + `#board`; with `--connector` it is the board's key in that
+database (default: the id). A password in an address is refused (no secret key yet): leave it out and let the driver
+find it (`PGPASSWORD`, `~/.pgpass`). A connector that registered boards use can't be removed. Tables are prefixed `us_`
+(boards use `ub_`), so the system database may share a database with boards. Every row names its organisation
+(`default` for now), so organisations, users and roles come as new tables, not a rewrite.
 
 ## Develop
 

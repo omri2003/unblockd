@@ -444,6 +444,12 @@ def main():
 	host, port = os.environ.get("HOST", "127.0.0.1"), int(os.environ.get("PORT", "8787"))
 	st.refuse_open_bind(host, os.environ.get("UNBLOCKD_TOKEN"))
 	files.SCAN_REUSE_S = 1.0  # one page load reads a files board ~4 times: share one stat pass (CORE-60); a write by this server drops it at once
+	if BOARDS.system is not None:  # created on first start (CORE-34): a fresh install needs no setup
+		try:
+			i = BOARDS.system.info()
+			print(f"system database: {i['url']} (schema {i['schema']}, {i['boards']} registered boards)", flush=True)
+		except Exception as e:  # noqa: BLE001 - the scanned boards still work
+			print(f"system database: {BOARDS.system.where}: {e} (registered boards are not listed)", flush=True)
 	print(f"unblockd on http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}  boards: "
 	      + (", ".join(f"{k} ({connectors.describe(str(v))})" for k, v in BOARDS.all().items()) or "none yet"), flush=True)
 	if notify.start(BOARDS):

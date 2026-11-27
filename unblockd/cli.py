@@ -29,6 +29,9 @@
     python -m unblockd.cli delete ID [--agent A]
     python -m unblockd.cli split ID --title "part one" --title "part two" [--sequential] [--by AGENT]   # too big: make children
     python -m unblockd.cli split ID --parts parts.json|- [--by AGENT --claim K]   # parts with their own done_when / touches / body; "#N" refs; claim part K
+    python -m unblockd.cli system info|boards|connectors   # the system database: unblockd's own data (registered boards, connectors)
+    python -m unblockd.cli system add-board ID --location FOLDER_OR_URL#BOARD | --connector NAME [--title T]   # listed next to scanned boards
+    python -m unblockd.cli system add-connector NAME URL | remove-board ID | remove-connector NAME
     python -m unblockd.cli note ID "text" [--by NAME]   # appends a signed, timestamped note to the ticket's notes (by defaults to "human")
 
 --dir defaults to $TICKETS_DIR, then ./tickets; it may be a database location instead (`sqlite:///x.db#board`, see docs/reference.md). With $UNBLOCKD_URL set (plus $UNBLOCKD_TOKEN, and $UNBLOCKD_BOARD for a non-default board) every
@@ -205,6 +208,24 @@ def _utf8_out() -> None:
 			f.reconfigure(encoding="utf-8")
 
 
+def _system(a) -> dict | list:
+	b = bd.from_env()
+	sysdb = b.system
+	if a.scmd == "info":
+		return sysdb.info()
+	if a.scmd == "boards":
+		return sysdb.boards()
+	if a.scmd == "add-board":
+		return b.register(a.id, a.location, a.connector, a.title)
+	if a.scmd == "remove-board":
+		return sysdb.remove_board(a.id)
+	if a.scmd == "connectors":
+		return sysdb.connectors()
+	if a.scmd == "add-connector":
+		return sysdb.add_connector(a.name, a.url)
+	return sysdb.remove_connector(a.name)
+
+
 def main(argv: list[str] | None = None) -> int:
 	_utf8_out()
 	argv = sys.argv[1:] if argv is None else list(argv)
@@ -352,10 +373,33 @@ def main(argv: list[str] | None = None) -> int:
 	mg.add_argument("--from", dest="src", required=True, help="where the board is now (a folder or a database URL + #board)")
 	mg.add_argument("--to", dest="dst", required=True, help="where it goes; must be empty unless --force")
 	mg.add_argument("--force", action="store_true", help="REPLACE whatever board is at --to")
+	sy = sub.add_parser("system", help="the system database (UNBLOCKD_SYSTEM_DB, default ~/.unblockd/system.db): registered boards and connectors")
+	ss = sy.add_subparsers(dest="scmd", required=True)
+	ss.add_parser("info", help="where it is, its schema version, how many boards and connectors")
+	ss.add_parser("boards", help="the registered boards")
+	ab = ss.add_parser("add-board", help="register a board: it appears in the board list next to the scanned ones")
+	ab.add_argument("id")
+	ab.add_argument("--location", default="", help="a folder, or a database URL + #board (no password: use a connector)")
+	ab.add_argument("--connector", help="a registered connector; --location is then the board's key in it (default: the id)")
+	ab.add_argument("--title", default="")
+	ss.add_parser("remove-board", help="unregister a board (its tickets stay where they are)").add_argument("id")
+	ss.add_parser("connectors", help="the registered database addresses")
+	ac = ss.add_parser("add-connector", help="register a database address boards can live in")
+	ac.add_argument("name")
+	ac.add_argument("url", help="sqlite:///path.db, postgres://user@host/db or mongodb://host/db (no #board)")
+	ss.add_parser("remove-connector", help="refused while a registered board uses it").add_argument("name")
 	try:
 		a = ap.parse_args(argv)
 	except _Usage as e:
 		return _fail(e, True)
+
+	if a.cmd == "system":  # unblockd's own data, not a board (--dir is not used)
+		try:
+			out = _system(a)
+		except st.TicketError as e:
+			return _fail(e, as_json)
+		print(json.dumps(out, indent=2, ensure_ascii=False))
+		return 0
 
 	if a.cmd == "migrate":  # needs no board of its own (--dir is not used)
 		try:

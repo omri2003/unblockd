@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .errors import TicketError
+from .errors import NotFound, TicketError
 
 SCHEMA = 1
 BUSY_S = 10  # how long a write waits for the board lock before "try again"
@@ -121,10 +121,11 @@ class MongoBackend:
 		self.dir = self.rt = None
 		self._seen = None
 		_, self.db, self.transactions = _client(url)
+		self.created = False  # True when opening made the board (boards.Boards.register says so)
 		if self.db.ub_boards.find_one({"_id": board}, {"_id": 1}) is None:
 			if not create:
-				raise TicketError(f"no board {board!r} in {redact(url)}")
-			self.db.ub_boards.update_one({"_id": board}, {"$setOnInsert": {"config": None, "version": 0, "evseq": 0, "created": _now()}}, upsert=True)
+				raise NotFound(f"no board {board!r} in {redact(url)}")
+			self.created = self.db.ub_boards.update_one({"_id": board}, {"$setOnInsert": {"config": None, "version": 0, "evseq": 0, "created": _now()}}, upsert=True).upserted_id is not None
 		# the lock document exists before anyone takes it ($expr, needed for the server-clock expiry, is not allowed in an upsert)
 		self.db.ub_locks.update_one({"_id": board}, {"$setOnInsert": {"holder": None, "until": datetime(1970, 1, 1, tzinfo=timezone.utc)}}, upsert=True)
 

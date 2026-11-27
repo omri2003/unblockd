@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --no-deps . && rm -rf build *.egg-info
 # No /data/tickets here: TICKETS_DIR is the first board, so an empty one would become the default "Tickets" board.
 RUN mkdir -p /data /projects && chown -R 1001:0 /app /data /projects && chmod -R g=u /app /data /projects
 USER 1001
-ENV UNBLOCKD_ROOT=/projects TICKETS_DIR=/data/tickets HOST=0.0.0.0 PORT=8787 PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ENV UNBLOCKD_ROOT=/projects TICKETS_DIR=/data/tickets UNBLOCKD_SYSTEM_DB=/data/system.db HOST=0.0.0.0 PORT=8787 PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8787 8788
 # The board's port (PORT). The MCP service shares this image and disables it in compose.yaml.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["python", "-c", "import os,urllib.request as u; u.urlopen('http://127.0.0.1:%s/healthz' % os.environ['PORT'], timeout=3)"]

@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from .errors import TicketError
+from .errors import NotFound, TicketError
 
 SCHEMA = 1  # bump with a migration step in _migrate (CORE-38)
 BUSY_S = 10  # how long a write waits for the board lock before "try again", like the files connector
@@ -190,9 +190,11 @@ class SqlBackend:
 		self.dir = self.rt = None
 		self._seen = None  # the board version read with the last tickets(): what version() reports
 		c = self.c
+		self.created = False  # True when opening made the board (boards.Boards.register says so)
 		if not c.q("SELECT 1 FROM ub_boards WHERE board = ?", (board,)):
 			if not create:
-				raise TicketError(f"no board {board!r} in {redact(url)}")
+				raise NotFound(f"no board {board!r} in {redact(url)}")
+			self.created = True
 			with self._tx():
 				c.q("INSERT INTO ub_boards (board, config, created) VALUES (?, NULL, ?) ON CONFLICT (board) DO NOTHING",
 				    (board, _now()))

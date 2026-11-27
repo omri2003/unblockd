@@ -20,6 +20,7 @@ from pathlib import Path
 
 from . import connectors as cn
 from . import store as st
+from . import system as sy
 
 
 MOUNTINFO = Path("/proc/self/mountinfo")  # module attributes so tests can point them at fakes
@@ -52,10 +53,24 @@ def _slug(s: str) -> str:
 
 
 class Boards:
-	def __init__(self, roots: list[str] | None = None, dirs: list[str] | None = None, legacy: list[str] | None = None):
+	def __init__(self, roots: list[str] | None = None, dirs: list[str] | None = None, legacy: list[str] | None = None,
+	             system: sy.System | None = None):
 		self.roots = [Path(r) for r in (roots or []) if r]
 		self.dirs = [d if cn.is_db(d) else Path(d) for d in (dirs or []) if d]  # a Path, or a database location (str)
 		self.legacy = legacy or []
+		self.system = system  # the system database (CORE-34): its registered boards are listed after the scanned ones
+		self._from_system: set[str] = set()  # ids all() took from it (summary marks them registered)
+
+	def registered(self) -> list[tuple[str, object]]:
+		"""[(id, location)] from the system database; [] when there is none, or it can't be read (said once on stderr: the
+		scanned boards must keep working)."""
+		if self.system is None:
+			return []
+		try:
+			return [(bid, loc if cn.is_db(loc) or isinstance(loc, sy.Broken) else Path(loc)) for bid, loc in self.system.locations()]
+		except Exception as e:  # noqa: BLE001 - a broken system database hides only the registered boards
+			sy.warn_once(f"{self.system.where}: {e}; registered boards are not listed")
+			return []
 
 	def _scan(self) -> list:
 		found = [d for d in self.dirs if isinstance(d, str) or d.is_dir()]
@@ -93,6 +108,18 @@ class Boards:
 			while bid in out:
 				bid, n = f"{base}-{n}", n + 1
 			out[bid] = p
+		seen = {p if isinstance(p, str) else p.resolve() for p in out.values()}
+		self._from_system = set()
+		for bid, p in self.registered():  # registered boards keep their id (a clash with a scanned board gets -2)
+			if not isinstance(p, sy.Broken) and (p if isinstance(p, str) else p.resolve()) in seen:
+				continue  # already listed by scanning
+			base, n = bid, 2
+			while bid in out:
+				bid, n = f"{base}-{n}", n + 1
+			out[bid] = p
+			self._from_system.add(bid)
+			if not isinstance(p, sy.Broken):
+				seen.add(p if isinstance(p, str) else p.resolve())
 		return out
 
 	def get(self, board: str | None = None) -> st.Store:
@@ -100,26 +127,44 @@ class Boards:
 		if not boards:
 			raise st.TicketError("no boards: set UNBLOCKD_ROOT to a folder of projects or TICKETS_DIR to a tickets folder")
 		if board is None:
-			return self.open(next(iter(boards.values())))
+			bid = next(iter(boards))
+			return self._open(bid, boards[bid])
 		if board not in boards:
 			raise st.NotFound(f"no board {board!r}. Boards: {', '.join(boards)}")
-		return self.open(boards[board])
+		return self._open(board, boards[board])
 
-	def open(self, where) -> st.Store:
-		"""The Store for one entry of all(): a folder or a database location."""
-		return st.Store(where, self.legacy)
+	def open(self, where, create: bool = True, bid: str | None = None) -> st.Store:
+		"""The Store for one entry of all(): a folder or a database location. create=False: a database board must already exist
+		(a registered board: a typo in its #board must say so, not quietly open a new empty board)."""
+		if isinstance(where, sy.Broken):
+			raise st.TicketError(str(where))
+		if create or not cn.is_db(where):
+			return st.Store(where, self.legacy)
+		try:
+			backend = cn.open_backend(where, create=False)
+		except st.NotFound as e:
+			raise st.TicketError(f"{e}: registered board {bid} points at a board that does not exist; fix its location or "
+			                     f"`system remove-board {bid}`") from None
+		return st.Store(backend=backend, legacy_files=self.legacy)
+
+	def _open(self, bid: str, where) -> st.Store:
+		"""open() for the board listed as bid: a registered one is never created by opening it."""
+		return self.open(where, create=bid not in self._from_system, bid=bid)
 
 	def summary(self) -> list[dict]:
 		out = []
-		for bid, p in self.all().items():
+		every = self.all()
+		reg = set(self._from_system)  # the entries that came from the system database
+		for bid, p in every.items():
+			extra = {"registered": True} if bid in reg else {}
 			try:
-				s = self.open(p)
+				s = self._open(bid, p)
 				ts = s.list()
 				out.append({"id": bid, "title": s.config["title"], "path": cn.describe(str(p)), "tickets": len(ts),
 				            "open": sum(t["status"] != "done" for t in ts),
-				            "ready": sum(t["effective_status"] == "todo" for t in ts)})
+				            "ready": sum(t["effective_status"] == "todo" for t in ts), **extra})
 			except st.TicketError as e:  # a broken config shouldn't hide the other boards
-				out.append({"id": bid, "title": bid, "path": cn.describe(str(p)), "error": str(e)})
+				out.append({"id": bid, "title": bid, "path": "" if isinstance(p, sy.Broken) else cn.describe(str(p)), "error": str(e), **extra})
 		return out
 
 	def needs(self, board: str | None = None) -> list[dict]:
@@ -133,7 +178,7 @@ class Boards:
 			if board is not None and bid != board:
 				continue
 			try:
-				s = self.open(path)
+				s = self._open(bid, path)
 				items = s.needs()
 			except st.TicketError:
 				if board is not None:
@@ -142,6 +187,24 @@ class Boards:
 			if items:
 				out.append({"id": bid, "title": s.config["title"], "items": items})
 		return out
+
+	def register(self, board_id: str, location: str = "", connector: str | None = None, title: str = "") -> dict:
+		"""Add a board to the system database (CORE-34): refused when the id is already in the board list."""
+		if self.system is None:
+			raise st.TicketError("no system database")
+		if board_id in self.all() and board_id not in self._from_system:
+			raise st.TicketError(f"board {board_id} is already listed (found by scanning): pick another id")
+		got = self.system.add_board(board_id, location, connector, title)
+		where = dict(self.registered()).get(board_id)  # a database board is created HERE, on purpose, never later by opening it
+		try:
+			s = self.open(where)
+			got["tickets"] = len(s.list())
+			if getattr(s.backend, "created", False):
+				got["new"] = True
+				got["hint"] = "a new empty board was created there; if you meant an existing one, check the #board name"
+		except st.TicketError as e:
+			got["warnings"] = [f"registered, but it can't be opened yet: {e}"]
+		return got
 
 	def create(self, board_id: str, title: str = "", root: str | None = None) -> dict:
 		"""New board under a root (default the first): <root>/<id>/tickets/unblockd.json. In a container, a root that is not on a mounted
@@ -253,4 +316,4 @@ def from_env() -> Boards:
 	roots = [r for r in env.get("UNBLOCKD_ROOT", "").split(sep) if r]
 	if not dirs and not roots:
 		dirs = ["tickets"]
-	return Boards(roots, dirs, [p for p in env.get("UNBLOCKD_LEGACY", "").split(sep) if p])
+	return Boards(roots, dirs, [p for p in env.get("UNBLOCKD_LEGACY", "").split(sep) if p], system=sy.from_env())
