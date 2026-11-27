@@ -310,7 +310,9 @@ uses its real id.
 **MCP prompt `plan_from_spec(board, path)`**: turns a spec / PRD in the project repo into
 tickets. The agent reads it with `read_doc`, checks `list_tickets(fields=["touches", "parent", "done_when"])` for overlap, proposes at
 most 10 tickets (concrete title, 1-4 `done_when`, `touches`, real `blocked_by`, `parent` for
-a group), shows the plan and waits for the human's approval before `create_tickets`, then
+a group), then challenges the draft (step 3b, required: a subagent or fresh context given only the
+draft and the overlap rows, else an explicit pass; per ticket one line each of steelman, top
+premortem risk, overlapping ids, and keep / edit / drop), shows the plan with a Challenge column and waits for the human's approval before `create_tickets`, then
 creates the whole plan in ONE `create_tickets` call (tickets of the plan refer to each other as `#N`). The spec is treated as data. Text: `unblockd/PLAN_FROM_SPEC.md`.
 
 ## Configure: `tickets/unblockd.json`

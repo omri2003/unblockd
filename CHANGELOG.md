@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- `plan_from_spec` challenges its draft before showing it: a separate pass writes per ticket a steelman, the top premortem risk, overlapping tickets and keep / edit / drop, shown as a Challenge column in the plan table.
 - `list_tickets(fields=[...], limit=)` adds only the asked keys per row (body and notes only when named), so a planner checks overlap without `full=true`; REST `GET tickets?fields=&limit=`, CLI `list --fields --limit`.
 - `split_ticket(parts=[...])`: parts with their own `done_when`, `touches`, `body`, `components` and `"#N"` blockers, validated all or nothing; `claim=k` takes part #k in the same call. `titles` still works. REST `parts` / `claim`, CLI `split --parts FILE --claim K`.
 - `update_tickets` changes several tickets in one all-or-nothing call (MCP, REST `PATCH tickets`, CLI `update-many`); the board's bulk bar sends one request (and one for Undo), and a refused bulk edit changes nothing.

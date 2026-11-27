@@ -7,7 +7,7 @@ cap, default 30): ONE shared server for every project.
 profile docs already sent unchanged in this process (_dedupe).
 
 Prompt `work_loop(board, profile)` and resource `unblockd://work-loop`: the worker protocol, for any MCP client.
-Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets, create them after the human approves.
+Prompt `plan_from_spec(board, path)`: read a spec doc, propose at most 10 linked tickets (challenged first: steelman, premortem, overlap), create them after the human approves.
 Tools: list_boards, create_board, board_info, work_plan, next_ready, list_tickets, get_ticket,
 create_ticket, create_tickets, needs_you, accept_ticket, approve_ticket, report_ticket, update_ticket, update_tickets, split_ticket, delete_ticket, for workers claim_next, claim_ticket, heartbeat,
 release, ask_human, add_note, answer, reject, complete, agents_now, roadmap, and for knowledge get_context, knowledge_graph, architecture_map, arch_add_component, arch_update_component, arch_delete_component, arch_set_edge, arch_remove_edge, read_doc, attach_file, detach_file. Every ticket tool takes board= (default: the first board).
@@ -87,7 +87,7 @@ def work_loop(board: str | None = None, profile: str | None = None) -> str:
 
 @mcp.prompt()
 def plan_from_spec(board: str, path: str) -> str:
-	"""Turn a spec / PRD doc in the project repo into a few linked tickets: read, check overlap, propose (max 10), wait for approval, then create."""
+	"""Turn a spec / PRD doc in the project repo into a few linked tickets: read, check overlap, draft (max 10), challenge the draft (steelman, premortem, overlap), wait for approval, then create."""
 	return string.Template((Path(__file__).parent / "PLAN_FROM_SPEC.md").read_text(encoding="utf-8")).safe_substitute(
 		board=board, path=path, board_arg=f", board=\"{board}\"", board_arg_bare=f"board=\"{board}\"")
 
