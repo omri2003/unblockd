@@ -13,6 +13,8 @@ upgrade off: an older database is then refused until an admin runs `python -m un
 (empty) database is set up either way: there is nothing to upgrade.
 
 mode: "auto" (on connect: upgrade unless turned off), "upgrade" (db upgrade: always), "status" (db status: report only).
+A current SQL database is only read (meta table looked up first: an app user without CREATE rights connects); a server
+that waits past the lock timeout while another upgrades gets "another unblockd is upgrading X; try again in a minute".
 """
 from __future__ import annotations
 
@@ -57,27 +59,64 @@ def _report(where, kind, have, target, applied, err) -> dict:
 	return out
 
 
+def _have(c, meta: str) -> int | None:
+	"""The schema the meta table records (0 = table without a row), None = no meta table. Reads only: an app user without
+	CREATE rights (Postgres 15 denies it on public by default) or a read-only file still connects when nothing is missing."""
+	if c.kind == "postgres":
+		found = c.q("SELECT to_regclass(?::text)", (meta,))[0][0] is not None
+	else:
+		found = bool(c.q("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (meta,)))
+	if not found:
+		return None
+	row = c.q(f"SELECT v FROM {meta} WHERE k = 'schema'")
+	return int(row[0][0]) if row else 0
+
+
+def _denied(e: Exception) -> bool:
+	"""The database user may not change the schema (Postgres InsufficientPrivilege, a read-only SQLite file)."""
+	return type(e).__name__ == "InsufficientPrivilege" or "readonly" in str(e)
+
+
 def sql(c, meta: str, steps: list[str], where: str, mode: str = "auto") -> dict:
-	"""Bring one SQL database (an open sql._Conn) to len(steps). Statements are split on ';'; {BLOB} = BLOB / BYTEA, {NOW} = now."""
+	"""Bring one SQL database (an open sql._Conn) to len(steps). Statements are split on ';'; {BLOB} = BLOB / BYTEA, {NOW} = now.
+	A current database is only read (no transaction, no DDL); the lock and the meta table are taken only to upgrade."""
 	target = len(steps)
-	c.begin()
-	ok = False
+	have = _have(c, meta)
+	apply, err = _decide(where, have or 0, target, mode)
+	if not apply:
+		return _report(where, c.kind, have or 0, target, False, err)
+	began = False
 	try:
+		c.begin()
+		began = True
 		if c.kind == "postgres":  # one upgrader per database and meta table at a time; freed with the transaction
 			c.q("SELECT pg_advisory_xact_lock(?)", (zlib.crc32(meta.encode()),))
-		c.q(f"CREATE TABLE IF NOT EXISTS {meta} (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
-		row = c.q(f"SELECT v FROM {meta} WHERE k = 'schema'")
-		have = int(row[0][0]) if row else 0
-		apply, err = _decide(where, have, target, mode)
+	except TicketError:  # the lock wait ran out (sql._busy): another server holds it, most likely upgrading
+		if began:
+			c.end(False)
+		raise TicketError(f"another unblockd is upgrading {where}; try again in a minute") from None
+	ok = False
+	try:
+		have = _have(c, meta)  # again under the lock: another server may have upgraded it meanwhile
+		apply, _ = _decide(where, have or 0, target, mode)
 		if apply:
-			now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-			for step in steps[have:]:
-				text = step.replace("{BLOB}", "BLOB" if c.kind == "sqlite" else "BYTEA").replace("{NOW}", now)
-				for stmt in filter(str.strip, text.split(";")):
-					c.q(stmt)
-			c.q(f"INSERT INTO {meta} (k, v) VALUES ('schema', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", (str(target),))
-		ok = mode != "status"  # status changes nothing (not even the meta table it may have made)
-		return _report(where, c.kind, have, target, apply, err)
+			try:
+				if have is None:
+					c.q(f"CREATE TABLE IF NOT EXISTS {meta} (k TEXT PRIMARY KEY, v TEXT NOT NULL)")
+				now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+				for step in steps[have or 0:]:
+					text = step.replace("{BLOB}", "BLOB" if c.kind == "sqlite" else "BYTEA").replace("{NOW}", now)
+					for stmt in filter(str.strip, text.split(";")):
+						c.q(stmt)
+				c.q(f"INSERT INTO {meta} (k, v) VALUES ('schema', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v", (str(target),))
+			except Exception as e:  # noqa: BLE001 - only a missing privilege gets its own message
+				if not _denied(e):
+					raise
+				first = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+				raise TicketError(f"{where} needs an upgrade (schema {have or 0} to {target}) and this database user can't change "
+				                  f"its schema ({first}): run `python -m unblockd.cli db upgrade` as the database owner") from None
+		ok = True
+		return _report(where, c.kind, have or 0, target, apply, None)
 	finally:
 		c.end(ok)
 

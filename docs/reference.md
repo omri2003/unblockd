@@ -780,6 +780,12 @@ Without `--url` they cover the system database, the databases named in `UNBLOCKD
 boards and connectors (passwords hidden in the output). Exit code 1 when any database failed (its row says why). A new,
 empty database is set up either way. Back up before upgrading production; there is no downgrade.
 
+A database that is already current is only read on connect (no lock, no DDL), so the app's database user needs no CREATE
+right (Postgres 15 denies it on `public` by default). When an upgrade is due and that user may not change the schema,
+unblockd says so: run `python -m unblockd.cli db upgrade` as the database owner, then start it again. A server that
+starts while another one is upgrading waits up to 10 s, then stops with "another unblockd is upgrading <database>; try
+again in a minute".
+
 ## Develop
 
 - New ticket field: one line in `FIELDS` in `store.py`; show it in `static/index.html`.

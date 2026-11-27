@@ -2,10 +2,13 @@
 on SQL; a newer one is refused; UNBLOCKD_AUTO_UPGRADE=0 leaves it to `db upgrade`. SQLite always; Postgres / MongoDB when
 UNBLOCKD_TEST_PG / UNBLOCKD_TEST_MONGO(_RS) are set; the Mongo step runner also against a small fake."""
 import contextlib
+import hashlib
+import inspect
 import io
 import json
 import os
 import sqlite3
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -101,6 +104,98 @@ class SqlUpgradeTest(unittest.TestCase):
 			self.assertEqual(cli.main(["db", "upgrade"]), 0)
 		self.assertTrue(sysfile.exists())
 		sy.System(str(sysfile)).close()
+
+	def test_waiting_while_another_server_upgrades(self):
+		holder = sqlite3.connect(self.file, isolation_level=None)  # another unblockd, mid-upgrade: it holds the write lock
+		self.addCleanup(holder.close)
+		holder.execute("BEGIN IMMEDIATE")
+		with mock.patch.object(sql, "BUSY_S", 1), mock.patch.object(sql, "STEPS", sql.STEPS + [EXTRA]):
+			with self.assertRaisesRegex(TicketError, rf"^another unblockd is upgrading {self.url}; try again in a minute$"):
+				sql.connect(self.url)
+		holder.execute("ROLLBACK")
+		with mock.patch.object(sql, "BUSY_S", 1):
+			sql.connect(self.url)  # a current database is only read: the held lock never stops it
+			sql.disconnect()
+			holder.execute("BEGIN IMMEDIATE")
+			sql.connect(self.url)
+
+	def test_a_current_read_only_database_connects(self):
+		os.chmod(self.file, stat.S_IREAD)
+		self.addCleanup(os.chmod, self.file, stat.S_IREAD | stat.S_IWRITE)
+		sql.connect(self.url)  # no DDL, no write transaction when nothing is missing
+		self.assertEqual(sql.schema(self.url)["schema"], sql.SCHEMA)
+		sql.disconnect()
+		with mock.patch.object(sql, "STEPS", sql.STEPS + [EXTRA]):
+			with self.assertRaisesRegex(TicketError, r"needs an upgrade \(schema 1 to 2\) and this database user can't change its "
+			                            r"schema .*: run `python -m unblockd.cli db upgrade` as the database owner"):
+				sql.connect(self.url)
+
+
+class InsufficientPrivilege(Exception):  # the name psycopg gives Postgres' 42501
+	pass
+
+
+class _FakePg:
+	"""A Postgres connection that records statements; DDL is refused like for an app user without CREATE rights."""
+	kind = "postgres"
+
+	def __init__(self, have):
+		self.have, self.sent = have, []
+
+	def begin(self):
+		self.sent.append("BEGIN")
+
+	def end(self, ok):
+		self.sent.append("COMMIT" if ok else "ROLLBACK")
+
+	def q(self, stmt, args=()):
+		self.sent.append(stmt)
+		if stmt.startswith("SELECT to_regclass"):
+			return [("ub_meta",)]
+		if stmt.startswith("SELECT v FROM"):
+			return [(str(self.have),)]
+		if stmt.startswith(("CREATE", "INSERT")):
+			raise InsufficientPrivilege("permission denied for schema public")
+		return [(None,)]
+
+
+class PostgresPrivilegeTest(unittest.TestCase):
+	def test_current_schema_needs_no_create_right(self):
+		c = _FakePg(1)
+		self.assertEqual(upgrade.sql(c, "ub_meta", ["CREATE TABLE a (x TEXT)"], "pg")["schema"], 1)
+		self.assertFalse([s for s in c.sent if s.startswith(("CREATE", "BEGIN", "SELECT pg_advisory"))], c.sent)
+
+	def test_upgrade_without_the_right_says_who_can(self):
+		c = _FakePg(1)
+		with mock.patch.dict(os.environ, {upgrade.ENV: ""}):
+			with self.assertRaisesRegex(TicketError, r"^pg needs an upgrade \(schema 1 to 2\) .*permission denied for schema public.*"
+			                            r"run `python -m unblockd.cli db upgrade` as the database owner$"):
+				upgrade.sql(c, "ub_meta", ["CREATE TABLE a (x TEXT)", "CREATE TABLE b (x TEXT)"], "pg")
+		self.assertEqual(c.sent[-1], "ROLLBACK")
+
+
+# Released steps, never to be edited (a change is a NEW step appended to STEPS). sha256 of each step's SQL text (sql.py,
+# system.py) or of its function's source (mongo.py). A new release adds its steps' hashes here.
+RELEASED = {
+	"sql": ["2dd1092658bbe54d642014f446cf948ffbb5f0b9a9ec97922c094993bc02164c"],
+	"system": ["f35c5c7dc7e3e01ad0b31610de3781460ba0ddab8f2365de412d5f1ac8fb3c3a"],
+	"mongo": ["e9eda0e739591f20826ef69d7e3159fae62d050ce597f4ff39f6d4d7e68c719b"],
+}
+
+
+class ReleasedStepsTest(unittest.TestCase):
+	def test_released_steps_never_change(self):
+		mods = {"sql": (sql, "unblockd/sql.py"), "system": (sy, "unblockd/system.py"), "mongo": (mg, "unblockd/mongo.py")}
+		for name, hashes in RELEASED.items():
+			mod, path = mods[name]
+			steps = mod.STEPS
+			self.assertGreaterEqual(len(steps), len(hashes), f"{path}: a released upgrade step was removed")
+			for n, want in enumerate(hashes):
+				step = steps[n]
+				text = step if isinstance(step, str) else inspect.getsource(step)
+				got = hashlib.sha256(text.replace("\r\n", "\n").encode()).hexdigest()
+				self.assertEqual(got, want, f"{path}: released upgrade step {n + 1} (STEPS[{n}]) was edited. Databases already at "
+				                 "this schema never run it again: put it back as it was and append the change as a new step")
 
 
 class SystemUpgradeTest(unittest.TestCase):
