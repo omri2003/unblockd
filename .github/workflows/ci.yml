@@ -62,9 +62,43 @@ jobs:
       - run: npx playwright install chromium  # no --with-deps: the ubuntu runner already has Chrome's system libraries (apt took ~11 min)
       - run: node tests/ui_smoke.mjs
 
+  image-db:
+    # The image as built (no rebuild, no pip at run time) serves a board on Postgres and one on MongoDB, configured only by
+    # UNBLOCKD_BOARDS (CORE-39). The shared suite itself runs on every connector in the test job.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+      mongo:
+        image: mongo:7
+        ports: ["27017:27017"]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t unblockd:ci .
+      - name: What the database drivers add (their own layer)
+        run: |
+          docker history unblockd:ci --format '{{.Size}} {{.CreatedBy}}' | grep requirements
+          docker image inspect unblockd:ci --format 'image size: {{.Size}} bytes'
+      - name: A board on Postgres and one on MongoDB, same image
+        run: |
+          docker run -d --name ub --network host -e HOST=127.0.0.1 -e PORT=8799 -e TICKETS_DIR= \
+            -e UNBLOCKD_BOARDS="postgres://postgres:test@127.0.0.1:5432/postgres#ci-pg:mongodb://127.0.0.1:27017/unblockd#ci-mongo" unblockd:ci
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8799/healthz && break; sleep 1; done
+          for b in ci-pg ci-mongo; do
+            curl -sf -X POST -H 'Content-Type: application/json' -d '{"prefix": "CI", "title": "from the image"}' http://127.0.0.1:8799/api/b/$b/tickets
+            curl -sf http://127.0.0.1:8799/api/b/$b/tickets | grep -q 'from the image'
+          done
+      - if: failure()
+        run: docker logs ub
+
   image:
     # publishes ghcr.io/<owner>/unblockd on pushes to main (tag: latest) and on v* tags
-    needs: [test, py310, ui]
+    needs: [test, py310, ui, image-db]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

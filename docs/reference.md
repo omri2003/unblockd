@@ -712,6 +712,23 @@ timestamp is kept. A cleanup that fails never fails the write (one line on stder
 keep the 5 MB rotation of `activity.jsonl` (one old file kept) and ignore `history_days`. A migrated board brings its whole
 history; the database side then trims it on the first write.
 
+
+**In Docker.** The image has both drivers (about 24 MB more, in their own layer; CI's `image-db` job prints it with
+`docker history`), so a database board needs no rebuild: set `UNBLOCKD_BOARDS` in `.env`. For a local database, compose
+has optional `postgres` (16) and `mongo` (7, a one-node replica set, so locked writes are transactions) services, each behind
+its own profile (`postgres`, `mongo`; name both for both), published on 127.0.0.1 only, with default passwords meant for local use:
+
+```bash
+docker compose --profile postgres up -d                    # Postgres only
+docker compose --profile mongo up -d                       # MongoDB only
+docker compose --profile postgres --profile mongo up -d    # both
+```
+
+```bash
+# .env, one line; boards separated by ":" (host-side URLs for the CLI: comments at the end of compose.yaml)
+UNBLOCKD_BOARDS=postgres://unblockd:unblockd@postgres:5432/unblockd#pay:mongodb://mongo:27017/unblockd?replicaSet=rs0#ops
+```
+
 ## The system database
 
 unblockd's own data, separate from every board's tickets (CORE-34): the boards registered with it and the **connectors**
