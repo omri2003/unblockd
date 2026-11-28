@@ -6,8 +6,10 @@ WORKDIR /app
 # Dependencies first (a cached layer), then the package itself (pyproject.toml: the unblockd, unblockd-web, unblockd-mcp
 # commands). CMD stays `python -m` from /app, so compose's ./unblockd and ./static mounts win over the installed copy.
 COPY requirements.txt requirements-db.txt ./
-# The database drivers are in the image (owner decision CORE-27 #13: one image, every connector works)
-RUN pip install --no-cache-dir -r requirements.txt -r requirements-db.txt
+RUN pip install --no-cache-dir -r requirements.txt
+# The database drivers are in the image (owner decision CORE-27 #13: one image, every connector works, no rebuild): their own
+# layer, so `docker history` shows what they cost (about 24 MB installed, 5.4 MB of wheels: psycopg-binary, pymongo, dnspython).
+RUN pip install --no-cache-dir -r requirements-db.txt
 COPY pyproject.toml README.md LICENSE ./
 COPY unblockd ./unblockd
 COPY static ./static

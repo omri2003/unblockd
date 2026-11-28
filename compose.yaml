@@ -28,6 +28,8 @@ x-unblockd: &unblockd   # shared by both services
     UNBLOCKD_WEBHOOK: ${UNBLOCKD_WEBHOOK:-}   # optional push notifications (see README)
     UNBLOCKD_WEBHOOK_FORMAT: ${UNBLOCKD_WEBHOOK_FORMAT:-json}
     UNBLOCKD_PUBLIC_URL: ${UNBLOCKD_PUBLIC_URL:-}
+    # Extra boards: folders or database locations, e.g. postgres://unblockd:unblockd@postgres:5432/unblockd#pay (see the postgres / mongo profiles below)
+    UNBLOCKD_BOARDS: ${UNBLOCKD_BOARDS:-}
   restart: unless-stopped
 
 services:
@@ -46,5 +48,45 @@ services:
     ports:
       - "127.0.0.1:8788:8788"
 
+  # Optional databases for database boards (docs/reference.md "Storage connectors"). Off by default; each has its own profile:
+  #   docker compose --profile postgres up -d     (Postgres only)
+  #   docker compose --profile mongo up -d        (MongoDB only)
+  #   docker compose --profile postgres --profile mongo up -d   (both)
+  # then put a board on one in .env (the image already has both drivers: no rebuild):
+  #   UNBLOCKD_BOARDS=postgres://unblockd:unblockd@postgres:5432/unblockd#pay
+  #   UNBLOCKD_BOARDS=mongodb://mongo:27017/unblockd?replicaSet=rs0#pay
+  # Several boards share one database (one #board each). Ports are published on this machine only (CLI from the host:
+  # postgres://unblockd:unblockd@127.0.0.1:5432/unblockd#pay, mongodb://127.0.0.1:27017/unblockd?directConnection=true#pay).
+  # Local use only: the passwords below are defaults, change them in .env for anything shared.
+  postgres:
+    profiles: [postgres]
+    image: postgres:16-alpine   # the same as CI
+    environment:
+      POSTGRES_USER: unblockd
+      POSTGRES_PASSWORD: ${UNBLOCKD_PG_PASSWORD:-unblockd}
+      POSTGRES_DB: unblockd
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U unblockd"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+  mongo:
+    profiles: [mongo]
+    image: mongo:7   # the same as CI
+    # A one-node replica set: the connector then runs every locked write as ONE transaction (a standalone server only gets
+    # the safe write order). The healthcheck initiates the set on first start.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes: [mongodata:/data/db]
+    ports: ["127.0.0.1:27017:27017"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { rs.status().ok } catch (e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongo:27017'}]}).ok }"]
+      interval: 5s
+      retries: 30
+    restart: unless-stopped
+
 volumes:
   unblockd-data:
+  pgdata:
+  mongodata:

@@ -1,0 +1,58 @@
+name: load
+# CORE-40: 20,000 tickets and 200 agents on every connector (tests/load.py). Opt-in (Actions -> load -> Run workflow), so
+# normal CI stays fast. Each connector is its own job; the JSON reports are uploaded and shown in the run summary.
+on:
+  workflow_dispatch:
+    inputs:
+      tickets: {description: "tickets on the board", default: "20000"}
+      agents: {description: "agents at once", default: "200"}
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        connector: [files, sqlite, postgres, mongo]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-db.txt
+      - name: Postgres (200 agents = 200 connections; the default max_connections is 100)
+        if: matrix.connector == 'postgres'
+        run: |
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_PASSWORD=test postgres:16-alpine -c max_connections=300
+          for i in $(seq 1 60); do docker exec pg pg_isready -U postgres && break; sleep 1; done
+      - name: MongoDB, a one-node replica set (transactions)
+        if: matrix.connector == 'mongo'
+        run: |
+          docker run -d --name mongo-rs -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 60); do docker exec mongo-rs mongosh --quiet --eval 'db.runCommand({ping:1}).ok' && break; sleep 1; done
+          docker exec mongo-rs mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
+          for i in $(seq 1 60); do docker exec mongo-rs mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true && break; sleep 1; done
+      - name: Load test
+        env:
+          LOC_files: ""
+          LOC_sqlite: sqlite:///${{ runner.temp }}/load.db#load
+          LOC_postgres: postgres://postgres:test@127.0.0.1:5432/postgres#load
+          LOC_mongo: mongodb://127.0.0.1:27017/unblockd?directConnection=true#load
+        run: |
+          loc_var="LOC_${{ matrix.connector }}"
+          loc="${!loc_var}"
+          python -m tests.load ${loc:+--location "$loc"} --tickets "${{ inputs.tickets }}" --agents "${{ inputs.agents }}" \
+            --json load-${{ matrix.connector }}.json
+      - if: always()
+        run: |
+          echo '### ${{ matrix.connector }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat load-${{ matrix.connector }}.json >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-${{ matrix.connector }}
+          path: load-${{ matrix.connector }}.json
+          if-no-files-found: ignore
