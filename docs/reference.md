@@ -729,6 +729,8 @@ docker compose --profile postgres --profile mongo up -d    # both
 UNBLOCKD_BOARDS=postgres://unblockd:unblockd@postgres:5432/unblockd#pay:mongodb://mongo:27017/unblockd?replicaSet=rs0#ops
 ```
 
+**Load**: `python -m tests.load` (20,000 tickets, 200 agents; numbers in AGENTS.md).
+
 ## The system database
 
 unblockd's own data, separate from every board's tickets (CORE-34): the boards registered with it and the **connectors**
